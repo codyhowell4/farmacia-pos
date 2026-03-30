@@ -278,6 +278,7 @@ const AdminSuppliers = () => {
                             </Button>
                           )}
                           {order.status === 'received' && <span className="text-xs text-slate-400">{new Date(order.received_at).toLocaleDateString('es-MX')}</span>}
+                        </td>
                       </tr>
                       {expandedOrder === order.id && (
                         <tr>
