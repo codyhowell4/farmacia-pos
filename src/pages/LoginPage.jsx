@@ -40,11 +40,12 @@ const LoginPage = () => {
       else if (profile.role === 'pos') navigate('/pos');
       else if (profile.role === 'inventory') navigate('/inventory');
     } catch (err) {
+      console.error("Detailed Login Error:", err);
       toast({
         title: 'Error al iniciar sesión',
         description: err.message === 'Invalid login credentials'
           ? 'Correo o contraseña incorrectos.'
-          : err.message,
+          : `System Error: ${err.message}`,
         variant: 'destructive',
       });
     } finally {

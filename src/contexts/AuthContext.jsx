@@ -14,9 +14,10 @@ export const AuthProvider = ({ children }) => {
       const p = await getMyProfile();
       setProfile(p);
       return p;
-    } catch {
+    } catch (e) {
+      console.error("AuthContext Profile Load Error:", e);
       setProfile(null);
-      return null;
+      throw e;
     }
   };
 
