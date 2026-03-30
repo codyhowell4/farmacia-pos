@@ -39,23 +39,9 @@ export const getMyProfile = async () => {
     .from('profiles')
     .select('*, locations(name), organizations(name, slug)')
     .eq('id', user.id)
-    .single();
+    .maybeSingle();
   if (error) throw error;
-  
-  // Default to the main location if the admin has no location_id
-  if (!data.location_id && data.org_id) {
-    const { data: locs } = await supabase
-      .from('locations')
-      .select('id, name')
-      .eq('org_id', data.org_id)
-      .limit(1);
-      
-    if (locs && locs.length > 0) {
-      data.location_id = locs[0].id;
-      data.locations = { name: locs[0].name };
-    }
-  }
-
+  if (!data) return null;
   return { ...data, email: user.email };
 };
 
@@ -79,10 +65,11 @@ export const getUsers = async () => {
   return data;
 };
 
-export const createUser = async ({ email, password, full_name, role, location_id, pin, org_id }) => {
-  const adminOrgId = org_id || await getOrgId();
-  
-  // Use a temporary client to sign up the new user without logging out the current admin
+export const createUser = async ({ email, password, full_name, role, location_id, pin }) => {
+  const adminOrgId = await getOrgId();
+
+  // Step 1: Create the Supabase auth user using a temporary client
+  // (so we don't sign out the current admin)
   const tempSupabase = createClient(
     import.meta.env.VITE_SUPABASE_URL,
     import.meta.env.VITE_SUPABASE_ANON_KEY,
@@ -92,17 +79,29 @@ export const createUser = async ({ email, password, full_name, role, location_id
   const { data: authData, error: authError } = await tempSupabase.auth.signUp({
     email,
     password,
-    options: { data: { full_name } }
+    options: { data: { full_name } },
   });
 
   if (authError) throw authError;
-  if (!authData.user) throw new Error("Error: No se pudo crear el usuario.");
+  if (!authData.user) throw new Error('No se pudo crear el usuario en Auth.');
 
-  // The database trigger will automatically create the profile as 'pos'.
-  // We use our existing logged-in admin identity to update the profile with the correct details.
-  const { data, error: profileError } = await supabase.from('profiles').update({
-    role, location_id, pin, org_id: adminOrgId
-  }).eq('id', authData.user.id).select().single();
+  const newUserId = authData.user.id;
+
+  // Step 2: Upsert the profile row directly.
+  // Using upsert handles both: the trigger already created a bare row OR it hasn't fired yet.
+  // We use the admin's existing session which has permission via admin_profiles_all policy.
+  const { data, error: profileError } = await supabase
+    .from('profiles')
+    .upsert({
+      id: newUserId,
+      full_name,
+      role,
+      location_id: location_id || null,
+      org_id: adminOrgId,
+      pin: pin || null,
+    }, { onConflict: 'id' })
+    .select()
+    .single();
 
   if (profileError) throw profileError;
   return data;

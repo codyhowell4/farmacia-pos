@@ -17,35 +17,35 @@ const LoginPage = () => {
   const { login, user } = useAuth();
   const { toast } = useToast();
 
+  // If already logged in, redirect immediately
   useEffect(() => {
-    if (user) {
-      if (user.role === 'admin') navigate('/admin');
-      else if (user.role === 'pos') navigate('/pos');
-      else if (user.role === 'inventory') navigate('/inventory');
-    }
+    if (!user) return;
+    if (user.role === 'admin') navigate('/admin');
+    else if (user.role === 'pos') navigate('/pos');
+    else if (user.role === 'inventory') navigate('/inventory');
   }, [user, navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!email || !password) {
-      toast({ title: 'Datos incompletos', description: 'Por favor ingresa tu correo y contraseña.', variant: 'destructive' });
+      toast({ title: 'Datos incompletos', description: 'Ingresa tu correo y contraseña.', variant: 'destructive' });
       return;
     }
     setSubmitting(true);
     try {
       const profile = await login(email, password);
-      if (!profile) throw new Error('No se pudo cargar el perfil.');
-      toast({ title: '¡Bienvenido!', description: `Hola, ${profile.full_name}` });
+      toast({ title: '¡Bienvenido!', description: `Hola, ${profile.name}` });
       if (profile.role === 'admin') navigate('/admin');
       else if (profile.role === 'pos') navigate('/pos');
       else if (profile.role === 'inventory') navigate('/inventory');
     } catch (err) {
-      console.error("Detailed Login Error:", err);
+      console.error('Login error:', err);
       toast({
         title: 'Error al iniciar sesión',
-        description: err.message === 'Invalid login credentials'
-          ? 'Correo o contraseña incorrectos.'
-          : `System Error: ${err.message}`,
+        description:
+          err.message === 'Invalid login credentials'
+            ? 'Correo o contraseña incorrectos.'
+            : err.message,
         variant: 'destructive',
       });
     } finally {
