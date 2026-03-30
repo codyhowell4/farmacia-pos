@@ -43,8 +43,6 @@ const AdminDashboard = () => {
 
   const navItems = [
     { id: 'overview', label: 'Resumen', icon: BarChart3, path: '/admin' },
-    { id: 'pos_module', label: 'Ir a Punto de Venta', icon: ShoppingCart, path: '/pos', external: true },
-    { id: 'inv_module', label: 'Ir a Inventario', icon: Package, path: '/inventory', external: true },
     { id: 'users', label: 'Usuarios', icon: Users, path: '/admin/users' },
     { id: 'sales', label: 'Ventas', icon: ShoppingCart, path: '/admin/sales' },
     { id: 'inventory', label: 'Inventario (Admin)', icon: Package, path: '/admin/inventory' },
@@ -108,10 +106,18 @@ const AdminDashboard = () => {
                   <p className="text-xs text-slate-500">Bienvenido, {user?.name}</p>
                 </div>
               </div>
-              <Button onClick={handleLogout} variant="outline" className="flex items-center space-x-2">
-                <LogOut className="w-4 h-4" />
-                <span className="hidden sm:inline">Cerrar sesión</span>
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button onClick={() => window.open('/pos', '_blank')} className="bg-green-600 hover:bg-green-700 text-white hidden sm:flex border-none">
+                  Punto de Venta
+                </Button>
+                <Button onClick={() => window.open('/inventory', '_blank')} className="bg-purple-600 hover:bg-purple-700 text-white hidden sm:flex border-none">
+                  Módulo Inventario
+                </Button>
+                <Button onClick={handleLogout} variant="outline" className="flex items-center space-x-2 ml-4">
+                  <LogOut className="w-4 h-4" />
+                  <span className="hidden sm:inline">Cerrar sesión</span>
+                </Button>
+              </div>
             </div>
           </div>
         </nav>

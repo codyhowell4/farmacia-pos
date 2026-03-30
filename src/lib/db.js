@@ -41,7 +41,31 @@ export const getMyProfile = async () => {
     .eq('id', user.id)
     .single();
   if (error) throw error;
+  
+  // Default to the main location if the admin has no location_id
+  if (!data.location_id && data.org_id) {
+    const { data: locs } = await supabase
+      .from('locations')
+      .select('id, name')
+      .eq('org_id', data.org_id)
+      .limit(1);
+      
+    if (locs && locs.length > 0) {
+      data.location_id = locs[0].id;
+      data.locations = { name: locs[0].name };
+    }
+  }
+
   return { ...data, email: user.email };
+};
+
+// ── LOCATIONS ───────────────────────────────────────────────
+
+export const getLocations = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase.from('locations').select('*').eq('org_id', orgId).order('name');
+  if (error) throw error;
+  return data;
 };
 
 // ── PROFILES / USERS ─────────────────────────────────────────

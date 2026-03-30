@@ -8,10 +8,11 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 
-import { getUsers, createUser, updateProfile, deleteProfile } from '@/lib/db';
+import { getUsers, createUser, updateProfile, deleteProfile, getLocations } from '@/lib/db';
 
 const AdminUsers = () => {
   const [users, setUsers] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -20,6 +21,14 @@ const AdminUsers = () => {
   });
   const { toast } = useToast();
 
+  const loadAll = async () => {
+    try {
+      const [usersData, locsData] = await Promise.all([getUsers(), getLocations()]);
+      setUsers(usersData);
+      setLocations(locsData);
+    } catch (e) { console.error(e); }
+  };
+
   const loadUsers = async () => {
     try {
       const data = await getUsers();
@@ -27,7 +36,7 @@ const AdminUsers = () => {
     } catch (e) { console.error(e); }
   };
 
-  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => { loadAll(); }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -74,7 +83,7 @@ const AdminUsers = () => {
       password: '',
       name: user.full_name || '',
       role: user.role || '',
-      pharmacyLocation: user.locations?.name || '',
+      pharmacyLocation: user.location_id || (locations?.length > 0 ? locations[0].id : ''),
       pin: user.pin || '',
     });
     setIsDialogOpen(true);
@@ -86,7 +95,7 @@ const AdminUsers = () => {
       password: '',
       name: '',
       role: '',
-      pharmacyLocation: '',
+      pharmacyLocation: locations?.length > 0 ? locations[0].id : '',
       pin: ''
     });
     setEditingUser(null);
@@ -163,7 +172,14 @@ const AdminUsers = () => {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="pharmacyLocation">Ubicación de farmacia</Label>
-                    <Input id="pharmacyLocation" value={formData.pharmacyLocation} onChange={(e) => setFormData({ ...formData, pharmacyLocation: e.target.value })} placeholder="Ej. farmacia1" />
+                    <Select value={formData.pharmacyLocation} onValueChange={(value) => setFormData({ ...formData, pharmacyLocation: value })}>
+                      <SelectTrigger id="pharmacyLocation"><SelectValue placeholder="Seleccionar ubicación" /></SelectTrigger>
+                      <SelectContent>
+                        {locations.map(loc => (
+                          <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   {formData.role === 'admin' && (
                     <div className="space-y-2">
