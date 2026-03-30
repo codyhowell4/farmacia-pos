@@ -331,3 +331,13 @@ create policy "po_items_policy" on purchase_order_items
 drop policy if exists "org_read" on organizations;
 create policy "org_read" on organizations
   for select using (id = get_my_org_id());
+
+-- Profiles: Admins can update/manage profiles within their org
+drop policy if exists "admin_profiles_all" on profiles;
+create policy "admin_profiles_all" on profiles
+  for all using (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin' and p.org_id = profiles.org_id)
+  )
+  with check (
+    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin' and p.org_id = profiles.org_id)
+  );

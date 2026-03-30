@@ -43,9 +43,11 @@ const AdminDashboard = () => {
 
   const navItems = [
     { id: 'overview', label: 'Resumen', icon: BarChart3, path: '/admin' },
+    { id: 'pos_module', label: 'Ir a Punto de Venta', icon: ShoppingCart, path: '/pos', external: true },
+    { id: 'inv_module', label: 'Ir a Inventario', icon: Package, path: '/inventory', external: true },
     { id: 'users', label: 'Usuarios', icon: Users, path: '/admin/users' },
     { id: 'sales', label: 'Ventas', icon: ShoppingCart, path: '/admin/sales' },
-    { id: 'inventory', label: 'Inventario', icon: Package, path: '/admin/inventory' },
+    { id: 'inventory', label: 'Inventario (Admin)', icon: Package, path: '/admin/inventory' },
     { id: 'discounts', label: 'Descuentos', icon: Ticket, path: '/admin/discounts' },
     { id: 'shifts', label: 'Turnos', icon: Clock, path: '/admin/shifts' },
     { id: 'audit', label: 'Auditoría', icon: Shield, path: '/admin/audit' },
@@ -61,9 +63,13 @@ const AdminDashboard = () => {
           <button
             key={item.id}
             onClick={() => {
-              setActiveTab(item.id);
-              navigate(item.path);
-              setIsMenuOpen(false);
+              if (item.external) {
+                window.open(item.path, '_blank');
+              } else {
+                setActiveTab(item.id);
+                navigate(item.path);
+                setIsMenuOpen(false);
+              }
             }}
             className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
               activeTab === item.id

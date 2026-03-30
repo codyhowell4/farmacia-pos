@@ -3,6 +3,8 @@
 // Each function maps 1:1 to what was previously a localStorage call
 // ============================================================
 import { supabase } from './supabase';
+import { createClient } from '@supabase/supabase-js';
+
 
 // ── helpers ─────────────────────────────────────────────────
 
@@ -54,13 +56,29 @@ export const getUsers = async () => {
 };
 
 export const createUser = async ({ email, password, full_name, role, location_id, pin, org_id }) => {
-  // Create auth user via admin API — requires service role key on a backend
-  // For now: create via Supabase dashboard or use invite flow
-  // Insert profile directly (auth user must exist first)
-  const { data, error } = await supabase.from('profiles').insert({
-    full_name, role, location_id, pin, org_id
-  }).select().single();
-  if (error) throw error;
+  // Use a temporary client to sign up the new user without logging out the current admin
+  const tempSupabase = createClient(
+    import.meta.env.VITE_SUPABASE_URL,
+    import.meta.env.VITE_SUPABASE_ANON_KEY,
+    { auth: { persistSession: false, autoRefreshToken: false } }
+  );
+
+  const { data: authData, error: authError } = await tempSupabase.auth.signUp({
+    email,
+    password,
+    options: { data: { full_name } }
+  });
+
+  if (authError) throw authError;
+  if (!authData.user) throw new Error("Error: No se pudo crear el usuario.");
+
+  // The database trigger will automatically create the profile as 'pos'.
+  // We use our existing logged-in admin identity to update the profile with the correct details.
+  const { data, error: profileError } = await supabase.from('profiles').update({
+    role, location_id, pin, org_id
+  }).eq('id', authData.user.id).select().single();
+
+  if (profileError) throw profileError;
   return data;
 };
 
