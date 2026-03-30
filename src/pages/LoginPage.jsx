@@ -33,10 +33,7 @@ const LoginPage = () => {
     }
     setSubmitting(true);
     try {
-      const loginPromise = login(email, password);
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMED_OUT')), 8000));
-      const profile = await Promise.race([loginPromise, timeoutPromise]);
-      
+      const profile = await login(email, password);
       if (!profile) throw new Error('No se pudo cargar el perfil.');
       toast({ title: '¡Bienvenido!', description: `Hola, ${profile.full_name}` });
       if (profile.role === 'admin') navigate('/admin');
