@@ -80,6 +80,8 @@ export const getUsers = async () => {
 };
 
 export const createUser = async ({ email, password, full_name, role, location_id, pin, org_id }) => {
+  const adminOrgId = org_id || await getOrgId();
+  
   // Use a temporary client to sign up the new user without logging out the current admin
   const tempSupabase = createClient(
     import.meta.env.VITE_SUPABASE_URL,
@@ -99,7 +101,7 @@ export const createUser = async ({ email, password, full_name, role, location_id
   // The database trigger will automatically create the profile as 'pos'.
   // We use our existing logged-in admin identity to update the profile with the correct details.
   const { data, error: profileError } = await supabase.from('profiles').update({
-    role, location_id, pin, org_id
+    role, location_id, pin, org_id: adminOrgId
   }).eq('id', authData.user.id).select().single();
 
   if (profileError) throw profileError;

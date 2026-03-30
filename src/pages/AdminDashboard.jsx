@@ -107,10 +107,10 @@ const AdminDashboard = () => {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Button onClick={() => window.open('/pos', '_blank')} className="bg-green-600 hover:bg-green-700 text-white hidden sm:flex border-none">
+                <Button onClick={() => navigate('/pos')} className="bg-green-600 hover:bg-green-700 text-white hidden sm:flex border-none">
                   Punto de Venta
                 </Button>
-                <Button onClick={() => window.open('/inventory', '_blank')} className="bg-purple-600 hover:bg-purple-700 text-white hidden sm:flex border-none">
+                <Button onClick={() => navigate('/inventory')} className="bg-purple-600 hover:bg-purple-700 text-white hidden sm:flex border-none">
                   Módulo Inventario
                 </Button>
                 <Button onClick={handleLogout} variant="outline" className="flex items-center space-x-2 ml-4">

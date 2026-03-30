@@ -45,6 +45,7 @@ const AdminUsers = () => {
         await updateProfile(editingUser.id, {
           full_name: formData.name,
           role: formData.role,
+          location_id: formData.pharmacyLocation,
           pin: formData.pin || null,
         });
         toast({ title: 'Usuario actualizado', description: 'La información del usuario ha sido actualizada' });
@@ -54,6 +55,7 @@ const AdminUsers = () => {
           password: formData.password,
           full_name: formData.name,
           role: formData.role,
+          location_id: formData.pharmacyLocation,
           pin: formData.pin || null,
         });
         toast({ title: 'Usuario agregado', description: 'El nuevo usuario ha sido creado' });
