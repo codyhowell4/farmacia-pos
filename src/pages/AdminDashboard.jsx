@@ -36,8 +36,8 @@ const AdminDashboard = () => {
   
   const [activeTab, setActiveTab] = useState(getCurrentTab());
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
