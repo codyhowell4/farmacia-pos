@@ -302,7 +302,7 @@ $$;
 -- Profiles: users can read all profiles in their org, edit their own
 drop policy if exists "profiles_read" on profiles;
 create policy "profiles_read" on profiles
-  for select using (org_id = get_my_org_id());
+  for select using (id = auth.uid() or org_id = get_my_org_id());
 
 drop policy if exists "profiles_update" on profiles;
 create policy "profiles_update" on profiles
@@ -332,12 +332,21 @@ drop policy if exists "org_read" on organizations;
 create policy "org_read" on organizations
   for select using (id = get_my_org_id());
 
--- Profiles: Admins can update/manage profiles within their org
+-- Security definer function to securely check if the current user is an admin without infinite recursion
+create or replace function is_admin()
+returns boolean language sql security definer stable as $$
+  select exists (
+    select 1 from profiles
+    where id = auth.uid() and role = 'admin'
+  )
+$$;
+
+-- Profiles: Admins can update/manage profiles within their org or newly created profiles 
 drop policy if exists "admin_profiles_all" on profiles;
 create policy "admin_profiles_all" on profiles
   for all using (
-    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin' and p.org_id = profiles.org_id)
+    is_admin() and (org_id = get_my_org_id() or org_id is null)
   )
   with check (
-    exists (select 1 from profiles p where p.id = auth.uid() and p.role = 'admin' and p.org_id = profiles.org_id)
+    is_admin() and (org_id = get_my_org_id() or org_id is null)
   );
