@@ -144,7 +144,14 @@ const InventoryDashboard = () => {
                 <div className="bg-gradient-to-br from-purple-500 to-pink-600 p-2 rounded-lg"><Package className="w-6 h-6 text-white" /></div>
                 <div><h1 className="text-xl font-bold text-slate-900">Gestión de inventario</h1><p className="text-xs text-slate-500">Gestor: {user?.name}</p></div>
               </div>
-              <Button onClick={handleLogout} variant="outline"><LogOut className="w-4 h-4 mr-2" />Cerrar sesión</Button>
+              <div className="flex items-center gap-2">
+                {user?.role === 'admin' && (
+                  <Button onClick={() => navigate('/admin')} variant="outline" className="text-blue-600 border-blue-200 hover:bg-blue-50">
+                    ← Admin
+                  </Button>
+                )}
+                <Button onClick={handleLogout} variant="outline"><LogOut className="w-4 h-4 mr-2" />Cerrar sesión</Button>
+              </div>
             </div>
           </div>
         </nav>

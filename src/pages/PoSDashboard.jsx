@@ -449,6 +449,11 @@ const PoSDashboard = () => {
                 <Button onClick={() => setCloseShiftOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-orange-600 border-orange-200 hover:bg-orange-50">
                   <Clock className="w-4 h-4 mr-2" />Close Shift
                 </Button>
+                {user?.role === 'admin' && (
+                  <Button onClick={() => navigate('/admin')} variant="outline" size="sm" className="hidden sm:inline-flex text-blue-600 border-blue-200 hover:bg-blue-50">
+                    ← Admin
+                  </Button>
+                )}
                 <Button onClick={handleLogout} variant="outline" size="sm" className="hidden sm:inline-flex"><LogOut className="w-4 h-4 mr-2" />Logout</Button>
                 <Button onClick={handleLogout} variant="ghost" size="icon" className="sm:hidden"><LogOut className="w-5 h-5" /></Button>
               </div>
