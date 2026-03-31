@@ -99,9 +99,16 @@ const ShiftGate = ({ children }) => {
           </Button>
         </form>
 
-        <Button onClick={handleLogout} variant="ghost" className="w-full mt-3 text-slate-500">
-          <LogOut className="w-4 h-4 mr-2" />Logout
-        </Button>
+        <div className="flex flex-col gap-2 mt-3">
+          {user?.role === 'admin' && (
+            <Button onClick={() => navigate('/admin')} variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50">
+              ← Back to Admin
+            </Button>
+          )}
+          <Button onClick={handleLogout} variant="ghost" className="w-full text-slate-500">
+            <LogOut className="w-4 h-4 mr-2" />Logout
+          </Button>
+        </div>
       </motion.div>
     </div>
   );
