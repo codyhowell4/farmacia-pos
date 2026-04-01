@@ -156,32 +156,63 @@ export const deleteInventoryItem = async (id) => {
 };
 
 export const decrementInventory = async (items) => {
-  // items: [{ id, quantity, salesCount }]
+  // items: [{ inventory_id, quantity }] - inventory_id is the FK to inventory table
   for (const item of items) {
+    const inventoryId = item.inventory_id || item.id;
+    if (!inventoryId) {
+      console.error('No inventory_id found for item:', item);
+      continue;
+    }
+    
     const { error } = await supabase.rpc('decrement_inventory', {
-      p_id: item.id,
+      p_id: inventoryId,
       p_qty: item.quantity,
     });
+    
     if (error) {
+      console.error('RPC decrement_inventory failed:', error);
       // Fallback: manual update
-      const { data: current } = await supabase.from('inventory').select('quantity, sales_count').eq('id', item.id).single();
-      await supabase.from('inventory').update({
+      const { data: current, error: fetchError } = await supabase.from('inventory').select('quantity, sales_count').eq('id', inventoryId).single();
+      if (fetchError) {
+        console.error('Failed to fetch current inventory:', fetchError);
+        continue;
+      }
+      const { error: updateError } = await supabase.from('inventory').update({
         quantity: (current?.quantity || 0) - item.quantity,
         sales_count: (current?.sales_count || 0) + item.quantity,
         updated_at: new Date().toISOString(),
-      }).eq('id', item.id);
+      }).eq('id', inventoryId);
+      if (updateError) {
+        console.error('Failed to update inventory:', updateError);
+      }
     }
   }
 };
 
 export const incrementInventory = async (items) => {
+  // items: [{ inventory_id, returnQty }] - for returns
   for (const item of items) {
-    const { data: current } = await supabase.from('inventory').select('quantity, sales_count').eq('id', item.id).single();
-    await supabase.from('inventory').update({
-      quantity: (current?.quantity || 0) + item.returnQty,
-      sales_count: Math.max(0, (current?.sales_count || 0) - item.returnQty),
+    const inventoryId = item.inventory_id || item.id;
+    if (!inventoryId) {
+      console.error('No inventory_id found for item:', item);
+      continue;
+    }
+    
+    const { data: current, error: fetchError } = await supabase.from('inventory').select('quantity, sales_count').eq('id', inventoryId).single();
+    if (fetchError) {
+      console.error('Failed to fetch current inventory for return:', fetchError);
+      continue;
+    }
+    
+    const { error: updateError } = await supabase.from('inventory').update({
+      quantity: (current?.quantity || 0) + (item.returnQty || item.quantity || 0),
+      sales_count: Math.max(0, (current?.sales_count || 0) - (item.returnQty || item.quantity || 0)),
       updated_at: new Date().toISOString(),
-    }).eq('id', item.id);
+    }).eq('id', inventoryId);
+    
+    if (updateError) {
+      console.error('Failed to update inventory for return:', updateError);
+    }
   }
 };
 
