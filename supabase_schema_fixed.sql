@@ -146,11 +146,13 @@ create table if not exists sales (
   shift_id uuid references shifts(id),
   salesperson_id uuid references profiles(id),
   salesperson_name text,
+  salesperson text,                  -- App sends this directly (display name)
   payment_method text not null default 'cash' check (payment_method in ('cash','card','insurance')),
   subtotal numeric(10,2) not null default 0,
   discount_code text,
-  discount_percent numeric(5,2),
+  discount_value numeric(5,2),       -- Percentage value (e.g., 10 for 10%)
   discount_amount numeric(10,2) default 0,
+  iva_enabled boolean default true,
   iva_rate numeric(5,2),
   iva_amount numeric(10,2) default 0,
   total numeric(10,2) not null default 0,
