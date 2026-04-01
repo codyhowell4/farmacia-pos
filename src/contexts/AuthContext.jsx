@@ -21,30 +21,18 @@ const toUserShim = (profile, email) =>
     : null;
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  // Guard: prevent concurrent profile fetches
-  const fetchingRef = useRef(false);
-  // Promise that resolves when profile fetch completes (used by login)
-  const profilePromiseRef = useRef(null);
+  // Core state - separated concerns
+  const [session, setSession] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [isReady, setIsReady] = useState(false);
+  
+  // For login to wait on auth state change
+  const loginResolveRef = useRef(null);
+  const loginTimeoutRef = useRef(null);
 
-  // Fetch profile once and update state. Never called concurrently.
-  const fetchAndSetProfile = useCallback(async (authUser) => {
-    if (!authUser) {
-      setUser(null);
-      setLoading(false);
-      return null;
-    }
-    if (fetchingRef.current) {
-      // Return existing promise if already fetching
-      return profilePromiseRef.current;
-    }
-    
-    fetchingRef.current = true;
-    setLoading(true);
-    
-    // Create a promise that resolves when fetch completes
-    profilePromiseRef.current = (async () => {
+  // Fetch profile with retry logic (for trigger delays)
+  const fetchProfileWithRetry = useCallback(async (authUser, maxRetries = 3) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         const { data, error } = await supabase
           .from('profiles')
@@ -53,15 +41,18 @@ export const AuthProvider = ({ children }) => {
           .maybeSingle();
 
         if (error) {
-          console.error('Profile fetch error:', error.message);
-          setUser(null);
-          return null;
+          console.error(`Profile fetch attempt ${attempt} failed:`, error.message);
+          if (attempt === maxRetries) return null;
+          // Wait before retry (exponential backoff)
+          await new Promise(r => setTimeout(r, 300 * attempt));
+          continue;
         }
 
         if (!data) {
-          // No profile yet (can happen briefly after signup trigger)
-          setUser(null);
-          return null;
+          console.log(`No profile found on attempt ${attempt}`);
+          if (attempt === maxRetries) return null;
+          await new Promise(r => setTimeout(r, 300 * attempt));
+          continue;
         }
 
         // If profile has no location_id yet, default to first location in org
@@ -81,112 +72,184 @@ export const AuthProvider = ({ children }) => {
           }
         }
 
-        const shim = toUserShim(profile, authUser.email);
-        setUser(shim);
-        return shim;
+        return toUserShim(profile, authUser.email);
       } catch (e) {
-        console.error('fetchAndSetProfile caught:', e);
-        setUser(null);
-        return null;
-      } finally {
-        fetchingRef.current = false;
-        setLoading(false);
+        console.error(`Profile fetch exception on attempt ${attempt}:`, e);
+        if (attempt === maxRetries) return null;
+        await new Promise(r => setTimeout(r, 300 * attempt));
       }
-    })();
-    
-    return profilePromiseRef.current;
+    }
+    return null;
   }, []);
 
+  // Main auth state listener
   useEffect(() => {
     let mounted = true;
+    let subscription;
 
-    // 1. Check for an existing session on mount
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Handle auth state changes
+    const handleAuthChange = async (event, newSession) => {
       if (!mounted) return;
-      fetchAndSetProfile(session?.user ?? null);
-    });
 
-    // 2. Listen for future auth events (sign-in, sign-out, token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!mounted) return;
-        if (event === 'SIGNED_OUT') {
-          setUser(null);
-          setLoading(false);
-          return;
+      console.log('Auth state changed:', event);
+      setSession(newSession);
+
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (newSession?.user) {
+          const userProfile = await fetchProfileWithRetry(newSession.user);
+          setProfile(userProfile);
+          
+          // Resolve any waiting login promise
+          if (loginResolveRef.current) {
+            loginResolveRef.current(userProfile);
+            loginResolveRef.current = null;
+          }
         }
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          await fetchAndSetProfile(session?.user ?? null);
-        }
+      } else if (event === 'SIGNED_OUT') {
+        setProfile(null);
+        setSession(null);
       }
-    );
+
+      setIsReady(true);
+    };
+
+    // Set up listener
+    const setupListener = async () => {
+      const { data } = supabase.auth.onAuthStateChange(handleAuthChange);
+      subscription = data.subscription;
+
+      // Check for existing session
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      
+      if (!mounted) return;
+
+      if (existingSession) {
+        setSession(existingSession);
+        const userProfile = await fetchProfileWithRetry(existingSession.user);
+        setProfile(userProfile);
+      }
+      
+      if (mounted) {
+        setIsReady(true);
+      }
+    };
+
+    setupListener();
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      if (subscription) subscription.unsubscribe();
+      if (loginTimeoutRef.current) clearTimeout(loginTimeoutRef.current);
     };
-  }, [fetchAndSetProfile]);
+  }, [fetchProfileWithRetry]);
 
-  // login() calls signInWithPassword and waits for profile to be fetched
+  // Login function - triggers auth, waits for listener to complete
   const login = async (email, password) => {
+    // Clear any previous login state
+    loginResolveRef.current = null;
+    if (loginTimeoutRef.current) clearTimeout(loginTimeoutRef.current);
+
     // Step 1: Sign in
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    const { error: signInError } = await supabase.auth.signInWithPassword({ 
+      email, 
+      password 
+    });
+    
     if (signInError) throw signInError;
 
-    // Step 2: Get the authenticated user
-    const { data: { user: authUser }, error: userError } = await supabase.auth.getUser();
-    if (userError) throw userError;
-    if (!authUser) throw new Error('No se pudo obtener el usuario autenticado.');
-
-    // Step 3: Fetch profile and wait for it (with timeout)
-    const shim = await Promise.race([
-      fetchAndSetProfile(authUser),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Tiempo de espera agotado. Intenta de nuevo.')), 15000)
-      ),
+    // Step 2: Wait for onAuthStateChange to fire and profile to be loaded
+    const userProfile = await Promise.race([
+      // Wait for the auth state change handler to resolve
+      new Promise((resolve) => {
+        loginResolveRef.current = resolve;
+      }),
+      // Timeout after 15 seconds
+      new Promise((_, reject) => {
+        loginTimeoutRef.current = setTimeout(() => {
+          reject(new Error('Tiempo de espera agotado. Intenta de nuevo.'));
+        }, 15000);
+      })
     ]);
 
-    if (!shim) {
-      throw new Error('Perfil no encontrado.');
+    // Clean up
+    if (loginTimeoutRef.current) {
+      clearTimeout(loginTimeoutRef.current);
+      loginTimeoutRef.current = null;
+    }
+    loginResolveRef.current = null;
+
+    if (!userProfile) {
+      throw new Error('Perfil no encontrado. Contacta al administrador.');
     }
 
-    // Step 4: Log audit event
+    // Log successful login
     logAudit({
       action: AUDIT_ACTIONS.LOGIN,
-      user: shim,
-      details: `Inicio de sesión como ${shim.role}`,
+      user: userProfile,
+      details: `Inicio de sesión como ${userProfile.role}`,
     });
 
-    return shim;
+    return userProfile;
   };
 
+  // Logout function
   const logout = async () => {
-    if (user) {
+    if (profile) {
       logAudit({
         action: AUDIT_ACTIONS.LOGOUT,
-        user,
+        user: profile,
         details: 'Sesión cerrada',
       });
     }
-    setUser(null);
+    
+    setProfile(null);
+    setSession(null);
     await supabase.auth.signOut();
   };
 
+  // Reset password - send email
+  const resetPassword = async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) throw error;
+  };
+
+  // Update password (when user is already authenticated or has recovery token)
+  const updatePassword = async (newPassword) => {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+    if (error) throw error;
+  };
+
   const checkAdminPin = (pin) => verifyAdminPin(pin);
+
+  // Derived user object (for backward compatibility)
+  const user = profile;
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        profile: user, // backward-compat alias
-        loading,
+        profile,
+        session,
+        isReady,
+        loading: !isReady, // backward compat
         login,
         logout,
+        resetPassword,
+        updatePassword,
         verifyAdminPin: checkAdminPin,
-        reloadProfile: () =>
-          supabase.auth.getUser().then(({ data: { user: au } }) =>
-            fetchAndSetProfile(au)
-          ),
+        reloadProfile: async () => {
+          const { data: { user: authUser } } = await supabase.auth.getUser();
+          if (authUser) {
+            const refreshed = await fetchProfileWithRetry(authUser);
+            setProfile(refreshed);
+            return refreshed;
+          }
+          return null;
+        },
       }}
     >
       {children}

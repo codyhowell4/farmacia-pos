@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Pill, Lock, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,38 +14,62 @@ const LoginPage = () => {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
-  const { login, user } = useAuth();
+  const { login } = useAuth();
   const { toast } = useToast();
 
-  // If already logged in, redirect immediately
-  useEffect(() => {
-    if (!user) return;
-    if (user.role === 'admin') navigate('/admin');
-    else if (user.role === 'pos') navigate('/pos');
-    else if (user.role === 'inventory') navigate('/inventory');
-  }, [user, navigate]);
+  // Note: Removed the useEffect auto-redirect based on user state
+  // This was causing race conditions - we now handle navigation after successful login only
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    
     if (!email || !password) {
-      toast({ title: 'Datos incompletos', description: 'Ingresa tu correo y contraseña.', variant: 'destructive' });
+      toast({ 
+        title: 'Datos incompletos', 
+        description: 'Ingresa tu correo y contraseña.', 
+        variant: 'destructive' 
+      });
       return;
     }
+    
     setSubmitting(true);
+    
     try {
       const profile = await login(email, password);
-      toast({ title: '¡Bienvenido!', description: `Hola, ${profile.name}` });
-      if (profile.role === 'admin') navigate('/admin');
-      else if (profile.role === 'pos') navigate('/pos');
-      else if (profile.role === 'inventory') navigate('/inventory');
+      
+      toast({ 
+        title: '¡Bienvenido!', 
+        description: `Hola, ${profile.name}` 
+      });
+      
+      // Navigate based on role
+      if (profile.role === 'admin') {
+        navigate('/admin');
+      } else if (profile.role === 'pos') {
+        navigate('/pos');
+      } else if (profile.role === 'inventory') {
+        navigate('/inventory');
+      } else {
+        // Fallback - shouldn't happen
+        navigate('/');
+      }
     } catch (err) {
       console.error('Login error:', err);
+      
+      // Better error messages
+      let errorMessage = err.message;
+      
+      if (err.message?.includes('Invalid login credentials')) {
+        errorMessage = 'Correo o contraseña incorrectos.';
+      } else if (err.message?.includes('Email not confirmed')) {
+        errorMessage = 'El correo no ha sido confirmado.';
+      } else if (err.message?.includes('Tiempo de espera')) {
+        errorMessage = 'El servidor está tardando en responder. Intenta de nuevo.';
+      }
+      
       toast({
         title: 'Error al iniciar sesión',
-        description:
-          err.message === 'Invalid login credentials'
-            ? 'Correo o contraseña incorrectos.'
-            : err.message,
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
@@ -91,6 +115,7 @@ const LoginPage = () => {
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10"
                     autoComplete="email"
+                    disabled={submitting}
                   />
                 </div>
               </div>
@@ -107,8 +132,18 @@ const LoginPage = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     className="pl-10"
                     autoComplete="current-password"
+                    disabled={submitting}
                   />
                 </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Link 
+                  to="/forgot-password" 
+                  className="text-sm text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                >
+                  ¿Olvidaste tu contraseña?
+                </Link>
               </div>
 
               <Button
