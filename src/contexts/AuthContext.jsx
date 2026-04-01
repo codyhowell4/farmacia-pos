@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { verifyAdminPin } from '@/lib/db';
@@ -25,61 +25,77 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   // Guard: prevent concurrent profile fetches
   const fetchingRef = useRef(false);
+  // Promise that resolves when profile fetch completes (used by login)
+  const profilePromiseRef = useRef(null);
 
   // Fetch profile once and update state. Never called concurrently.
-  const fetchAndSetProfile = async (authUser) => {
+  const fetchAndSetProfile = useCallback(async (authUser) => {
     if (!authUser) {
       setUser(null);
       setLoading(false);
-      return;
+      return null;
     }
-    if (fetchingRef.current) return; // already in-flight
+    if (fetchingRef.current) {
+      // Return existing promise if already fetching
+      return profilePromiseRef.current;
+    }
+    
     fetchingRef.current = true;
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*, locations(name), organizations(name, slug)')
-        .eq('id', authUser.id)
-        .maybeSingle();
+    setLoading(true);
+    
+    // Create a promise that resolves when fetch completes
+    profilePromiseRef.current = (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*, locations(name), organizations(name, slug)')
+          .eq('id', authUser.id)
+          .maybeSingle();
 
-      if (error) {
-        console.error('Profile fetch error:', error.message);
-        setUser(null);
-        return;
-      }
-
-      if (!data) {
-        // No profile yet (can happen briefly after signup trigger)
-        setUser(null);
-        return;
-      }
-
-      // If profile has no location_id yet, default to first location in org
-      let profile = data;
-      if (!profile.location_id && profile.org_id) {
-        const { data: locs } = await supabase
-          .from('locations')
-          .select('id, name')
-          .eq('org_id', profile.org_id)
-          .limit(1);
-        if (locs?.length) {
-          profile = {
-            ...profile,
-            location_id: locs[0].id,
-            locations: { name: locs[0].name },
-          };
+        if (error) {
+          console.error('Profile fetch error:', error.message);
+          setUser(null);
+          return null;
         }
-      }
 
-      setUser(toUserShim(profile, authUser.email));
-    } catch (e) {
-      console.error('fetchAndSetProfile caught:', e);
-      setUser(null);
-    } finally {
-      fetchingRef.current = false;
-      setLoading(false);
-    }
-  };
+        if (!data) {
+          // No profile yet (can happen briefly after signup trigger)
+          setUser(null);
+          return null;
+        }
+
+        // If profile has no location_id yet, default to first location in org
+        let profile = data;
+        if (!profile.location_id && profile.org_id) {
+          const { data: locs } = await supabase
+            .from('locations')
+            .select('id, name')
+            .eq('org_id', profile.org_id)
+            .limit(1);
+          if (locs?.length) {
+            profile = {
+              ...profile,
+              location_id: locs[0].id,
+              locations: { name: locs[0].name },
+            };
+          }
+        }
+
+        const shim = toUserShim(profile, authUser.email);
+        setUser(shim);
+        return shim;
+      } catch (e) {
+        console.error('fetchAndSetProfile caught:', e);
+        setUser(null);
+        return null;
+      } finally {
+        fetchingRef.current = false;
+        setLoading(false);
+      }
+    })();
+    
+    return profilePromiseRef.current;
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -109,51 +125,39 @@ export const AuthProvider = ({ children }) => {
       mounted = false;
       subscription.unsubscribe();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchAndSetProfile]);
 
-  // login() just calls signInWithPassword. onAuthStateChange handles profile loading.
-  // Returns a Promise that resolves to the user shim once the profile is loaded.
-  const login = (email, password) => {
-    return new Promise(async (resolve, reject) => {
-      try {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+  // login() calls signInWithPassword and waits for profile to be fetched
+  const login = async (email, password) => {
+    // Step 1: Sign in
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+    if (signInError) throw signInError;
 
-        // Wait for onAuthStateChange → fetchAndSetProfile to complete
-        // by polling the state (max 15s)
-        const start = Date.now();
-        const poll = setInterval(() => {
-          if (fetchingRef.current) return; // still loading
-          clearInterval(poll);
-          // Read the latest user from state via a fresh session call
-          supabase.auth.getUser().then(({ data: { user: au } }) => {
-            if (!au) return reject(new Error('No se pudo cargar el perfil.'));
-            supabase
-              .from('profiles')
-              .select('*, locations(name)')
-              .eq('id', au.id)
-              .maybeSingle()
-              .then(({ data }) => {
-                if (!data) return reject(new Error('Perfil no encontrado.'));
-                const shim = toUserShim(data, au.email);
-                logAudit({
-                  action: AUDIT_ACTIONS.LOGIN,
-                  user: shim,
-                  details: `Inicio de sesión como ${shim.role}`,
-                });
-                resolve(shim);
-              });
-          });
-          if (Date.now() - start > 15000) {
-            clearInterval(poll);
-            reject(new Error('Tiempo de espera agotado. Intenta de nuevo.'));
-          }
-        }, 200);
-      } catch (e) {
-        reject(e);
-      }
+    // Step 2: Get the authenticated user
+    const { data: { user: authUser }, error: userError } = await supabase.auth.getUser();
+    if (userError) throw userError;
+    if (!authUser) throw new Error('No se pudo obtener el usuario autenticado.');
+
+    // Step 3: Fetch profile and wait for it (with timeout)
+    const shim = await Promise.race([
+      fetchAndSetProfile(authUser),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Tiempo de espera agotado. Intenta de nuevo.')), 15000)
+      ),
+    ]);
+
+    if (!shim) {
+      throw new Error('Perfil no encontrado.');
+    }
+
+    // Step 4: Log audit event
+    logAudit({
+      action: AUDIT_ACTIONS.LOGIN,
+      user: shim,
+      details: `Inicio de sesión como ${shim.role}`,
     });
+
+    return shim;
   };
 
   const logout = async () => {
