@@ -265,7 +265,12 @@ const PoSDashboard = () => {
         rx_number: rxNumbers[item.id] || null,
       }));
 
+      console.log('Creating sale with record:', saleRecord);
+      console.log('Sale items:', saleItems);
+      
       const sale = await createSale(saleRecord, saleItems);
+      
+      console.log('Sale created successfully:', sale);
 
       logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(finalTotal)} | ${paymentMethod} | ${cart.length} item(s)` });
       toast({ title: '¡Venta completada!', description: `${formatMXN(finalTotal)} via ${paymentMethod}` });
@@ -305,7 +310,8 @@ const PoSDashboard = () => {
         searchInputRef.current?.focus();
       }, 500);
     } catch (e) {
-      toast({ title: 'Error al procesar venta', description: e.message, variant: 'destructive' });
+      console.error('Sale error:', e);
+      toast({ title: 'Error al procesar venta', description: e.message || 'Unknown error', variant: 'destructive' });
     }
   };
 
