@@ -179,7 +179,7 @@ create table if not exists sale_items (
   inventory_id uuid references inventory(id) on delete set null,
   name text not null,
   quantity integer not null,
-  unit_price numeric(10,2) not null,
+  price numeric(10,2) not null,      -- App sends 'price', not 'unit_price'
   original_price numeric(10,2),
   override_by text,
   requires_prescription boolean default false,
