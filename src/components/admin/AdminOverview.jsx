@@ -1,7 +1,7 @@
 import { formatMXN } from '@/lib/currency';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, Package, ShoppingCart, Users, TrendingUp, XCircle } from 'lucide-react';
+import { DollarSign, Package, ShoppingCart, Users, TrendingUp, XCircle, UserCog } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { getSales, getInventory, getUsers } from '@/lib/db';
@@ -82,21 +82,36 @@ const AdminOverview = () => {
         <h3 className="text-2xl font-bold mb-4">Acciones rápidas</h3>
         <p className="text-blue-100 mb-4">Usa el menú lateral para navegar entre las secciones del panel</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
-            <Users className="w-6 h-6 mb-2" />
+          <motion.div 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="bg-white/10 backdrop-blur-sm rounded-lg p-4 cursor-pointer hover:bg-white/20 transition-colors"
+            onClick={() => navigate('/admin/users')}
+          >
+            <UserCog className="w-6 h-6 mb-2" />
             <p className="font-semibold">Gestionar usuarios</p>
             <p className="text-sm text-blue-100">Agrega, edita o elimina usuarios</p>
-          </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+          </motion.div>
+          <motion.div 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="bg-white/10 backdrop-blur-sm rounded-lg p-4 cursor-pointer hover:bg-white/20 transition-colors"
+            onClick={() => navigate('/admin/sales')}
+          >
             <ShoppingCart className="w-6 h-6 mb-2" />
             <p className="font-semibold">Ver ventas</p>
             <p className="text-sm text-blue-100">Consulta todas las transacciones</p>
-          </div>
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+          </motion.div>
+          <motion.div 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="bg-white/10 backdrop-blur-sm rounded-lg p-4 cursor-pointer hover:bg-white/20 transition-colors"
+            onClick={() => navigate('/admin/inventory')}
+          >
             <Package className="w-6 h-6 mb-2" />
             <p className="font-semibold">Monitorear inventario</p>
             <p className="text-sm text-blue-100">Revisa los niveles de stock</p>
-          </div>
+          </motion.div>
         </div>
       </motion.div>
     </div>
