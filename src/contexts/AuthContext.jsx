@@ -143,46 +143,31 @@ export const AuthProvider = ({ children }) => {
     };
   }, [fetchProfileWithRetry]);
 
-  // Login function - triggers auth, waits for listener to complete
+  // Login function - directly fetches profile after sign in (more reliable than waiting for event)
   const login = async (email, password) => {
-    // Clear any previous login state
-    loginResolveRef.current = null;
-    if (loginTimeoutRef.current) clearTimeout(loginTimeoutRef.current);
-
     // Step 1: Sign in
-    const { error: signInError } = await supabase.auth.signInWithPassword({ 
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ 
       email, 
       password 
     });
     
     if (signInError) throw signInError;
+    if (!signInData?.user) throw new Error('No se pudo obtener el usuario.');
 
-    // Step 2: Wait for onAuthStateChange to fire and profile to be loaded
-    const userProfile = await Promise.race([
-      // Wait for the auth state change handler to resolve
-      new Promise((resolve) => {
-        loginResolveRef.current = resolve;
-      }),
-      // Timeout after 15 seconds
-      new Promise((_, reject) => {
-        loginTimeoutRef.current = setTimeout(() => {
-          reject(new Error('Tiempo de espera agotado. Intenta de nuevo.'));
-        }, 15000);
-      })
-    ]);
-
-    // Clean up
-    if (loginTimeoutRef.current) {
-      clearTimeout(loginTimeoutRef.current);
-      loginTimeoutRef.current = null;
-    }
-    loginResolveRef.current = null;
+    // Step 2: Directly fetch profile (don't rely on onAuthStateChange - it's unreliable)
+    const userProfile = await fetchProfileWithRetry(signInData.user);
 
     if (!userProfile) {
+      // Sign out since we couldn't get the profile
+      await supabase.auth.signOut();
       throw new Error('Perfil no encontrado. Contacta al administrador.');
     }
 
-    // Log successful login
+    // Step 3: Update local state (since we bypassed the event listener)
+    setSession(signInData.session);
+    setProfile(userProfile);
+
+    // Step 4: Log successful login
     logAudit({
       action: AUDIT_ACTIONS.LOGIN,
       user: userProfile,
