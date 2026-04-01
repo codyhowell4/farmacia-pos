@@ -3,9 +3,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Printer, X } from 'lucide-react';
 import { formatMXN } from '@/lib/currency';
+import { useToast } from '@/components/ui/use-toast';
 
 const ReceiptModal = ({ open, onOpenChange, sale }) => {
   const printRef = useRef(null);
+  const { toast } = useToast();
 
   if (!sale) return null;
 
@@ -116,10 +118,23 @@ const ReceiptModal = ({ open, onOpenChange, sale }) => {
           <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
             <X className="w-4 h-4 mr-2" />Cerrar
           </Button>
-          <Button className="flex-1" onClick={handlePrint}>
+          <Button variant="outline" className="flex-1" onClick={handlePrint}>
             <Printer className="w-4 h-4 mr-2" />Imprimir
           </Button>
         </div>
+        <Button 
+          className="w-full mt-2" 
+          variant="secondary"
+          onClick={() => {
+            // Open factura generation in new tab or show coming soon
+            toast({ 
+              title: 'Factura', 
+              description: 'Generación de factura CFDI - Próximamente disponible',
+            });
+          }}
+        >
+          📄 Generar Factura (CFDI)
+        </Button>
       </DialogContent>
     </Dialog>
   );

@@ -27,6 +27,9 @@ const PAYMENT_METHODS = [
   { id: 'insurance', label: 'Seguro', icon: Stethoscope, color: 'from-purple-500 to-pink-600' },
 ];
 
+// Mexican Peso denominations
+const PESO_DENOMINATIONS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+
 const PoSDashboard = () => {
   const { logout, user, verifyAdminPin } = useAuth();
   const { activeShift } = useShift();
@@ -265,7 +268,26 @@ const PoSDashboard = () => {
       const sale = await createSale(saleRecord, saleItems);
 
       logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(finalTotal)} | ${paymentMethod} | ${cart.length} item(s)` });
-      toast({ title: 'Sale Completed!', description: `${formatMXN(finalTotal)} via ${paymentMethod}` });
+      toast({ title: '¡Venta completada!', description: `${formatMXN(finalTotal)} via ${paymentMethod}` });
+
+      // Prepare sale data for receipt
+      const saleData = {
+        ...sale,
+        items: saleItems.map(item => ({
+          ...item,
+          rxNumber: item.rx_number,
+          requiresPrescription: cart.find(c => c.id === item.inventory_id)?.requiresPrescription
+        })),
+        discount: discount ? { code: discount.code, amount: discountAmount } : null,
+        iva: { rate: taxSettings.ivaRate, amount: ivaAmount },
+        pharmacyLocation: user?.pharmacyLocation || user?.locationId,
+        amountGiven: isCash ? parseFloat(amountGiven) : null,
+        changeDue: isCash ? (parseFloat(amountGiven) - finalTotal) : null,
+      };
+
+      // Show receipt modal
+      setCompletedSale(saleData);
+      setReceiptOpen(true);
 
       // Refresh local inventory from DB
       const updatedInventory = await getInventory(user.locationId);
@@ -276,9 +298,12 @@ const PoSDashboard = () => {
           .slice(0, 10)
       );
 
-      setCart([]); setDiscount(null); setDiscountCode(''); setAmountGiven(''); setChange(0);
-      setPaymentMethod('cash'); setView('main'); setRxNumbers({});
-      searchInputRef.current?.focus();
+      // Reset cart after a delay (so receipt can be printed)
+      setTimeout(() => {
+        setCart([]); setDiscount(null); setDiscountCode(''); setAmountGiven(''); setChange(0);
+        setPaymentMethod('cash'); setView('main'); setRxNumbers({});
+        searchInputRef.current?.focus();
+      }, 500);
     } catch (e) {
       toast({ title: 'Error al procesar venta', description: e.message, variant: 'destructive' });
     }
@@ -372,12 +397,19 @@ const PoSDashboard = () => {
                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="space-y-3 overflow-hidden">
                       <Label htmlFor="amount-given">Monto entregado</Label>
                       <Input id="amount-given" type="number" placeholder="0.00" value={amountGiven} onChange={e => setAmountGiven(e.target.value)} />
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {[10, 20, 50, 100].map(val => (
-                          <Button key={val} variant="outline" onClick={() => setAmountGiven((parseFloat(amountGiven || 0) + val).toString())}>{`+${formatMXN(val)}`}</Button>
+                      <div className="grid grid-cols-5 gap-2">
+                        {PESO_DENOMINATIONS.slice(0, 5).map(val => (
+                          <Button key={val} variant="outline" size="sm" onClick={() => setAmountGiven((parseFloat(amountGiven || 0) + val).toString())}>+${val}</Button>
                         ))}
-                        <Button variant="outline" className="sm:col-span-2" onClick={() => setAmountGiven(finalTotal.toFixed(2))}>Monto exacto</Button>
-                        <Button variant="destructive" className="sm:col-span-2" onClick={() => setAmountGiven('')}>Limpiar</Button>
+                      </div>
+                      <div className="grid grid-cols-5 gap-2">
+                        {PESO_DENOMINATIONS.slice(5).map(val => (
+                          <Button key={val} variant="outline" size="sm" onClick={() => setAmountGiven((parseFloat(amountGiven || 0) + val).toString())}>+${val}</Button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button variant="outline" onClick={() => setAmountGiven(finalTotal.toFixed(2))}>Monto exacto</Button>
+                        <Button variant="destructive" onClick={() => setAmountGiven('')}>Limpiar</Button>
                       </div>
                       <div className={`text-center text-3xl font-bold p-4 rounded-lg ${change < 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
                         <p className="text-sm font-normal">{change < 0 ? 'Monto pendiente' : 'Cambio'}</p>
@@ -394,6 +426,30 @@ const PoSDashboard = () => {
                     </motion.div>
                   )}
                 </AnimatePresence>
+
+                {/* Rx Number Inputs - Show if any items require prescription */}
+                {cart.some(item => item.requiresPrescription) && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                    <p className="font-semibold text-blue-800 flex items-center gap-2">
+                      <Stethoscope className="w-4 h-4" />
+                      Números de receta requeridos
+                    </p>
+                    {cart.filter(item => item.requiresPrescription).map(item => (
+                      <div key={item.id} className="space-y-1">
+                        <Label className="text-sm text-blue-700">{item.name}</Label>
+                        <Input
+                          placeholder="Ingresa número de receta (Rx #)"
+                          value={rxNumbers[item.id] || ''}
+                          onChange={e => setRxNumbers(prev => ({ ...prev, [item.id]: e.target.value }))}
+                          className={!rxNumbers[item.id]?.trim() ? 'border-red-300 bg-red-50' : 'border-green-300 bg-green-50'}
+                        />
+                        {!rxNumbers[item.id]?.trim() && (
+                          <p className="text-xs text-red-600">Este medicamento requiere número de receta</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <Button onClick={handleCheckoutClick} className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-lg py-6">Finalizar venta</Button>
                 <Button onClick={() => setView('main')} variant="outline" className="w-full">Volver al carrito</Button>
