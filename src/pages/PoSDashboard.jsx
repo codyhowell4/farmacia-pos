@@ -233,7 +233,7 @@ const PoSDashboard = () => {
   };
 
   const handleCheckoutClick = () => {
-    const hasRx = cart.some(item => item.requiresPrescription);
+    const hasRx = cart.some(item => item.requires_prescription);
     if (hasRx) {
       // Show prescription modal FIRST (before payment)
       setPrescriptionModalOpen(true);
@@ -307,7 +307,7 @@ const PoSDashboard = () => {
       }];
     }
 
-    const missingRx = cart.filter(item => item.requiresPrescription && !rxNumbers[item.id]?.trim());
+    const missingRx = cart.filter(item => item.requires_prescription && !rxNumbers[item.id]?.trim());
     if (missingRx.length > 0) {
       toast({ title: 'Número de receta requerido', description: `Ingresa Rx # para: ${missingRx.map(i => i.name).join(', ')}`, variant: 'destructive' });
       return;
@@ -321,7 +321,7 @@ const PoSDashboard = () => {
         org_id: user.orgId,
         salesperson: user.name,
         total: finalTotal,
-        payment_method: isSplitPayment ? 'split' : paymentMethod,
+        payment_method: isSplitPayment ? (payments[0]?.payment_method || 'cash') : paymentMethod,
         amount_given: cashPayment ? cashPayment.amount : null,
         change_due: cashPayment ? (cashPayment.amount - (cashPayment.amountApplied || cashPayment.amount)) : null,
         discount_code: discount?.code || null,
@@ -398,7 +398,7 @@ const PoSDashboard = () => {
         items: saleItems.map(item => ({
           ...item,
           rxNumber: item.rx_number,
-          requiresPrescription: cart.find(c => c.id === item.inventory_id)?.requiresPrescription
+          requiresPrescription: cart.find(c => c.id === item.inventory_id)?.requires_prescription
         })),
         payments: payments,
         discount: discount ? { code: discount.code, amount: discountAmount } : null,
@@ -712,13 +712,13 @@ const PoSDashboard = () => {
                 )}
 
                 {/* Rx Number Inputs - Show if any items require prescription */}
-                {cart.some(item => item.requiresPrescription) && (
+                {cart.some(item => item.requires_prescription) && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
                     <p className="font-semibold text-blue-800 flex items-center gap-2">
                       <Stethoscope className="w-4 h-4" />
                       Números de receta requeridos
                     </p>
-                    {cart.filter(item => item.requiresPrescription).map(item => (
+                    {cart.filter(item => item.requires_prescription).map(item => (
                       <div key={item.id} className="space-y-1">
                         <Label className="text-sm text-blue-700">{item.name}</Label>
                         <Input
@@ -811,7 +811,7 @@ const PoSDashboard = () => {
                     <div>
                       <div className="flex items-center gap-1.5 mb-1">
                         <h3 className="font-semibold text-slate-900 truncate text-sm sm:text-base">{medicine.name}</h3>
-                        {medicine.requiresPrescription && <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700 flex-shrink-0">Rx</span>}
+                        {medicine.requires_prescription && <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700 flex-shrink-0">Rx</span>}
                       </div>
                       <p className="text-xs sm:text-sm text-slate-500 truncate">{medicine.use}</p>
                     </div>
@@ -834,7 +834,7 @@ const PoSDashboard = () => {
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <span className="font-medium text-sm">{item.name}</span>
-                        {item.requiresPrescription && (
+                        {item.requires_prescription && (
                           <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700">Rx</span>
                         )}
                         {item.overrideBy && <p className="text-xs text-blue-600">Overridden by {item.overrideBy}</p>}
@@ -852,7 +852,7 @@ const PoSDashboard = () => {
                         <Input type="number" value={item.price} onChange={e => handlePriceChange(item.id, e.target.value)} onBlur={() => handlePriceBlur(item.id)} className="w-20 h-8 text-right font-bold text-green-600" />
                       </div>
                     </div>
-                    {item.requiresPrescription && (
+                    {item.requires_prescription && (
                       <div className="mt-2">
                         <Input
                           placeholder="Rx # (required)"

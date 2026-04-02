@@ -15,7 +15,7 @@ const PrescriptionModal = ({
   paymentMethod,
 }) => {
   const { toast } = useToast();
-  const rxItems = cart.filter(item => item.requiresPrescription);
+  const rxItems = cart.filter(item => item.requires_prescription);
   
   const [formData, setFormData] = useState({
     // Patient
