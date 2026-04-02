@@ -246,27 +246,73 @@ const PoSDashboard = () => {
   };
 
   const completeSale = async (patient) => {
-    const isCash = paymentMethod === 'cash';
-    if (isCash && finalTotal > parseFloat(amountGiven || 0)) {
-      toast({ title: 'Insufficient Funds', description: "Can't complete order due to insufficient funds.", variant: 'destructive' });
-      return;
+    // Build payments array
+    let payments = [];
+    
+    if (isSplitPayment) {
+      // Use split payments
+      if (splitPayments.length === 0) {
+        toast({ title: 'Error', description: 'Agrega al menos un pago', variant: 'destructive' });
+        return;
+      }
+      const totalPaid = splitPayments.reduce((sum, p) => sum + p.amount, 0);
+      if (Math.abs(totalPaid - finalTotal) > 0.01) {
+        toast({ title: 'Error', description: `El total de pagos (${formatMXN(totalPaid)}) no coincide con el total (${formatMXN(finalTotal)})`, variant: 'destructive' });
+        return;
+      }
+      payments = splitPayments;
+    } else {
+      // Single payment - build from current state
+      let reference = '';
+      let bankAccountId = null;
+      
+      if (paymentMethod === 'transferencia') {
+        if (!transferenciaReference.trim()) {
+          toast({ title: 'Referencia requerida', description: 'Ingresa el número de referencia de la transferencia', variant: 'destructive' });
+          return;
+        }
+        reference = transferenciaReference;
+        bankAccountId = selectedBankAccount?.id;
+      } else if (paymentMethod === 'card') {
+        if (!cardReference.trim()) {
+          toast({ title: 'Autorización requerida', description: 'Ingresa el número de autorización', variant: 'destructive' });
+          return;
+        }
+        reference = cardReference;
+      }
+      
+      if (paymentMethod === 'cash') {
+        if (finalTotal > parseFloat(amountGiven || 0)) {
+          toast({ title: 'Fondos insuficientes', description: 'El efectivo entregado es menor al total', variant: 'destructive' });
+          return;
+        }
+      }
+      
+      payments = [{
+        payment_method: paymentMethod,
+        amount: finalTotal,
+        reference_number: reference || null,
+        bank_account_id: bankAccountId,
+      }];
     }
 
     const missingRx = cart.filter(item => item.requiresPrescription && !rxNumbers[item.id]?.trim());
     if (missingRx.length > 0) {
-      toast({ title: 'Rx Number Required', description: `Enter Rx # for: ${missingRx.map(i => i.name).join(', ')}`, variant: 'destructive' });
+      toast({ title: 'Número de receta requerido', description: `Ingresa Rx # para: ${missingRx.map(i => i.name).join(', ')}`, variant: 'destructive' });
       return;
     }
 
     try {
+      const cashPayment = payments.find(p => p.payment_method === 'cash');
+      
       const saleRecord = {
         location_id: user.locationId,
         org_id: user.orgId,
         salesperson: user.name,
         total: finalTotal,
-        payment_method: paymentMethod,
-        amount_given: isCash ? parseFloat(amountGiven) : null,
-        change_due: isCash ? (parseFloat(amountGiven) - finalTotal) : null,
+        payment_method: isSplitPayment ? 'split' : paymentMethod,
+        amount_given: cashPayment ? cashPayment.amount : null,
+        change_due: cashPayment ? (cashPayment.amount - (cashPayment.amountApplied || cashPayment.amount)) : null,
         discount_code: discount?.code || null,
         discount_value: discount?.value || null,
         discount_amount: discountAmount || null,
@@ -277,6 +323,7 @@ const PoSDashboard = () => {
         patient_curp: patient?.curp || null,
         timestamp: new Date().toISOString(),
         voided: false,
+        is_split_payment: isSplitPayment,
       };
 
       const saleItems = cart.map(item => ({
@@ -291,13 +338,14 @@ const PoSDashboard = () => {
 
       console.log('Creating sale with record:', saleRecord);
       console.log('Sale items:', saleItems);
+      console.log('Payments:', payments);
       
-      const sale = await createSale(saleRecord, saleItems);
+      const sale = await createSaleWithPayments(saleRecord, saleItems, payments);
       
       console.log('Sale created successfully:', sale);
 
-      logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(finalTotal)} | ${paymentMethod} | ${cart.length} item(s)` });
-      toast({ title: '¡Venta completada!', description: `${formatMXN(finalTotal)} via ${paymentMethod}` });
+      logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(finalTotal)} | ${isSplitPayment ? 'split' : paymentMethod} | ${cart.length} item(s)` });
+      toast({ title: '¡Venta completada!', description: `${formatMXN(finalTotal)} ${isSplitPayment ? '(pago dividido)' : ''}` });
 
       // Prepare sale data for receipt
       const saleData = {
@@ -307,11 +355,12 @@ const PoSDashboard = () => {
           rxNumber: item.rx_number,
           requiresPrescription: cart.find(c => c.id === item.inventory_id)?.requiresPrescription
         })),
+        payments: payments,
         discount: discount ? { code: discount.code, amount: discountAmount } : null,
         iva: { rate: taxSettings.ivaRate, amount: ivaAmount },
         pharmacyLocation: user?.pharmacyLocation || user?.locationId,
-        amountGiven: isCash ? parseFloat(amountGiven) : null,
-        changeDue: isCash ? (parseFloat(amountGiven) - finalTotal) : null,
+        amountGiven: cashPayment ? cashPayment.amount : null,
+        changeDue: cashPayment ? (cashPayment.amount - finalTotal) : null,
       };
 
       // Show receipt modal
@@ -327,15 +376,17 @@ const PoSDashboard = () => {
           .slice(0, 10)
       );
 
-      // Reset cart after a delay (so receipt can be printed)
+      // Reset cart after a delay
       setTimeout(() => {
         setCart([]); setDiscount(null); setDiscountCode(''); setAmountGiven(''); setChange(0);
         setPaymentMethod('cash'); setView('main'); setRxNumbers({});
+        setSplitPayments([]); setIsSplitPayment(false);
+        setTransferenciaReference(''); setCardReference('');
         searchInputRef.current?.focus();
       }, 500);
     } catch (e) {
       console.error('Sale error:', e);
-      toast({ title: 'Error al procesar venta', description: e.message || 'Unknown error', variant: 'destructive' });
+      toast({ title: 'Error al procesar venta', description: e.message || 'Error desconocido', variant: 'destructive' });
     }
   };
 
@@ -378,6 +429,53 @@ const PoSDashboard = () => {
 
   if (view === 'checkout') {
     const isCash = paymentMethod === 'cash';
+    const remainingForSplit = finalTotal - splitPayments.reduce((sum, p) => sum + p.amount, 0);
+    
+    const addSplitPayment = () => {
+      let amount = remainingForSplit;
+      let reference = '';
+      let bankAccountId = null;
+      
+      if (paymentMethod === 'transferencia') {
+        if (!transferenciaReference.trim()) {
+          toast({ title: 'Referencia requerida', description: 'Ingresa el número de referencia de la transferencia', variant: 'destructive' });
+          return;
+        }
+        reference = transferenciaReference;
+        bankAccountId = selectedBankAccount?.id;
+      } else if (paymentMethod === 'card') {
+        if (!cardReference.trim()) {
+          toast({ title: 'Autorización requerida', description: 'Ingresa el número de autorización', variant: 'destructive' });
+          return;
+        }
+        reference = cardReference;
+      }
+      
+      if (paymentMethod === 'cash' && parseFloat(amountGiven) > 0) {
+        amount = parseFloat(amountGiven);
+      }
+      
+      if (amount <= 0 || amount > remainingForSplit) {
+        toast({ title: 'Monto inválido', description: `El monto debe ser entre $1 y ${formatMXN(remainingForSplit)}`, variant: 'destructive' });
+        return;
+      }
+      
+      setSplitPayments([...splitPayments, {
+        payment_method: paymentMethod,
+        amount,
+        reference_number: reference,
+        bank_account_id: bankAccountId,
+      }]);
+      
+      setAmountGiven('');
+      setTransferenciaReference('');
+      setCardReference('');
+    };
+    
+    const removeSplitPayment = (index) => {
+      setSplitPayments(splitPayments.filter((_, i) => i !== index));
+    };
+    
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 p-4 sm:p-8">
         <Helmet><title>Checkout - Pharmacy PoS</title></Helmet>
@@ -398,22 +496,68 @@ const PoSDashboard = () => {
                 <div className="flex justify-between"><p>Subtotal:</p><p>{formatMXN(subtotal)}</p></div>
                 {discount && <div className="flex justify-between text-red-600"><p>Descuento ({discount.value}%):</p><p>-{formatMXN(discountAmount)}</p></div>}
                 {taxSettings.ivaEnabled && <div className="flex justify-between text-slate-500"><p>IVA ({taxSettings.ivaRate}%):</p><p>{formatMXN(ivaAmount)}</p></div>}
-                <div className="flex justify-between text-lg sm:text-2xl font-bold"><p>Total:</p><p>{formatMXN(finalTotal)}</p></div>
+                <div className="flex justify-between text-lg sm:text-2xl font-bold">
+                  <p>Total:</p>
+                  <div className="text-right">
+                    <p>{formatMXN(finalTotal)}</p>
+                    {isSplitPayment && remainingForSplit > 0 && (
+                      <p className="text-sm font-normal text-orange-600">Pendiente: {formatMXN(remainingForSplit)}</p>
+                    )}
+                  </div>
+                </div>
               </div>
+              
+              {/* Split Payments List */}
+              {isSplitPayment && splitPayments.length > 0 && (
+                <div className="mt-4 bg-slate-50 rounded-lg p-3">
+                  <h3 className="font-semibold text-sm mb-2">Pagos agregados:</h3>
+                  {splitPayments.map((payment, idx) => (
+                    <div key={idx} className="flex justify-between items-center text-sm py-1 border-b border-slate-200 last:border-0">
+                      <span className="capitalize">{PAYMENT_METHODS.find(m => m.id === payment.payment_method)?.label}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">{formatMXN(payment.amount)}</span>
+                        <button onClick={() => removeSplitPayment(idx)} className="text-red-500 hover:text-red-700">
+                          <TrashIcon className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex justify-between font-bold text-sm mt-2 pt-2 border-t">
+                    <span>Total pagado:</span>
+                    <span>{formatMXN(splitPayments.reduce((sum, p) => sum + p.amount, 0))}</span>
+                  </div>
+                </div>
+              )}
             </div>
             <div>
               <h2 className="text-xl sm:text-2xl font-bold mb-4">Pago</h2>
               <div className="space-y-4">
+                {/* Split Payment Toggle */}
+                <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg">
+                  <Label className="cursor-pointer">Pago dividido</Label>
+                  <button
+                    onClick={() => {
+                      setIsSplitPayment(!isSplitPayment);
+                      if (isSplitPayment) {
+                        setSplitPayments([]);
+                      }
+                    }}
+                    className={`relative flex items-center w-14 h-7 rounded-full transition-colors ${isSplitPayment ? 'bg-blue-600' : 'bg-slate-300'}`}
+                  >
+                    <span className={`inline-block w-5 h-5 bg-white rounded-full shadow-md transform transition-transform ${isSplitPayment ? 'translate-x-8' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+
                 {/* Payment Method */}
                 <div>
-                  <Label className="mb-2 block">Método de pago</Label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <Label className="mb-2 block">{isSplitPayment ? 'Agregar pago:' : 'Método de pago'}</Label>
+                  <div className="grid grid-cols-4 gap-2">
                     {PAYMENT_METHODS.map(m => {
                       const Icon = m.icon;
                       return (
                         <button key={m.id} onClick={() => { setPaymentMethod(m.id); setAmountGiven(''); }}
-                          className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 transition-all ${paymentMethod === m.id ? 'border-green-500 bg-green-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                          <Icon className={`w-5 h-5 mb-1 ${paymentMethod === m.id ? 'text-green-600' : 'text-slate-500'}`} />
+                          className={`flex flex-col items-center justify-center p-2 rounded-lg border-2 transition-all ${paymentMethod === m.id ? 'border-green-500 bg-green-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                          <Icon className={`w-4 h-4 mb-1 ${paymentMethod === m.id ? 'text-green-600' : 'text-slate-500'}`} />
                           <span className={`text-xs font-medium ${paymentMethod === m.id ? 'text-green-700' : 'text-slate-600'}`}>{m.label}</span>
                         </button>
                       );
@@ -421,41 +565,106 @@ const PoSDashboard = () => {
                   </div>
                 </div>
 
-                {/* Cash only: amount given */}
-                <AnimatePresence>
-                  {isCash && (
-                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="space-y-3 overflow-hidden">
-                      <Label htmlFor="amount-given">Monto entregado</Label>
-                      <Input id="amount-given" type="number" placeholder="0.00" value={amountGiven} onChange={e => setAmountGiven(e.target.value)} />
-                      <div className="grid grid-cols-5 gap-2">
-                        {PESO_DENOMINATIONS.slice(0, 5).map(val => (
-                          <Button key={val} variant="outline" size="sm" onClick={() => setAmountGiven((parseFloat(amountGiven || 0) + val).toString())}>+${val}</Button>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-5 gap-2">
-                        {PESO_DENOMINATIONS.slice(5).map(val => (
-                          <Button key={val} variant="outline" size="sm" onClick={() => setAmountGiven((parseFloat(amountGiven || 0) + val).toString())}>+${val}</Button>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button variant="outline" onClick={() => setAmountGiven(finalTotal.toFixed(2))}>Monto exacto</Button>
-                        <Button variant="destructive" onClick={() => setAmountGiven('')}>Limpiar</Button>
-                      </div>
+                {/* Cash Payment */}
+                {paymentMethod === 'cash' && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+                    <Label>Monto en efectivo</Label>
+                    <Input type="number" placeholder="0.00" value={amountGiven} onChange={e => setAmountGiven(e.target.value)} />
+                    <div className="grid grid-cols-5 gap-2">
+                      {PESO_DENOMINATIONS.slice(0, 5).map(val => (
+                        <Button key={val} variant="outline" size="sm" onClick={() => setAmountGiven((parseFloat(amountGiven || 0) + val).toString())}>+${val}</Button>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-5 gap-2">
+                      {PESO_DENOMINATIONS.slice(5).map(val => (
+                        <Button key={val} variant="outline" size="sm" onClick={() => setAmountGiven((parseFloat(amountGiven || 0) + val).toString())}>+${val}</Button>
+                      ))}
+                    </div>
+                    {isSplitPayment && (
+                      <Button onClick={addSplitPayment} className="w-full" variant="outline">Agregar pago en efectivo</Button>
+                    )}
+                    {!isSplitPayment && (
                       <div className={`text-center text-3xl font-bold p-4 rounded-lg ${change < 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
                         <p className="text-sm font-normal">{change < 0 ? 'Monto pendiente' : 'Cambio'}</p>
                         <p>{formatMXN(Math.abs(change))}</p>
                       </div>
-                    </motion.div>
-                  )}
-                  {!isCash && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 bg-blue-50 rounded-lg text-center">
-                      <p className="text-blue-700 font-medium">
-                        {paymentMethod === 'card' ? 'Procesar pago con tarjeta por' : 'Enviar reclamación al seguro por'}
-                      </p>
-                      <p className="text-3xl font-bold text-blue-800 mt-1">{formatMXN(finalTotal)}</p>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                    )}
+                  </motion.div>
+                )}
+
+                {/* Card Payment */}
+                {paymentMethod === 'card' && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+                    <Label>Número de autorización</Label>
+                    <Input 
+                      placeholder="Ingresa número de autorización" 
+                      value={cardReference}
+                      onChange={e => setCardReference(e.target.value)}
+                    />
+                    <p className="text-sm text-slate-500">Monto a pagar: {formatMXN(isSplitPayment ? remainingForSplit : finalTotal)}</p>
+                    {isSplitPayment && (
+                      <Button onClick={addSplitPayment} className="w-full" variant="outline">Agregar pago con tarjeta</Button>
+                    )}
+                  </motion.div>
+                )}
+
+                {/* Transferencia Payment */}
+                {paymentMethod === 'transferencia' && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+                    {bankAccounts.length > 0 ? (
+                      <>
+                        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                          <p className="font-semibold text-orange-800 mb-2">Datos para transferencia:</p>
+                          <select 
+                            className="w-full p-2 border rounded mb-3"
+                            value={selectedBankAccount?.id || ''}
+                            onChange={e => setSelectedBankAccount(bankAccounts.find(a => a.id === e.target.value))}
+                          >
+                            {bankAccounts.map(account => (
+                              <option key={account.id} value={account.id}>
+                                {account.bank_name} - {account.account_number.slice(-4)}
+                              </option>
+                            ))}
+                          </select>
+                          {selectedBankAccount && (
+                            <div className="text-sm space-y-1">
+                              <p><strong>Banco:</strong> {selectedBankAccount.bank_name}</p>
+                              <p><strong>Cuenta:</strong> {selectedBankAccount.account_number}</p>
+                              {selectedBankAccount.clabe && <p><strong>CLABE:</strong> {selectedBankAccount.clabe}</p>}
+                              {selectedBankAccount.account_holder && <p><strong>Titular:</strong> {selectedBankAccount.account_holder}</p>}
+                            </div>
+                          )}
+                        </div>
+                        <Label>Número de referencia de la transferencia</Label>
+                        <Input 
+                          placeholder="Ingresa número de referencia" 
+                          value={transferenciaReference}
+                          onChange={e => setTransferenciaReference(e.target.value)}
+                        />
+                        <p className="text-sm text-slate-500">Monto a transferir: {formatMXN(isSplitPayment ? remainingForSplit : finalTotal)}</p>
+                        {isSplitPayment && (
+                          <Button onClick={addSplitPayment} className="w-full" variant="outline">Agregar pago por transferencia</Button>
+                        )}
+                      </>
+                    ) : (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                        <p className="text-red-700">No hay cuentas bancarias configuradas</p>
+                        <p className="text-sm text-red-600">Contacta al administrador para configurar transferencias</p>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+
+                {/* Insurance Payment */}
+                {paymentMethod === 'insurance' && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 bg-blue-50 rounded-lg text-center">
+                    <p className="text-blue-700 font-medium">Enviar reclamación al seguro por</p>
+                    <p className="text-3xl font-bold text-blue-800 mt-1">{formatMXN(isSplitPayment ? remainingForSplit : finalTotal)}</p>
+                    {isSplitPayment && (
+                      <Button onClick={addSplitPayment} className="w-full mt-3" variant="outline">Agregar pago por seguro</Button>
+                    )}
+                  </motion.div>
+                )}
 
                 {/* Rx Number Inputs - Show if any items require prescription */}
                 {cart.some(item => item.requiresPrescription) && (
