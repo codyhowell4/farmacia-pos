@@ -233,21 +233,30 @@ const PoSDashboard = () => {
   };
 
   const handleCheckoutClick = () => {
+    // This is called from the checkout screen to finalize the sale
+    completeSale(null, prescriptionData);
+  };
+
+  const proceedToCheckout = () => {
     const hasRx = cart.some(item => item.requires_prescription);
     if (hasRx) {
-      // Show prescription modal FIRST (before payment)
+      // Show prescription modal FIRST (before going to checkout)
       setPrescriptionModalOpen(true);
     } else {
       // No prescription needed, proceed directly to checkout
-      completeSale(null, null);
+      setView('checkout');
     }
   };
 
   const handlePrescriptionConfirm = (prescription) => {
     setPrescriptionData(prescription);
+    // Also update Rx numbers from the prescription form
+    if (prescription.rx_item_numbers) {
+      setRxNumbers(prescription.rx_item_numbers);
+    }
     setPrescriptionModalOpen(false);
-    // Proceed to complete the sale with prescription data
-    completeSale(null, prescription);
+    // Now proceed to checkout screen
+    setView('checkout');
   };
 
   const handlePatientConfirm = (patient) => {
@@ -877,7 +886,7 @@ const PoSDashboard = () => {
                   {taxSettings.ivaEnabled && <div className="flex justify-between text-slate-500 text-sm"><p>IVA ({taxSettings.ivaRate}%):</p><p>{formatMXN(ivaAmount)}</p></div>}
                 </div>
                 <div className="flex justify-between items-center text-xl sm:text-2xl font-bold"><p>Total:</p><p className="text-green-600">{formatMXN(finalTotal)}</p></div>
-                <Button onClick={() => setView('checkout')} disabled={cart.length === 0} className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-lg py-6"><DollarSign className="w-5 h-5 mr-2" />Ir a cobrar</Button>
+                <Button onClick={proceedToCheckout} disabled={cart.length === 0} className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-lg py-6"><DollarSign className="w-5 h-5 mr-2" />Ir a cobrar</Button>
               </div>
             </motion.div>
           </div>
