@@ -29,6 +29,9 @@ export const AuthProvider = ({ children }) => {
   // For login to wait on auth state change
   const loginResolveRef = useRef(null);
   const loginTimeoutRef = useRef(null);
+  
+  // Guard to prevent concurrent auth operations
+  const isProcessingAuth = useRef(false);
 
   // Fetch profile with retry logic (for trigger delays)
   const fetchProfileWithRetry = useCallback(async (authUser, maxRetries = 3) => {
@@ -90,6 +93,12 @@ export const AuthProvider = ({ children }) => {
     // Handle auth state changes
     const handleAuthChange = async (event, newSession) => {
       if (!mounted) return;
+      
+      // Skip if we're already processing auth in login function
+      if (isProcessingAuth.current && (event === 'SIGNED_IN' || event === 'INITIAL_SESSION')) {
+        console.log('Auth state change skipped - login in progress');
+        return;
+      }
 
       console.log('Auth state changed:', event);
       setSession(newSession);
@@ -145,36 +154,48 @@ export const AuthProvider = ({ children }) => {
 
   // Login function - directly fetches profile after sign in (more reliable than waiting for event)
   const login = async (email, password) => {
-    // Step 1: Sign in
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ 
-      email, 
-      password 
-    });
-    
-    if (signInError) throw signInError;
-    if (!signInData?.user) throw new Error('No se pudo obtener el usuario.');
-
-    // Step 2: Directly fetch profile (don't rely on onAuthStateChange - it's unreliable)
-    const userProfile = await fetchProfileWithRetry(signInData.user);
-
-    if (!userProfile) {
-      // Sign out since we couldn't get the profile
-      await supabase.auth.signOut();
-      throw new Error('Perfil no encontrado. Contacta al administrador.');
+    // Prevent concurrent auth operations
+    if (isProcessingAuth.current) {
+      throw new Error('Otra operación de inicio de sesión está en progreso.');
     }
+    
+    isProcessingAuth.current = true;
+    
+    try {
+      // Step 1: Sign in
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ 
+        email, 
+        password 
+      });
+      
+      if (signInError) throw signInError;
+      if (!signInData?.user) throw new Error('No se pudo obtener el usuario.');
 
-    // Step 3: Update local state (since we bypassed the event listener)
-    setSession(signInData.session);
-    setProfile(userProfile);
+      // Step 2: Directly fetch profile (don't rely on onAuthStateChange - it's unreliable)
+      const userProfile = await fetchProfileWithRetry(signInData.user);
 
-    // Step 4: Log successful login
-    logAudit({
-      action: AUDIT_ACTIONS.LOGIN,
-      user: userProfile,
-      details: `Inicio de sesión como ${userProfile.role}`,
-    });
+      if (!userProfile) {
+        // Sign out since we couldn't get the profile
+        await supabase.auth.signOut();
+        throw new Error('Perfil no encontrado. Contacta al administrador.');
+      }
 
-    return userProfile;
+      // Step 3: Update local state (since we bypassed the event listener)
+      setSession(signInData.session);
+      setProfile(userProfile);
+
+      // Step 4: Log successful login
+      logAudit({
+        action: AUDIT_ACTIONS.LOGIN,
+        user: userProfile,
+        details: `Inicio de sesión como ${userProfile.role}`,
+      });
+
+      return userProfile;
+    } finally {
+      // Always reset the flag
+      isProcessingAuth.current = false;
+    }
   };
 
   // Logout function
