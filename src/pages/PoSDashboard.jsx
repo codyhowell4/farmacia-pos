@@ -246,8 +246,8 @@ const PoSDashboard = () => {
   const handlePrescriptionConfirm = (prescription) => {
     setPrescriptionData(prescription);
     setPrescriptionModalOpen(false);
-    // Now proceed to checkout
-    setView('checkout');
+    // Proceed to complete the sale with prescription data
+    completeSale(null, prescription);
   };
 
   const handlePatientConfirm = (patient) => {
