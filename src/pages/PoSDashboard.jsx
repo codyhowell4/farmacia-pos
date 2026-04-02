@@ -10,11 +10,12 @@ import CloseShiftModal from '@/components/CloseShiftModal';
 import ReceiptModal from '@/components/ReceiptModal';
 import PatientModal from '@/components/PatientModal';
 import ReturnModal from '@/components/ReturnModal';
+import PrescriptionModal from '@/components/PrescriptionModal';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN, getTaxSettings, calcIVA } from '@/lib/currency';
 import {
   getInventory, createSale, createSaleWithPayments, getRecentSales, voidSale, findDiscount,
-  getTaxSettingsDb, getBankAccounts,
+  getTaxSettingsDb, getBankAccounts, createPrescription,
 } from '@/lib/db';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -69,6 +70,8 @@ const PoSDashboard = () => {
   const [patientModalOpen, setPatientModalOpen] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
+  const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
+  const [prescriptionData, setPrescriptionData] = useState(null);
   const searchInputRef = useRef(null);
 
   useEffect(() => {
@@ -232,20 +235,28 @@ const PoSDashboard = () => {
   const handleCheckoutClick = () => {
     const hasRx = cart.some(item => item.requiresPrescription);
     if (hasRx) {
-      setPendingCheckout(true);
-      setPatientModalOpen(true);
+      // Show prescription modal FIRST (before payment)
+      setPrescriptionModalOpen(true);
     } else {
-      completeSale(null);
+      // No prescription needed, proceed directly to checkout
+      completeSale(null, null);
     }
+  };
+
+  const handlePrescriptionConfirm = (prescription) => {
+    setPrescriptionData(prescription);
+    setPrescriptionModalOpen(false);
+    // Now proceed to checkout
+    setView('checkout');
   };
 
   const handlePatientConfirm = (patient) => {
     setPatientModalOpen(false);
     setPendingCheckout(false);
-    completeSale(patient);
+    completeSale(patient, prescriptionData);
   };
 
-  const completeSale = async (patient) => {
+  const completeSale = async (patient, prescription) => {
     // Build payments array
     let payments = [];
     
@@ -343,6 +354,40 @@ const PoSDashboard = () => {
       const sale = await createSaleWithPayments(saleRecord, saleItems, payments);
       
       console.log('Sale created successfully:', sale);
+
+      // Create prescription record if prescription data exists
+      if (prescription) {
+        try {
+          const prescriptionRecord = {
+            sale_id: sale.id,
+            patient_name: prescription.patient_name,
+            patient_curp: prescription.patient_curp,
+            doctor_name: prescription.doctor_name,
+            doctor_license_number: prescription.doctor_license_number,
+            doctor_office_address: prescription.doctor_office_address,
+            doctor_phone: prescription.doctor_phone,
+            prescription_number: prescription.prescription_number,
+            prescription_date: prescription.prescription_date,
+          };
+          
+          const createdPrescription = await createPrescription(prescriptionRecord);
+          console.log('Prescription created:', createdPrescription);
+          
+          logAudit({ 
+            action: AUDIT_ACTIONS.PRESCRIPTION_ADDED, 
+            user, 
+            details: `Prescription #${prescription.prescription_number} for ${prescription.patient_name} - Dr. ${prescription.doctor_name}` 
+          });
+        } catch (rxErr) {
+          console.error('Failed to create prescription:', rxErr);
+          // Don't fail the sale if prescription fails, but log it
+          toast({ 
+            title: 'Advertencia', 
+            description: 'La venta se completó pero hubo un error guardando la receta. Contacte al administrador.', 
+            variant: 'destructive' 
+          });
+        }
+      }
 
       logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(finalTotal)} | ${isSplitPayment ? 'split' : paymentMethod} | ${cart.length} item(s)` });
       toast({ title: '¡Venta completada!', description: `${formatMXN(finalTotal)} ${isSplitPayment ? '(pago dividido)' : ''}` });
@@ -888,6 +933,14 @@ const PoSDashboard = () => {
       <CloseShiftModal open={closeShiftOpen} onOpenChange={setCloseShiftOpen} />
       <ReceiptModal open={receiptOpen} onOpenChange={setReceiptOpen} sale={completedSale} />
       <PatientModal open={patientModalOpen} onOpenChange={setPatientModalOpen} onConfirm={handlePatientConfirm} />
+      <PrescriptionModal 
+        open={prescriptionModalOpen} 
+        onOpenChange={setPrescriptionModalOpen}
+        cart={cart}
+        onConfirm={handlePrescriptionConfirm}
+        finalTotal={finalTotal}
+        paymentMethod={paymentMethod}
+      />
       <ReturnModal open={returnOpen} onOpenChange={setReturnOpen} onReturnComplete={async () => {
         const updatedInventory = await getInventory(user?.locationId);
         setInventory(updatedInventory);
