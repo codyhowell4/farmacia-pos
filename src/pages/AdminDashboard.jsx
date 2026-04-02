@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield, Settings, Truck } from 'lucide-react';
+import { Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield, Settings, Truck, FileText, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminUsers from '@/components/admin/AdminUsers';
@@ -14,6 +14,8 @@ import AdminShifts from '@/components/admin/AdminShifts';
 import AdminAuditLog from '@/components/admin/AdminAuditLog';
 import AdminSettings from '@/pages/AdminSettings';
 import AdminSuppliers from '@/components/admin/AdminSuppliers';
+import ReportsPage from './ReportsPage';
+import AdminReports from '@/components/admin/AdminReports';
 
 const AdminDashboard = () => {
   const { logout, user } = useAuth();
@@ -30,6 +32,8 @@ const AdminDashboard = () => {
     if (path.includes('/shifts')) return 'shifts';
     if (path.includes('/audit')) return 'audit';
     if (path.includes('/suppliers')) return 'suppliers';
+    if (path.includes('/reports')) return 'reports';
+    if (path.includes('/analytics')) return 'analytics';
     if (path.includes('/settings')) return 'settings';
     return 'overview';
   };
@@ -50,6 +54,8 @@ const AdminDashboard = () => {
     { id: 'shifts', label: 'Turnos', icon: Clock, path: '/admin/shifts' },
     { id: 'audit', label: 'Auditoría', icon: Shield, path: '/admin/audit' },
     { id: 'suppliers', label: 'Proveedores', icon: Truck, path: '/admin/suppliers' },
+    { id: 'reports', label: 'Reportes COFEPRIS', icon: FileText, path: '/admin/reports' },
+    { id: 'analytics', label: 'Análisis', icon: TrendingUp, path: '/admin/analytics' },
     { id: 'settings', label: 'Configuración', icon: Settings, path: '/admin/settings' },
   ];
 
@@ -169,6 +175,8 @@ const AdminDashboard = () => {
                 <Route path="/shifts" element={<AdminShifts />} />
                 <Route path="/audit" element={<AdminAuditLog />} />
                 <Route path="/suppliers" element={<AdminSuppliers />} />
+                <Route path="/reports" element={<ReportsPage />} />
+                <Route path="/analytics" element={<AdminReports />} />
                 <Route path="/settings" element={<AdminSettings />} />
               </Routes>
             </main>

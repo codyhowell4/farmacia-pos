@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/components/ui/use-toast';
 import {
   getBankAccounts,
@@ -159,11 +159,12 @@ const BankAccountSettings = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Switch
+              <Checkbox
+                id="is_default"
                 checked={formData.is_default}
                 onCheckedChange={(checked) => setFormData({ ...formData, is_default: checked })}
               />
-              <Label className="cursor-pointer">Cuenta predeterminada</Label>
+              <Label htmlFor="is_default" className="cursor-pointer">Cuenta predeterminada</Label>
             </div>
             <div className="flex gap-2">
               <Button onClick={handleSubmit} disabled={loading}>
