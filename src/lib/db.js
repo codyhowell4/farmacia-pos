@@ -466,6 +466,86 @@ export const getAuditLog = async () => {
   return data;
 };
 
+// ── INVENTORY BATCH MANAGEMENT ───────────────────────────────
+
+export const getInventoryWithBatches = async (locationId = null) => {
+  let query = supabase
+    .from('inventory')
+    .select('*, suppliers(name)')
+    .order('expiration_date', { ascending: true })
+    .order('created_at', { ascending: true });
+  
+  if (locationId) query = query.eq('location_id', locationId);
+  
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+};
+
+export const addInventoryBatch = async (batch) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('inventory')
+    .insert({ ...batch, org_id: orgId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// ── STOCK ADJUSTMENTS ────────────────────────────────────────
+
+export const createStockAdjustment = async (adjustment) => {
+  const orgId = await getOrgId();
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  // Get current profile for name
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('full_name')
+    .eq('id', user.id)
+    .single();
+  
+  const { data, error } = await supabase
+    .from('stock_adjustments')
+    .insert({
+      ...adjustment,
+      org_id: orgId,
+      adjusted_by: user?.id,
+      adjusted_by_name: profile?.full_name || user?.email,
+    })
+    .select()
+    .single();
+  
+  if (error) throw error;
+  
+  // Update inventory quantity
+  const { error: updateError } = await supabase
+    .from('inventory')
+    .update({ 
+      quantity: adjustment.new_quantity,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', adjustment.inventory_id);
+  
+  if (updateError) throw updateError;
+  
+  return data;
+};
+
+export const getStockAdjustments = async (inventoryId = null) => {
+  let query = supabase
+    .from('stock_adjustments')
+    .select('*')
+    .order('created_at', { ascending: false });
+  
+  if (inventoryId) query = query.eq('inventory_id', inventoryId);
+  
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+};
+
 // ── TAX SETTINGS ─────────────────────────────────────────────
 
 export const getTaxSettingsDb = async () => {

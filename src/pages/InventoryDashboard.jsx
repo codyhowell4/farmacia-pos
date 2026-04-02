@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock } from 'lucide-react';
+import { Package, Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
-import { getInventory, upsertInventoryItem, deleteInventoryItem } from '@/lib/db';
+import { getInventory, upsertInventoryItem, deleteInventoryItem, createStockAdjustment, getStockAdjustments } from '@/lib/db';
 
 const LOW_STOCK_THRESHOLD = 10;
 
@@ -35,11 +36,17 @@ const InventoryDashboard = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [alertFilter, setAlertFilter] = useState(null);
+  const [adjustmentItem, setAdjustmentItem] = useState(null);
+  const [adjustmentHistory, setAdjustmentHistory] = useState([]);
+  const [showHistoryItem, setShowHistoryItem] = useState(null);
   const [formData, setFormData] = useState({
     name: '', use: '', cost: '', price: '', quantity: '',
     lowStockThreshold: LOW_STOCK_THRESHOLD.toString(),
     pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '',
-    requiresPrescription: false
+    requiresPrescription: false, batchNumber: '',
+  });
+  const [adjustmentForm, setAdjustmentForm] = useState({
+    newQuantity: '', reason: '',
   });
 
   useEffect(() => { loadInventory(); }, [user?.locationId]);
@@ -72,6 +79,7 @@ const InventoryDashboard = () => {
         barcode: formData.barcode || null,
         expiration_date: formData.expirationDate || null,
         requires_prescription: formData.requiresPrescription,
+        batch_number: formData.batchNumber || null,
       };
       await upsertInventoryItem(item);
       logAudit({
@@ -102,8 +110,61 @@ const InventoryDashboard = () => {
       barcode: item.barcode || '',
       expirationDate: item.expiration_date || '',
       requiresPrescription: item.requires_prescription || false,
+      batchNumber: item.batch_number || '',
     });
     setIsDialogOpen(true);
+  };
+
+  const handleAdjustStock = (item) => {
+    setAdjustmentItem(item);
+    setAdjustmentForm({
+      newQuantity: item.quantity.toString(),
+      reason: '',
+    });
+  };
+
+  const submitAdjustment = async () => {
+    if (!adjustmentForm.reason.trim()) {
+      toast({ title: 'Motivo requerido', description: 'Debes proporcionar un motivo para el ajuste', variant: 'destructive' });
+      return;
+    }
+    
+    const newQty = parseInt(adjustmentForm.newQuantity);
+    if (isNaN(newQty) || newQty < 0) {
+      toast({ title: 'Cantidad inválida', description: 'La cantidad debe ser un número positivo', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      await createStockAdjustment({
+        inventory_id: adjustmentItem.id,
+        previous_quantity: adjustmentItem.quantity,
+        new_quantity: newQty,
+        reason: adjustmentForm.reason,
+      });
+      
+      logAudit({
+        action: AUDIT_ACTIONS.INVENTORY_EDIT,
+        user,
+        details: `Stock adjusted: ${adjustmentItem.name} from ${adjustmentItem.quantity} to ${newQty}. Reason: ${adjustmentForm.reason}`,
+      });
+      
+      toast({ title: 'Stock ajustado', description: `Cantidad actualizada de ${adjustmentItem.quantity} a ${newQty}` });
+      setAdjustmentItem(null);
+      await loadInventory();
+    } catch (err) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  const viewAdjustmentHistory = async (item) => {
+    try {
+      const history = await getStockAdjustments(item.id);
+      setAdjustmentHistory(history);
+      setShowHistoryItem(item);
+    } catch (e) {
+      toast({ title: 'Error', description: 'No se pudo cargar el historial', variant: 'destructive' });
+    }
   };
 
   const handleDelete = async (id) => {
@@ -119,8 +180,30 @@ const InventoryDashboard = () => {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false });
+    setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false, batchNumber: '' });
     setEditingItem(null);
+  };
+
+  // Handle barcode scan in form
+  const handleBarcodeScan = async (barcode) => {
+    if (!barcode) return;
+    // Search for existing item with this barcode
+    const existingItem = inventory.find(item => item.barcode === barcode);
+    if (existingItem) {
+      // Pre-fill form with existing data
+      setFormData({
+        ...formData,
+        name: existingItem.name,
+        use: existingItem.use || '',
+        cost: existingItem.cost?.toString() || '',
+        price: existingItem.price?.toString() || '',
+        lowStockThreshold: (existingItem.low_stock_threshold || LOW_STOCK_THRESHOLD).toString(),
+        warehouseLocation: existingItem.warehouse_location || '',
+        requiresPrescription: existingItem.requires_prescription || false,
+        barcode: barcode,
+      });
+      toast({ title: 'Producto encontrado', description: 'Datos pre-llenados del producto existente' });
+    }
   };
 
   const lowStockItems = inventory.filter(item => item.quantity > 0 && item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD));
@@ -209,8 +292,21 @@ const InventoryDashboard = () => {
                       <div className="space-y-2"><Label>Cantidad</Label><Input type="number" value={formData.quantity} onChange={(e) => setFormData({ ...formData, quantity: e.target.value })} required /></div>
                       <div className="space-y-2"><Label>Umbral de alerta de stock bajo</Label><Input type="number" value={formData.lowStockThreshold} onChange={(e) => setFormData({ ...formData, lowStockThreshold: e.target.value })} placeholder="10" /></div>
                       <div className="space-y-2"><Label>Fecha de vencimiento</Label><Input type="date" value={formData.expirationDate} onChange={(e) => setFormData({ ...formData, expirationDate: e.target.value })} /></div>
-                      <div className="space-y-2"><Label>Código de barras (UPC)</Label><Input value={formData.barcode} onChange={(e) => setFormData({ ...formData, barcode: e.target.value })} /></div>
-                      <div className="space-y-2"><Label>Ubicación de farmacia</Label><Input value={formData.pharmacyLocation} onChange={(e) => setFormData({ ...formData, pharmacyLocation: e.target.value })} required placeholder="Ej. farmacia1" /></div>
+                      <div className="space-y-2"><Label>Número de lote</Label><Input value={formData.batchNumber} onChange={(e) => setFormData({ ...formData, batchNumber: e.target.value })} placeholder="Ej. LOT-2024-001" /></div>
+                      <div className="space-y-2"><Label>Código de barras (UPC)</Label>
+                        <div className="relative">
+                          <Barcode className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                          <Input 
+                            className="pl-10"
+                            value={formData.barcode} 
+                            onChange={(e) => {
+                              setFormData({ ...formData, barcode: e.target.value });
+                              handleBarcodeScan(e.target.value);
+                            }} 
+                            placeholder="Escanear o escribir código"
+                          />
+                        </div>
+                      </div>
                       <div className="space-y-2"><Label>Ubicación en almacén</Label><Input value={formData.warehouseLocation} onChange={(e) => setFormData({ ...formData, warehouseLocation: e.target.value })} required placeholder="Ej. Pasillo 5, Estante B" /></div>
                       <div className="md:col-span-2 flex items-center gap-3 pt-1">
                         <input
@@ -242,7 +338,7 @@ const InventoryDashboard = () => {
               <table className="w-full">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    {['Name','Use','Cost','Price','Qty','Rx','Expiration','Warehouse','Barcode','Actions'].map(h => (
+                    {['Name','Use','Cost','Price','Qty','Rx','Expiration','Batch','Warehouse','Actions'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-sm font-semibold text-slate-900">{h}</th>
                     ))}
                   </tr>
@@ -271,12 +367,14 @@ const InventoryDashboard = () => {
                         <td className="px-4 py-3 text-sm">
                           {expiryStatus ? <span className={`px-2 py-1 rounded-full text-xs font-semibold ${expiryStatus.color}`}>{expiryStatus.label}</span> : <span className="text-slate-400 text-xs">No establecida</span>}
                         </td>
+                        <td className="px-4 py-3 text-sm text-slate-600">{item.batch_number || '-'}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.warehouse_location}</td>
-                        <td className="px-4 py-3 text-sm text-slate-600">{item.barcode}</td>
                         <td className="px-4 py-3 text-sm">
                           <div className="flex space-x-2">
-                            <button onClick={() => handleEdit(item)} className="text-blue-600 hover:text-blue-800"><Edit className="w-4 h-4" /></button>
-                            <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-800"><Trash2 className="w-4 h-4" /></button>
+                            <button onClick={() => handleEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit className="w-4 h-4" /></button>
+                            <button onClick={() => handleAdjustStock(item)} className="text-orange-600 hover:text-orange-800" title="Ajustar stock"><SlidersHorizontal className="w-4 h-4" /></button>
+                            <button onClick={() => viewAdjustmentHistory(item)} className="text-purple-600 hover:text-purple-800" title="Historial"><History className="w-4 h-4" /></button>
+                            <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 className="w-4 h-4" /></button>
                           </div>
                         </td>
                       </motion.tr>
@@ -288,6 +386,80 @@ const InventoryDashboard = () => {
             </div>
           </motion.div>
         </div>
+
+        {/* Stock Adjustment Modal */}
+        <Dialog open={!!adjustmentItem} onOpenChange={() => setAdjustmentItem(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Ajustar Stock - {adjustmentItem?.name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="bg-slate-50 p-3 rounded">
+                <p className="text-sm text-slate-600">Stock actual: <strong>{adjustmentItem?.quantity}</strong></p>
+              </div>
+              <div className="space-y-2">
+                <Label>Nueva cantidad *</Label>
+                <Input 
+                  type="number" 
+                  min="0"
+                  value={adjustmentForm.newQuantity}
+                  onChange={(e) => setAdjustmentForm({ ...adjustmentForm, newQuantity: e.target.value })}
+                  placeholder="Ingresa la nueva cantidad"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Motivo del ajuste *</Label>
+                <Textarea 
+                  value={adjustmentForm.reason}
+                  onChange={(e) => setAdjustmentForm({ ...adjustmentForm, reason: e.target.value })}
+                  placeholder="Ej: Conteo físico, Producto dañado, Corrección de inventario..."
+                  rows={3}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={submitAdjustment} className="flex-1">Guardar ajuste</Button>
+                <Button variant="outline" onClick={() => setAdjustmentItem(null)}>Cancelar</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Adjustment History Modal */}
+        <Dialog open={!!showHistoryItem} onOpenChange={() => setShowHistoryItem(null)}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Historial de Ajustes - {showHistoryItem?.name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {adjustmentHistory.length === 0 ? (
+                <p className="text-center text-slate-500 py-8">No hay ajustes registrados para este producto</p>
+              ) : (
+                <div className="space-y-3">
+                  {adjustmentHistory.map((adjustment) => (
+                    <div key={adjustment.id} className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="font-medium">
+                            {adjustment.previous_quantity} → {adjustment.new_quantity} unidades
+                            <span className={`ml-2 text-xs px-2 py-0.5 rounded ${adjustment.new_quantity > adjustment.previous_quantity ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {adjustment.new_quantity > adjustment.previous_quantity ? '+' : ''}{adjustment.new_quantity - adjustment.previous_quantity}
+                            </span>
+                          </p>
+                          <p className="text-sm text-slate-600 mt-1">{adjustment.reason}</p>
+                        </div>
+                        <div className="text-right text-sm text-slate-500">
+                          <p>{new Date(adjustment.created_at).toLocaleDateString('es-MX')}</p>
+                          <p className="text-xs">{adjustment.adjusted_by_name}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Button variant="outline" className="w-full" onClick={() => setShowHistoryItem(null)}>Cerrar</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </>
   );
