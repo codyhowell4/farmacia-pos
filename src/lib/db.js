@@ -484,3 +484,145 @@ export const saveTaxSettingsDb = async (settings) => {
   });
   if (error) throw error;
 };
+
+// ── BANK ACCOUNTS ────────────────────────────────────────────
+
+export const getBankAccounts = async () => {
+  const { data, error } = await supabase
+    .from('bank_accounts')
+    .select('*')
+    .eq('is_active', true)
+    .order('is_default', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const createBankAccount = async (account) => {
+  const orgId = await getOrgId();
+  
+  // If this is the first account or marked as default, handle defaults
+  if (account.isDefault) {
+    await supabase.from('bank_accounts')
+      .update({ is_default: false })
+      .eq('org_id', orgId);
+  }
+  
+  const { data, error } = await supabase
+    .from('bank_accounts')
+    .insert({ ...account, org_id: orgId })
+    .select().single();
+  if (error) throw error;
+  return data;
+};
+
+export const updateBankAccount = async (id, updates) => {
+  const orgId = await getOrgId();
+  
+  // Handle default flag
+  if (updates.isDefault) {
+    await supabase.from('bank_accounts')
+      .update({ is_default: false })
+      .eq('org_id', orgId);
+  }
+  
+  const { data, error } = await supabase
+    .from('bank_accounts')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select().single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteBankAccount = async (id) => {
+  const { error } = await supabase
+    .from('bank_accounts')
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) throw error;
+};
+
+// ── SPLIT PAYMENTS ───────────────────────────────────────────
+
+export const createSaleWithPayments = async (sale, items, payments) => {
+  const orgId = await getOrgId();
+  
+  // Create the sale
+  const { data: saleRow, error } = await supabase
+    .from('sales')
+    .insert({ ...sale, org_id: orgId, is_split_payment: payments.length > 1 })
+    .select().single();
+  if (error) throw error;
+
+  // Create sale items
+  if (items?.length) {
+    const { error: itemsError } = await supabase.from('sale_items').insert(
+      items.map(i => ({ ...i, sale_id: saleRow.id }))
+    );
+    if (itemsError) throw itemsError;
+  }
+
+  // Create payment records
+  if (payments?.length) {
+    const { error: paymentsError } = await supabase.from('sale_payments').insert(
+      payments.map(p => ({ ...p, sale_id: saleRow.id }))
+    );
+    if (paymentsError) throw paymentsError;
+  }
+
+  // Update inventory
+  await decrementInventory(items || []);
+  
+  return saleRow;
+};
+
+// ── PRESCRIPTIONS (COFEPRIS) ─────────────────────────────────
+
+export const createPrescription = async (prescription) => {
+  const orgId = await getOrgId();
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  const { data, error } = await supabase
+    .from('prescriptions')
+    .insert({
+      ...prescription,
+      org_id: orgId,
+      created_by: user?.id,
+    })
+    .select().single();
+  if (error) throw error;
+  return data;
+};
+
+export const getPrescriptions = async (filters = {}) => {
+  let query = supabase
+    .from('prescriptions')
+    .select('*, sales(timestamp, total)')
+    .order('created_at', { ascending: false });
+  
+  if (filters.startDate) {
+    query = query.gte('prescription_date', filters.startDate);
+  }
+  if (filters.endDate) {
+    query = query.lte('prescription_date', filters.endDate);
+  }
+  if (filters.isVoided !== undefined) {
+    query = query.eq('is_voided', filters.isVoided);
+  }
+  
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+};
+
+export const voidPrescription = async (prescriptionId, voidedBy) => {
+  const { error } = await supabase
+    .from('prescriptions')
+    .update({
+      is_voided: true,
+      voided_at: new Date().toISOString(),
+      voided_by: voidedBy,
+    })
+    .eq('id', prescriptionId);
+  if (error) throw error;
+};

@@ -137,11 +137,23 @@ const PoSDashboard = () => {
   };
 
   const handleSearch = (e, updateGrid = false) => {
-    e.preventDefault();
+    e?.preventDefault();
     const lowerSearchTerm = searchTerm.toLowerCase();
     const results = inventory.filter(item =>
-      (item.barcode === searchTerm || item.name.toLowerCase().includes(lowerSearchTerm) || item.use.toLowerCase().includes(lowerSearchTerm)) && item.quantity > 0
+      (item.barcode === searchTerm || item.name.toLowerCase().includes(lowerSearchTerm) || item.use?.toLowerCase().includes(lowerSearchTerm)) && item.quantity > 0
     );
+    
+    // Barcode scanner auto-add: if exact barcode match and only 1 result, add to cart immediately
+    if (results.length === 1 && results[0].barcode === searchTerm) {
+      addToCart(results[0]);
+      setSearchTerm('');
+      setSearchResults([]);
+      // Play beep sound for barcode scan success
+      const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmFgU7k9n1unEiBC13yO/eizEIHWq+8+OWT');
+      audio.play().catch(() => {});
+      return;
+    }
+    
     if (updateGrid) {
       setDisplayItems(results); setIsSearching(true); setSearchResults([]);
     } else {
