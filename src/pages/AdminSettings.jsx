@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { Save, Settings, Percent, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Save, Settings, Percent } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { getTaxSettings, formatMXN, calcIVA } from '@/lib/currency';
 import { getTaxSettingsDb, saveTaxSettingsDb } from '@/lib/db';
+import BankAccountSettings from '@/components/admin/BankAccountSettings';
 
 const AdminSettings = () => {
   const { toast } = useToast();
@@ -119,6 +120,12 @@ const AdminSettings = () => {
           <Button onClick={handleSave} disabled={!dirty} className="w-full bg-gradient-to-r from-blue-500 to-indigo-600">
             <Save className="w-4 h-4 mr-2" />Guardar configuración
           </Button>
+        </motion.div>
+
+        {/* Bank Account Settings */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+          className="bg-white rounded-xl shadow-lg p-6 max-w-2xl">
+          <BankAccountSettings />
         </motion.div>
       </div>
     </>

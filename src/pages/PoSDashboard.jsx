@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, Trash2 as TrashIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,8 +13,8 @@ import ReturnModal from '@/components/ReturnModal';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN, getTaxSettings, calcIVA } from '@/lib/currency';
 import {
-  getInventory, createSale, getRecentSales, voidSale, findDiscount,
-  getTaxSettingsDb,
+  getInventory, createSale, createSaleWithPayments, getRecentSales, voidSale, findDiscount,
+  getTaxSettingsDb, getBankAccounts,
 } from '@/lib/db';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -24,6 +24,7 @@ import { Label } from '@/components/ui/label';
 const PAYMENT_METHODS = [
   { id: 'cash', label: 'Efectivo', icon: DollarSign, color: 'from-green-500 to-emerald-600' },
   { id: 'card', label: 'Tarjeta', icon: CreditCard, color: 'from-blue-500 to-indigo-600' },
+  { id: 'transferencia', label: 'Transferencia', icon: Building2, color: 'from-orange-500 to-red-600' },
   { id: 'insurance', label: 'Seguro', icon: Stethoscope, color: 'from-purple-500 to-pink-600' },
 ];
 
@@ -48,6 +49,12 @@ const PoSDashboard = () => {
   const [discountCode, setDiscountCode] = useState('');
   const [discount, setDiscount] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('cash');
+  const [splitPayments, setSplitPayments] = useState([]); // [{ method, amount, reference }]
+  const [isSplitPayment, setIsSplitPayment] = useState(false);
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [selectedBankAccount, setSelectedBankAccount] = useState(null);
+  const [transferenciaReference, setTransferenciaReference] = useState('');
+  const [cardReference, setCardReference] = useState('');
   const [isAdminPinOpen, setIsAdminPinOpen] = useState(false);
   const [adminPin, setAdminPin] = useState('');
   const [overrideData, setOverrideData] = useState(null);
@@ -75,6 +82,11 @@ const PoSDashboard = () => {
       );
     }).catch(console.error);
     getTaxSettingsDb().then(setTaxSettings).catch(console.error);
+    getBankAccounts().then(accounts => {
+      setBankAccounts(accounts);
+      const defaultAccount = accounts.find(a => a.is_default);
+      if (defaultAccount) setSelectedBankAccount(defaultAccount);
+    }).catch(console.error);
     searchInputRef.current?.focus();
   }, [user?.locationId]);
 
