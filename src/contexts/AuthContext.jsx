@@ -5,6 +5,8 @@ import { verifyAdminPin } from '@/lib/db';
 
 const AuthContext = createContext(null);
 
+const deferAuthFollowup = () => new Promise(resolve => setTimeout(resolve, 0));
+
 // Maps a raw profile DB row to the shape the rest of the app expects
 const toUserShim = (profile, email) =>
   profile
@@ -91,7 +93,7 @@ export const AuthProvider = ({ children }) => {
     let subscription;
 
     // Handle auth state changes
-    const handleAuthChange = async (event, newSession) => {
+    const handleAuthChange = (event, newSession) => {
       if (!mounted) return;
       
       // Skip if we're already processing auth in login function
@@ -103,16 +105,23 @@ export const AuthProvider = ({ children }) => {
       console.log('Auth state changed:', event);
       setSession(newSession);
 
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
         if (newSession?.user) {
-          const userProfile = await fetchProfileWithRetry(newSession.user);
-          setProfile(userProfile);
-          
-          // Resolve any waiting login promise
-          if (loginResolveRef.current) {
-            loginResolveRef.current(userProfile);
-            loginResolveRef.current = null;
-          }
+          setTimeout(async () => {
+            if (!mounted) return;
+            const userProfile = await fetchProfileWithRetry(newSession.user);
+            if (!mounted) return;
+            setProfile(userProfile);
+
+            // Resolve any waiting login promise
+            if (loginResolveRef.current) {
+              loginResolveRef.current(userProfile);
+              loginResolveRef.current = null;
+            }
+
+            setIsReady(true);
+          }, 0);
+          return;
         }
       } else if (event === 'SIGNED_OUT') {
         setProfile(null);
@@ -172,6 +181,7 @@ export const AuthProvider = ({ children }) => {
       if (!signInData?.user) throw new Error('No se pudo obtener el usuario.');
 
       // Step 2: Directly fetch profile (don't rely on onAuthStateChange - it's unreliable)
+      await deferAuthFollowup();
       const userProfile = await fetchProfileWithRetry(signInData.user);
 
       if (!userProfile) {
@@ -183,6 +193,7 @@ export const AuthProvider = ({ children }) => {
       // Step 3: Update local state (since we bypassed the event listener)
       setSession(signInData.session);
       setProfile(userProfile);
+      setIsReady(true);
 
       // Step 4: Log successful login
       logAudit({

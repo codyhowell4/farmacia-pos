@@ -35,24 +35,26 @@ export const exportShiftsCSV = (shifts) => {
     'Total Sales','Total Revenue','Cash Sales','Card Sales','Insurance Sales','Notes'
   ];
   const rows = shifts.filter(s => s.status === 'closed').map(s => {
-    const durationMs = new Date(s.closedAt) - new Date(s.openedAt);
-    const durationMin = Math.round(durationMs / 60000);
+    const openedAt = s.opened_at || s.openedAt;
+    const closedAt = s.closed_at || s.closedAt;
+    const durationMs = new Date(closedAt) - new Date(openedAt);
+    const durationMin = Number.isNaN(durationMs) ? '' : Math.round(durationMs / 60000);
     return [
       `"${s.id}"`,
-      `"${s.openedBy}"`,
-      `"${s.pharmacyLocation}"`,
-      `"${new Date(s.openedAt).toLocaleString()}"`,
-      `"${new Date(s.closedAt).toLocaleString()}"`,
+      `"${s.opened_by_name || s.openedBy || ''}"`,
+      `"${s.locations?.name || s.pharmacyLocation || ''}"`,
+      `"${openedAt ? new Date(openedAt).toLocaleString() : ''}"`,
+      `"${closedAt ? new Date(closedAt).toLocaleString() : ''}"`,
       durationMin,
-      s.startingCash?.toFixed(2),
-      s.closingCash?.toFixed(2),
-      s.expectedCash?.toFixed(2),
+      (s.starting_cash ?? s.startingCash ?? 0).toFixed(2),
+      (s.closing_cash ?? s.closingCash ?? 0).toFixed(2),
+      (s.expected_cash ?? s.expectedCash ?? 0).toFixed(2),
       s.variance?.toFixed(2),
-      s.summary?.totalSales || 0,
-      (s.summary?.totalRevenue || 0).toFixed(2),
-      (s.summary?.totalCash || 0).toFixed(2),
-      (s.summary?.totalCard || 0).toFixed(2),
-      (s.summary?.totalInsurance || 0).toFixed(2),
+      s.total_sales ?? s.summary?.totalSales ?? 0,
+      (s.total_revenue ?? s.summary?.totalRevenue ?? 0).toFixed(2),
+      (s.total_cash ?? s.summary?.totalCash ?? 0).toFixed(2),
+      (s.total_card ?? s.summary?.totalCard ?? 0).toFixed(2),
+      (s.total_insurance ?? s.summary?.totalInsurance ?? 0).toFixed(2),
       `"${s.notes || ''}"`,
     ].join(',');
   });

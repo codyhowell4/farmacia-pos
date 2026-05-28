@@ -35,6 +35,11 @@ const PESO_DENOMINATIONS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
 const PoSDashboard = () => {
   const { logout, user, verifyAdminPin } = useAuth();
   const { activeShift } = useShift();
+  const shiftOpenedAt = activeShift?.opened_at || activeShift?.openedAt;
+  const shiftOpenedDate = shiftOpenedAt ? new Date(shiftOpenedAt) : null;
+  const shiftOpenedTime = shiftOpenedDate && !Number.isNaN(shiftOpenedDate.getTime())
+    ? shiftOpenedDate.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
+    : null;
   const navigate = useNavigate();
   const { toast } = useToast();
   const [closeShiftOpen, setCloseShiftOpen] = useState(false);
@@ -404,6 +409,8 @@ const PoSDashboard = () => {
       // Prepare sale data for receipt
       const saleData = {
         ...sale,
+        paymentMethod: saleRecord.payment_method,
+        payment_method: saleRecord.payment_method,
         items: saleItems.map(item => ({
           ...item,
           rxNumber: item.rx_number,
@@ -413,8 +420,8 @@ const PoSDashboard = () => {
         discount: discount ? { code: discount.code, amount: discountAmount } : null,
         iva: { rate: taxSettings.ivaRate, amount: ivaAmount },
         pharmacyLocation: user?.pharmacyLocation || user?.locationId,
-        amountGiven: cashPayment ? cashPayment.amount : null,
-        changeDue: cashPayment ? (cashPayment.amount - finalTotal) : null,
+        amountGiven: cashPayment ? (paymentMethod === 'cash' && !isSplitPayment ? parseFloat(amountGiven) : cashPayment.amount) : null,
+        changeDue: cashPayment ? ((paymentMethod === 'cash' && !isSplitPayment ? parseFloat(amountGiven) : cashPayment.amount) - finalTotal) : null,
       };
 
       // Show receipt modal
@@ -786,7 +793,7 @@ const PoSDashboard = () => {
                 {activeShift && (
                   <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                    Turno abierto desde las {new Date(activeShift.openedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    Turno abierto desde {shiftOpenedTime || 'hora no disponible'}
                   </span>
                 )}
                 <Button onClick={() => setReturnOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-orange-600 border-orange-200 hover:bg-orange-50">

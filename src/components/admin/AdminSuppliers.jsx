@@ -1,18 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Truck, Package, ChevronDown, ChevronUp, CheckCircle, Search, Trash2, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import { formatMXN } from '@/lib/currency';
 
 import { getSuppliers, upsertSupplier, deleteSupplier, getPurchaseOrders, createPurchaseOrder, receivePurchaseOrder } from '@/lib/db';
 
+const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
+
 const AdminSuppliers = () => {
   const { toast } = useToast();
+  const mountedRef = useRef(false);
   const [tab, setTab] = useState('suppliers');
   const [suppliers, setSuppliers] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -29,11 +30,52 @@ const AdminSuppliers = () => {
 
   const loadAll = async () => {
     const [s, o] = await Promise.all([getSuppliers(), getPurchaseOrders()]);
+    if (!mountedRef.current) return;
     setSuppliers(s);
     setOrders(o);
   };
 
-  useEffect(() => { loadAll().catch(console.error); }, []);
+  const resetSupplierDialog = () => {
+    if (!mountedRef.current) return;
+    setEditingSupplier(null);
+    setSupplierForm({ name: '', contact: '', phone: '', email: '', notes: '' });
+  };
+
+  const closeSupplierDialog = async () => {
+    if (!mountedRef.current) return;
+    setSupplierDialogOpen(false);
+    await waitForDialogUnmount();
+    resetSupplierDialog();
+  };
+
+  const resetPoDialog = () => {
+    if (!mountedRef.current) return;
+    setPoForm({ supplierId: '', notes: '' });
+    setPoItems([{ medicineName: '', quantity: '', unitCost: '' }]);
+  };
+
+  const closePoDialog = async () => {
+    if (!mountedRef.current) return;
+    setPoDialogOpen(false);
+    await waitForDialogUnmount();
+    resetPoDialog();
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    setTab('suppliers');
+    setSearchTerm('');
+    setExpandedOrder(null);
+    setSupplierDialogOpen(false);
+    setPoDialogOpen(false);
+    resetSupplierDialog();
+    resetPoDialog();
+    loadAll().catch(console.error);
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const saveSupplier = async (e) => {
     e.preventDefault();
@@ -42,14 +84,12 @@ const AdminSuppliers = () => {
         ? { id: editingSupplier.id, ...supplierForm }
         : { ...supplierForm }
       );
-      await loadAll();
       toast({ title: editingSupplier ? 'Proveedor actualizado' : 'Proveedor agregado' });
+      await closeSupplierDialog();
+      await loadAll();
     } catch (err) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     }
-    setSupplierDialogOpen(false);
-    setEditingSupplier(null);
-    setSupplierForm({ name: '', contact: '', phone: '', email: '', notes: '' });
   };
 
   const deleteSupplierItem = async (id) => {
@@ -87,11 +127,9 @@ const AdminSuppliers = () => {
         unit_cost: parseFloat(i.unitCost),
       }));
       await createPurchaseOrder(poRecord, items);
-      await loadAll();
       toast({ title: 'Orden de compra creada' });
-      setPoDialogOpen(false);
-      setPoForm({ supplierId: '', notes: '' });
-      setPoItems([{ medicineName: '', quantity: '', unitCost: '' }]);
+      await closePoDialog();
+      await loadAll();
     } catch (err) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     }
@@ -131,12 +169,12 @@ const AdminSuppliers = () => {
           { label: 'Órdenes pendientes', value: totalPending, color: 'from-orange-500 to-red-500', icon: Package },
           { label: 'Valor total compras', value: formatMXN(totalValue), color: 'from-green-500 to-emerald-600', icon: Package },
         ].map((s, i) => (
-          <motion.div key={s.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}
+          <div key={s.label}
             className={`bg-gradient-to-br ${s.color} rounded-xl shadow-lg p-6 text-white`}>
             <s.icon className="w-8 h-8 mb-2" />
             <p className="text-sm opacity-90">{s.label}</p>
             <p className="text-3xl font-bold">{s.value}</p>
-          </motion.div>
+          </div>
         ))}
       </div>
 
@@ -150,7 +188,7 @@ const AdminSuppliers = () => {
         ))}
       </div>
 
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white rounded-xl shadow-lg p-6">
+      <div className="bg-white rounded-xl shadow-lg p-6">
         <div className="flex justify-between items-center mb-6 gap-4">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
@@ -158,7 +196,7 @@ const AdminSuppliers = () => {
           </div>
 
           {tab === 'suppliers' && (
-            <Dialog open={supplierDialogOpen} onOpenChange={v => { setSupplierDialogOpen(v); if (!v) { setEditingSupplier(null); setSupplierForm({ name: '', contact: '', phone: '', email: '', notes: '' }); } }}>
+            <Dialog open={supplierDialogOpen} onOpenChange={v => { if (v) setSupplierDialogOpen(true); else closeSupplierDialog(); }}>
               <DialogTrigger asChild>
                 <Button className="bg-gradient-to-r from-blue-500 to-indigo-600"><Plus className="w-4 h-4 mr-2" />Nuevo proveedor</Button>
               </DialogTrigger>
@@ -179,7 +217,7 @@ const AdminSuppliers = () => {
           )}
 
           {tab === 'orders' && (
-            <Dialog open={poDialogOpen} onOpenChange={v => { setPoDialogOpen(v); if (!v) { setPoForm({ supplierId: '', notes: '' }); setPoItems([{ medicineName: '', quantity: '', unitCost: '' }]); } }}>
+            <Dialog open={poDialogOpen} onOpenChange={v => { if (v) setPoDialogOpen(true); else closePoDialog(); }}>
               <DialogTrigger asChild>
                 <Button className="bg-gradient-to-r from-green-500 to-emerald-600"><Plus className="w-4 h-4 mr-2" />Nueva orden</Button>
               </DialogTrigger>
@@ -189,10 +227,15 @@ const AdminSuppliers = () => {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label>Proveedor *</Label>
-                      <Select value={poForm.supplierId} onValueChange={v => setPoForm(p => ({ ...p, supplierId: v }))}>
-                        <SelectTrigger><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
-                        <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-                      </Select>
+                      <select
+                        value={poForm.supplierId}
+                        onChange={e => setPoForm(p => ({ ...p, supplierId: e.target.value }))}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        required
+                      >
+                        <option value="" disabled>Seleccionar...</option>
+                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
                     </div>
                     <div className="space-y-1.5"><Label>Notas</Label><Input value={poForm.notes} onChange={e => setPoForm(p => ({ ...p, notes: e.target.value }))} /></div>
                   </div>
@@ -283,7 +326,7 @@ const AdminSuppliers = () => {
                       {expandedOrder === order.id && (
                         <tr>
                           <td colSpan="8" className="p-0">
-                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-slate-50 px-8 py-3">
+                            <div className="bg-slate-50 px-8 py-3">
                               <table className="w-full text-xs">
                                 <thead><tr className="text-slate-500"><th className="text-left py-1">Medicamento</th><th className="text-left">Cantidad</th><th className="text-left">Costo unitario</th><th className="text-left">Subtotal</th></tr></thead>
                                 <tbody>
@@ -298,7 +341,7 @@ const AdminSuppliers = () => {
                                 </tbody>
                               </table>
                               {order.notes && <p className="text-xs text-slate-500 mt-2 italic">Nota: {order.notes}</p>}
-                            </motion.div>
+                            </div>
                           </td>
                         </tr>
                       )}
@@ -310,7 +353,7 @@ const AdminSuppliers = () => {
             </table>
           </div>
         )}
-      </motion.div>
+      </div>
     </div>
   );
 };

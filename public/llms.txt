@@ -1,0 +1,8 @@
+## Pages
+- [Checkout - Pharmacy PoS](/posdashboard): No description available
+- [Configuración - Farmacia](/adminsettings): No description available
+- [Gestión de inventario - Farmacia](/inventorydashboard): No description available
+- [Iniciar sesión - Sistema de Farmacia](/login): No description available
+- [Panel de administración - Farmacia](/admindashboard): Panel de administración del sistema de farmacia
+- [Recuperar contraseña - Sistema de Farmacia](/forgotpassword): No description available
+- [Restablecer contraseña - Sistema de Farmacia](/resetpassword): No description available

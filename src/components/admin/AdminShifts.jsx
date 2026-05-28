@@ -10,6 +10,23 @@ import { useToast } from '@/components/ui/use-toast';
 
 import { getShifts } from '@/lib/db';
 
+const formatShiftDate = (value) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
+};
+
+const formatShiftDuration = (shift) => {
+  if (!shift.opened_at || !shift.closed_at) return '-';
+  const opened = new Date(shift.opened_at);
+  const closed = new Date(shift.closed_at);
+  const ms = closed - opened;
+  if (Number.isNaN(ms) || ms < 0) return '-';
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  return `${h}h ${m}m`;
+};
+
 const AdminShifts = () => {
   const [shifts, setShifts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -29,31 +46,30 @@ const AdminShifts = () => {
   const handlePrint = () => {
     const closed = shifts.filter(s => s.status === 'closed');
     if (closed.length === 0) { toast({ title: 'Sin turnos cerrados para imprimir', variant: 'destructive' }); return; }
-    const totalRev = closed.reduce((sum, s) => sum + (s.summary?.totalRevenue || 0), 0);
+    const totalRev = closed.reduce((sum, s) => sum + (s.total_revenue || 0), 0);
     const html = `
-      <h1>Historial de turnos Report</h1>
+      <h1>Reporte de historial de turnos</h1>
       <div class="summary">
         <div class="summary-card"><p class="label">Total de turnos</p><p class="value">${closed.length}</p></div>
-        <div class="summary-card"><p class="label">Total Revenue</p><p class="value">{formatMXN(totalRev)}</p></div>
+        <div class="summary-card"><p class="label">Ingresos totales</p><p class="value">${formatMXN(totalRev)}</p></div>
       </div>
       <table>
         <thead><tr><th>Cajero</th><th>Ubicación</th><th>Apertura</th><th>Duración</th><th>Ventas</th><th>Ingresos</th><th>Efectivo inicial</th><th>Efectivo contado</th><th>Variación</th></tr></thead>
         <tbody>
           ${closed.map(s => {
-            const ms = new Date(s.closedAt) - new Date(s.openedAt);
-            const dur = `${Math.floor(ms/3600000)}h ${Math.floor((ms%3600000)/60000)}m`;
-            const varClass = Math.abs(s.variance) < 0.01 ? 'green' : s.variance < 0 ? 'red' : 'yellow';
+            const variance = s.variance || 0;
+            const varClass = Math.abs(variance) < 0.01 ? 'green' : variance < 0 ? 'red' : 'yellow';
             return `<tr>
-              <td>${s.openedBy}</td><td>${s.pharmacyLocation}</td>
-              <td>${new Date(s.openedAt).toLocaleString()}</td><td>${dur}</td>
-              <td>${s.summary?.totalSales || 0}</td><td>{formatMXN((s.summary?.totalRevenue||0))}</td>
-              <td>{formatMXN(s.startingCash || 0)}</td><td>{formatMXN(s.closingCash || 0)}</td>
-              <td><span class="badge ${varClass}">${s.variance > 0 ? '+' : ''}${s.variance?.toFixed(2)}</span></td>
+              <td>${s.opened_by_name || '-'}</td><td>${s.locations?.name || '-'}</td>
+              <td>${formatShiftDate(s.opened_at)}</td><td>${formatShiftDuration(s)}</td>
+              <td>${s.total_sales ?? 0}</td><td>${formatMXN(s.total_revenue || 0)}</td>
+              <td>${formatMXN(s.starting_cash || 0)}</td><td>${formatMXN(s.closing_cash || 0)}</td>
+              <td><span class="badge ${varClass}">${variance > 0 ? '+' : ''}${formatMXN(variance)}</span></td>
             </tr>`;
           }).join('')}
         </tbody>
       </table>`;
-    printReport('Historial de turnos Report', html);
+    printReport('Reporte de historial de turnos', html);
   };
 
   const filtered = shifts.filter(s =>
@@ -67,10 +83,7 @@ const AdminShifts = () => {
 
   const duration = (shift) => {
     if (!shift.closed_at) return 'Abierto';
-    const ms = new Date(shift.closed_at) - new Date(shift.opened_at);
-    const h = Math.floor(ms / 3600000);
-    const m = Math.floor((ms % 3600000) / 60000);
-    return `${h}h ${m}m`;
+    return formatShiftDuration(shift);
   };
 
   return (

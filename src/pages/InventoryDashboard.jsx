@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +14,7 @@ import { formatMXN } from '@/lib/currency';
 import { getInventory, upsertInventoryItem, deleteInventoryItem, createStockAdjustment, getStockAdjustments } from '@/lib/db';
 
 const LOW_STOCK_THRESHOLD = 10;
+const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const getExpiryStatus = (expirationDate) => {
   if (!expirationDate) return null;
@@ -37,6 +37,7 @@ const InventoryDashboard = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [alertFilter, setAlertFilter] = useState(null);
   const [adjustmentItem, setAdjustmentItem] = useState(null);
+  const [isAdjustmentDialogOpen, setIsAdjustmentDialogOpen] = useState(false);
   const [adjustmentHistory, setAdjustmentHistory] = useState([]);
   const [showHistoryItem, setShowHistoryItem] = useState(null);
   const [formData, setFormData] = useState({
@@ -88,9 +89,10 @@ const InventoryDashboard = () => {
         details: editingItem ? `Updated: ${formData.name}` : `Added: ${formData.name} | Qty: ${formData.quantity} | Rx: ${formData.requiresPrescription}`,
       });
       toast({ title: editingItem ? 'Medicamento actualizado' : 'Medicamento agregado' });
-      await loadInventory();
       setIsDialogOpen(false);
       resetForm();
+      await waitForDialogUnmount();
+      await loadInventory();
     } catch (err) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     }
@@ -121,6 +123,18 @@ const InventoryDashboard = () => {
       newQuantity: item.quantity.toString(),
       reason: '',
     });
+    setIsAdjustmentDialogOpen(true);
+  };
+
+  const resetAdjustmentForm = () => {
+    setAdjustmentForm({ newQuantity: '', reason: '' });
+  };
+
+  const closeAdjustmentModal = async () => {
+    setIsAdjustmentDialogOpen(false);
+    await waitForDialogUnmount();
+    setAdjustmentItem(null);
+    resetAdjustmentForm();
   };
 
   const submitAdjustment = async () => {
@@ -150,7 +164,7 @@ const InventoryDashboard = () => {
       });
       
       toast({ title: 'Stock ajustado', description: `Cantidad actualizada de ${adjustmentItem.quantity} a ${newQty}` });
-      setAdjustmentItem(null);
+      await closeAdjustmentModal();
       await loadInventory();
     } catch (err) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
@@ -240,9 +254,9 @@ const InventoryDashboard = () => {
         </nav>
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
-          <AnimatePresence>
+          <>
             {lowStockItems.length > 0 && (
-              <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              <div
                 className={`flex items-center justify-between p-4 rounded-xl shadow cursor-pointer border-2 transition-all ${alertFilter === 'low_stock' ? 'bg-orange-100 border-orange-500' : 'bg-orange-50 border-orange-200 hover:border-orange-400'}`}
                 onClick={() => setAlertFilter(alertFilter === 'low_stock' ? null : 'low_stock')}>
                 <div className="flex items-center space-x-3">
@@ -253,10 +267,10 @@ const InventoryDashboard = () => {
                   </div>
                 </div>
                 <span className="text-xs text-orange-600 font-medium whitespace-nowrap ml-4">{alertFilter === 'low_stock' ? 'Mostrar todos' : 'Ver artículos'}</span>
-              </motion.div>
+              </div>
             )}
             {expiringItems.length > 0 && (
-              <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+              <div
                 className={`flex items-center justify-between p-4 rounded-xl shadow cursor-pointer border-2 transition-all ${alertFilter === 'expiring' ? 'bg-red-100 border-red-500' : 'bg-red-50 border-red-200 hover:border-red-400'}`}
                 onClick={() => setAlertFilter(alertFilter === 'expiring' ? null : 'expiring')}>
                 <div className="flex items-center space-x-3">
@@ -267,11 +281,11 @@ const InventoryDashboard = () => {
                   </div>
                 </div>
                 <span className="text-xs text-red-600 font-medium whitespace-nowrap ml-4">{alertFilter === 'expiring' ? 'Mostrar todos' : 'Ver artículos'}</span>
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
+          </>
 
-          <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="bg-white rounded-xl shadow-lg p-6">
+          <div className="bg-white rounded-xl shadow-lg p-6">
             <div className="flex justify-between items-center mb-6 gap-4">
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
@@ -348,7 +362,7 @@ const InventoryDashboard = () => {
                     const expiryStatus = getExpiryStatus(item.expiration_date);
                     const isLow = item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD);
                     return (
-                      <motion.tr key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="hover:bg-slate-50 transition-colors">
+                      <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-4 py-3 text-sm font-medium text-slate-900">{item.name}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.use}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{formatMXN(item.cost)}</td>
@@ -377,18 +391,18 @@ const InventoryDashboard = () => {
                             <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 className="w-4 h-4" /></button>
                           </div>
                         </td>
-                      </motion.tr>
+                      </tr>
                     );
                   })}
                 </tbody>
               </table>
               {filteredInventory.length === 0 && <p className="text-center text-slate-500 py-8">Sin artículos encontrados.</p>}
             </div>
-          </motion.div>
+          </div>
         </div>
 
         {/* Stock Adjustment Modal */}
-        <Dialog open={!!adjustmentItem} onOpenChange={() => setAdjustmentItem(null)}>
+        <Dialog open={isAdjustmentDialogOpen} onOpenChange={(open) => { if (!open) closeAdjustmentModal(); }}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Ajustar Stock - {adjustmentItem?.name}</DialogTitle>
@@ -418,7 +432,7 @@ const InventoryDashboard = () => {
               </div>
               <div className="flex gap-2">
                 <Button onClick={submitAdjustment} className="flex-1">Guardar ajuste</Button>
-                <Button variant="outline" onClick={() => setAdjustmentItem(null)}>Cancelar</Button>
+                <Button variant="outline" onClick={closeAdjustmentModal}>Cancelar</Button>
               </div>
             </div>
           </DialogContent>

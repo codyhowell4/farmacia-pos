@@ -556,12 +556,14 @@ export const getTaxSettingsDb = async () => {
 
 export const saveTaxSettingsDb = async (settings) => {
   const orgId = await getOrgId();
-  const { error } = await supabase.from('tax_settings').upsert({
-    org_id: orgId,
-    iva_enabled: settings.ivaEnabled,
-    iva_rate: settings.ivaRate,
-    updated_at: new Date().toISOString(),
-  });
+  const { error } = await supabase
+    .from('tax_settings')
+    .upsert({
+      org_id: orgId,
+      iva_enabled: settings.ivaEnabled,
+      iva_rate: settings.ivaRate,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'org_id' });
   if (error) throw error;
 };
 
@@ -581,7 +583,7 @@ export const createBankAccount = async (account) => {
   const orgId = await getOrgId();
   
   // If this is the first account or marked as default, handle defaults
-  if (account.isDefault) {
+  if (account.is_default) {
     await supabase.from('bank_accounts')
       .update({ is_default: false })
       .eq('org_id', orgId);
@@ -599,7 +601,7 @@ export const updateBankAccount = async (id, updates) => {
   const orgId = await getOrgId();
   
   // Handle default flag
-  if (updates.isDefault) {
+  if (updates.is_default) {
     await supabase.from('bank_accounts')
       .update({ is_default: false })
       .eq('org_id', orgId);
@@ -607,7 +609,7 @@ export const updateBankAccount = async (id, updates) => {
   
   const { data, error } = await supabase
     .from('bank_accounts')
-    .update({ ...updates, updated_at: new Date().toISOString() })
+    .update(updates)
     .eq('id', id)
     .select().single();
   if (error) throw error;
@@ -617,7 +619,7 @@ export const updateBankAccount = async (id, updates) => {
 export const deleteBankAccount = async (id) => {
   const { error } = await supabase
     .from('bank_accounts')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .update({ is_active: false })
     .eq('id', id);
   if (error) throw error;
 };

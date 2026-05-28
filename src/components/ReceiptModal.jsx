@@ -11,6 +11,15 @@ const ReceiptModal = ({ open, onOpenChange, sale }) => {
 
   if (!sale) return null;
 
+  const paymentMethod = sale.payment_method || sale.paymentMethod || sale.payments?.[0]?.payment_method || 'cash';
+  const paymentLabels = {
+    cash: 'Efectivo',
+    card: 'Tarjeta',
+    transferencia: 'Transferencia',
+    insurance: 'Seguro',
+  };
+  const paymentLabel = paymentLabels[paymentMethod] || paymentMethod;
+
   const handlePrint = () => {
     const content = printRef.current.innerHTML;
     const win = window.open('', '_blank', 'width=400,height=700');
@@ -98,9 +107,19 @@ const ReceiptModal = ({ open, onOpenChange, sale }) => {
           <div className="border-t border-dashed border-slate-300 pt-2 space-y-0.5">
             <div className="flex justify-between">
               <span>Forma de pago</span>
-              <span className="capitalize">{sale.paymentMethod === 'cash' ? 'Efectivo' : sale.paymentMethod === 'card' ? 'Tarjeta' : 'Seguro'}</span>
+              <span>{sale.is_split_payment ? 'Pago dividido' : paymentLabel}</span>
             </div>
-            {sale.paymentMethod === 'cash' && sale.amountGiven != null && (
+            {sale.is_split_payment && sale.payments?.length > 0 && (
+              <div className="space-y-0.5 pt-1">
+                {sale.payments.map((payment, index) => (
+                  <div key={index} className="flex justify-between text-slate-600">
+                    <span>{paymentLabels[payment.payment_method] || payment.payment_method}</span>
+                    <span>{formatMXN(payment.amount || 0)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {paymentMethod === 'cash' && sale.amountGiven != null && (
               <>
                 <div className="flex justify-between"><span>Recibido</span><span>{formatMXN(sale.amountGiven)}</span></div>
                 <div className="flex justify-between font-bold"><span>Cambio</span><span>{formatMXN(sale.changeDue || 0)}</span></div>

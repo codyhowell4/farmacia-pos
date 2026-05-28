@@ -7,15 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useShift } from '@/contexts/ShiftContext';
-import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { getSales } from '@/lib/db';
 
 const CloseShiftModal = ({ open, onOpenChange }) => {
   const { activeShift, closeShift } = useShift();
-  const { logout } = useAuth();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const [step, setStep] = useState('count'); // 'count' | 'summary'
   const [closingCash, setClosingCash] = useState('');
@@ -50,8 +46,11 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
   const handleConfirmClose = async () => {
     const closed = await closeShift(closingCash, notes);
     toast({ title: 'Turno cerrado', description: `Variance: ${formatMXN(closed?.variance || 0)}` });
-    logout();
-    navigate('/login');
+    setStep('count');
+    setClosingCash('');
+    setNotes('');
+    setSummary(null);
+    onOpenChange(false);
   };
 
   const handleCancel = () => { setStep('count'); setClosingCash(''); setNotes(''); setSummary(null); onOpenChange(false); };

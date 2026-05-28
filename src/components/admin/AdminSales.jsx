@@ -10,6 +10,7 @@ import { exportSalesCSV, printReport } from '@/lib/exportUtils';
 const PaymentBadge = ({ method }) => {
   if (!method || method === 'cash') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700"><DollarSign className="w-3 h-3" />Efectivo</span>;
   if (method === 'card') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700"><CreditCard className="w-3 h-3" />Tarjeta</span>;
+  if (method === 'transferencia') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700"><DollarSign className="w-3 h-3" />Transferencia</span>;
   if (method === 'insurance') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700"><Stethoscope className="w-3 h-3" />Seguro</span>;
   return <span className="text-xs text-slate-500">{method}</span>;
 };

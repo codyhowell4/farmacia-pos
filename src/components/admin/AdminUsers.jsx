@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import { Plus, Edit, Trash2, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 
 import { getUsers, createUser, updateProfile, deleteProfile, getLocations } from '@/lib/db';
@@ -117,11 +115,7 @@ const AdminUsers = () => {
         </div>
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-xl shadow-lg p-6"
-      >
+      <div className="bg-white rounded-xl shadow-lg p-6">
         <div className="flex justify-between items-center mb-6">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
@@ -163,25 +157,32 @@ const AdminUsers = () => {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="role">Rol</Label>
-                    <Select value={formData.role} onValueChange={(value) => setFormData({ ...formData, role: value })}>
-                      <SelectTrigger><SelectValue placeholder="Seleccionar rol" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="admin">Administrador</SelectItem>
-                        <SelectItem value="pos">Punto de Venta</SelectItem>
-                        <SelectItem value="inventory">Gestor de Inventario</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <select
+                      id="role"
+                      value={formData.role}
+                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                      required
+                    >
+                      <option value="" disabled>Seleccionar rol</option>
+                      <option value="admin">Administrador</option>
+                      <option value="pos">Punto de Venta</option>
+                      <option value="inventory">Gestor de Inventario</option>
+                    </select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="pharmacyLocation">Ubicación de farmacia</Label>
-                    <Select value={formData.pharmacyLocation} onValueChange={(value) => setFormData({ ...formData, pharmacyLocation: value })}>
-                      <SelectTrigger id="pharmacyLocation"><SelectValue placeholder="Seleccionar ubicación" /></SelectTrigger>
-                      <SelectContent>
-                        {locations.map(loc => (
-                          <SelectItem key={loc.id} value={loc.id}>{loc.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <select
+                      id="pharmacyLocation"
+                      value={formData.pharmacyLocation}
+                      onChange={(e) => setFormData({ ...formData, pharmacyLocation: e.target.value })}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    >
+                      <option value="" disabled>Seleccionar ubicación</option>
+                      {locations.map(loc => (
+                        <option key={loc.id} value={loc.id}>{loc.name}</option>
+                      ))}
+                    </select>
                   </div>
                   {formData.role === 'admin' && (
                     <div className="space-y-2">
@@ -211,7 +212,7 @@ const AdminUsers = () => {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {filteredUsers.map((user) => (
-                <motion.tr key={user.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="hover:bg-slate-50 transition-colors">
+                <tr key={user.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3 text-sm font-medium text-slate-900">{user.full_name}</td>
                   <td className="px-4 py-3 text-sm text-slate-600">{user.email}</td>
                   <td className="px-4 py-3 text-sm">
@@ -224,12 +225,12 @@ const AdminUsers = () => {
                       <button onClick={() => handleDelete(user.id)} className="text-red-600 hover:text-red-800"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
-                </motion.tr>
+                </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 };
