@@ -708,3 +708,34 @@ export const voidPrescription = async (prescriptionId, voidedBy) => {
     .eq('id', prescriptionId);
   if (error) throw error;
 };
+
+// ── AKAUNTING SETTINGS ───────────────────────────────────────
+
+export const getAkauntingSettings = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('akaunting_settings')
+    .select('*')
+    .eq('org_id', orgId)
+    .single();
+  if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows
+  return data || null;
+};
+
+export const saveAkauntingSettings = async (settings) => {
+  const orgId = await getOrgId();
+  const { error } = await supabase
+    .from('akaunting_settings')
+    .upsert({
+      org_id: orgId,
+      api_url: settings.apiUrl,
+      company_id: settings.companyId,
+      api_email: settings.apiEmail,
+      api_password: settings.apiPassword,
+      enabled: settings.enabled,
+      sync_customers: settings.syncCustomers,
+      sync_sales: settings.syncSales,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'org_id' });
+  if (error) throw error;
+};

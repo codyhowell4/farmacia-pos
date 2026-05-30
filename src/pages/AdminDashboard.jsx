@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield, Settings, Truck, FileText, TrendingUp } from 'lucide-react';
+import { Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield, Settings, Truck, FileText, TrendingUp, BookOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminUsers from '@/components/admin/AdminUsers';
@@ -16,6 +16,7 @@ import AdminSettings from '@/pages/AdminSettings';
 import AdminSuppliers from '@/components/admin/AdminSuppliers';
 import ReportsPage from './ReportsPage';
 import AdminReports from '@/components/admin/AdminReports';
+import AdminAccounting from '@/components/admin/AdminAccounting';
 
 const AdminDashboard = () => {
   const { logout, user } = useAuth();
@@ -35,6 +36,7 @@ const AdminDashboard = () => {
     if (path.includes('/reports')) return 'reports';
     if (path.includes('/analytics')) return 'analytics';
     if (path.includes('/settings')) return 'settings';
+    if (path.includes('/accounting')) return 'accounting';
     return 'overview';
   };
   
@@ -56,6 +58,7 @@ const AdminDashboard = () => {
     { id: 'suppliers', label: 'Proveedores', icon: Truck, path: '/admin/suppliers' },
     { id: 'reports', label: 'Reportes COFEPRIS', icon: FileText, path: '/admin/reports' },
     { id: 'analytics', label: 'Análisis', icon: TrendingUp, path: '/admin/analytics' },
+    { id: 'accounting', label: 'Contabilidad', icon: BookOpen, path: '/admin/accounting' },
     { id: 'settings', label: 'Configuración', icon: Settings, path: '/admin/settings' },
   ];
 
@@ -177,6 +180,7 @@ const AdminDashboard = () => {
                 <Route path="/suppliers" element={<AdminSuppliers />} />
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/analytics" element={<AdminReports />} />
+                <Route path="/accounting" element={<AdminAccounting />} />
                 <Route path="/settings" element={<AdminSettings />} />
               </Routes>
             </main>
