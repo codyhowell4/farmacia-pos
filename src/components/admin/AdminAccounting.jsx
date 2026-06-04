@@ -2,6 +2,7 @@ import React from 'react';
 import { Helmet } from 'react-helmet';
 import { BookOpen } from 'lucide-react';
 import AkauntingConnectionCard from './AkauntingConnectionCard';
+import AkauntingSyncPanel from './AkauntingSyncPanel';
 
 const AdminAccounting = () => {
   return (
@@ -23,14 +24,7 @@ const AdminAccounting = () => {
         </div>
 
         <AkauntingConnectionCard />
-
-        {/* Placeholder for future sync panel */}
-        <div className="bg-white rounded-xl shadow-lg p-6 max-w-2xl">
-          <h3 className="font-semibold text-slate-900 mb-2">Sincronización</h3>
-          <p className="text-sm text-slate-500">
-            La sincronización automática de clientes, productos y ventas estará disponible próximamente.
-          </p>
-        </div>
+        <AkauntingSyncPanel />
       </div>
     </>
   );

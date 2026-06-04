@@ -66,8 +66,8 @@ const ReceiptModal = ({ open, onOpenChange, sale }) => {
           <div className="border-t border-dashed border-slate-300 pt-2 space-y-0.5">
             <p>Folio: <span className="font-bold">#{sale.id.slice(-8).toUpperCase()}</span></p>
             <p>Cajero: {sale.salesperson}</p>
-            {sale.patient && <p>Paciente: {sale.patient.name}</p>}
-            {sale.patient?.curp && <p>CURP: {sale.patient.curp}</p>}
+            {(sale.customer_name || sale.patient_name) && <p>Cliente: {sale.customer_name || sale.patient_name}</p>}
+            {(sale.customer_curp || sale.patient_curp) && <p>CURP: {sale.customer_curp || sale.patient_curp}</p>}
           </div>
 
           <div className="border-t border-dashed border-slate-300 pt-2 space-y-1">

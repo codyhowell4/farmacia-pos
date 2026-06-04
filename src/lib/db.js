@@ -739,3 +739,202 @@ export const saveAkauntingSettings = async (settings) => {
     }, { onConflict: 'org_id' });
   if (error) throw error;
 };
+
+// ── AKAUNTING MAPPINGS ───────────────────────────────────────
+
+export const getCustomerProfiles = async () => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*, locations(name)')
+    .eq('role', 'customer')
+    .order('full_name');
+  if (error) throw error;
+  return data || [];
+};
+
+export const getAkauntingMapping = async (entityType, farmaciaId) => {
+  const orgId = await getOrgId();
+  const { data } = await supabase
+    .from('akaunting_mappings')
+    .select('akaunting_id')
+    .eq('org_id', orgId)
+    .eq('entity_type', entityType)
+    .eq('farmacia_id', farmaciaId)
+    .maybeSingle();
+  return data?.akaunting_id || null;
+};
+
+export const saveAkauntingMapping = async (entityType, farmaciaId, akauntingId) => {
+  const orgId = await getOrgId();
+  const { error } = await supabase
+    .from('akaunting_mappings')
+    .upsert({
+      org_id: orgId,
+      entity_type: entityType,
+      farmacia_id: farmaciaId,
+      akaunting_id: String(akauntingId),
+      last_synced_at: new Date().toISOString(),
+    }, { onConflict: 'org_id,entity_type,farmacia_id' });
+  if (error) throw error;
+};
+
+export const deleteAkauntingMapping = async (entityType, farmaciaId) => {
+  const orgId = await getOrgId();
+  const { error } = await supabase
+    .from('akaunting_mappings')
+    .delete()
+    .eq('org_id', orgId)
+    .eq('entity_type', entityType)
+    .eq('farmacia_id', farmaciaId);
+  if (error) throw error;
+};
+
+// ── AKAUNTING SYNC HELPERS ───────────────────────────────────
+
+export const getInventoryForSync = async () => {
+  const { data, error } = await supabase
+    .from('inventory')
+    .select('*, suppliers(name)')
+    .order('name');
+  if (error) throw error;
+  return data || [];
+};
+
+export const getUnsyncedSales = async (limit = 50) => {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('*, sale_items(*), sale_payments(*)')
+    .is('akaunting_invoice_id', null)
+    .eq('voided', false)
+    .eq('sync_in_progress', false)
+    .order('timestamp', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+};
+
+export const markSaleSyncInProgress = async (saleId) => {
+  const { error } = await supabase
+    .from('sales')
+    .update({ sync_in_progress: true })
+    .eq('id', saleId);
+  if (error) throw error;
+};
+
+export const clearSaleSyncInProgress = async (saleId) => {
+  const { error } = await supabase
+    .from('sales')
+    .update({ sync_in_progress: false })
+    .eq('id', saleId);
+  if (error) throw error;
+};
+
+export const markSaleAsSynced = async (saleId, invoiceId) => {
+  const { error } = await supabase
+    .from('sales')
+    .update({
+      akaunting_invoice_id: String(invoiceId),
+      synced_at: new Date().toISOString(),
+      sync_in_progress: false,
+    })
+    .eq('id', saleId);
+  if (error) throw error;
+};
+
+export const markSalePaymentSynced = async (saleId, status, errorMsg = null) => {
+  const { error } = await supabase
+    .from('sales')
+    .update({
+      payment_sync_status: status,
+      payment_synced_at: status === 'synced' ? new Date().toISOString() : null,
+      payment_sync_error: errorMsg,
+    })
+    .eq('id', saleId);
+  if (error) throw error;
+};
+
+// ── SALE BY ID (for retry sync) ─────────────────────────────
+
+export const getSaleById = async (saleId) => {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('*, sale_items(*), sale_payments(*)')
+    .eq('id', saleId)
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// ── CUSTOMERS ────────────────────────────────────────────────
+
+export const getCustomers = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('customers')
+    .select('*')
+    .eq('org_id', orgId)
+    .order('full_name');
+  if (error) throw error;
+  return data || [];
+};
+
+export const getCustomerById = async (id) => {
+  const { data, error } = await supabase
+    .from('customers')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const searchCustomers = async (query) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('customers')
+    .select('*')
+    .eq('org_id', orgId)
+    .or(`full_name.ilike.%${query}%,phone.ilike.%${query}%,curp.ilike.%${query}%`)
+    .order('full_name')
+    .limit(20);
+  if (error) throw error;
+  return data || [];
+};
+
+export const createCustomer = async (customer) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('customers')
+    .insert({ ...customer, org_id: orgId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const updateCustomer = async (id, updates) => {
+  const { data, error } = await supabase
+    .from('customers')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteCustomer = async (id) => {
+  const { error } = await supabase.from('customers').delete().eq('id', id);
+  if (error) throw error;
+};
+
+export const getCustomersForSync = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('customers')
+    .select('*')
+    .eq('org_id', orgId)
+    .order('full_name');
+  if (error) throw error;
+  return data || [];
+};

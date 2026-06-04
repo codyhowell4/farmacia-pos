@@ -1,11 +1,12 @@
 import { formatMXN } from '@/lib/currency';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Calendar, DollarSign, Download, ChevronDown, ChevronUp, CreditCard, Stethoscope, XCircle, Printer } from 'lucide-react';
+import { Search, Calendar, DollarSign, Download, ChevronDown, ChevronUp, CreditCard, Stethoscope, XCircle, Printer, Cloud, CloudOff, RotateCcw, AlertTriangle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { exportSalesCSV, printReport } from '@/lib/exportUtils';
+import { syncSaleById } from '@/services/akauntingSync';
 
 const PaymentBadge = ({ method }) => {
   if (!method || method === 'cash') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700"><DollarSign className="w-3 h-3" />Efectivo</span>;
@@ -15,6 +16,28 @@ const PaymentBadge = ({ method }) => {
   return <span className="text-xs text-slate-500">{method}</span>;
 };
 
+const SyncStatusBadge = ({ sale }) => {
+  if (sale.voided) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-500">
+        <XCircle className="w-3 h-3" />Anulada
+      </span>
+    );
+  }
+  if (sale.akaunting_invoice_id) {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700" title={`Factura Akaunting: ${sale.akaunting_invoice_id}`}>
+        <Cloud className="w-3 h-3" />Sincronizada
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">
+      <CloudOff className="w-3 h-3" />Pendiente
+    </span>
+  );
+};
+
 import { getSales } from '@/lib/db';
 
 const AdminSales = () => {
@@ -22,16 +45,22 @@ const AdminSales = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedSale, setExpandedSale] = useState(null);
   const [showVoided, setShowVoided] = useState(false);
+  const [retryingId, setRetryingId] = useState(null);
   const { toast } = useToast();
 
+  const loadSales = async () => {
+    try {
+      const data = await getSales();
+      setSales(data);
+    } catch (e) {
+      console.error(e);
+      setSales([]);
+      toast({ title: 'Error Loading Data', description: 'Could not load sales history.', variant: 'destructive' });
+    }
+  };
+
   useEffect(() => {
-    getSales()
-      .then(data => setSales(data))
-      .catch(e => {
-        console.error(e);
-        setSales([]);
-        toast({ title: 'Error Loading Data', description: 'Could not load sales history.', variant: 'destructive' });
-      });
+    loadSales();
   }, []);
 
   const downloadCSV = () => {
@@ -68,6 +97,27 @@ const AdminSales = () => {
         </tbody>
       </table>`;
     printReport('Reporte de ventas', summaryHtml);
+  };
+
+  const handleRetrySync = async (sale) => {
+    if (sale.voided) {
+      toast({ title: 'No se puede sincronizar', description: 'Las ventas anuladas no se sincronizan.', variant: 'destructive' });
+      return;
+    }
+    setRetryingId(sale.id);
+    try {
+      const res = await syncSaleById(sale.id);
+      if (res.action === 'created' || res.action === 'updated') {
+        toast({ title: 'Sincronización exitosa', description: `Factura Akaunting: ${res.akauntingId}` });
+        await loadSales(); // refresh to show synced status
+      } else {
+        toast({ title: 'Sin cambios', description: 'La venta ya estaba sincronizada.' });
+      }
+    } catch (e) {
+      toast({ title: 'Error de sincronización', description: e.message, variant: 'destructive' });
+    } finally {
+      setRetryingId(null);
+    }
   };
 
   const filteredSales = sales.filter(sale => {
@@ -124,7 +174,7 @@ const AdminSales = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200"><tr><th className="px-4 py-3 text-left font-semibold text-slate-900 w-10"></th><th className="px-4 py-3 text-left font-semibold text-slate-900">Fecha y hora</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Vendedor</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Farmacia</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Artículos</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Pago</th><th className="px-4 py-3 text-left font-semibold text-slate-900">IVA</th>
-                  <th className="px-4 py-3 text-left font-semibold text-slate-900">Descuento</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Total</th></tr></thead>
+              <th className="px-4 py-3 text-left font-semibold text-slate-900">Descuento</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Total</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Akaunting</th></tr></thead>
             <tbody className="divide-y divide-slate-200">
               {filteredSales.map((sale) => (
                 <React.Fragment key={sale.id}>
@@ -143,16 +193,50 @@ const AdminSales = () => {
                       : <span className="font-bold text-green-600">{formatMXN(sale.total || 0)}</span>
                     }
                   </td>
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-2">
+                      <SyncStatusBadge sale={sale} />
+                      {!sale.voided && !sale.akaunting_invoice_id && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-xs"
+                          disabled={retryingId === sale.id}
+                          onClick={() => handleRetrySync(sale)}
+                        >
+                          {retryingId === sale.id ? (
+                            <RotateCcw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <RotateCcw className="w-3 h-3" />
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
                 {expandedSale === sale.id && (
                     <tr>
-                        <td colSpan="7" className="p-0">
+                        <td colSpan="10" className="p-0">
                             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="bg-slate-50 px-8 py-4">
                                <h4 className="font-bold mb-2">Detalle de venta</h4>
                                {sale.patient_name && (
                                  <div className="mb-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
                                    <span className="font-medium">Paciente:</span> {sale.patient_name}
                                    {sale.patient_curp && <span className="ml-2">| CURP: {sale.patient_curp}</span>}
+                                 </div>
+                               )}
+                               {sale.akaunting_invoice_id && (
+                                 <div className="mb-2 p-2 bg-blue-50 rounded text-xs text-blue-700 flex items-center gap-2">
+                                   <Cloud className="w-3 h-3" />
+                                   <span className="font-medium">Factura Akaunting:</span> {sale.akaunting_invoice_id}
+                                   {sale.synced_at && <span className="ml-2 text-slate-500">| {new Date(sale.synced_at).toLocaleString()}</span>}
+                                 </div>
+                               )}
+                               {sale.voided && sale.akaunting_invoice_id && (
+                                 <div className="mb-2 p-2 bg-amber-50 rounded text-xs text-amber-700 flex items-center gap-2">
+                                   <AlertTriangle className="w-3 h-3" />
+                                   <span className="font-medium">Venta anulada después de sincronizar.</span>
+                                   La factura en Akaunting deberá cancelarse manualmente.
                                  </div>
                                )}
                                <ul>

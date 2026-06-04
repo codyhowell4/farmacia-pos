@@ -15,7 +15,7 @@ import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN, getTaxSettings, calcIVA } from '@/lib/currency';
 import {
   getInventory, createSale, createSaleWithPayments, getRecentSales, voidSale, findDiscount,
-  getTaxSettingsDb, getBankAccounts, createPrescription,
+  getTaxSettingsDb, getBankAccounts, createPrescription, searchCustomers,
 } from '@/lib/db';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -68,6 +68,10 @@ const PoSDashboard = () => {
   const [voidSaleId, setVoidSaleId] = useState('');
   const [voidPin, setVoidPin] = useState('');
   const [recentSales, setRecentSales] = useState([]);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [customerSearchResults, setCustomerSearchResults] = useState([]);
+  const [showCustomerSearch, setShowCustomerSearch] = useState(false);
   const [rxNumbers, setRxNumbers] = useState({}); // { [itemId]: rxNumber }
   const [taxSettings, setTaxSettings] = useState(getTaxSettings());
   const [completedSale, setCompletedSale] = useState(null);
@@ -270,6 +274,31 @@ const PoSDashboard = () => {
     completeSale(patient, prescriptionData);
   };
 
+  const handleCustomerSearch = async (query) => {
+    setCustomerSearchQuery(query);
+    if (!query.trim()) {
+      setCustomerSearchResults([]);
+      return;
+    }
+    try {
+      const results = await searchCustomers(query);
+      setCustomerSearchResults(results);
+    } catch {
+      setCustomerSearchResults([]);
+    }
+  };
+
+  const selectCustomer = (customer) => {
+    setSelectedCustomer(customer);
+    setShowCustomerSearch(false);
+    setCustomerSearchQuery('');
+    setCustomerSearchResults([]);
+  };
+
+  const clearCustomer = () => {
+    setSelectedCustomer(null);
+  };
+
   const completeSale = async (patient, prescription) => {
     // Build payments array
     let payments = [];
@@ -344,8 +373,9 @@ const PoSDashboard = () => {
         iva_enabled: taxSettings.ivaEnabled,
         iva_rate: taxSettings.ivaRate,
         iva_amount: ivaAmount || null,
-        patient_name: patient?.name || null,
-        patient_curp: patient?.curp || null,
+        customer_id: selectedCustomer?.id || null,
+        patient_name: patient?.name || selectedCustomer?.full_name || null,
+        patient_curp: patient?.curp || selectedCustomer?.curp || null,
         timestamp: new Date().toISOString(),
         voided: false,
         is_split_payment: isSplitPayment,
@@ -403,6 +433,26 @@ const PoSDashboard = () => {
         }
       }
 
+      // ── Fire-and-forget Akaunting sync ──
+      setTimeout(async () => {
+        try {
+          const { syncSale } = await import('@/services/akauntingSync');
+          await syncSale({
+            ...sale,
+            sale_items: saleItems,
+            sale_payments: payments,
+            timestamp: saleRecord.timestamp,
+          });
+        } catch (syncErr) {
+          console.warn('Akaunting auto-sync failed:', syncErr.message);
+          toast({
+            title: 'Advertencia de sincronización',
+            description: `La venta se guardó pero no se sincronizó con Akaunting: ${syncErr.message}`,
+            variant: 'destructive',
+          });
+        }
+      }, 0);
+
       logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(finalTotal)} | ${isSplitPayment ? 'split' : paymentMethod} | ${cart.length} item(s)` });
       toast({ title: '¡Venta completada!', description: `${formatMXN(finalTotal)} ${isSplitPayment ? '(pago dividido)' : ''}` });
 
@@ -411,6 +461,7 @@ const PoSDashboard = () => {
         ...sale,
         paymentMethod: saleRecord.payment_method,
         payment_method: saleRecord.payment_method,
+        customer_name: selectedCustomer?.full_name || null,
         items: saleItems.map(item => ({
           ...item,
           rxNumber: item.rx_number,
@@ -443,6 +494,7 @@ const PoSDashboard = () => {
         setPaymentMethod('cash'); setView('main'); setRxNumbers({});
         setSplitPayments([]); setIsSplitPayment(false);
         setTransferenciaReference(''); setCardReference('');
+        setSelectedCustomer(null);
         searchInputRef.current?.focus();
       }, 500);
     } catch (e) {
@@ -567,7 +619,53 @@ const PoSDashboard = () => {
                   </div>
                 </div>
               </div>
-              
+
+              {/* Customer Selector */}
+              <div className="mt-4 bg-slate-50 rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-semibold text-sm">Cliente</h3>
+                  {selectedCustomer && (
+                    <button onClick={clearCustomer} className="text-xs text-red-600 hover:underline">Quitar</button>
+                  )}
+                </div>
+                {selectedCustomer ? (
+                  <div className="text-sm bg-white border rounded-md p-2">
+                    <p className="font-medium text-slate-900">{selectedCustomer.full_name}</p>
+                    {selectedCustomer.phone && <p className="text-slate-500 text-xs">{selectedCustomer.phone}</p>}
+                    {selectedCustomer.curp && <p className="text-slate-500 text-xs font-mono">{selectedCustomer.curp}</p>}
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Input
+                      placeholder="Buscar cliente..."
+                      value={customerSearchQuery}
+                      onChange={(e) => handleCustomerSearch(e.target.value)}
+                      onFocus={() => setShowCustomerSearch(true)}
+                      className="text-sm"
+                    />
+                    {showCustomerSearch && customerSearchResults.length > 0 && (
+                      <div className="absolute z-10 w-full bg-white border rounded-md shadow-lg mt-1 max-h-40 overflow-y-auto">
+                        {customerSearchResults.map((c) => (
+                          <button
+                            key={c.id}
+                            onClick={() => selectCustomer(c)}
+                            className="w-full text-left px-3 py-2 hover:bg-slate-50 text-sm"
+                          >
+                            <p className="font-medium">{c.full_name}</p>
+                            <p className="text-xs text-slate-500">{c.phone || c.curp || c.email || ''}</p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {showCustomerSearch && customerSearchQuery && customerSearchResults.length === 0 && (
+                      <div className="absolute z-10 w-full bg-white border rounded-md shadow-lg mt-1 px-3 py-2 text-sm text-slate-500">
+                        No se encontraron clientes
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Split Payments List */}
               {isSplitPayment && splitPayments.length > 0 && (
                 <div className="mt-4 bg-slate-50 rounded-lg p-3">

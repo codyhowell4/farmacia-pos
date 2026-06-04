@@ -38,7 +38,7 @@ const AkauntingConnectionCard = () => {
           apiUrl: data.api_url || '',
           companyId: data.company_id || '',
           apiEmail: data.api_email || '',
-          apiPassword: data.api_password || '',
+          apiPassword: data.api_password ? '••••••••' : '',
           enabled: data.enabled || false,
           syncCustomers: data.sync_customers ?? true,
           syncSales: data.sync_sales ?? true,
@@ -56,8 +56,8 @@ const AkauntingConnectionCard = () => {
   };
 
   const handleSave = async () => {
-    if (!settings.apiUrl || !settings.companyId || !settings.apiEmail || !settings.apiPassword) {
-      toast({ title: 'Datos incompletos', description: 'Todos los campos de conexión son requeridos.', variant: 'destructive' });
+    if (!settings.apiUrl || !settings.companyId || !settings.apiEmail) {
+      toast({ title: 'Datos incompletos', description: 'URL, ID de empresa y email son requeridos.', variant: 'destructive' });
       return;
     }
 
@@ -67,17 +67,40 @@ const AkauntingConnectionCard = () => {
       return;
     }
 
+    let passwordToSave = settings.apiPassword;
+    // If password field still shows mask, preserve existing password from DB
+    if (passwordToSave === '••••••••') {
+      try {
+        const existing = await getAkauntingSettings();
+        if (existing?.api_password) {
+          passwordToSave = existing.api_password;
+        } else {
+          toast({ title: 'Contraseña requerida', description: 'Ingresa la contraseña de la API.', variant: 'destructive' });
+          return;
+        }
+      } catch {
+        toast({ title: 'Contraseña requerida', description: 'Ingresa la contraseña de la API.', variant: 'destructive' });
+        return;
+      }
+    }
+    if (!passwordToSave) {
+      toast({ title: 'Contraseña requerida', description: 'Ingresa la contraseña de la API.', variant: 'destructive' });
+      return;
+    }
+
     setLoading(true);
     try {
       await saveAkauntingSettings({
         apiUrl: settings.apiUrl.trim(),
         companyId: companyIdNum,
         apiEmail: settings.apiEmail.trim(),
-        apiPassword: settings.apiPassword,
+        apiPassword: passwordToSave,
         enabled: settings.enabled,
         syncCustomers: settings.syncCustomers,
         syncSales: settings.syncSales,
       });
+      // Mask password again after save
+      setSettings((prev) => ({ ...prev, apiPassword: '••••••••' }));
       setDirty(false);
       toast({ title: 'Configuración guardada' });
     } catch (e) {
@@ -102,9 +125,18 @@ const AkauntingConnectionCard = () => {
         apiEmail: settings.apiEmail.trim(),
         apiPassword: settings.apiPassword,
       });
-      await akauntingApi.testConnection();
-      setConnectionStatus('ok');
-      toast({ title: 'Conexión exitosa', description: 'Akaunting respondió correctamente.' });
+      const testRes = await akauntingApi.testConnection();
+      if (testRes.ok) {
+        setConnectionStatus('ok');
+        toast({ title: 'Conexión exitosa', description: 'Akaunting respondió correctamente con acceso a la API.' });
+      } else if (testRes.pingOnly) {
+        setConnectionStatus('warning');
+        toast({
+          title: 'Servidor disponible pero API bloqueada',
+          description: testRes.error || 'Akaunting respondió al ping pero las credenciales no tienen acceso a la API. Verifica permisos read-api y de contactos.',
+          variant: 'destructive',
+        });
+      }
     } catch (e) {
       setConnectionStatus('error');
       toast({ title: 'Error de conexión', description: e.message, variant: 'destructive' });
@@ -139,6 +171,11 @@ const AkauntingConnectionCard = () => {
         {connectionStatus === 'ok' && (
           <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
             <CheckCircle2 className="w-3 h-3" /> Conectado
+          </span>
+        )}
+        {connectionStatus === 'warning' && (
+          <span className="inline-flex items-center gap-1 text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full">
+            <XCircle className="w-3 h-3" /> Ping OK — API bloqueada
           </span>
         )}
         {connectionStatus === 'error' && (
