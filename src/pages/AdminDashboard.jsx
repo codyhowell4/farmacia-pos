@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield, Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle } from 'lucide-react';
+import { Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield, Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle, Stethoscope } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminUsers from '@/components/admin/AdminUsers';
@@ -18,6 +18,7 @@ import ReportsPage from './ReportsPage';
 import AdminReports from '@/components/admin/AdminReports';
 import AdminAccounting from '@/components/admin/AdminAccounting';
 import AdminCustomers from '@/components/admin/AdminCustomers';
+import AdminDoctors from '@/components/admin/AdminDoctors';
 
 const AdminDashboard = () => {
   const { logout, user } = useAuth();
@@ -39,6 +40,7 @@ const AdminDashboard = () => {
     if (path.includes('/analytics')) return 'analytics';
     if (path.includes('/settings')) return 'settings';
     if (path.includes('/accounting')) return 'accounting';
+    if (path.includes('/doctors')) return 'doctors';
     return 'overview';
   };
   
@@ -53,6 +55,7 @@ const AdminDashboard = () => {
     { id: 'overview', label: 'Resumen', icon: BarChart3, path: '/admin' },
     { id: 'users', label: 'Usuarios', icon: Users, path: '/admin/users' },
     { id: 'customers', label: 'Clientes', icon: UserCircle, path: '/admin/customers' },
+    { id: 'doctors', label: 'Médicos', icon: Stethoscope, path: '/admin/doctors' },
     { id: 'sales', label: 'Ventas', icon: ShoppingCart, path: '/admin/sales' },
     { id: 'inventory', label: 'Inventario (Admin)', icon: Package, path: '/admin/inventory' },
     { id: 'discounts', label: 'Descuentos', icon: Ticket, path: '/admin/discounts' },
@@ -185,6 +188,7 @@ const AdminDashboard = () => {
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/analytics" element={<AdminReports />} />
                 <Route path="/accounting" element={<AdminAccounting />} />
+                <Route path="/doctors" element={<AdminDoctors />} />
                 <Route path="/settings" element={<AdminSettings />} />
               </Routes>
             </main>

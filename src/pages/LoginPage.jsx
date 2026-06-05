@@ -49,8 +49,10 @@ const LoginPage = () => {
         navigate('/pos');
       } else if (profile.role === 'inventory') {
         navigate('/inventory');
+      } else if (profile.role === 'doctor') {
+        navigate('/doctor');
       } else {
-        // Fallback - shouldn't happen
+        // Fallback for customer or unknown roles
         navigate('/');
       }
     } catch (err) {

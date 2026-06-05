@@ -7,6 +7,7 @@ import ResetPasswordPage from '@/pages/ResetPasswordPage';
 import AdminDashboard from '@/pages/AdminDashboard';
 import PoSDashboard from '@/pages/PoSDashboard';
 import InventoryDashboard from '@/pages/InventoryDashboard';
+import DoctorDashboard from '@/pages/DoctorDashboard';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ShiftProvider } from '@/contexts/ShiftContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -45,6 +46,14 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['inventory', 'admin']}>
                   <InventoryDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/doctor/*"
+              element={
+                <ProtectedRoute allowedRoles={['doctor']}>
+                  <DoctorDashboard />
                 </ProtectedRoute>
               }
             />

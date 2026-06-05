@@ -42,6 +42,7 @@ const AdminUsers = () => {
       if (editingUser) {
         await updateProfile(editingUser.id, {
           full_name: formData.name,
+          email: formData.username,
           role: formData.role,
           location_id: formData.pharmacyLocation,
           pin: formData.pin || null,
@@ -153,7 +154,7 @@ const AdminUsers = () => {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="password">Contraseña</Label>
-                    <Input id="password" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required />
+                    <Input id="password" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required={!editingUser} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="role">Rol</Label>
@@ -168,6 +169,8 @@ const AdminUsers = () => {
                       <option value="admin">Administrador</option>
                       <option value="pos">Punto de Venta</option>
                       <option value="inventory">Gestor de Inventario</option>
+                      <option value="doctor">Médico</option>
+                      <option value="customer">Cliente</option>
                     </select>
                   </div>
                   <div className="space-y-2">
@@ -216,7 +219,19 @@ const AdminUsers = () => {
                   <td className="px-4 py-3 text-sm font-medium text-slate-900">{user.full_name}</td>
                   <td className="px-4 py-3 text-sm text-slate-600">{user.email}</td>
                   <td className="px-4 py-3 text-sm">
-                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${user.role === 'admin' ? 'bg-blue-100 text-blue-700' : user.role === 'pos' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'}`}>{user.role === 'admin' ? 'Administrador' : user.role === 'pos' ? 'Punto de Venta' : 'Inventario'}</span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                      user.role === 'admin' ? 'bg-blue-100 text-blue-700' :
+                      user.role === 'pos' ? 'bg-green-100 text-green-700' :
+                      user.role === 'inventory' ? 'bg-purple-100 text-purple-700' :
+                      user.role === 'doctor' ? 'bg-teal-100 text-teal-700' :
+                      'bg-amber-100 text-amber-700'
+                    }`}>{
+                      user.role === 'admin' ? 'Administrador' :
+                      user.role === 'pos' ? 'Punto de Venta' :
+                      user.role === 'inventory' ? 'Inventario' :
+                      user.role === 'doctor' ? 'Médico' :
+                      'Cliente'
+                    }</span>
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-600">{user.locations?.name || 'N/A'}</td>
                   <td className="px-4 py-3 text-sm">

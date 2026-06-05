@@ -95,6 +95,7 @@ export const createUser = async ({ email, password, full_name, role, location_id
     .upsert({
       id: newUserId,
       full_name,
+      email,
       role,
       location_id: location_id || null,
       org_id: adminOrgId,
@@ -935,6 +936,353 @@ export const getCustomersForSync = async () => {
     .select('*')
     .eq('org_id', orgId)
     .order('full_name');
+  if (error) throw error;
+  return data || [];
+};
+
+
+// ── DOCTOR PORTAL ───────────────────────────────────────────
+
+const getUserId = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('No autenticado');
+  return user.id;
+};
+
+// ── APPOINTMENTS ────────────────────────────────────────────
+
+export const getAppointments = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('*, customers(full_name, phone)')
+    .eq('org_id', orgId)
+    .order('appointment_date', { ascending: true });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getAppointmentsByDoctor = async (doctorId) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('*, customers(full_name, phone)')
+    .eq('org_id', orgId)
+    .eq('doctor_id', doctorId)
+    .order('appointment_date', { ascending: true });
+  if (error) throw error;
+  return data || [];
+};
+
+export const createAppointment = async (appointment) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('appointments')
+    .insert({ ...appointment, org_id: orgId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const updateAppointment = async (id, updates) => {
+  const { data, error } = await supabase
+    .from('appointments')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteAppointment = async (id) => {
+  const { error } = await supabase.from('appointments').delete().eq('id', id);
+  if (error) throw error;
+};
+
+// ── PREORDERS ───────────────────────────────────────────────
+
+export const getPreorders = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('preorders')
+    .select('*, customers(full_name), inventory(name, price, quantity)')
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getPreordersByDoctor = async (doctorId) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('preorders')
+    .select('*, customers(full_name), inventory(name, price, quantity)')
+    .eq('org_id', orgId)
+    .eq('doctor_id', doctorId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const createPreorder = async (preorder) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('preorders')
+    .insert({ ...preorder, org_id: orgId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const updatePreorderStatus = async (id, status) => {
+  const { data, error } = await supabase
+    .from('preorders')
+    .update({ status })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// ── MEDICAL NOTES ───────────────────────────────────────────
+
+export const getMedicalNotesByCustomer = async (customerId) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('medical_notes')
+    .select('*')
+    .eq('org_id', orgId)
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getMedicalNotesByDoctor = async (doctorId) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('medical_notes')
+    .select('*, customers(full_name)')
+    .eq('org_id', orgId)
+    .eq('doctor_id', doctorId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const createMedicalNote = async (note) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('medical_notes')
+    .insert({ ...note, org_id: orgId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const updateMedicalNote = async (id, updates) => {
+  const { data, error } = await supabase
+    .from('medical_notes')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// ── DOCTOR CUSTOMERS ────────────────────────────────────────
+
+export const getCustomersForDoctor = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('customers')
+    .select('*')
+    .eq('org_id', orgId)
+    .order('full_name');
+  if (error) throw error;
+  return data || [];
+};
+
+export const getCustomerPurchaseHistory = async (customerId) => {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('*, sale_items(*)')
+    .eq('customer_id', customerId)
+    .eq('voided', false)
+    .order('timestamp', { ascending: false })
+    .limit(20);
+  if (error) throw error;
+  return data || [];
+};
+
+export const getCustomerMedicalNoteCount = async (customerId) => {
+  const { count, error } = await supabase
+    .from('medical_notes')
+    .select('*', { count: 'exact', head: true })
+    .eq('customer_id', customerId);
+  if (error) throw error;
+  return count || 0;
+};
+
+// ── DOCTOR DASHBOARD STATS ──────────────────────────────────
+
+export const getDoctorDashboardStats = async (doctorId) => {
+  const orgId = await getOrgId();
+  const today = new Date().toISOString().split('T')[0];
+
+  const { count: apptCount } = await supabase
+    .from('appointments')
+    .select('*', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .eq('doctor_id', doctorId)
+    .gte('appointment_date', `${today}T00:00:00`)
+    .lte('appointment_date', `${today}T23:59:59`);
+
+  const { count: preorderCount } = await supabase
+    .from('preorders')
+    .select('*', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .eq('doctor_id', doctorId)
+    .eq('status', 'pending');
+
+  const { count: customerCount } = await supabase
+    .from('customers')
+    .select('*', { count: 'exact', head: true })
+    .eq('org_id', orgId);
+
+  const { count: noteCount } = await supabase
+    .from('medical_notes')
+    .select('*', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .eq('doctor_id', doctorId);
+
+  return {
+    appointmentsToday: apptCount || 0,
+    pendingPreorders: preorderCount || 0,
+    totalCustomers: customerCount || 0,
+    medicalNotes: noteCount || 0,
+  };
+};
+
+export const deleteMedicalNote = async (id) => {
+  const { error } = await supabase.from('medical_notes').delete().eq('id', id);
+  if (error) throw error;
+};
+
+
+// ── DOCTOR PROFILES ─────────────────────────────────────────
+
+export const getDoctorProfile = async (profileId) => {
+  console.log('[getDoctorProfile] profileId:', profileId);
+  const { data, error } = await supabase
+    .from('doctor_profiles')
+    .select('*, profiles(full_name, email)')
+    .eq('profile_id', profileId)
+    .maybeSingle();
+  if (error) {
+    console.error('[getDoctorProfile] error:', error);
+    throw error;
+  }
+  console.log('[getDoctorProfile] result:', data);
+  return data;
+};
+
+export const getDoctorUsersWithProfiles = async () => {
+  const orgId = await getOrgId();
+  console.log('[getDoctorUsersWithProfiles] orgId:', orgId);
+
+  // Try explicit select (includes email). If the email column does not exist yet
+  // (migration not run), fall back to * so the page does not crash.
+  let query = supabase
+    .from('profiles')
+    .select('id, full_name, email, role, org_id, location_id, created_at, doctor_profiles(*)')
+    .eq('org_id', orgId)
+    .eq('role', 'doctor')
+    .order('full_name');
+
+  let { data, error } = await query;
+
+  if (error?.message?.includes('email') && error.message.includes('does not exist')) {
+    console.warn('[getDoctorUsersWithProfiles] email column missing, falling back to *');
+    const fallback = await supabase
+      .from('profiles')
+      .select('*, doctor_profiles(*)')
+      .eq('org_id', orgId)
+      .eq('role', 'doctor')
+      .order('full_name');
+    data = fallback.data;
+    error = fallback.error;
+  }
+
+  if (error) {
+    console.error('[getDoctorUsersWithProfiles] error:', error);
+    throw error;
+  }
+  console.log('[getDoctorUsersWithProfiles] rows:', data?.length || 0);
+  if (data?.[0]) {
+    console.log('[getDoctorUsersWithProfiles] first row shape:', JSON.stringify(data[0], null, 2));
+  }
+  return data || [];
+};
+
+export const upsertDoctorProfile = async (profileId, data) => {
+  console.log('[upsertDoctorProfile] profileId:', profileId);
+  console.log('[upsertDoctorProfile] data:', data);
+
+  // 1. Check if row already exists
+  const { data: existing, error: findError } = await supabase
+    .from('doctor_profiles')
+    .select('id')
+    .eq('profile_id', profileId)
+    .maybeSingle();
+
+  if (findError) {
+    console.error('[upsertDoctorProfile] find error:', findError);
+    throw findError;
+  }
+
+  console.log('[upsertDoctorProfile] existing row:', existing);
+
+  if (existing?.id) {
+    // 2. UPDATE existing row
+    const { error: updateError } = await supabase
+      .from('doctor_profiles')
+      .update(data)
+      .eq('id', existing.id);
+    if (updateError) {
+      console.error('[upsertDoctorProfile] update error:', updateError);
+      throw updateError;
+    }
+    console.log('[upsertDoctorProfile] updated row id:', existing.id);
+  } else {
+    // 3. INSERT new row
+    const { error: insertError } = await supabase
+      .from('doctor_profiles')
+      .insert({ profile_id: profileId, ...data });
+    if (insertError) {
+      console.error('[upsertDoctorProfile] insert error:', insertError);
+      throw insertError;
+    }
+    console.log('[upsertDoctorProfile] inserted new row for profile_id:', profileId);
+  }
+};
+
+// ── INVENTORY (doctor-scoped) ───────────────────────────────
+
+export const getInventoryForDoctor = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('inventory')
+    .select('id, name, quantity, price, requires_prescription, barcode')
+    .eq('org_id', orgId)
+    .gt('quantity', 0)
+    .order('name');
   if (error) throw error;
   return data || [];
 };
