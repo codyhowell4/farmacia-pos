@@ -222,10 +222,13 @@ const AdminSales = () => {
                                  <h4 className="font-bold">Detalle de venta</h4>
                                  <span className="text-sm font-mono font-semibold text-slate-600 bg-white border px-2 py-0.5 rounded">Folio: #{sale.id.slice(-8).toUpperCase()}</span>
                                </div>
-                               {sale.patient_name && (
+                               {(sale.patient_name || sale.customers?.full_name) && (
                                  <div className="mb-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
-                                   <span className="font-medium">Paciente:</span> {sale.patient_name}
-                                   {sale.patient_curp && <span className="ml-2">| CURP: {sale.patient_curp}</span>}
+                                   <span className="font-medium">Cliente:</span> {sale.customers?.full_name || sale.patient_name}
+                                   {(sale.customers?.phone || sale.patient_curp) && (
+                                     <span className="ml-2">| {(sale.customers?.phone || sale.patient_curp)}</span>
+                                   )}
+                                   {sale.customers?.curp && <span className="ml-2">| CURP: {sale.customers.curp}</span>}
                                  </div>
                                )}
                                {sale.akaunting_invoice_id && (

@@ -427,7 +427,7 @@ export const createSale = async (sale, items) => {
 export const getSales = async () => {
   const { data, error } = await supabase
     .from('sales')
-    .select('*, sale_items(*)')
+    .select('*, sale_items(*), customers(full_name, phone, curp, email)')
     .order('timestamp', { ascending: false });
   if (error) throw error;
   return data;

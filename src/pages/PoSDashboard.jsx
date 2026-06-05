@@ -15,7 +15,7 @@ import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN, getTaxSettings, calcIVA } from '@/lib/currency';
 import {
   getInventory, createSale, createSaleWithPayments, getRecentSales, voidSale, findDiscount,
-  getTaxSettingsDb, getBankAccounts, createPrescription, searchCustomers,
+  getTaxSettingsDb, getBankAccounts, createPrescription, searchCustomers, createCustomer,
 } from '@/lib/db';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -72,6 +72,9 @@ const PoSDashboard = () => {
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
   const [customerSearchResults, setCustomerSearchResults] = useState([]);
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
+  const [newCustomer, setNewCustomer] = useState({ full_name: '', phone: '', email: '', curp: '' });
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
   const [rxNumbers, setRxNumbers] = useState({}); // { [itemId]: rxNumber }
   const [taxSettings, setTaxSettings] = useState(getTaxSettings());
   const [completedSale, setCompletedSale] = useState(null);
@@ -314,6 +317,53 @@ const PoSDashboard = () => {
 
   const clearCustomer = () => {
     setSelectedCustomer(null);
+    setShowCreateCustomer(false);
+  };
+
+  const handleCreateCustomer = async () => {
+    if (!newCustomer.full_name.trim()) {
+      toast({ title: 'Nombre requerido', description: 'Ingresa el nombre del cliente', variant: 'destructive' });
+      return;
+    }
+    setCreatingCustomer(true);
+    try {
+      // Check for duplicates by phone, email, or CURP
+      if (newCustomer.phone || newCustomer.email || newCustomer.curp) {
+        const existing = await searchCustomers(
+          newCustomer.phone || newCustomer.email || newCustomer.curp
+        );
+        const duplicate = existing.find(c =>
+          (newCustomer.phone && c.phone === newCustomer.phone) ||
+          (newCustomer.email && c.email === newCustomer.email) ||
+          (newCustomer.curp && c.curp === newCustomer.curp)
+        );
+        if (duplicate) {
+          toast({
+            title: 'Cliente ya existe',
+            description: `${duplicate.full_name} ya está registrado. Se seleccionó automáticamente.`,
+          });
+          selectCustomer(duplicate);
+          setShowCreateCustomer(false);
+          setNewCustomer({ full_name: '', phone: '', email: '', curp: '' });
+          setCreatingCustomer(false);
+          return;
+        }
+      }
+      const created = await createCustomer({
+        full_name: newCustomer.full_name.trim(),
+        phone: newCustomer.phone.trim() || null,
+        email: newCustomer.email.trim() || null,
+        curp: newCustomer.curp.trim() || null,
+      });
+      toast({ title: 'Cliente guardado', description: created.full_name });
+      selectCustomer(created);
+      setShowCreateCustomer(false);
+      setNewCustomer({ full_name: '', phone: '', email: '', curp: '' });
+    } catch (err) {
+      toast({ title: 'Error al guardar cliente', description: err.message, variant: 'destructive' });
+    } finally {
+      setCreatingCustomer(false);
+    }
   };
 
   const completeSale = async (patient, prescription) => {
@@ -666,6 +716,65 @@ const PoSDashboard = () => {
                     {selectedCustomer.phone && <p className="text-slate-500 text-xs">{selectedCustomer.phone}</p>}
                     {selectedCustomer.curp && <p className="text-slate-500 text-xs font-mono">{selectedCustomer.curp}</p>}
                   </div>
+                ) : showCreateCustomer ? (
+                  <div className="space-y-2">
+                    <div>
+                      <Label className="text-xs">Nombre completo *</Label>
+                      <Input
+                        value={newCustomer.full_name}
+                        onChange={(e) => setNewCustomer({ ...newCustomer, full_name: e.target.value })}
+                        placeholder="Ej. Juan Pérez"
+                        className="text-sm"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-xs">Teléfono</Label>
+                        <Input
+                          value={newCustomer.phone}
+                          onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                          placeholder="5551234567"
+                          className="text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Email</Label>
+                        <Input
+                          value={newCustomer.email}
+                          onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                          placeholder="opcional"
+                          className="text-sm"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs">CURP</Label>
+                      <Input
+                        value={newCustomer.curp}
+                        onChange={(e) => setNewCustomer({ ...newCustomer, curp: e.target.value.toUpperCase() })}
+                        placeholder="opcional"
+                        maxLength={18}
+                        className="text-sm font-mono"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        onClick={handleCreateCustomer}
+                        disabled={creatingCustomer}
+                      >
+                        {creatingCustomer ? 'Guardando...' : 'Guardar cliente'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => { setShowCreateCustomer(false); setNewCustomer({ full_name: '', phone: '', email: '', curp: '' }); }}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
                   <div className="relative">
                     <Input
@@ -694,6 +803,14 @@ const PoSDashboard = () => {
                         No se encontraron clientes
                       </div>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-2 w-full text-green-600 hover:text-green-700 hover:bg-green-50"
+                      onClick={() => setShowCreateCustomer(true)}
+                    >
+                      + Agregar nuevo cliente
+                    </Button>
                   </div>
                 )}
               </div>
