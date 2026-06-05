@@ -8,7 +8,7 @@ import { formatMXN } from '@/lib/currency';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
-import { getSales, getReturnsBySaleId, createReturn } from '@/lib/db';
+import { getSales, getReturnsBySaleId, createReturn, incrementInventory } from '@/lib/db';
 
 const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
   const { user } = useAuth();
@@ -39,18 +39,7 @@ const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
     }
   };
 
-  const returnableItems = (foundSale?.sale_items || []).filter(item => {
-    // Already-returned qty tracked via returnQtys max; full check happens on confirm
-    return item.quantity > 0;
-  });
-
-  const getAlreadyReturned = async (saleId, itemId) => {
-    const returns = await getReturnsBySaleId(saleId);
-    return returns
-      .flatMap(r => r.return_items || [])
-      .filter(i => i.inventory_id === itemId)
-      .reduce((sum, i) => sum + i.quantity, 0);
-  };
+  const returnableItems = (foundSale?.sale_items || []).filter(item => item.quantity > 0);
 
   const refundTotal = (foundSale?.sale_items || []).reduce((sum, item) => {
     const qty = returnQtys[item.id] || 0;
@@ -67,20 +56,23 @@ const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
       .map(item => ({
         inventory_id: item.inventory_id,
         name: item.name,
-        quantity: returnQtys[item.id],
-        price: item.price,
-        returnQty: returnQtys[item.id],
+        return_qty: returnQtys[item.id],
+        unit_price: item.price,
       }));
 
     try {
       const returnRecord = {
         original_sale_id: foundSale.id,
         refund_total: refundTotal,
-        processed_by: user.name,
+        processed_by: user.id,
+        processed_by_name: user.name,
         location_id: user.locationId,
         timestamp: new Date().toISOString(),
       };
       await createReturn(returnRecord, returnItems);
+      
+      // Restore inventory
+      await incrementInventory(returnItems.map(i => ({ inventory_id: i.inventory_id, returnQty: i.return_qty })));
 
       logAudit({
         action: AUDIT_ACTIONS.RETURN_PROCESSED,

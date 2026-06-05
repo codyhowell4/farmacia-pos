@@ -33,7 +33,7 @@ const PrescriptionModal = ({
     prescriptionDate: new Date().toISOString().split('T')[0],
   });
 
-  const [rxNumbers, setRxNumbers] = useState({}); // { [itemId]: rxNumber }
+  // Global prescription number is used for all controlled items (per COFEPRIS requirement)
 
   const handleSubmit = () => {
     // Validate all required fields
@@ -56,16 +56,11 @@ const PrescriptionModal = ({
       }
     }
 
-    // Validate each Rx item has a prescription number
+    // Use the single global prescription number for all Rx items
+    const globalRx = formData.prescriptionNumber.trim();
+    const itemRxNumbers = {};
     for (const item of rxItems) {
-      if (!rxNumbers[item.id]?.trim()) {
-        toast({ 
-          title: 'Número de receta requerido', 
-          description: `Ingresa el número de receta para ${item.name}`, 
-          variant: 'destructive' 
-        });
-        return;
-      }
+      itemRxNumbers[item.id] = globalRx;
     }
 
     // Build prescription data
@@ -76,9 +71,9 @@ const PrescriptionModal = ({
       doctor_license_number: formData.doctorLicense.trim(),
       doctor_office_address: formData.doctorAddress.trim() || null,
       doctor_phone: formData.doctorPhone.trim() || null,
-      prescription_number: formData.prescriptionNumber.trim(),
+      prescription_number: globalRx,
       prescription_date: formData.prescriptionDate,
-      rx_item_numbers: rxNumbers,
+      rx_item_numbers: itemRxNumbers,
     };
 
     onConfirm(prescriptionData);
@@ -96,7 +91,7 @@ const PrescriptionModal = ({
       prescriptionNumber: '',
       prescriptionDate: new Date().toISOString().split('T')[0],
     });
-    setRxNumbers({});
+
     onOpenChange(false);
   };
 
@@ -122,29 +117,6 @@ const PrescriptionModal = ({
                 Debes proporcionar la información completa antes de continuar.
               </p>
             </div>
-          </div>
-        </div>
-
-        {/* Medications requiring prescription */}
-        <div className="bg-slate-50 rounded-lg p-4 mb-6">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <CreditCard className="w-4 h-4" />
-            Medicamentos con receta
-          </h3>
-          <div className="space-y-3">
-            {rxItems.map(item => (
-              <div key={item.id} className="flex items-center gap-3">
-                <span className="flex-1 font-medium">{item.name} x{item.quantity}</span>
-                <div className="flex-1">
-                  <Input
-                    placeholder="Número de receta (Rx #)"
-                    value={rxNumbers[item.id] || ''}
-                    onChange={(e) => setRxNumbers({ ...rxNumbers, [item.id]: e.target.value })}
-                    className="h-8 text-sm"
-                  />
-                </div>
-              </div>
-            ))}
           </div>
         </div>
 

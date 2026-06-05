@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Truck, Package, ChevronDown, ChevronUp, CheckCircle, Search, Trash2, Edit } from 'lucide-react';
+import { Plus, Truck, Package, ChevronDown, ChevronUp, CheckCircle, Search, Trash2, Edit, Lightbulb } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,7 +7,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from '@/components/ui/use-toast';
 import { formatMXN } from '@/lib/currency';
 
-import { getSuppliers, upsertSupplier, deleteSupplier, getPurchaseOrders, createPurchaseOrder, receivePurchaseOrder } from '@/lib/db';
+import {
+  getSuppliers,
+  upsertSupplier,
+  deleteSupplier,
+  getPurchaseOrders,
+  createPurchaseOrder,
+  updatePurchaseOrder,
+  receivePurchaseOrder,
+  getInventory,
+  getSalesInRange,
+} from '@/lib/db';
 
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -25,8 +35,10 @@ const AdminSuppliers = () => {
   const [supplierForm, setSupplierForm] = useState({ name: '', contact: '', phone: '', email: '', notes: '' });
 
   const [poDialogOpen, setPoDialogOpen] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
   const [poForm, setPoForm] = useState({ supplierId: '', notes: '' });
   const [poItems, setPoItems] = useState([{ medicineName: '', quantity: '', unitCost: '' }]);
+  const [suggesting, setSuggesting] = useState(false);
 
   const loadAll = async () => {
     const [s, o] = await Promise.all([getSuppliers(), getPurchaseOrders()]);
@@ -50,6 +62,7 @@ const AdminSuppliers = () => {
 
   const resetPoDialog = () => {
     if (!mountedRef.current) return;
+    setEditingOrder(null);
     setPoForm({ supplierId: '', notes: '' });
     setPoItems([{ medicineName: '', quantity: '', unitCost: '' }]);
   };
@@ -126,12 +139,82 @@ const AdminSuppliers = () => {
         quantity: parseInt(i.quantity),
         unit_cost: parseFloat(i.unitCost),
       }));
-      await createPurchaseOrder(poRecord, items);
-      toast({ title: 'Orden de compra creada' });
+      if (editingOrder) {
+        await updatePurchaseOrder(editingOrder.id, poRecord, items);
+        toast({ title: 'Orden de compra actualizada' });
+      } else {
+        await createPurchaseOrder(poRecord, items);
+        toast({ title: 'Orden de compra creada' });
+      }
       await closePoDialog();
       await loadAll();
     } catch (err) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  const editOrder = (order) => {
+    setEditingOrder(order);
+    setPoForm({ supplierId: order.supplier_id || '', notes: order.notes || '' });
+    setPoItems((order.purchase_order_items || []).map(i => ({
+      medicineName: i.medicine_name,
+      quantity: String(i.quantity),
+      unitCost: String(i.unit_cost),
+    })));
+    setPoDialogOpen(true);
+  };
+
+  const suggestReorder = async () => {
+    setSuggesting(true);
+    try {
+      const [inventory, sales] = await Promise.all([
+        getInventory(),
+        getSalesInRange(
+          new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          new Date().toISOString().split('T')[0]
+        ),
+      ]);
+
+      // Aggregate sales per inventory item in last 30 days
+      const salesMap = {};
+      for (const sale of sales) {
+        for (const item of sale.sale_items || []) {
+          if (!item.inventory_id) continue;
+          salesMap[item.inventory_id] = (salesMap[item.inventory_id] || 0) + (item.quantity || 0);
+        }
+      }
+
+      const suggestions = [];
+      for (const item of inventory) {
+        const sold30 = salesMap[item.id] || 0;
+        const avgDaily = sold30 / 30;
+        const threshold = item.low_stock_threshold || 10;
+        const current = item.quantity || 0;
+
+        // Suggest reorder if stock will run out within 30 days OR below threshold
+        const stockDays = avgDaily > 0 ? current / avgDaily : Infinity;
+        const target = Math.max(Math.ceil(avgDaily * 60), threshold * 2);
+        const suggestQty = Math.max(0, target - current);
+
+        if (suggestQty > 0 && (stockDays < 30 || current < threshold)) {
+          suggestions.push({
+            medicineName: item.name,
+            quantity: String(suggestQty),
+            unitCost: String(item.cost || 0),
+          });
+        }
+      }
+
+      if (suggestions.length === 0) {
+        toast({ title: 'Sin sugerencias', description: 'El inventario está bien abastecido por los próximos 30 días.' });
+      } else {
+        setPoItems(suggestions);
+        toast({ title: `${suggestions.length} artículos sugeridos`, description: 'Basado en ventas de los últimos 30 días.' });
+      }
+    } catch (err) {
+      toast({ title: 'Error al sugerir', description: err.message, variant: 'destructive' });
+    } finally {
+      setSuggesting(false);
     }
   };
 
@@ -222,7 +305,7 @@ const AdminSuppliers = () => {
                 <Button className="bg-gradient-to-r from-green-500 to-emerald-600"><Plus className="w-4 h-4 mr-2" />Nueva orden</Button>
               </DialogTrigger>
               <DialogContent className="max-w-2xl">
-                <DialogHeader><DialogTitle>Nueva orden de compra</DialogTitle></DialogHeader>
+                <DialogHeader><DialogTitle>{editingOrder ? 'Editar orden de compra' : 'Nueva orden de compra'}</DialogTitle></DialogHeader>
                 <form onSubmit={savePO} className="space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
@@ -239,8 +322,16 @@ const AdminSuppliers = () => {
                     </div>
                     <div className="space-y-1.5"><Label>Notas</Label><Input value={poForm.notes} onChange={e => setPoForm(p => ({ ...p, notes: e.target.value }))} /></div>
                   </div>
-                  <div className="space-y-2">
+                  <div className="flex justify-between items-center">
                     <Label>Artículos</Label>
+                    {!editingOrder && (
+                      <Button type="button" variant="outline" size="sm" onClick={suggestReorder} disabled={suggesting}>
+                        <Lightbulb className="w-3 h-3 mr-1" />
+                        {suggesting ? 'Calculando...' : 'Sugerir reorden'}
+                      </Button>
+                    )}
+                  </div>
+                  <div className="space-y-2">
                     {poItems.map((item, idx) => (
                       <div key={idx} className="grid grid-cols-3 gap-2">
                         <Input placeholder="Nombre del medicamento" value={item.medicineName} onChange={e => setPoItems(p => p.map((it, i) => i === idx ? { ...it, medicineName: e.target.value } : it))} />
@@ -255,7 +346,7 @@ const AdminSuppliers = () => {
                   <div className="text-right font-semibold">
                     Total OC: {formatMXN(poItems.reduce((s, i) => s + (parseFloat(i.unitCost) || 0) * (parseInt(i.quantity) || 0), 0))}
                   </div>
-                  <Button type="submit" className="w-full">Crear orden de compra</Button>
+                  <Button type="submit" className="w-full">{editingOrder ? 'Actualizar orden' : 'Crear orden de compra'}</Button>
                 </form>
               </DialogContent>
             </Dialog>
@@ -315,12 +406,19 @@ const AdminSuppliers = () => {
                           </span>
                         </td>
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                          {order.status === 'pending' && (
-                            <Button size="sm" variant="outline" className="text-green-700 border-green-300 hover:bg-green-50" onClick={() => receivePO(order.id)}>
-                              <CheckCircle className="w-3 h-3 mr-1" />Recibir
-                            </Button>
-                          )}
-                          {order.status === 'received' && <span className="text-xs text-slate-400">{new Date(order.received_at).toLocaleDateString('es-MX')}</span>}
+                          <div className="flex gap-2">
+                            {order.status === 'pending' && (
+                              <>
+                                <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-800 h-7 px-2" onClick={() => editOrder(order)}>
+                                  <Edit className="w-3 h-3 mr-1" />Editar
+                                </Button>
+                                <Button size="sm" variant="outline" className="text-green-700 border-green-300 hover:bg-green-50 h-7 px-2" onClick={() => receivePO(order.id)}>
+                                  <CheckCircle className="w-3 h-3 mr-1" />Recibir
+                                </Button>
+                              </>
+                            )}
+                            {order.status === 'received' && <span className="text-xs text-slate-400">{new Date(order.received_at).toLocaleDateString('es-MX')}</span>}
+                          </div>
                         </td>
                       </tr>
                       {expandedOrder === order.id && (

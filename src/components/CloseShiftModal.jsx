@@ -37,7 +37,7 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
   const handlePreview = (e) => {
     e.preventDefault();
     const amount = parseFloat(closingCash);
-    if (isNaN(amount) || amount < 0) { toast({ title: 'Invalid amount', variant: 'destructive' }); return; }
+    if (isNaN(amount) || amount < 0) { toast({ title: 'Cantidad inválida', variant: 'destructive' }); return; }
     const expected = activeShift.starting_cash + shiftSales.cash;
     setSummary({ closingCash: amount, expectedCash: expected, variance: amount - expected });
     setStep('summary');
@@ -45,7 +45,7 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
 
   const handleConfirmClose = async () => {
     const closed = await closeShift(closingCash, notes);
-    toast({ title: 'Turno cerrado', description: `Variance: ${formatMXN(closed?.variance || 0)}` });
+    toast({ title: 'Turno cerrado', description: `Variación: ${formatMXN(closed?.variance || 0)}` });
     setStep('count');
     setClosingCash('');
     setNotes('');
@@ -141,10 +141,10 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
                 }
                 <div>
                   <p className="font-semibold">
-                    {Math.abs(summary.variance) < 0.01 ? 'Caja cuadrada' : `Variance: ${summary.variance > 0 ? '+' : ''}${formatMXN(summary.variance)}`}
+                    {Math.abs(summary.variance) < 0.01 ? 'Caja cuadrada' : `Variación: ${summary.variance > 0 ? '+' : ''}${formatMXN(summary.variance)}`}
                   </p>
                   <p className="text-xs text-slate-500">
-                    {Math.abs(summary.variance) < 0.01 ? 'Efectivo contado matches expected.' : summary.variance < 0 ? 'La caja tiene faltante.' : 'La caja tiene sobrante.'}
+                    {Math.abs(summary.variance) < 0.01 ? 'El efectivo contado coincide con el esperado.' : summary.variance < 0 ? 'La caja tiene faltante.' : 'La caja tiene sobrante.'}
                   </p>
                 </div>
               </div>
@@ -155,7 +155,7 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => setStep('count')}>Atrás</Button>
               <Button onClick={handleConfirmClose} className="flex-1 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
-                Confirm & Cerrar turno
+                Confirmar cierre
               </Button>
             </div>
           </motion.div>

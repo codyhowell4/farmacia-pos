@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
-import { getInventory, upsertInventoryItem, deleteInventoryItem, createStockAdjustment, getStockAdjustments } from '@/lib/db';
+import { getInventory, upsertInventoryItem, deleteInventoryItem, createStockAdjustment, getInventoryMovements } from '@/lib/db';
 
 const LOW_STOCK_THRESHOLD = 10;
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -173,7 +173,7 @@ const InventoryDashboard = () => {
 
   const viewAdjustmentHistory = async (item) => {
     try {
-      const history = await getStockAdjustments(item.id);
+      const history = await getInventoryMovements(item.id);
       setAdjustmentHistory(history);
       setShowHistoryItem(item);
     } catch (e) {
@@ -446,28 +446,51 @@ const InventoryDashboard = () => {
             </DialogHeader>
             <div className="space-y-4">
               {adjustmentHistory.length === 0 ? (
-                <p className="text-center text-slate-500 py-8">No hay ajustes registrados para este producto</p>
+                <p className="text-center text-slate-500 py-8">No hay movimientos registrados para este producto</p>
               ) : (
                 <div className="space-y-3">
-                  {adjustmentHistory.map((adjustment) => (
-                    <div key={adjustment.id} className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-medium">
-                            {adjustment.previous_quantity} → {adjustment.new_quantity} unidades
-                            <span className={`ml-2 text-xs px-2 py-0.5 rounded ${adjustment.new_quantity > adjustment.previous_quantity ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                              {adjustment.new_quantity > adjustment.previous_quantity ? '+' : ''}{adjustment.new_quantity - adjustment.previous_quantity}
-                            </span>
-                          </p>
-                          <p className="text-sm text-slate-600 mt-1">{adjustment.reason}</p>
-                        </div>
-                        <div className="text-right text-sm text-slate-500">
-                          <p>{new Date(adjustment.created_at).toLocaleDateString('es-MX')}</p>
-                          <p className="text-xs">{adjustment.adjusted_by_name}</p>
+                  {adjustmentHistory.map((movement) => {
+                    const typeLabels = {
+                      sale: 'Venta',
+                      return: 'Devolución',
+                      adjustment: 'Ajuste',
+                      purchase: 'Compra',
+                      void: 'Anulación',
+                      edit: 'Edición',
+                    };
+                    const typeColors = {
+                      sale: 'bg-red-100 text-red-700',
+                      return: 'bg-green-100 text-green-700',
+                      adjustment: 'bg-blue-100 text-blue-700',
+                      purchase: 'bg-purple-100 text-purple-700',
+                      void: 'bg-amber-100 text-amber-700',
+                      edit: 'bg-slate-100 text-slate-700',
+                    };
+                    return (
+                      <div key={movement.id} className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`text-xs px-2 py-0.5 rounded font-semibold ${typeColors[movement.type] || 'bg-slate-100 text-slate-700'}`}>
+                                {typeLabels[movement.type] || movement.type}
+                              </span>
+                              <p className="font-medium text-sm">
+                                {movement.previous_quantity} → {movement.new_quantity} unidades
+                                <span className={`ml-2 text-xs px-2 py-0.5 rounded ${movement.quantity_change > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                  {movement.quantity_change > 0 ? '+' : ''}{movement.quantity_change}
+                                </span>
+                              </p>
+                            </div>
+                            <p className="text-sm text-slate-600 mt-1">{movement.reason}</p>
+                          </div>
+                          <div className="text-right text-sm text-slate-500 ml-4 shrink-0">
+                            <p>{new Date(movement.created_at).toLocaleDateString('es-MX')}</p>
+                            <p className="text-xs">{movement.user_name || 'Sistema'}</p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
               <Button variant="outline" className="w-full" onClick={() => setShowHistoryItem(null)}>Cerrar</Button>

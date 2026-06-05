@@ -88,7 +88,7 @@ const PoSDashboard = () => {
     getInventory(user.locationId).then(items => {
       setInventory(items);
       setDisplayItems(
-        items.filter(i => i.quantity > 0)
+        items.filter(i => isSellable(i))
           .sort((a, b) => (b.sales_count || 0) - (a.sales_count || 0))
           .slice(0, 10)
       );
@@ -113,10 +113,27 @@ const PoSDashboard = () => {
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
+  const isExpired = (item) => {
+    if (!item?.expiration_date) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const exp = new Date(item.expiration_date);
+    exp.setHours(0, 0, 0, 0);
+    return exp < today;
+  };
+
+  const isSellable = (item) => {
+    return item && item.quantity > 0 && !isExpired(item);
+  };
+
   const addToCart = (medicine, quantity = 1) => {
     const invItem = inventory.find(i => i.id === medicine.id);
     if (!invItem || invItem.quantity <= 0) {
       toast({ title: 'Sin existencias', description: `${medicine.name} no está disponible.`, variant: 'destructive' });
+      return;
+    }
+    if (isExpired(invItem)) {
+      toast({ title: 'Producto caducado', description: `${medicine.name} ha caducado (${invItem.expiration_date}) y no puede venderse.`, variant: 'destructive' });
       return;
     }
     const existingItem = cart.find(item => item.id === medicine.id);
@@ -139,7 +156,7 @@ const PoSDashboard = () => {
     }
     if (itemAdded) {
       setSearchResults([]); setSearchTerm(''); setIsSearching(false);
-      setDisplayItems(inventory.filter(item => item.quantity > 0).sort((a, b) => (b.sales || 0) - (a.sales || 0)).slice(0, 10));
+      setDisplayItems(inventory.filter(item => isSellable(item)).sort((a, b) => (b.sales || 0) - (a.sales || 0)).slice(0, 10));
       toast({ title: 'Artículo agregado', description: `${medicine.name} agregado al carrito.` });
     }
   };
@@ -164,7 +181,7 @@ const PoSDashboard = () => {
     e?.preventDefault();
     const lowerSearchTerm = searchTerm.toLowerCase();
     const results = inventory.filter(item =>
-      (item.barcode === searchTerm || item.name.toLowerCase().includes(lowerSearchTerm) || item.use?.toLowerCase().includes(lowerSearchTerm)) && item.quantity > 0
+      (item.barcode === searchTerm || item.name.toLowerCase().includes(lowerSearchTerm) || item.use?.toLowerCase().includes(lowerSearchTerm)) && isSellable(item)
     );
     
     // Barcode scanner auto-add: if exact barcode match and only 1 result, add to cart immediately
@@ -353,6 +370,21 @@ const PoSDashboard = () => {
     const missingRx = cart.filter(item => item.requires_prescription && !rxNumbers[item.id]?.trim());
     if (missingRx.length > 0) {
       toast({ title: 'Número de receta requerido', description: `Ingresa Rx # para: ${missingRx.map(i => i.name).join(', ')}`, variant: 'destructive' });
+      return;
+    }
+
+    // Revalidate cart items for expiry and stock before finalizing
+    const expiredCartItems = cart.map(item => inventory.find(i => i.id === item.id)).filter((invItem, idx) => invItem && isExpired(invItem));
+    if (expiredCartItems.length > 0) {
+      toast({ title: 'Productos caducados en carrito', description: `Retira del carrito: ${expiredCartItems.map(i => i.name).join(', ')}`, variant: 'destructive' });
+      return;
+    }
+    const outOfStockItems = cart.filter(item => {
+      const invItem = inventory.find(i => i.id === item.id);
+      return !invItem || item.quantity > invItem.quantity;
+    });
+    if (outOfStockItems.length > 0) {
+      toast({ title: 'Stock insuficiente', description: `Cantidad no disponible para: ${outOfStockItems.map(i => i.name).join(', ')}`, variant: 'destructive' });
       return;
     }
 
@@ -901,7 +933,7 @@ const PoSDashboard = () => {
                   <XCircle className="w-4 h-4 mr-2" />Anular venta
                 </Button>
                 <Button onClick={() => setCloseShiftOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-orange-600 border-orange-200 hover:bg-orange-50">
-                  <Clock className="w-4 h-4 mr-2" />Close Shift
+                  <Clock className="w-4 h-4 mr-2" />Cerrar turno
                 </Button>
                 {user?.role === 'admin' && (
                   <Button onClick={() => navigate('/admin')} variant="outline" size="sm" className="hidden sm:inline-flex text-blue-600 border-blue-200 hover:bg-blue-50">
@@ -920,21 +952,36 @@ const PoSDashboard = () => {
             <motion.div initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="lg:col-span-8 xl:col-span-9 mb-6 lg:mb-0">
               <h2 className="text-lg sm:text-xl font-bold mb-4">{isSearching ? 'Resultados de búsqueda' : 'Artículos más vendidos'}</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
-                {displayItems.map((medicine) => (
-                  <motion.div key={medicine.id} whileHover={{ scale: 1.03 }} className="bg-white border border-slate-200 rounded-lg p-3 sm:p-4 hover:shadow-xl transition-all cursor-pointer flex flex-col justify-between" onClick={() => addToCart(medicine)}>
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <h3 className="font-semibold text-slate-900 truncate text-sm sm:text-base">{medicine.name}</h3>
-                        {medicine.requires_prescription && <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700 flex-shrink-0">Rx</span>}
+                {displayItems.map((medicine) => {
+                  const expired = isExpired(medicine);
+                  const outOfStock = medicine.quantity <= 0;
+                  const disabled = expired || outOfStock;
+                  return (
+                    <motion.div key={medicine.id} whileHover={disabled ? {} : { scale: 1.03 }} className={`bg-white border border-slate-200 rounded-lg p-3 sm:p-4 transition-all flex flex-col justify-between ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:shadow-xl cursor-pointer'}`} onClick={() => !disabled && addToCart(medicine)}>
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <h3 className="font-semibold text-slate-900 truncate text-sm sm:text-base">{medicine.name}</h3>
+                          {medicine.requires_prescription && <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700 flex-shrink-0">Rx</span>}
+                        </div>
+                        <p className="text-xs sm:text-sm text-slate-500 truncate">{medicine.use}</p>
                       </div>
-                      <p className="text-xs sm:text-sm text-slate-500 truncate">{medicine.use}</p>
-                    </div>
-                    <div className="flex justify-between items-center mt-3">
-                      <span className="text-base sm:text-lg font-bold text-green-600">{formatMXN(medicine.price)}</span>
-                      <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">Stock: {medicine.quantity}</span>
-                    </div>
-                  </motion.div>
-                ))}
+                      <div className="flex justify-between items-center mt-3">
+                        <span className={`text-base sm:text-lg font-bold ${disabled ? 'text-slate-400' : 'text-green-600'}`}>{formatMXN(medicine.price)}</span>
+                        <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">Stock: {medicine.quantity}</span>
+                      </div>
+                      {medicine.expiration_date && (
+                        <span className={`text-[10px] mt-1 px-1.5 py-0.5 rounded-full self-start ${expired ? 'bg-red-100 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
+                          {expired ? 'Caducado — No vendible' : `Cad: ${medicine.expiration_date}`}
+                        </span>
+                      )}
+                      {outOfStock && (
+                        <span className="text-[10px] mt-1 px-1.5 py-0.5 rounded-full self-start bg-slate-100 text-slate-600">
+                          Sin existencias
+                        </span>
+                      )}
+                    </motion.div>
+                  );
+                })}
                 {isSearching && displayItems.length === 0 && <p className="col-span-full text-center text-slate-500 py-8">Ningún artículo coincide con tu búsqueda.</p>}
                 {!isSearching && displayItems.length === 0 && <p className="col-span-full text-center text-slate-500 py-8">Sin artículos en existencia.</p>}
               </div>

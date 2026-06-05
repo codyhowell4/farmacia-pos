@@ -2,32 +2,39 @@ import { supabase } from '../lib/supabase';
 
 /**
  * Get controlled substances sales for a date range
- * @param {string} startDate - ISO date string
- * @param {string} endDate - ISO date string
- * @returns {Promise<Array>}
+ * Queries actual tables (sales + sale_items + inventory) since the
+ * controlled_substances_sales view may not exist yet.
  */
 export async function getControlledSubstancesSales(startDate, endDate) {
   const { data, error } = await supabase
-    .from('controlled_substances_sales')
-    .select('*')
-    .gte('sale_date', startDate)
-    .lte('sale_date', endDate + 'T23:59:59')
-    .order('sale_date', { ascending: false });
+    .from('sales')
+    .select('*, sale_items(*, inventory:inventory_id(name, requires_prescription, barcode))')
+    .gte('timestamp', startDate)
+    .lte('timestamp', endDate + 'T23:59:59')
+    .order('timestamp', { ascending: false });
 
   if (error) throw error;
-  return data || [];
+
+  // Filter to sales that have at least one controlled/prescription item
+  const filtered = (data || []).filter(sale => {
+    const items = sale.sale_items || [];
+    return items.some(item => item.inventory?.requires_prescription);
+  }).map(sale => ({
+    ...sale,
+    controlled_items: (sale.sale_items || []).filter(item => item.inventory?.requires_prescription),
+  }));
+
+  return filtered;
 }
 
 /**
- * Get inventory movement (adjustments) for a date range
- * @param {string} startDate - ISO date string
- * @param {string} endDate - ISO date string
- * @returns {Promise<Array>}
+ * Get inventory movement for a date range
+ * Queries inventory_movements table (unified: sales, returns, adjustments, purchases, voids, edits).
  */
 export async function getInventoryMovement(startDate, endDate) {
   const { data, error } = await supabase
-    .from('inventory_movement')
-    .select('*')
+    .from('inventory_movements')
+    .select('*, inventory:inventory_id(name, barcode)')
     .gte('created_at', startDate)
     .lte('created_at', endDate + 'T23:59:59')
     .order('created_at', { ascending: false });
@@ -38,46 +45,62 @@ export async function getInventoryMovement(startDate, endDate) {
 
 /**
  * Get expiring items with their status
- * @param {number} days - Number of days to look ahead
- * @returns {Promise<Array>}
+ * Queries inventory directly since expiration_tracking view may not exist.
  */
 export async function getExpiringItems(days = 90) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() + days);
+  const cutoffStr = cutoff.toISOString().split('T')[0];
+
   const { data, error } = await supabase
-    .from('expiration_tracking')
+    .from('inventory')
     .select('*')
-    .lte('days_until_expiry', days)
-    .order('days_until_expiry', { ascending: true });
+    .not('expiration_date', 'is', null)
+    .lte('expiration_date', cutoffStr)
+    .order('expiration_date', { ascending: true });
 
   if (error) throw error;
-  return data || [];
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return (data || []).map(item => {
+    const exp = item.expiration_date ? new Date(item.expiration_date) : null;
+    if (exp) exp.setHours(0, 0, 0, 0);
+    const daysUntil = exp ? Math.ceil((exp - today) / (1000 * 60 * 60 * 24)) : null;
+    return {
+      ...item,
+      days_until_expiry: daysUntil,
+      status: daysUntil < 0 ? 'EXPIRED' : daysUntil <= 30 ? 'EXPIRING_SOON' : 'OK',
+    };
+  });
 }
 
 /**
  * Get expired items
- * @returns {Promise<Array>}
  */
 export async function getExpiredItems() {
+  const today = new Date().toISOString().split('T')[0];
+
   const { data, error } = await supabase
-    .from('expiration_tracking')
+    .from('inventory')
     .select('*')
-    .eq('status', 'EXPIRED');
+    .not('expiration_date', 'is', null)
+    .lt('expiration_date', today)
+    .order('expiration_date', { ascending: true });
 
   if (error) throw error;
-  return data || [];
+  return (data || []).map(item => ({ ...item, days_until_expiry: -1, status: 'EXPIRED' }));
 }
 
 /**
  * Export data to CSV format
- * @param {Array} data - Array of objects
- * @param {Array} headers - Array of {key, label} objects
- * @returns {string} CSV content
  */
 export function exportToCSV(data, headers) {
   const headerRow = headers.map(h => `"${h.label}"`).join(',');
   const rows = data.map(row => {
     return headers.map(h => {
       const value = row[h.key] ?? '';
-      // Escape quotes and wrap in quotes if contains comma
       const escaped = String(value).replace(/"/g, '""');
       if (escaped.includes(',') || escaped.includes('\n') || escaped.includes('"')) {
         return `"${escaped}"`;
@@ -90,8 +113,6 @@ export function exportToCSV(data, headers) {
 
 /**
  * Download CSV file
- * @param {string} csvContent - CSV content
- * @param {string} filename - Filename without extension
  */
 export function downloadCSV(csvContent, filename) {
   const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -103,11 +124,6 @@ export function downloadCSV(csvContent, filename) {
   document.body.removeChild(link);
 }
 
-/**
- * Format date for reports
- * @param {string} dateStr - ISO date string
- * @returns {string} Formatted date
- */
 export function formatReportDate(dateStr) {
   if (!dateStr) return '-';
   return new Date(dateStr).toLocaleDateString('es-MX', {
@@ -117,11 +133,6 @@ export function formatReportDate(dateStr) {
   });
 }
 
-/**
- * Format datetime for reports
- * @param {string} dateStr - ISO datetime string
- * @returns {string} Formatted datetime
- */
 export function formatReportDateTime(dateStr) {
   if (!dateStr) return '-';
   return new Date(dateStr).toLocaleString('es-MX', {

@@ -2,27 +2,28 @@
 
 export const exportSalesCSV = (sales) => {
   const headers = [
-    'Sale ID','Date','Salesperson','Pharmacy','Payment Method','Status',
+    'Folio','Sale ID','Date','Salesperson','Pharmacy','Payment Method','Status',
     'Item Name','Qty','Unit Price','Original Price','Override By',
     'Sale Total','Discount Code','Discount %','Discount Amount'
   ];
   const rows = sales.flatMap(sale =>
-    (sale.items || []).map(item => [
+    (sale.sale_items || sale.items || []).map(item => [
+      `"#${(sale.id || '').slice(-8).toUpperCase()}"`,
       `"${sale.id}"`,
       `"${new Date(sale.timestamp).toLocaleString()}"`,
       `"${sale.salesperson}"`,
-      `"${sale.pharmacyLocation}"`,
-      `"${sale.paymentMethod || 'cash'}"`,
+      `"${sale.location_id || sale.pharmacyLocation || ''}"`,
+      `"${sale.payment_method || sale.paymentMethod || 'cash'}"`,
       `"${sale.voided ? 'Anulada' : 'Completada'}"`,
       `"${item.name}"`,
       item.quantity,
       (item.price || 0).toFixed(2),
-      (item.originalPrice || 0).toFixed(2),
-      `"${item.overrideBy || ''}"`,
+      (item.original_price || item.originalPrice || 0).toFixed(2),
+      `"${item.override_by || item.overrideBy || ''}"`,
       (sale.total || 0).toFixed(2),
-      `"${sale.discount?.code || ''}"`,
-      sale.discount?.value || 0,
-      (sale.discount?.amount || 0).toFixed(2),
+      `"${sale.discount_code || sale.discount?.code || ''}"`,
+      sale.discount_value || sale.discount?.value || 0,
+      (sale.discount_amount || sale.discount?.amount || 0).toFixed(2),
     ].join(','))
   );
   downloadCSV([headers.join(','), ...rows].join('\n'), 'sales_report.csv');

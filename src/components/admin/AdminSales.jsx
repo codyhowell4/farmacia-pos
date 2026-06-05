@@ -218,7 +218,10 @@ const AdminSales = () => {
                     <tr>
                         <td colSpan="10" className="p-0">
                             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="bg-slate-50 px-8 py-4">
-                               <h4 className="font-bold mb-2">Detalle de venta</h4>
+                               <div className="flex items-center justify-between mb-2">
+                                 <h4 className="font-bold">Detalle de venta</h4>
+                                 <span className="text-sm font-mono font-semibold text-slate-600 bg-white border px-2 py-0.5 rounded">Folio: #{sale.id.slice(-8).toUpperCase()}</span>
+                               </div>
                                {sale.patient_name && (
                                  <div className="mb-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
                                    <span className="font-medium">Paciente:</span> {sale.patient_name}

@@ -143,11 +143,58 @@ export const getInventory = async (locationId = null) => {
 
 export const upsertInventoryItem = async (item) => {
   const orgId = await getOrgId();
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  // Enforce barcode uniqueness within the organization
+  if (item.barcode) {
+    const { data: existing, error: lookupError } = await supabase
+      .from('inventory')
+      .select('id, name')
+      .eq('org_id', orgId)
+      .eq('barcode', item.barcode)
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (existing && existing.id !== item.id) {
+      throw new Error(`El código de barras "${item.barcode}" ya está asignado a "${existing.name}". Usa un código diferente.`);
+    }
+  }
+  
+  // If editing, check for quantity change to log movement
+  let prevQty = 0;
+  let isNew = true;
+  if (item.id) {
+    const { data: existing } = await supabase
+      .from('inventory')
+      .select('quantity')
+      .eq('id', item.id)
+      .single();
+    if (existing) {
+      prevQty = existing.quantity || 0;
+      isNew = false;
+    }
+  }
+  
   const { data, error } = await supabase
     .from('inventory')
     .upsert({ ...item, org_id: orgId, updated_at: new Date().toISOString() })
     .select().single();
   if (error) throw error;
+  
+  // Log movement if quantity changed on edit
+  if (!isNew && item.quantity !== undefined && item.quantity !== prevQty) {
+    await logInventoryMovement({
+      inventory_id: item.id,
+      type: 'edit',
+      quantity_change: item.quantity - prevQty,
+      previous_quantity: prevQty,
+      new_quantity: item.quantity,
+      reference_id: item.id,
+      reference_type: 'inventory_edit',
+      user_name: user?.email,
+      reason: `Edición de producto: ${item.name}`,
+    });
+  }
+  
   return data;
 };
 
@@ -156,14 +203,51 @@ export const deleteInventoryItem = async (id) => {
   if (error) throw error;
 };
 
-export const decrementInventory = async (items) => {
-  // items: [{ inventory_id, quantity }] - inventory_id is the FK to inventory table
+export const logInventoryMovement = async (movement) => {
+  try {
+    const orgId = await getOrgId();
+    const { data: { user } } = await supabase.auth.getUser();
+    const { error } = await supabase.from('inventory_movements').insert({
+      ...movement,
+      org_id: orgId,
+      user_name: movement.user_name || user?.email,
+    });
+    if (error) {
+      console.error('[logInventoryMovement] insert error:', error);
+      throw error;
+    }
+  } catch (err) {
+    console.error('[logInventoryMovement] failed:', err);
+    throw err;
+  }
+};
+
+export const getInventoryMovements = async (inventoryId) => {
+  const { data, error } = await supabase
+    .from('inventory_movements')
+    .select('*')
+    .eq('inventory_id', inventoryId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const decrementInventory = async (items, referenceId = null, referenceType = 'sale') => {
+  // items: [{ inventory_id, quantity, name }] - inventory_id is the FK to inventory table
   for (const item of items) {
     const inventoryId = item.inventory_id || item.id;
     if (!inventoryId) {
-      console.error('No inventory_id found for item:', item);
+      console.error('[decrementInventory] No inventory_id found for item:', item);
       continue;
     }
+    
+    // Get current quantity before decrementing
+    const { data: current, error: fetchError } = await supabase.from('inventory').select('quantity, sales_count').eq('id', inventoryId).single();
+    if (fetchError) {
+      console.error('[decrementInventory] Failed to fetch current inventory:', fetchError);
+      continue;
+    }
+    const prevQty = current?.quantity || 0;
     
     const { error } = await supabase.rpc('decrement_inventory', {
       p_id: inventoryId,
@@ -171,48 +255,87 @@ export const decrementInventory = async (items) => {
     });
     
     if (error) {
-      console.error('RPC decrement_inventory failed:', error);
+      console.error('[decrementInventory] RPC decrement_inventory failed:', error);
       // Fallback: manual update
-      const { data: current, error: fetchError } = await supabase.from('inventory').select('quantity, sales_count').eq('id', inventoryId).single();
-      if (fetchError) {
-        console.error('Failed to fetch current inventory:', fetchError);
-        continue;
-      }
       const { error: updateError } = await supabase.from('inventory').update({
-        quantity: (current?.quantity || 0) - item.quantity,
+        quantity: prevQty - item.quantity,
         sales_count: (current?.sales_count || 0) + item.quantity,
         updated_at: new Date().toISOString(),
       }).eq('id', inventoryId);
       if (updateError) {
-        console.error('Failed to update inventory:', updateError);
+        console.error('[decrementInventory] Failed to update inventory:', updateError);
+        continue;
       }
+    }
+    
+    // Log movement
+    console.log('[decrementInventory] Logging movement:', { inventoryId, referenceType, referenceId, qty: item.quantity });
+    try {
+      await logInventoryMovement({
+        inventory_id: inventoryId,
+        type: referenceType,
+        quantity_change: -item.quantity,
+        previous_quantity: prevQty,
+        new_quantity: prevQty - item.quantity,
+        reference_id: referenceId,
+        reference_type: referenceType,
+        reason: item.name || referenceType,
+      });
+      console.log('[decrementInventory] Movement logged successfully');
+    } catch (logErr) {
+      console.error('[decrementInventory] Failed to log movement:', logErr);
+      // Do not throw — sale should succeed even if audit logging fails
     }
   }
 };
 
-export const incrementInventory = async (items) => {
-  // items: [{ inventory_id, returnQty }] - for returns
+export const incrementInventory = async (items, referenceId = null, referenceType = 'return') => {
+  // items: [{ inventory_id, returnQty, name }] - for returns/voids
   for (const item of items) {
     const inventoryId = item.inventory_id || item.id;
+    const qty = item.returnQty || item.quantity || 0;
     if (!inventoryId) {
-      console.error('No inventory_id found for item:', item);
+      console.error('[incrementInventory] No inventory_id found for item:', item);
       continue;
     }
     
     const { data: current, error: fetchError } = await supabase.from('inventory').select('quantity, sales_count').eq('id', inventoryId).single();
     if (fetchError) {
-      console.error('Failed to fetch current inventory for return:', fetchError);
+      console.error('[incrementInventory] Failed to fetch current inventory:', fetchError);
       continue;
     }
     
+    const prevQty = current?.quantity || 0;
+    const newQty = prevQty + qty;
+    
     const { error: updateError } = await supabase.from('inventory').update({
-      quantity: (current?.quantity || 0) + (item.returnQty || item.quantity || 0),
-      sales_count: Math.max(0, (current?.sales_count || 0) - (item.returnQty || item.quantity || 0)),
+      quantity: newQty,
+      sales_count: Math.max(0, (current?.sales_count || 0) - qty),
       updated_at: new Date().toISOString(),
     }).eq('id', inventoryId);
     
     if (updateError) {
-      console.error('Failed to update inventory for return:', updateError);
+      console.error('[incrementInventory] Failed to update inventory:', updateError);
+      continue;
+    }
+    
+    // Log movement
+    console.log('[incrementInventory] Logging movement:', { inventoryId, referenceType, referenceId, qty });
+    try {
+      await logInventoryMovement({
+        inventory_id: inventoryId,
+        type: referenceType,
+        quantity_change: qty,
+        previous_quantity: prevQty,
+        new_quantity: newQty,
+        reference_id: referenceId,
+        reference_type: referenceType,
+        reason: item.name || referenceType,
+      });
+      console.log('[incrementInventory] Movement logged successfully');
+    } catch (logErr) {
+      console.error('[incrementInventory] Failed to log movement:', logErr);
+      // Do not throw — return/void should succeed even if audit logging fails
     }
   }
 };
@@ -245,13 +368,19 @@ export const findDiscount = async (code) => {
 // ── SHIFTS ──────────────────────────────────────────────────
 
 export const getOpenShift = async (profileId, locationId) => {
-  const { data } = await supabase
+  // Find ANY open shift at this location, not just one opened by the current user.
+  // This allows different cashiers to close each other's shifts.
+  const { data, error } = await supabase
     .from('shifts')
     .select('*')
-    .eq('opened_by', profileId)
     .eq('location_id', locationId)
     .eq('status', 'open')
-    .single();
+    .order('opened_at', { ascending: false })
+    .maybeSingle();
+  if (error) {
+    console.error('[getOpenShift] error:', error);
+    return null;
+  }
   return data || null;
 };
 
@@ -291,7 +420,7 @@ export const createSale = async (sale, items) => {
     if (itemsError) throw itemsError;
   }
 
-  await decrementInventory(items || []);
+  await decrementInventory(items || [], saleRow.id, 'sale');
   return saleRow;
 };
 
@@ -316,6 +445,18 @@ export const getRecentSales = async (locationId, limit = 10) => {
   return data;
 };
 
+export const getSalesInRange = async (startDate, endDate) => {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('*, sale_items(*)')
+    .eq('voided', false)
+    .gte('timestamp', startDate)
+    .lte('timestamp', endDate + 'T23:59:59')
+    .order('timestamp', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
 export const voidSale = async (saleId, voidedByName) => {
   const { data: sale, error: fetchError } = await supabase
     .from('sales')
@@ -325,7 +466,11 @@ export const voidSale = async (saleId, voidedByName) => {
   if (fetchError) throw fetchError;
   if (sale.voided) throw new Error('Venta ya fue anulada');
 
-  await incrementInventory(sale.sale_items.map(i => ({ ...i, returnQty: i.quantity })));
+  await incrementInventory(
+    sale.sale_items.map(i => ({ ...i, returnQty: i.quantity })),
+    saleId,
+    'void'
+  );
 
   const { error } = await supabase.from('sales').update({
     voided: true,
@@ -349,7 +494,7 @@ export const createReturn = async (returnRecord, items) => {
     await supabase.from('return_items').insert(items.map(i => ({ ...i, return_id: ret.id })));
   }
 
-  await incrementInventory(items || []);
+  await incrementInventory(items || [], ret.id, 'return');
   return ret;
 };
 
@@ -409,6 +554,25 @@ export const createPurchaseOrder = async (po, items) => {
   return poRow;
 };
 
+export const updatePurchaseOrder = async (poId, updates, items) => {
+  // Update PO header
+  const { data: poRow, error } = await supabase
+    .from('purchase_orders')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', poId)
+    .select().single();
+  if (error) throw error;
+
+  // Replace items: delete old, insert new
+  if (items) {
+    await supabase.from('purchase_order_items').delete().eq('po_id', poId);
+    if (items.length) {
+      await supabase.from('purchase_order_items').insert(items.map(i => ({ ...i, po_id: poId })));
+    }
+  }
+  return poRow;
+};
+
 export const receivePurchaseOrder = async (poId) => {
   const { data: po, error } = await supabase
     .from('purchase_orders')
@@ -421,15 +585,28 @@ export const receivePurchaseOrder = async (poId) => {
   for (const item of po.purchase_order_items) {
     const { data: inv } = await supabase
       .from('inventory')
-      .select('id, quantity')
+      .select('id, quantity, name')
       .ilike('name', item.medicine_name)
       .single();
     if (inv) {
+      const newQty = inv.quantity + item.quantity;
       await supabase.from('inventory').update({
-        quantity: inv.quantity + item.quantity,
+        quantity: newQty,
         cost: item.unit_cost,
         updated_at: new Date().toISOString(),
       }).eq('id', inv.id);
+      
+      // Log purchase movement
+      await logInventoryMovement({
+        inventory_id: inv.id,
+        type: 'purchase',
+        quantity_change: item.quantity,
+        previous_quantity: inv.quantity,
+        new_quantity: newQty,
+        reference_id: poId,
+        reference_type: 'purchase_order',
+        reason: `Recepción OC: ${item.medicine_name}`,
+      });
     }
   }
 
@@ -530,6 +707,19 @@ export const createStockAdjustment = async (adjustment) => {
     .eq('id', adjustment.inventory_id);
   
   if (updateError) throw updateError;
+  
+  // Log unified movement
+  await logInventoryMovement({
+    inventory_id: adjustment.inventory_id,
+    type: 'adjustment',
+    quantity_change: adjustment.new_quantity - adjustment.previous_quantity,
+    previous_quantity: adjustment.previous_quantity,
+    new_quantity: adjustment.new_quantity,
+    reference_id: data?.id,
+    reference_type: 'stock_adjustment',
+    user_name: profile?.full_name || user?.email,
+    reason: adjustment.reason,
+  });
   
   return data;
 };
@@ -654,7 +844,7 @@ export const createSaleWithPayments = async (sale, items, payments) => {
   }
 
   // Update inventory
-  await decrementInventory(items || []);
+  await decrementInventory(items || [], saleRow.id, 'sale');
   
   return saleRow;
 };
@@ -1271,6 +1461,65 @@ export const upsertDoctorProfile = async (profileId, data) => {
     }
     console.log('[upsertDoctorProfile] inserted new row for profile_id:', profileId);
   }
+};
+
+// ── SUPPLIER PRODUCTS ───────────────────────────────────────
+
+export const getSupplierProducts = async (supplierId = null) => {
+  let query = supabase
+    .from('supplier_products')
+    .select('*, suppliers(name), inventory(name, barcode)')
+    .order('created_at', { ascending: false });
+  if (supplierId) query = query.eq('supplier_id', supplierId);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+};
+
+export const upsertSupplierProduct = async (sp) => {
+  const { data, error } = await supabase
+    .from('supplier_products')
+    .upsert(sp)
+    .select().single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteSupplierProduct = async (id) => {
+  const { error } = await supabase.from('supplier_products').delete().eq('id', id);
+  if (error) throw error;
+};
+
+// ── INVENTORY BATCHES ───────────────────────────────────────
+
+export const getInventoryBatches = async (inventoryId) => {
+  const { data, error } = await supabase
+    .from('inventory_batches')
+    .select('*')
+    .eq('inventory_id', inventoryId)
+    .order('expiration_date', { ascending: true });
+  if (error) throw error;
+  return data || [];
+};
+
+export const createInventoryBatch = async (batch) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('inventory_batches')
+    .insert({ ...batch, org_id: orgId })
+    .select().single();
+  if (error) throw error;
+  return data;
+};
+
+export const updateInventoryBatch = async (id, updates) => {
+  const { data, error } = await supabase
+    .from('inventory_batches')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select().single();
+  if (error) throw error;
+  return data;
 };
 
 // ── INVENTORY (doctor-scoped) ───────────────────────────────
