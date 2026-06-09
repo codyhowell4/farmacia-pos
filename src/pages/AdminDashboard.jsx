@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield, Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle, Stethoscope } from 'lucide-react';
+import { Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield, Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle, Stethoscope, Smartphone, ClipboardList, Pill } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminUsers from '@/components/admin/AdminUsers';
@@ -19,6 +19,8 @@ import AdminReports from '@/components/admin/AdminReports';
 import AdminAccounting from '@/components/admin/AdminAccounting';
 import AdminCustomers from '@/components/admin/AdminCustomers';
 import AdminDoctors from '@/components/admin/AdminDoctors';
+import AdminPrescriptions from '@/components/admin/AdminPrescriptions';
+import AdminPreorders from '@/components/admin/AdminPreorders';
 
 const AdminDashboard = () => {
   const { logout, user } = useAuth();
@@ -41,6 +43,8 @@ const AdminDashboard = () => {
     if (path.includes('/settings')) return 'settings';
     if (path.includes('/accounting')) return 'accounting';
     if (path.includes('/doctors')) return 'doctors';
+    if (path.includes('/prescriptions')) return 'prescriptions';
+    if (path.includes('/preorders')) return 'preorders';
     return 'overview';
   };
   
@@ -66,6 +70,9 @@ const AdminDashboard = () => {
     { id: 'analytics', label: 'Análisis', icon: TrendingUp, path: '/admin/analytics' },
     { id: 'accounting', label: 'Contabilidad', icon: BookOpen, path: '/admin/accounting' },
     { id: 'settings', label: 'Configuración', icon: Settings, path: '/admin/settings' },
+    { id: 'prescriptions', label: 'Recetas médicas', icon: ClipboardList, path: '/admin/prescriptions' },
+    { id: 'preorders', label: 'Solicitudes de recarga', icon: Pill, path: '/admin/preorders' },
+    { id: 'customer-portal', label: 'Portal Cliente', icon: Smartphone, path: '/customer-app/', external: true },
   ];
 
   const SideNav = () => (
@@ -189,6 +196,8 @@ const AdminDashboard = () => {
                 <Route path="/analytics" element={<AdminReports />} />
                 <Route path="/accounting" element={<AdminAccounting />} />
                 <Route path="/doctors" element={<AdminDoctors />} />
+                <Route path="/prescriptions" element={<AdminPrescriptions />} />
+                <Route path="/preorders" element={<AdminPreorders />} />
                 <Route path="/settings" element={<AdminSettings />} />
               </Routes>
             </main>

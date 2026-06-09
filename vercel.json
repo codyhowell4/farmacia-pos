@@ -1,5 +1,16 @@
 {
+  "redirects": [
+    {
+      "source": "/customer-app",
+      "destination": "/customer-app/",
+      "permanent": false
+    }
+  ],
   "rewrites": [
+    {
+      "source": "/customer-app/:path*",
+      "destination": "/customer-app/index.html"
+    },
     {
       "source": "/(.*)",
       "destination": "/index.html"

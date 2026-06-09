@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Farmacia Apollo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/style.css?v=2">
+  <style>
+    /* Critical CSS - Ensure design loads */
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+    html, body { min-height: 100vh; background: linear-gradient(180deg, #0a3d62 0%, #0a7a7a 100%); background-attachment: fixed; }
+    body { display: flex; justify-content: center; }
+    #app { width: 100%; max-width: 430px; min-height: 100vh; }
+    .white-card { background: white; border-radius: 24px; margin: 0 16px 16px; padding: 24px; }
+    .circular-progress { position: relative; width: 180px; height: 180px; margin: 0 auto; }
+    .circular-progress svg { transform: rotate(-90deg); }
+    .circular-progress .track { fill: none; stroke: #e8e8e8; stroke-width: 14; }
+    .circular-progress .progress { fill: none; stroke: #00d4aa; stroke-width: 14; stroke-linecap: round; }
+    .circular-progress .content { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+    .circular-progress .percentage { font-size: 2.5rem; font-weight: 800; color: #1a1a2e; }
+    .circular-progress .label { font-size: 0.8rem; color: #666; }
+    /* Menu styles */
+    .menu-panel { background: rgba(10, 40, 60, 0.98); }
+    .menu-item { display: flex; align-items: center; gap: 12px; padding: 12px 20px; color: white; text-decoration: none; }
+    .menu-section { padding: 16px 20px 8px; font-size: 0.75rem; color: rgba(255,255,255,0.5); text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-icon">A</div>
+        <span>Apollo</span>
+      </div>
+      <div class="search-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="search" placeholder="Buscar medicamentos...">
+      </div>
+      <button class="icon-btn" id="cart-btn">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+      </button>
+      <!-- Hamburger Menu Button -->
+      <button class="icon-btn" id="menu-btn" style="margin-left: 8px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main" id="main-content">
+      <!-- Content injected by JS -->
+    </main>
+
+    <!-- Bottom Navigation - Simplified 3 Tabs -->
+    <nav class="bottom-nav">
+      <a href="#" class="nav-item active" data-page="home">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Hoy
+      </a>
+      <a href="#" class="nav-item" data-page="body">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" y1="8" x2="2" y2="22"/><line x1="17.5" y1="15" x2="9" y2="15"/></svg>
+        Cuerpo
+      </a>
+      <a href="#" class="nav-item" data-page="health">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        Salud
+      </a>
+      <a href="#" class="nav-item" data-page="consulta">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Consulta
+      </a>
+      <a href="#" class="nav-item" data-page="shop">
+        <span style="position: relative; display: flex; flex-direction: column; align-items: center;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+          <span id="nav-cart-badge" style="position: absolute; top: -4px; right: 2px; background: #f59e0b; color: white; font-size: 0.6rem; padding: 1px 5px; border-radius: 8px; font-weight: 700; display: none;"></span>
+        </span>
+        Compras
+      </a>
+    </nav>
+
+    <!-- Floating Voice Button -->
+    <button id="voice-btn" onclick="toggleVoiceInput()" style="position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, rgba(0,212,170,0.9), rgba(94,231,198,0.9)); border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 8px 32px rgba(0,212,170,0.4), 0 0 20px rgba(0,212,170,0.3); cursor: pointer; z-index: 50; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; transition: all 0.3s ease; backdrop-filter: blur(10px);">
+      🎤
+    </button>
+
+    <!-- Voice Input Modal -->
+    <div id="voice-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; padding: 1rem;">
+      <div style="background: white; border-radius: 20px; padding: 2rem; width: 100%; max-width: 400px; text-align: center;">
+        <div id="voice-status" style="font-size: 4rem; margin-bottom: 1rem;">🎤</div>
+        <div id="voice-text" style="font-size: 1.2rem; color: var(--text-primary); margin-bottom: 0.5rem; min-height: 3rem;">Toca el micrófono y habla...</div>
+        <div id="voice-hint" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">Ejemplo: "Corrí 5 kilómetros" o "Peso 70 kilos"</div>
+        <div id="voice-result" style="display: none; background: #f0fdf4; padding: 1rem; border-radius: 12px; margin-bottom: 1rem; text-align: left;">
+          <div style="font-size: 0.75rem; color: #166534; font-weight: 600; margin-bottom: 0.25rem;">Entendido:</div>
+          <div id="voice-result-text" style="font-size: 0.9rem; color: #166534;"></div>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+          <button onclick="closeVoiceModal()" style="flex: 1; padding: 0.75rem; background: #f3f4f6; color: var(--text-primary); border: none; border-radius: 12px; font-weight: 500; cursor: pointer;">Cancelar</button>
+          <button id="voice-action-btn" onclick="startVoiceListening()" style="flex: 1; padding: 0.75rem; background: linear-gradient(135deg, #003366, #00A86B); color: white; border: none; border-radius: 12px; font-weight: 500; cursor: pointer;">Escuchar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hamburger Menu Overlay -->
+    <div class="menu-overlay" id="menu-overlay"></div>
+    
+    <!-- Hamburger Menu Panel -->
+    <aside class="menu-panel" id="menu-panel">
+      <div class="menu-header">
+        <div class="brand">
+          <div class="brand-icon">+</div>
+          <span>Farmacia Apollo</span>
+        </div>
+        <button class="icon-btn" id="close-menu-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      
+      <div class="menu-user" id="menu-user-info">
+        <div class="user-avatar" id="menu-user-avatar">👤</div>
+        <div class="user-info">
+          <div class="user-name" id="menu-user-name">Invitado</div>
+          <div class="user-level" id="menu-user-status">🏆 Nivel Plata • 350 pts</div>
+        </div>
+      </div>
+      
+      <!-- Auth actions -->
+      <div id="menu-auth-actions" style="padding: 0 1rem 0.75rem; display: flex; gap: 0.5rem;">
+        <button onclick="renderLogin()" id="menu-btn-login" style="flex: 1; padding: 0.5rem; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; font-size: 0.8rem; cursor: pointer;">Iniciar sesión</button>
+        <button onclick="renderSignup()" id="menu-btn-signup" style="flex: 1; padding: 0.5rem; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; border-radius: 10px; font-size: 0.8rem; cursor: pointer;">Registrarse</button>
+        <button onclick="handleLogout()" id="menu-btn-logout" style="display: none; flex: 1; padding: 0.5rem; background: rgba(255,107,107,0.2); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.3); border-radius: 10px; font-size: 0.8rem; cursor: pointer;">Cerrar sesión</button>
+      </div>
+      
+      <nav class="menu-nav">
+        <div class="menu-section">Fitness</div>
+        <a href="#" class="menu-item" data-page="home">
+          <span class="menu-icon">📅</span>
+          <span>Hoy - Resumen Diario</span>
+        </a>
+        <a href="#" class="menu-item" data-page="body">
+          <span class="menu-icon">⚖️</span>
+          <span>Cuerpo - Métricas</span>
+        </a>
+        
+        <div class="menu-section">Consultas Médicas</div>
+        <a href="#" class="menu-item" data-page="appointments">
+          <span class="menu-icon">📋</span>
+          <span>Mis Citas</span>
+        </a>
+        <a href="#" class="menu-item" data-page="consulta">
+          <span class="menu-icon">👨‍⚕️</span>
+          <span>Nueva Consulta</span>
+        </a>
+        
+        <div class="menu-section">Herramientas</div>
+        <a href="#" class="menu-item" data-page="fasting">
+          <span class="menu-icon">⏰</span>
+          <span>Ayuno Intermitente</span>
+        </a>
+        <a href="#" class="menu-item" data-page="sleep">
+          <span class="menu-icon">😴</span>
+          <span>Seguimiento del Sueño</span>
+        </a>
+        <a href="#" class="menu-item" data-page="checkin">
+          <span class="menu-icon">📸</span>
+          <span>Fotos de Progreso</span>
+        </a>
+        <a href="#" class="menu-item" data-page="integrations">
+          <span class="menu-icon">⌚</span>
+          <span>Conectar Fitbit/Garmin</span>
+        </a>
+        
+        <div class="menu-section">Farmacia Apollo</div>
+        <a href="#" class="menu-item" data-page="shop">
+          <span class="menu-icon">🛒</span>
+          <span>Comprar Medicamentos</span>
+        </a>
+        <a href="#" class="menu-item" data-page="store">
+          <span class="menu-icon">💊</span>
+          <span>Catálogo Completo</span>
+        </a>
+        <a href="#" class="menu-item" data-page="recetas">
+          <span class="menu-icon">📄</span>
+          <span>Mis Recetas Médicas</span>
+        </a>
+        <a href="#" class="menu-item" data-page="orders">
+          <span class="menu-icon">📦</span>
+          <span>Mis Pedidos</span>
+        </a>
+        <a href="#" class="menu-item" data-page="emergency-id" style="border-left: 3px solid #dc2626;">
+          <span class="menu-icon">🆔</span>
+          <span style="color: #dc2626; font-weight: 600;">ID Médico Emergencia</span>
+        </a>
+        <a href="#" class="menu-item" data-page="guides">
+          <span class="menu-icon">📚</span>
+          <span>Guías de Salud</span>
+        </a>
+        
+        <div class="menu-section">Familia</div>
+        <a href="#" class="menu-item" data-page="caregiver">
+          <span class="menu-icon">👨‍👩‍👧‍👦</span>
+          <span>Cuidado Familiar</span>
+        </a>
+        
+        <div class="menu-section">Cuenta</div>
+        <a href="#" class="menu-item" data-page="login" id="menu-item-login">
+          <span class="menu-icon">🔑</span>
+          <span>Iniciar sesión</span>
+        </a>
+        <a href="#" class="menu-item" data-page="signup" id="menu-item-signup">
+          <span class="menu-icon">✨</span>
+          <span>Crear cuenta</span>
+        </a>
+        
+        <div class="menu-section">Configuración</div>
+        <a href="#" class="menu-item" data-page="settings">
+          <span class="menu-icon">⚙️</span>
+          <span>Ajustes</span>
+        </a>
+      </nav>
+    </aside>
+  </div>
+
+  <!-- Supabase integration (Phase 1) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./js/supabase.js?v=1"></script>
+  <script src="./js/api.js?v=1"></script>
+
+  <script type="module" src="./js/app.js?v=8"></script>
+</body>
+</html>

@@ -888,6 +888,17 @@ export const getPrescriptions = async (filters = {}) => {
   return data || [];
 };
 
+export const getCustomerDocuments = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('customer_documents')
+    .select('*, customers(full_name, email)')
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
 export const voidPrescription = async (prescriptionId, voidedBy) => {
   const { error } = await supabase
     .from('prescriptions')
