@@ -483,6 +483,7 @@ window.FarmaciaAPI = (function () {
               type:      'document',
               fileUrl:   doc.file_url,
               notes:     doc.notes,
+              status:    doc.status || 'pending',
               createdAt: doc.created_at,
               source:    'supabase'
             });
@@ -690,7 +691,10 @@ window.FarmaciaAPI = (function () {
             medicine: p.notes || 'Pedido',
             quantity: p.quantity || 1,
             status: p.status || 'pending',
-            statusText: p.status === 'ready' ? 'Lista' : p.status === 'picked_up' ? 'Recogida' : p.status === 'cancelled' ? 'Cancelada' : 'Pendiente',
+            statusText: {
+              pending: 'Pendiente', approved: 'Aprobado', ready: 'Lista',
+              delivered: 'Entregado', completed: 'Completado', cancelled: 'Cancelada', picked_up: 'Recogida'
+            }[p.status] || 'Pendiente',
             createdAt: p.created_at,
             source: 'supabase'
           }));
@@ -874,6 +878,87 @@ window.FarmaciaAPI = (function () {
       } catch (err) {
         console.error('[FarmaciaAPI] placeOrder failed:', err.message);
         return { order: null, error: err };
+      }
+    /**
+     * Get notifications for the current user.
+     */
+    async getNotifications() {
+      const fallback = () => lsGet('notifications', []);
+      if (!sb) return fallback();
+      try {
+        const user = await getAuthUser();
+        if (!user) return fallback();
+        const { data: customer } = await sb.from('customers').select('id').eq('profile_id', user.id).maybeSingle();
+        let query = sb.from('notifications').select('*').order('created_at', { ascending: false }).limit(50);
+        if (customer?.id) {
+          query = query.or(`customer_id.eq.${customer.id},profile_id.eq.${user.id}`);
+        } else {
+          query = query.eq('profile_id', user.id);
+        }
+        const { data, error } = await query;
+        if (error) throw error;
+        return (data || []).map(n => ({
+          id: n.id,
+          title: n.title,
+          message: n.message,
+          type: n.type,
+          isRead: n.is_read,
+          createdAt: n.created_at,
+          source: 'supabase'
+        }));
+      } catch (err) {
+        return fallback();
+      }
+    },
+
+    async getUnreadNotificationCount() {
+      if (!sb) return 0;
+      try {
+        const user = await getAuthUser();
+        if (!user) return 0;
+        const { data: customer } = await sb.from('customers').select('id').eq('profile_id', user.id).maybeSingle();
+        let query = sb.from('notifications').select('*', { count: 'exact', head: true }).eq('is_read', false);
+        if (customer?.id) {
+          query = query.or(`customer_id.eq.${customer.id},profile_id.eq.${user.id}`);
+        } else {
+          query = query.eq('profile_id', user.id);
+        }
+        const { count, error } = await query;
+        if (error) throw error;
+        return count || 0;
+      } catch (err) {
+        return 0;
+      }
+    },
+
+    async markNotificationRead(id) {
+      if (!sb) return { error: new Error('Supabase not available') };
+      try {
+        const { data, error } = await sb.from('notifications').update({ is_read: true }).eq('id', id).select().single();
+        if (error) throw error;
+        return { data, error: null };
+      } catch (err) {
+        return { data: null, error: err };
+      }
+    },
+
+    async markAllNotificationsRead() {
+      if (!sb) return { error: new Error('Supabase not available') };
+      try {
+        const user = await getAuthUser();
+        if (!user) return { error: new Error('No user') };
+        const { data: customer } = await sb.from('customers').select('id').eq('profile_id', user.id).maybeSingle();
+        let query = sb.from('notifications').update({ is_read: true }).eq('is_read', false);
+        if (customer?.id) {
+          query = query.or(`customer_id.eq.${customer.id},profile_id.eq.${user.id}`);
+        } else {
+          query = query.eq('profile_id', user.id);
+        }
+        const { error } = await query;
+        if (error) throw error;
+        return { error: null };
+      } catch (err) {
+        return { error: err };
       }
     }
   };

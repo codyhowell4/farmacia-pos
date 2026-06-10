@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Search, FileText, ExternalLink, UserCircle, Clock, FileImage, Pill } from 'lucide-react';
+import { Search, FileText, ExternalLink, UserCircle, Clock, FileImage, Pill, Eye, CheckCircle, XCircle, Package } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { getCustomerDocuments } from '@/lib/db';
+import { getCustomerDocuments, updateCustomerDocumentStatus, createNotification } from '@/lib/db';
 
-const statusLabels = {
-  pending: { label: 'Pendiente', className: 'bg-yellow-100 text-yellow-800' },
-  approved: { label: 'Aprobada', className: 'bg-green-100 text-green-800' },
-  rejected: { label: 'Rechazada', className: 'bg-red-100 text-red-800' },
-  completed: { label: 'Completada', className: 'bg-blue-100 text-blue-800' },
+const statusConfig = {
+  pending:    { label: 'Pendiente', className: 'bg-yellow-100 text-yellow-800' },
+  reviewed:   { label: 'Revisada',  className: 'bg-blue-100 text-blue-800' },
+  approved:   { label: 'Aprobada',  className: 'bg-green-100 text-green-800' },
+  dispensed:  { label: 'Surtida',   className: 'bg-purple-100 text-purple-800' },
+  rejected:   { label: 'Rechazada', className: 'bg-red-100 text-red-800' },
 };
 
-const getStatusBadge = (status) => {
-  const s = statusLabels[status] || statusLabels.pending;
+const StatusBadge = ({ status }) => {
+  const s = statusConfig[status] || statusConfig.pending;
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${s.className}`}>
       {s.label}
@@ -20,11 +22,16 @@ const getStatusBadge = (status) => {
   );
 };
 
+const isRealFileUrl = (url) => {
+  return url && typeof url === 'string' && url.startsWith('http');
+};
+
 const AdminPrescriptions = () => {
   const [documents, setDocuments] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState(null);
   const { toast } = useToast();
 
   const loadDocuments = async () => {
@@ -42,6 +49,35 @@ const AdminPrescriptions = () => {
 
   useEffect(() => { loadDocuments(); }, []);
 
+  const handleStatusChange = async (id, newStatus) => {
+    setUpdatingId(id);
+    try {
+      await updateCustomerDocumentStatus(id, newStatus);
+      const doc = documents.find((d) => d.id === id);
+      if (doc?.customers?.id) {
+        try {
+          await createNotification({
+            customer_id: doc.customers.id,
+            profile_id: doc.customers.profile_id,
+            type: 'prescription',
+            title: `Receta médica ${statusConfig[newStatus]?.label || newStatus}`,
+            message: doc.notes ? `"${doc.notes.substring(0, 60)}"` : 'Tu receta médica ha sido actualizada.',
+            related_id: id,
+            related_table: 'customer_documents',
+          });
+        } catch (notifErr) {
+          console.warn('[Notification] Failed to create:', notifErr);
+        }
+      }
+      toast({ title: 'Estado actualizado', description: `Receta marcada como ${statusConfig[newStatus]?.label || newStatus}` });
+      await loadDocuments();
+    } catch (err) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
   const filtered = documents.filter((doc) => {
     const matchesSearch =
       (doc.customers?.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -54,6 +90,23 @@ const AdminPrescriptions = () => {
   const formatDate = (d) => {
     if (!d) return '—';
     return new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const nextActions = (status) => {
+    switch (status) {
+      case 'pending': return [
+        { status: 'reviewed', label: 'Revisar', icon: Eye, variant: 'outline', className: 'border-blue-200 text-blue-700 hover:bg-blue-50' },
+        { status: 'rejected', label: 'Rechazar', icon: XCircle, variant: 'outline', className: 'border-red-200 text-red-700 hover:bg-red-50' },
+      ];
+      case 'reviewed': return [
+        { status: 'approved', label: 'Aprobar', icon: CheckCircle, variant: 'outline', className: 'border-green-200 text-green-700 hover:bg-green-50' },
+        { status: 'rejected', label: 'Rechazar', icon: XCircle, variant: 'outline', className: 'border-red-200 text-red-700 hover:bg-red-50' },
+      ];
+      case 'approved': return [
+        { status: 'dispensed', label: 'Marcar surtida', icon: Package, variant: 'outline', className: 'border-purple-200 text-purple-700 hover:bg-purple-50' },
+      ];
+      default: return [];
+    }
   };
 
   return (
@@ -82,10 +135,11 @@ const AdminPrescriptions = () => {
             className="px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="all">Todos los estados</option>
-            <option value="pending">Pendiente</option>
-            <option value="approved">Aprobada</option>
-            <option value="rejected">Rechazada</option>
-            <option value="completed">Completada</option>
+            <option value="pending">🟡 Pendiente</option>
+            <option value="reviewed">🔵 Revisada</option>
+            <option value="approved">🟢 Aprobada</option>
+            <option value="dispensed">🟣 Surtida</option>
+            <option value="rejected">🔴 Rechazada</option>
           </select>
         </div>
 
@@ -102,6 +156,7 @@ const AdminPrescriptions = () => {
                   <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">Estado</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">Fecha</th>
                   <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">Archivo</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -139,7 +194,9 @@ const AdminPrescriptions = () => {
                     <td className="px-4 py-3 text-sm text-slate-600 max-w-xs truncate" title={doc.notes || ''}>
                       {doc.notes || '—'}
                     </td>
-                    <td className="px-4 py-3 text-sm">{getStatusBadge(doc.status)}</td>
+                    <td className="px-4 py-3 text-sm">
+                      <StatusBadge status={doc.status || 'pending'} />
+                    </td>
                     <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5 text-slate-400" />
@@ -147,25 +204,60 @@ const AdminPrescriptions = () => {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm">
-                      {doc.file_url && doc.file_url !== 'pending' ? (
+                      {isRealFileUrl(doc.file_url) ? (
                         <a
                           href={doc.file_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline"
                         >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          Ver
+                          <FileText className="w-3.5 h-3.5" />
+                          📄 Ver archivo
                         </a>
+                      ) : doc.file_url === 'pending' ? (
+                        <span className="inline-flex items-center gap-1 text-amber-600 text-xs">
+                          <Clock className="w-3.5 h-3.5" />
+                          Subiendo archivo...
+                        </span>
                       ) : (
-                        <span className="text-slate-400 text-xs">Sin archivo</span>
+                        <span className="inline-flex items-center gap-1 text-slate-400 text-xs">
+                          <FileText className="w-3.5 h-3.5" />
+                          Receta manual
+                        </span>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {nextActions(doc.status || 'pending').map((action) => {
+                          const Icon = action.icon;
+                          return (
+                            <Button
+                              key={action.status}
+                              size="sm"
+                              variant={action.variant}
+                              disabled={updatingId === doc.id}
+                              onClick={() => handleStatusChange(doc.id, action.status)}
+                              className={`text-xs h-7 px-2 ${action.className}`}
+                            >
+                              {updatingId === doc.id ? (
+                                <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
+                              ) : (
+                                <Icon className="w-3 h-3 mr-0.5" />
+                              )}
+                              {action.label}
+                            </Button>
+                          );
+                        })}
+                        {nextActions(doc.status || 'pending').length === 0 && (
+                          <span className="text-xs text-slate-400">Sin acciones</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                       {searchTerm || statusFilter !== 'all'
                         ? 'No se encontraron recetas médicas con ese criterio'
                         : 'No hay recetas médicas registradas.'}

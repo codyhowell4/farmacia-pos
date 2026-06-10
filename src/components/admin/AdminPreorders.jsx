@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Package, UserCircle, Clock, Pill, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Search, Package, UserCircle, Clock, Pill, CheckCircle, XCircle, Loader2, Calendar } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { getPreorders, updatePreorderStatus } from '@/lib/db';
+import { getPreorders, updatePreorderStatus, createNotification } from '@/lib/db';
 
 const statusConfig = {
-  pending: { label: 'Pendiente', className: 'bg-yellow-100 text-yellow-800' },
-  approved: { label: 'Aprobado', className: 'bg-green-100 text-green-800' },
-  ready: { label: 'Listo', className: 'bg-blue-100 text-blue-800' },
-  delivered: { label: 'Entregado', className: 'bg-emerald-100 text-emerald-800' },
-  cancelled: { label: 'Cancelado', className: 'bg-red-100 text-red-800' },
-  completed: { label: 'Completado', className: 'bg-slate-100 text-slate-800' },
+  pending:    { label: 'Pendiente',  className: 'bg-yellow-100 text-yellow-800' },
+  approved:   { label: 'Aprobado',   className: 'bg-green-100 text-green-800' },
+  ready:      { label: 'Listo',      className: 'bg-blue-100 text-blue-800' },
+  delivered:  { label: 'Entregado',  className: 'bg-emerald-100 text-emerald-800' },
+  completed:  { label: 'Completado', className: 'bg-slate-100 text-slate-800' },
+  cancelled:  { label: 'Cancelado',  className: 'bg-red-100 text-red-800' },
+  picked_up:  { label: 'Recogido',   className: 'bg-slate-100 text-slate-800' },
 };
 
 const StatusBadge = ({ status }) => {
@@ -27,6 +28,8 @@ const AdminPreorders = () => {
   const [preorders, setPreorders] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('');
+  const [medicationFilter, setMedicationFilter] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
   const { toast } = useToast();
@@ -50,6 +53,24 @@ const AdminPreorders = () => {
     setUpdatingId(id);
     try {
       await updatePreorderStatus(id, newStatus);
+      const preorder = preorders.find((p) => p.id === id);
+      if (preorder?.customers?.id) {
+        try {
+          await createNotification({
+            customer_id: preorder.customers.id,
+            profile_id: preorder.customers.profile_id,
+            type: 'refill',
+            title: `Solicitud de recarga ${statusConfig[newStatus]?.label || newStatus}`,
+            message: preorder.inventory?.name
+              ? `Tu solicitud de ${preorder.inventory.name} (${preorder.quantity || 1} unidad(es)) ha sido actualizada.`
+              : 'Tu solicitud de recarga ha sido actualizada.',
+            related_id: id,
+            related_table: 'preorders',
+          });
+        } catch (notifErr) {
+          console.warn('[Notification] Failed to create:', notifErr);
+        }
+      }
       toast({ title: 'Estado actualizado', description: `Solicitud marcada como ${statusConfig[newStatus]?.label || newStatus}` });
       await loadPreorders();
     } catch (err) {
@@ -65,7 +86,9 @@ const AdminPreorders = () => {
       (p.inventory?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (p.notes || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || (p.status || 'pending') === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesDate = !dateFilter || (p.created_at && p.created_at.startsWith(dateFilter));
+    const matchesMedication = !medicationFilter || (p.inventory?.name || '').toLowerCase().includes(medicationFilter.toLowerCase());
+    return matchesSearch && matchesStatus && matchesDate && matchesMedication;
   });
 
   const formatDate = (d) => {
@@ -93,7 +116,7 @@ const AdminPreorders = () => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-        <div className="flex flex-col sm:flex-row gap-4 mb-4">
+        <div className="flex flex-col lg:flex-row gap-4 mb-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <Input
@@ -102,6 +125,29 @@ const AdminPreorders = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10"
             />
+          </div>
+          <div className="relative flex-1">
+            <Pill className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input
+              placeholder="Filtrar por medicamento..."
+              value={medicationFilter}
+              onChange={(e) => setMedicationFilter(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-slate-400" />
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {dateFilter && (
+              <Button size="sm" variant="ghost" onClick={() => setDateFilter('')}>
+                Limpiar
+              </Button>
+            )}
           </div>
           <select
             value={statusFilter}
@@ -113,8 +159,8 @@ const AdminPreorders = () => {
             <option value="approved">Aprobado</option>
             <option value="ready">Listo</option>
             <option value="delivered">Entregado</option>
-            <option value="cancelled">Cancelado</option>
             <option value="completed">Completado</option>
+            <option value="cancelled">Cancelado</option>
           </select>
         </div>
 
@@ -164,7 +210,7 @@ const AdminPreorders = () => {
                       {p.notes || '—'}
                     </td>
                     <td className="px-4 py-3 text-sm">
-                      <StatusBadge status={p.status} />
+                      <StatusBadge status={p.status || 'pending'} />
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
@@ -174,7 +220,7 @@ const AdminPreorders = () => {
                     </td>
                     <td className="px-4 py-3 text-sm">
                       <div className="flex items-center gap-2 flex-wrap">
-                        {nextStatuses(p.status).map((nextStatus) => (
+                        {nextStatuses(p.status || 'pending').map((nextStatus) => (
                           <Button
                             key={nextStatus}
                             size="sm"
@@ -197,7 +243,7 @@ const AdminPreorders = () => {
                             {statusConfig[nextStatus]?.label || nextStatus}
                           </Button>
                         ))}
-                        {nextStatuses(p.status).length === 0 && (
+                        {nextStatuses(p.status || 'pending').length === 0 && (
                           <span className="text-xs text-slate-400">Sin acciones</span>
                         )}
                       </div>
@@ -207,7 +253,7 @@ const AdminPreorders = () => {
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
-                      {searchTerm || statusFilter !== 'all'
+                      {searchTerm || statusFilter !== 'all' || dateFilter || medicationFilter
                         ? 'No se encontraron solicitudes con ese criterio'
                         : 'No hay solicitudes de recarga registradas.'}
                     </td>

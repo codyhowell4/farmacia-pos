@@ -427,7 +427,7 @@ export const createSale = async (sale, items) => {
 export const getSales = async () => {
   const { data, error } = await supabase
     .from('sales')
-    .select('*, sale_items(*), customers(full_name, phone, curp, email)')
+    .select('*, sale_items(*), customers(id, full_name, phone, curp, email, profile_id)')
     .order('timestamp', { ascending: false });
   if (error) throw error;
   return data;
@@ -892,7 +892,7 @@ export const getCustomerDocuments = async () => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('customer_documents')
-    .select('*, customers(full_name, email)')
+    .select('*, customers(id, full_name, email, profile_id)')
     .eq('org_id', orgId)
     .order('created_at', { ascending: false });
   if (error) throw error;
@@ -1156,7 +1156,7 @@ export const getAppointments = async () => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('appointments')
-    .select('*, customers(full_name, phone)')
+    .select('*, customers(id, full_name, phone, profile_id), profiles(full_name)')
     .eq('org_id', orgId)
     .order('appointment_date', { ascending: true });
   if (error) throw error;
@@ -1208,7 +1208,7 @@ export const getPreorders = async () => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('preorders')
-    .select('*, customers(full_name), inventory(name, price, quantity)')
+    .select('*, customers(id, full_name, profile_id), inventory(name, price, quantity)')
     .eq('org_id', orgId)
     .order('created_at', { ascending: false });
   if (error) throw error;
@@ -1543,6 +1543,165 @@ export const getInventoryForDoctor = async () => {
     .eq('org_id', orgId)
     .gt('quantity', 0)
     .order('name');
+  if (error) throw error;
+  return data || [];
+};
+
+// ── CUSTOMER DOCUMENTS (PRESCRIPTIONS) ──────────────────────
+
+export const updateCustomerDocumentStatus = async (id, status) => {
+  const { data, error } = await supabase
+    .from('customer_documents')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// ── SALES / ORDERS ──────────────────────────────────────────
+
+export const updateSaleStatus = async (id, status) => {
+  const { data, error } = await supabase
+    .from('sales')
+    .update({ status })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// ── CUSTOMER STATS & PROFILE ────────────────────────────────
+
+export const getCustomerStats = async (customerId) => {
+  const orgId = await getOrgId();
+  const [{ count: prescriptions }, { count: preorders }, { count: appointments }, { count: orders }] = await Promise.all([
+    supabase.from('customer_documents').select('*', { count: 'exact', head: true }).eq('customer_id', customerId),
+    supabase.from('preorders').select('*', { count: 'exact', head: true }).eq('customer_id', customerId),
+    supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('customer_id', customerId),
+    supabase.from('sales').select('*', { count: 'exact', head: true }).eq('customer_id', customerId).eq('voided', false),
+  ]);
+  return {
+    prescriptions: prescriptions || 0,
+    preorders: preorders || 0,
+    appointments: appointments || 0,
+    orders: orders || 0,
+  };
+};
+
+export const getCustomerPrescriptions = async (customerId) => {
+  const { data, error } = await supabase
+    .from('customer_documents')
+    .select('*')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getCustomerPreorders = async (customerId) => {
+  const { data, error } = await supabase
+    .from('preorders')
+    .select('*, inventory(name, price)')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getCustomerAppointments = async (customerId) => {
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('*, profiles(full_name)')
+    .eq('customer_id', customerId)
+    .order('appointment_date', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getCustomerOrders = async (customerId) => {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('*, sale_items(*)')
+    .eq('customer_id', customerId)
+    .eq('voided', false)
+    .order('timestamp', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+// ── NOTIFICATIONS ───────────────────────────────────────────
+
+export const getNotifications = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('*, customers(full_name)')
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  return data || [];
+};
+
+export const getUnreadNotificationsCount = async (customerId = null, profileId = null) => {
+  let query = supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('is_read', false);
+  if (customerId) query = query.eq('customer_id', customerId);
+  if (profileId) query = query.eq('profile_id', profileId);
+  const { count, error } = await query;
+  if (error) throw error;
+  return count || 0;
+};
+
+export const createNotification = async (notification) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('notifications')
+    .insert({ ...notification, org_id: orgId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const markNotificationRead = async (id) => {
+  const { data, error } = await supabase
+    .from('notifications')
+    .update({ is_read: true })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const markAllNotificationsRead = async (customerId = null, profileId = null) => {
+  let query = supabase.from('notifications').update({ is_read: true }).eq('is_read', false);
+  if (customerId) query = query.eq('customer_id', customerId);
+  if (profileId) query = query.eq('profile_id', profileId);
+  const { error } = await query;
+  if (error) throw error;
+};
+
+// ── INVENTORY / REORDER ─────────────────────────────────────
+
+export const decrementInventoryItem = async (inventoryId, quantity) => {
+  const { data, error } = await supabase
+    .rpc('decrement_inventory', { p_id: inventoryId, p_qty: quantity });
+  if (error) throw error;
+  return data;
+};
+
+export const getInventoryLowStock = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('inventory')
+    .select('*, suppliers(name)')
+    .eq('org_id', orgId)
+    .or('quantity.lte.low_stock_threshold,quantity.eq.0')
+    .order('quantity', { ascending: true });
   if (error) throw error;
   return data || [];
 };

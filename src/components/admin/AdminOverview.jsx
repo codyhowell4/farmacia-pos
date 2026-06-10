@@ -1,24 +1,31 @@
 import { formatMXN } from '@/lib/currency';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, Package, ShoppingCart, Users, TrendingUp, XCircle, UserCog } from 'lucide-react';
+import { DollarSign, Package, ShoppingCart, Users, TrendingUp, XCircle, UserCog, ClipboardList, Pill, Clock, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-import { getSales, getInventory, getUsers } from '@/lib/db';
+import { getSales, getInventory, getUsers, getCustomerDocuments, getPreorders, getAppointments } from '@/lib/db';
 
 const AdminOverview = () => {
   const [stats, setStats] = useState({
     totalSales: 0, totalRevenue: 0, totalInventory: 0,
     totalUsers: 0, lowStockItems: 0, outOfStockItems: 0,
+    pendingPrescriptions: 0, pendingPreorders: 0,
+    appointmentsToday: 0, pendingOrders: 0,
   });
   const navigate = useNavigate();
 
   useEffect(() => {
-    Promise.all([getSales(), getInventory(), getUsers()])
-      .then(([sales, inventory, users]) => {
+    Promise.all([getSales(), getInventory(), getUsers(), getCustomerDocuments(), getPreorders(), getAppointments()])
+      .then(([sales, inventory, users, documents, preorders, appointments]) => {
         const totalRevenue = sales.filter(s => !s.voided).reduce((sum, sale) => sum + sale.total, 0);
         const lowStockItems = inventory.filter(item => item.quantity > 0 && item.quantity < (item.low_stock_threshold || 10)).length;
         const outOfStockItems = inventory.filter(item => item.quantity === 0).length;
+        const pendingPrescriptions = documents.filter(d => (d.status || 'pending') === 'pending').length;
+        const pendingPreorders = preorders.filter(p => (p.status || 'pending') === 'pending').length;
+        const today = new Date().toISOString().split('T')[0];
+        const appointmentsToday = appointments.filter(a => a.appointment_date && a.appointment_date.startsWith(today)).length;
+        const pendingOrders = sales.filter(s => !s.voided && (s.status === 'pending' || s.status === 'processing')).length;
         setStats({
           totalSales: sales.filter(s => !s.voided).length,
           totalRevenue,
@@ -26,6 +33,10 @@ const AdminOverview = () => {
           totalUsers: users.length,
           lowStockItems,
           outOfStockItems,
+          pendingPrescriptions,
+          pendingPreorders,
+          appointmentsToday,
+          pendingOrders,
         });
       })
       .catch(console.error);
@@ -38,6 +49,10 @@ const AdminOverview = () => {
     { label: 'Usuarios totales', value: stats.totalUsers, icon: Users, color: 'from-sky-500 to-cyan-600', path: '/admin/users' },
     { label: 'Stock bajo', value: stats.lowStockItems, icon: TrendingUp, color: 'from-yellow-500 to-orange-600', path: '/admin/inventory' },
     { label: 'Sin existencias', value: stats.outOfStockItems, icon: XCircle, color: 'from-red-500 to-rose-600', path: '/admin/inventory' },
+    { label: 'Recetas pendientes', value: stats.pendingPrescriptions, icon: ClipboardList, color: 'from-amber-500 to-yellow-600', path: '/admin/prescriptions' },
+    { label: 'Recargas pendientes', value: stats.pendingPreorders, icon: Pill, color: 'from-teal-500 to-emerald-600', path: '/admin/preorders' },
+    { label: 'Citas hoy', value: stats.appointmentsToday, icon: Clock, color: 'from-violet-500 to-purple-600', path: '/admin/appointments' },
+    { label: 'Pedidos pendientes', value: stats.pendingOrders, icon: ShoppingCart, color: 'from-orange-500 to-red-600', path: '/admin/orders' },
   ];
 
   return (
@@ -47,7 +62,7 @@ const AdminOverview = () => {
         <p className="text-slate-600">Bienvenido al sistema de gestión de farmacia</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         {statCards.map((stat, index) => {
           const Icon = stat.icon;
           return (

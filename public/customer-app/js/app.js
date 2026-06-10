@@ -595,7 +595,13 @@ function renderHome() {
     <!-- Date Header -->
     <div class="date-header">
       <div class="day">${today}</div>
-      <div class="title">Farmacia Apollo</div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="title">Farmacia Apollo</div>
+        <button onclick="showNotifications()" style="position: relative; background: rgba(255,255,255,0.1); border: none; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;">
+          🔔
+          <span id="notification-badge" style="position: absolute; top: -2px; right: -2px; background: #ef4444; color: white; font-size: 0.6rem; padding: 1px 5px; border-radius: 8px; font-weight: 700; display: none;">0</span>
+        </button>
+      </div>
       <div class="subtitle">Cuidamos de ti, cuidamos tu salud</div>
     </div>
 
@@ -719,6 +725,8 @@ function renderHome() {
     <!-- Bottom spacing for nav -->
     <div style="height: 100px;"></div>
   `;
+  // Load notification count after rendering home
+  setTimeout(loadNotificationCount, 500);
 }
 window.addWaterFromTracker = function() {
   Store.addWater(1);
@@ -4618,7 +4626,8 @@ async function renderSalud() {
             createdAt: p.createdAt,
             profileId: Store.getActiveProfileId(),
             _supabaseType: p.type,
-            _fileUrl: p.fileUrl
+            _fileUrl: p.fileUrl,
+            _docStatus: p.status || 'pending'
           }));
         prescriptions = [...mapped, ...prescriptions];
       }
@@ -4700,6 +4709,31 @@ async function renderSalud() {
               <div style="flex: 1; min-width: 0;">
                 <div style="font-weight: 600; color: white; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.medicine}</div>
                 <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${p.dose ? p.dose.substring(0, 40) : ''} ${p.frequency ? '• ' + p.frequency : ''}</div>
+                ${isSupabase && p._docStatus ? `
+                  <div style="font-size: 0.75rem; margin-top: 0.25rem;">
+                    <span style="background: ${
+                      p._docStatus === 'pending' ? 'rgba(245,158,11,0.2)' :
+                      p._docStatus === 'reviewed' ? 'rgba(59,130,246,0.2)' :
+                      p._docStatus === 'approved' ? 'rgba(0,212,170,0.2)' :
+                      p._docStatus === 'dispensed' ? 'rgba(139,92,246,0.2)' :
+                      'rgba(255,107,107,0.2)'
+                    }; color: ${
+                      p._docStatus === 'pending' ? '#fbbf24' :
+                      p._docStatus === 'reviewed' ? '#60a5fa' :
+                      p._docStatus === 'approved' ? '#00d4aa' :
+                      p._docStatus === 'dispensed' ? '#a78bfa' :
+                      '#ff6b6b'
+                    }; padding: 0.125rem 0.5rem; border-radius: 10px;">
+                      ${
+                        p._docStatus === 'pending' ? '🟡 Pendiente' :
+                        p._docStatus === 'reviewed' ? '🔵 Revisada' :
+                        p._docStatus === 'approved' ? '🟢 Aprobada' :
+                        p._docStatus === 'dispensed' ? '🟣 Surtida' :
+                        '🔴 Rechazada'
+                      }
+                    </span>
+                  </div>
+                ` : ''}
                 ${activeRefill ? `
                   <div style="font-size: 0.75rem; margin-top: 0.25rem;">
                     <span style="background: ${activeRefill.status === 'confirmed' ? 'rgba(0,212,170,0.2)' : 'rgba(245,158,11,0.2)'}; color: ${activeRefill.status === 'confirmed' ? '#00d4aa' : '#f59e0b'}; padding: 0.125rem 0.5rem; border-radius: 10px;">
@@ -9575,6 +9609,73 @@ window.saveVaccineRecord = function(vaccineId) {
   renderVaccineTracker();
   alert('✅ Vacuna registrada. ¡+25 puntos!');
 };
+
+// ============================================
+// NOTIFICATION CENTER
+// ============================================
+
+async function loadNotificationCount() {
+  try {
+    const count = await FarmaciaAPI.getUnreadNotificationCount();
+    const badge = document.getElementById('notification-badge');
+    if (badge) {
+      badge.textContent = count > 99 ? '99+' : count;
+      badge.style.display = count > 0 ? 'block' : 'none';
+    }
+  } catch (e) {
+    console.warn('[Notifications] Could not load count:', e);
+  }
+}
+
+window.showNotifications = async function() {
+  const notifications = await FarmaciaAPI.getNotifications();
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; display: flex; align-items: flex-start; justify-content: center; padding-top: 60px;';
+  modal.innerHTML = `
+    <div style="background: white; border-radius: 16px; width: 90%; max-width: 420px; max-height: 70vh; overflow: hidden; display: flex; flex-direction: column;">
+      <div style="padding: 1rem; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: #1e293b;">🔔 Notificaciones</h3>
+        <div style="display: flex; gap: 0.5rem;">
+          ${notifications.length > 0 ? `<button onclick="markAllNotificationsRead()" style="background: none; border: none; color: #3b82f6; font-size: 0.8rem; cursor: pointer; font-weight: 500;">Marcar todas</button>` : ''}
+          <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #94a3b8;">×</button>
+        </div>
+      </div>
+      <div style="overflow-y: auto; padding: 0.5rem;">
+        ${notifications.length === 0 ? `
+          <div style="text-align: center; padding: 2rem; color: #94a3b8;">
+            <div style="font-size: 2rem; margin-bottom: 0.5rem;">📭</div>
+            <div style="font-size: 0.9rem;">No tienes notificaciones</div>
+          </div>
+        ` : notifications.map(n => `
+          <div onclick="markNotificationRead('${n.id}')" style="padding: 0.75rem; border-radius: 10px; margin-bottom: 0.25rem; cursor: pointer; ${n.isRead ? 'background: #f8fafc;' : 'background: #eff6ff; border-left: 3px solid #3b82f6;'}">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
+              <div style="font-weight: 600; font-size: 0.85rem; color: #1e293b; flex: 1;">${n.title}</div>
+              <div style="font-size: 0.7rem; color: #94a3b8; white-space: nowrap;">${n.createdAt ? new Date(n.createdAt).toLocaleDateString('es-MX') : ''}</div>
+            </div>
+            ${n.message ? `<div style="font-size: 0.8rem; color: #64748b; margin-top: 0.25rem;">${n.message}</div>` : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+};
+
+window.markNotificationRead = async function(id) {
+  await FarmaciaAPI.markNotificationRead(id);
+  await loadNotificationCount();
+  window.showNotifications();
+};
+
+window.markAllNotificationsRead = async function() {
+  await FarmaciaAPI.markAllNotificationsRead();
+  await loadNotificationCount();
+  window.showNotifications();
+};
+
+// Update notification count periodically
+setInterval(loadNotificationCount, 30000);
 
 // ============================================
 // GLOBAL EXPOSURES (for inline onclick handlers)

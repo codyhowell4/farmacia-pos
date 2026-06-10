@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Search, UserCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, UserCircle, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -7,8 +7,10 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '@/lib/db';
+import { useNavigate } from 'react-router-dom';
 
 const AdminCustomers = () => {
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -184,8 +186,9 @@ const AdminCustomers = () => {
                   <td className="px-4 py-3 text-sm text-slate-600">{c.email || '—'}</td>
                   <td className="px-4 py-3 text-sm">
                     <div className="flex space-x-2">
-                      <button onClick={() => handleEdit(c)} className="text-blue-600 hover:text-blue-800"><Edit className="w-4 h-4" /></button>
-                      <button onClick={() => handleDelete(c.id)} className="text-red-600 hover:text-red-800"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => navigate(`/admin/customers/${c.id}`)} className="text-emerald-600 hover:text-emerald-800" title="Ver perfil"><Eye className="w-4 h-4" /></button>
+                      <button onClick={() => handleEdit(c)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit className="w-4 h-4" /></button>
+                      <button onClick={() => handleDelete(c.id)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
                 </tr>

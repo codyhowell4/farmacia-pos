@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield, Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle, Stethoscope, Smartphone, ClipboardList, Pill } from 'lucide-react';
+import { Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield, Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle, Stethoscope, Smartphone, ClipboardList, Pill, CalendarDays, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminUsers from '@/components/admin/AdminUsers';
@@ -21,6 +21,10 @@ import AdminCustomers from '@/components/admin/AdminCustomers';
 import AdminDoctors from '@/components/admin/AdminDoctors';
 import AdminPrescriptions from '@/components/admin/AdminPrescriptions';
 import AdminPreorders from '@/components/admin/AdminPreorders';
+import AdminAppointments from '@/components/admin/AdminAppointments';
+import AdminOrders from '@/components/admin/AdminOrders';
+import AdminCustomerProfile from '@/components/admin/AdminCustomerProfile';
+import AdminReorderReport from '@/components/admin/AdminReorderReport';
 
 const AdminDashboard = () => {
   const { logout, user } = useAuth();
@@ -45,6 +49,9 @@ const AdminDashboard = () => {
     if (path.includes('/doctors')) return 'doctors';
     if (path.includes('/prescriptions')) return 'prescriptions';
     if (path.includes('/preorders')) return 'preorders';
+    if (path.includes('/appointments')) return 'appointments';
+    if (path.includes('/orders')) return 'orders';
+    if (path.includes('/reorder-report')) return 'reorder-report';
     return 'overview';
   };
   
@@ -72,6 +79,9 @@ const AdminDashboard = () => {
     { id: 'settings', label: 'Configuración', icon: Settings, path: '/admin/settings' },
     { id: 'prescriptions', label: 'Recetas médicas', icon: ClipboardList, path: '/admin/prescriptions' },
     { id: 'preorders', label: 'Solicitudes de recarga', icon: Pill, path: '/admin/preorders' },
+    { id: 'appointments', label: 'Citas', icon: CalendarDays, path: '/admin/appointments' },
+    { id: 'orders', label: 'Pedidos', icon: ShoppingCart, path: '/admin/orders' },
+    { id: 'reorder-report', label: 'Reporte de reorden', icon: AlertTriangle, path: '/admin/reorder-report' },
     { id: 'customer-portal', label: 'Portal Cliente', icon: Smartphone, path: '/customer-app/', external: true },
   ];
 
@@ -198,6 +208,10 @@ const AdminDashboard = () => {
                 <Route path="/doctors" element={<AdminDoctors />} />
                 <Route path="/prescriptions" element={<AdminPrescriptions />} />
                 <Route path="/preorders" element={<AdminPreorders />} />
+                <Route path="/appointments" element={<AdminAppointments />} />
+                <Route path="/orders" element={<AdminOrders />} />
+                <Route path="/customers/:customerId" element={<AdminCustomerProfile />} />
+                <Route path="/reorder-report" element={<AdminReorderReport />} />
                 <Route path="/settings" element={<AdminSettings />} />
               </Routes>
             </main>
