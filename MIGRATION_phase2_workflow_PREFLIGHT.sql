@@ -3,6 +3,7 @@
 -- ============================================================
 -- Run this BEFORE applying the migration to see current state.
 -- All results are read-only. No changes are made.
+-- Compatible with both old (pre-migration) and new schemas.
 -- ============================================================
 
 SELECT '=== 1. customer_documents columns ===' AS section;
@@ -55,7 +56,12 @@ SELECT 'preorders' AS table_name, status, COUNT(*) FROM preorders GROUP BY statu
 UNION ALL
 SELECT 'sales' AS table_name, status, COUNT(*) FROM sales GROUP BY status
 UNION ALL
-SELECT 'customer_documents' AS table_name, status, COUNT(*) FROM customer_documents GROUP BY status;
+SELECT 'customer_documents' AS table_name,
+  CASE WHEN EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'customer_documents' AND column_name = 'status'
+  ) THEN (SELECT status::text FROM customer_documents LIMIT 1) ELSE '(no status column)' END,
+  (SELECT COUNT(*) FROM customer_documents);
 
 SELECT '=== 9. Row counts ===' AS section;
 SELECT 'preorders' AS table_name, COUNT(*) FROM preorders
@@ -63,6 +69,18 @@ UNION ALL
 SELECT 'sales' AS table_name, COUNT(*) FROM sales
 UNION ALL
 SELECT 'customer_documents' AS table_name, COUNT(*) FROM customer_documents;
+
+SELECT '=== 10. Does customer_documents.status column exist? ===' AS section;
+SELECT EXISTS (
+  SELECT 1 FROM information_schema.columns
+  WHERE table_name = 'customer_documents' AND column_name = 'status'
+) AS status_column_exists;
+
+SELECT '=== 11. Does customer_documents.updated_at column exist? ===' AS section;
+SELECT EXISTS (
+  SELECT 1 FROM information_schema.columns
+  WHERE table_name = 'customer_documents' AND column_name = 'updated_at'
+) AS updated_at_column_exists;
 
 -- ============================================================
 -- END PREFLIGHT

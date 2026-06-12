@@ -34,7 +34,6 @@ const closeMenuBtn = document.getElementById('close-menu-btn');
 const menuOverlay = document.getElementById('menu-overlay');
 const menuPanel = document.getElementById('menu-panel');
 const menuItems = document.querySelectorAll('.menu-item');
-const cartBtn = document.getElementById('cart-btn');
 
 // Initialize
 // Auth state
@@ -51,9 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setupNavigation();
   setupMenuNavigation();
   setupSearch();
-  
-  // Cart button
-  cartBtn?.addEventListener('click', showCart);
   
   // Set home nav as active by default
   navItems.forEach(nav => nav.classList.remove('active'));
@@ -106,10 +102,6 @@ async function initAuth() {
       await FarmaciaAPI.ensureCustomerProfile(currentCustomerProfile?.name);
       
       updateMenuUserInfo();
-      
-      // Authenticated user with profile — skip onboarding
-      Store.markOnboardingComplete();
-      document.getElementById('onboarding-modal')?.remove();
     } else {
       console.log('[Auth] No active session');
       updateMenuUserInfo();
@@ -219,13 +211,8 @@ async function handleLogin() {
   await FarmaciaAPI.ensureCustomerProfile(currentCustomerProfile?.name);
   
   updateMenuUserInfo();
-  
-  // Logged-in user — skip onboarding
-  Store.markOnboardingComplete();
-  document.getElementById('onboarding-modal')?.remove();
-  
   renderHome();
-  alert('✅ Bienvenido de vuelta, ' + (currentCustomerProfile?.name || currentAuthUser.email));
+  showToast('Bienvenido de vuelta, ' + (currentCustomerProfile?.name || currentAuthUser.email), 'success');
 }
 
 function renderSignup() {
@@ -329,10 +316,6 @@ async function handleSignup() {
   
   updateMenuUserInfo();
   
-  // Signed-up user — skip onboarding
-  Store.markOnboardingComplete();
-  document.getElementById('onboarding-modal')?.remove();
-  
   // If email confirmation is not required, auto-login feel
   if (data.session) {
     currentCustomerProfile = await FarmaciaAPI.getCustomerProfile();
@@ -350,7 +333,7 @@ async function handleLogout() {
   updateMenuUserInfo();
   closeMenu();
   renderHome();
-  alert('👋 Sesión cerrada');
+  showToast('Sesión cerrada', 'info');
 }
 
 window.handleLogout = handleLogout;
@@ -365,20 +348,16 @@ async function requestNotificationPermission() {
   }
   
   if (status.permission === 'default') {
-    // Show a subtle prompt first
-    const shouldRequest = confirm('¿Deseas recibir recordatorios de medicamentos?\n\nTe enviaremos notificaciones cuando sea hora de tomar tus medicamentos.');
-    if (shouldRequest) {
-      const granted = await NotificationManager.requestPermission();
-      if (granted) {
-        // Schedule notifications for existing schedules
-        const schedules = Store.getMedicineSchedules();
-        for (const schedule of schedules) {
-          if (schedule.active) {
-            await NotificationManager.scheduleAllDoses(schedule);
-          }
+    const granted = await NotificationManager.requestPermission();
+    if (granted) {
+      // Schedule notifications for existing schedules
+      const schedules = Store.getMedicineSchedules();
+      for (const schedule of schedules) {
+        if (schedule.active) {
+          await NotificationManager.scheduleAllDoses(schedule);
         }
-        alert('✅ Notificaciones activadas. Recibirás alertas cuando sea hora de tus medicamentos.');
       }
+      showToast('Notificaciones activadas. Recibirás alertas cuando sea hora de tus medicamentos.', 'success');
     }
   } else if (status.permission === 'granted') {
     // Already granted, schedule notifications for existing schedules
@@ -595,13 +574,7 @@ function renderHome() {
     <!-- Date Header -->
     <div class="date-header">
       <div class="day">${today}</div>
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div class="title">Farmacia Apollo</div>
-        <button onclick="showNotifications()" style="position: relative; background: rgba(255,255,255,0.1); border: none; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: white;">
-          🔔
-          <span id="notification-badge" style="position: absolute; top: -2px; right: -2px; background: #ef4444; color: white; font-size: 0.6rem; padding: 1px 5px; border-radius: 8px; font-weight: 700; display: none;">0</span>
-        </button>
-      </div>
+      <div class="title">Farmacia Apollo</div>
       <div class="subtitle">Cuidamos de ti, cuidamos tu salud</div>
     </div>
 
@@ -725,8 +698,6 @@ function renderHome() {
     <!-- Bottom spacing for nav -->
     <div style="height: 100px;"></div>
   `;
-  // Load notification count after rendering home
-  setTimeout(loadNotificationCount, 500);
 }
 window.addWaterFromTracker = function() {
   Store.addWater(1);
@@ -994,9 +965,6 @@ function renderHealth() {
       <button class="btn btn-white" style="background: var(--primary-light); color: var(--primary); border: 1px solid var(--primary); padding: 0.5rem; font-size: 0.85rem;" onclick="showHealthModal('temperature')">🌡️ Temp</button>
       <button class="btn btn-white" style="background: var(--primary-light); color: var(--primary); border: 1px solid var(--primary); padding: 0.5rem; font-size: 0.85rem;" onclick="showHealthModal('oxygen')">💨 SpO2</button>
     </div>
-    
-    <!-- Bottom spacing for nav -->
-    <div style="height: 80px;"></div>
   `;
 }
 
@@ -1131,45 +1099,22 @@ function renderGoals() {
 
     <!-- Available Rewards -->
     <h3 class="section-title">🎁 Recompensas Disponibles</h3>
-    <div style="padding: 0 1rem; margin-bottom: 1rem;">
-      <!-- Reward Card 1 -->
-      <div style="background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04)); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15); border-radius: 20px; padding: 1.25rem; margin-bottom: 0.75rem; color: white;">
-        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
-          <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #00d4aa, #00a8e8); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0;">💊</div>
-          <div style="flex: 1; min-width: 0;">
-            <div style="font-weight: 700; font-size: 1rem; margin-bottom: 0.15rem;">Descuento Medicamentos</div>
-            <div style="font-size: 0.8rem; opacity: 0.8;">Válido en todos los productos</div>
-          </div>
-          <div style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 700; flex-shrink: 0;">15% OFF</div>
+    <div class="medicine-list">
+      <div class="medicine-card" style="cursor: pointer;" onclick="alert('Canjear cupón')">
+        <div class="med-icon prescription">💊</div>
+        <div class="med-info">
+          <div class="med-brand">Descuento Medicamentos</div>
+          <div class="med-name">15% off - 200 pts</div>
         </div>
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;">
-          <div style="font-size: 0.8rem; opacity: 0.7;">
-            <span style="font-weight: 600; color: #f59e0b;">200</span> puntos requeridos
-          </div>
-          <button onclick="alert('Cupón canjeado: 15% de descuento en medicamentos')" style="padding: 0.5rem 1.25rem; background: linear-gradient(135deg, #00d4aa, #00a8e8); color: white; border: none; border-radius: 10px; font-weight: 600; font-size: 0.85rem; cursor: pointer; box-shadow: 0 2px 8px rgba(0,212,170,0.3);">
-            Canjear
-          </button>
-        </div>
+        <button class="add-btn">Canjear</button>
       </div>
-      
-      <!-- Reward Card 2 (disabled) -->
-      <div style="background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02)); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 1.25rem; color: white; opacity: 0.7;">
-        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
-          <div style="width: 48px; height: 48px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; opacity: 0.6;">👨‍⚕️</div>
-          <div style="flex: 1; min-width: 0;">
-            <div style="font-weight: 700; font-size: 1rem; margin-bottom: 0.15rem;">Consulta Nutricionista</div>
-            <div style="font-size: 0.8rem; opacity: 0.7;">1 sesión personalizada</div>
-          </div>
-          <div style="background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; opacity: 0.6;">GRATIS</div>
+      <div class="medicine-card" style="cursor: pointer;" onclick="alert('Canjear consulta')">
+        <div class="med-icon otc">👨‍⚕️</div>
+        <div class="med-info">
+          <div class="med-brand">Consulta Nutricionista</div>
+          <div class="med-name">Gratis - 500 pts</div>
         </div>
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;">
-          <div style="font-size: 0.8rem; opacity: 0.6;">
-            <span style="font-weight: 600; color: #f59e0b;">500</span> puntos requeridos
-          </div>
-          <button disabled style="padding: 0.5rem 1.25rem; background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.4); border: none; border-radius: 10px; font-weight: 600; font-size: 0.85rem; cursor: not-allowed;">
-            No disponible
-          </button>
-        </div>
+        <button class="add-btn" style="opacity: 0.5;" disabled>Canjear</button>
       </div>
     </div>
 
@@ -1201,9 +1146,6 @@ function renderGoals() {
         </div>
       `).join('')}
     </div>
-    
-    <!-- Bottom spacing for nav -->
-    <div style="height: 80px;"></div>
   `;
 }
 
@@ -1233,7 +1175,7 @@ function renderFamily() {
 // Global function for add to cart
 window.addToCart = function(id) {
   Store.addToCart(id, 1);
-  alert('Agregado al carrito');
+  showToast('Agregado al carrito', 'success');
 };
 
 // Global functions for fitness tracking
@@ -1318,9 +1260,9 @@ window.showLogModal = function(type) {
       <div style="padding: 1rem;">
         ${content[type]}
       </div>
-      <div style="padding: 1rem; display: flex; gap: 0.5rem; border-top: 1px solid var(--border);">
-        <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.75rem; border: 1px solid var(--border); background: white; border-radius: var(--radius); font-weight: 500;">Cancelar</button>
-        <button onclick="saveLog('${type}', this.closest('.modal-overlay'))" style="flex: 1; padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: var(--radius); font-weight: 500;">Guardar</button>
+      <div class="modal-actions-sticky">
+        <button onclick="this.closest('.modal-overlay').remove()" class="btn-modal-secondary">Cancelar</button>
+        <button onclick="saveLog('${type}', this.closest('.modal-overlay'))" class="btn-modal-primary">Guardar</button>
       </div>
     </div>
   `;
@@ -1359,8 +1301,8 @@ window.saveLog = function(type, modal) {
   }
   
   modal.remove();
-  renderHome(); // Refresh view
-  alert('✅ Registro guardado');
+  renderPage(currentPage); // Refresh view
+  showToast('Registro guardado', 'success');
 };
 
 
@@ -1380,13 +1322,13 @@ function renderStore() {
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🛒 Catálogo Completo</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Medicamentos, suplementos y más</p>
       <button onclick="alert('Subir receta')" style="margin-top: 1rem; padding: 0.625rem 1.25rem; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem;">
-        <span>📤</span> Subir Receta Médica
+        <span>📤</span> Subir Receta
       </button>
     </div>
 
     <!-- Categories -->
     <div style="padding: 1rem;">
-      <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem; scrollbar-width: none; -webkit-overflow-scrolling: touch;">
+      <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem;">
         ${categories.map(cat => `
           <button onclick="filterStoreCategory('${cat.id}')" class="store-cat-btn ${cat.id === 'all' ? 'active' : ''}" data-cat="${cat.id}" style="flex-shrink: 0; padding: 0.625rem 1rem; background: ${cat.id === 'all' ? 'rgba(0,212,170,0.3)' : 'rgba(255,255,255,0.08)'}; color: white; border: 1px solid ${cat.id === 'all' ? 'rgba(0,212,170,0.5)' : 'rgba(255,255,255,0.15)'}; border-radius: 20px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.35rem; backdrop-filter: blur(10px);">
             <span>${cat.icon}</span>
@@ -2137,7 +2079,7 @@ window.saveEmergencyInfo = function() {
   
   document.querySelector('.modal-overlay').remove();
   renderEmergencyID();
-  alert('✅ Información de emergencia actualizada');
+  showToast('Información de emergencia actualizada', 'success');
 };
 
 window.addEmergencyContactField = function() {
@@ -2367,9 +2309,9 @@ _Enviado desde Farmacia Apollo_`;
   } else {
     // Fallback: copy to clipboard
     navigator.clipboard.writeText(shareText).then(() => {
-      alert('✅ Información copiada al portapapeles. Pégala donde necesites.');
+      showToast('Información copiada al portapapeles', 'success');
     }).catch(() => {
-      alert('No se pudo copiar. Por favor copia manualmente.');
+      showToast('No se pudo copiar. Por favor copia manualmente.', 'error');
     });
   }
 };
@@ -2482,14 +2424,14 @@ window.saveGoal = function(goalIndex, modal) {
   
   modal.remove();
   renderGoals();
-  alert(goalIndex !== null ? '✅ Meta actualizada' : '✅ Meta creada');
+  showToast(goalIndex !== null ? 'Meta actualizada' : 'Meta creada', 'success');
 };
 
 window.deleteGoal = function(index) {
   if (confirm('¿Eliminar esta meta?')) {
     Store.deleteGoal(index);
     renderGoals();
-    alert('🗑️ Meta eliminada');
+    showToast('Meta eliminada', 'info');
   }
 };
 
@@ -2507,25 +2449,21 @@ window.updateGoalProgress = function(index) {
     renderGoals();
     
     if (goal.progress >= 100) {
-      alert('🎉 ¡Felicidades! Has alcanzado tu meta. Toca "Completar" para archivarla.');
+      showToast('¡Meta alcanzada! Toca Completar para archivar', 'success');
     }
   }
 };
 
 window.completeGoal = function(index) {
-  if (confirm('¿Marcar esta meta como completada? ¡Ganarás 100 puntos!')) {
-    Store.completeGoal(index, 'completed');
-    renderGoals();
-    alert('🎉 ¡Meta completada! +100 puntos');
-  }
+  Store.completeGoal(index, 'completed');
+  renderGoals();
+  showToast('¡Meta completada! +100 puntos', 'success');
 };
 
 window.expireGoal = function(index) {
-  if (confirm('¿Archivar esta meta? Se moverá a tu historial.')) {
-    Store.completeGoal(index, 'expired');
-    renderGoals();
-    alert('📁 Meta archivada');
-  }
+  Store.completeGoal(index, 'expired');
+  renderGoals();
+  showToast('Meta archivada', 'info');
 };
 
 // ============================================
@@ -2577,9 +2515,9 @@ window.showHealthModal = function(vitalType = null) {
           <textarea id="vital-notes" placeholder="Ej: Antes de desayunar, después de ejercicio..." style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 1rem; min-height: 80px; resize: vertical;"></textarea>
         </div>
       </div>
-      <div style="padding: 1rem; display: flex; gap: 0.5rem; border-top: 1px solid var(--border);">
-        <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.75rem; border: 1px solid var(--border-color); background: white; border-radius: var(--radius-md); font-weight: 500; cursor: pointer;">Cancelar</button>
-        <button onclick="saveVital(this.closest('.modal-overlay'))" style="flex: 1; padding: 0.75rem; background: var(--primary); color: white; border: none; border-radius: var(--radius-md); font-weight: 500; cursor: pointer;">Guardar</button>
+      <div class="modal-actions-sticky">
+        <button onclick="this.closest('.modal-overlay').remove()" class="btn-modal-secondary">Cancelar</button>
+        <button onclick="saveVital(this.closest('.modal-overlay'))" class="btn-modal-primary">Guardar</button>
       </div>
     </div>
   `;
@@ -2647,14 +2585,14 @@ window.saveVital = function(modal) {
   
   modal.remove();
   renderHealth();
-  alert('✅ Signo vital registrado');
+  showToast('Signo vital registrado', 'success');
 };
 
 window.deleteVital = function(index) {
   if (confirm('¿Eliminar este registro?')) {
     Store.deleteVital(index);
     renderHealth();
-    alert('🗑️ Registro eliminado');
+    showToast('Registro eliminado', 'info');
   }
 };
 
@@ -2713,7 +2651,7 @@ window.saveProfile = function(modal) {
   
   modal.remove();
   if (currentPage === 'settings') renderSettings();
-  alert('✅ Perfil actualizado');
+  showToast('Perfil actualizado', 'success');
 };
 
 window.showHeightModal = function(callback = null) {
@@ -2794,7 +2732,7 @@ window.saveHeight = function(modal, hasCallback) {
     renderSettings();
   }
   
-  alert('✅ Altura guardada');
+  showToast('Altura guardada', 'success');
 };
 
 
@@ -2852,8 +2790,8 @@ window.showOnboardingModal = function() {
         </div>
         
         <!-- Submit button -->
-        <button onclick="completeOnboarding(this.closest('#onboarding-modal'))" style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #003366, #00A86B); color: white; border: none; border-radius: 12px; font-weight: 700; font-size: 1rem; cursor: pointer; box-shadow: 0 4px 12px rgba(0,168,106,0.3);">
-          Guardar y continuar
+        <button onclick="completeOnboarding(this.closest('#onboarding-modal'))" style="width: 100%; padding: 1rem; background: var(--primary); color: white; border: none; border-radius: var(--radius-md); font-weight: 700; font-size: 1rem; cursor: pointer;">
+          Comenzar mi viaje de salud 🚀
         </button>
         
         <button onclick="skipOnboarding(this.closest('#onboarding-modal'))" style="width: 100%; padding: 0.75rem; background: transparent; border: none; color: var(--text-muted); font-size: 0.85rem; cursor: pointer; margin-top: 0.5rem;">
@@ -2882,7 +2820,6 @@ window.completeOnboarding = function(modal) {
   }
   
   Store.updateProfile({ name, height, birthdate, gender });
-  Store.markOnboardingComplete();
   
   modal.remove();
   renderGoals(); // Refresh to show any BMI-related content
@@ -2892,7 +2829,6 @@ window.completeOnboarding = function(modal) {
 window.skipOnboarding = function(modal) {
   const name = modal.querySelector('#onboard-name')?.value || 'María García';
   Store.updateProfile({ name });
-  Store.markOnboardingComplete();
   modal.remove();
 };
 
@@ -2956,7 +2892,7 @@ window.selectActivityLevel = function(level) {
   Store.setActivityLevel(level);
   document.querySelector('.modal-overlay')?.remove();
   renderHealth();
-  alert('✅ Nivel de actividad actualizado');
+  showToast('Nivel de actividad actualizado', 'success');
 };
 
 
@@ -2965,8 +2901,7 @@ window.selectActivityLevel = function(level) {
 // ============================================
 
 function renderIntegrations() {
-  const aggregatedData = Integrations.getAggregatedData();
-  const integrations = Integrations.getAllIntegrations();
+  currentPage = 'integrations';
   
   mainContent.innerHTML = `
     <!-- Header -->
@@ -2976,75 +2911,18 @@ function renderIntegrations() {
       <div class="subtitle">Conecta tus dispositivos de salud</div>
     </div>
 
-    <!-- Synced Data Summary -->
-    ${aggregatedData.sources.length > 0 ? `
-    <div style="margin: 0 16px 16px;">
-      <div style="background: linear-gradient(135deg, rgba(0,212,170,0.25), rgba(0,168,132,0.15)); backdrop-filter: blur(20px); border: 1px solid rgba(0,212,170,0.4); border-radius: 24px; padding: 20px;">
-        <div style="font-weight: 600; color: white; margin-bottom: 16px; font-size: 1.05rem;">📊 Datos Sincronizados</div>
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center;">
-          <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 12px 8px;">
-            <div style="font-size: 1.1rem; font-weight: 800; color: #00d4aa;">${aggregatedData.steps.toLocaleString()}</div>
-            <div style="font-size: 0.6rem; color: rgba(255,255,255,0.7);">Pasos</div>
-          </div>
-          <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 12px 8px;">
-            <div style="font-size: 1.1rem; font-weight: 800; color: #f59e0b;">${aggregatedData.heartRate?.resting || '--'}</div>
-            <div style="font-size: 0.6rem; color: rgba(255,255,255,0.7);">FC Reposo</div>
-          </div>
-          <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 12px 8px;">
-            <div style="font-size: 1.1rem; font-weight: 800; color: #8b5cf6;">${aggregatedData.sleep?.duration || '--'}h</div>
-            <div style="font-size: 0.6rem; color: rgba(255,255,255,0.7);">Sueño</div>
-          </div>
-          <div style="background: rgba(255,255,255,0.1); border-radius: 12px; padding: 12px 8px;">
-            <div style="font-size: 1.1rem; font-weight: 800; color: #3b82f6;">${aggregatedData.weight || '--'}kg</div>
-            <div style="font-size: 0.6rem; color: rgba(255,255,255,0.7);">Peso</div>
-          </div>
-        </div>
-        <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-top: 12px; text-align: center;">
-          Fuentes: ${aggregatedData.sources.join(', ')}
-        </div>
-      </div>
-    </div>
-    ` : ''}
-
-    <!-- Available Integrations -->
+    <!-- Disabled Notice -->
     <div style="padding: 0 16px 16px;">
-      <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,255,255,0.6); margin-bottom: 12px; padding-left: 4px;">🔗 Plataformas Disponibles</div>
-      <div style="display: flex; flex-direction: column; gap: 12px;">
-        ${integrations.map(int => `
-          <div style="background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04)); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15); border-radius: 20px; padding: 16px; border-left: 4px solid ${int.connected ? int.color : 'rgba(255,255,255,0.3)'};">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-              <div style="display: flex; align-items: center; gap: 12px;">
-                <div style="font-size: 2rem;">${int.icon}</div>
-                <div>
-                  <div style="font-weight: 700; color: white; font-size: 1rem;">${int.name}</div>
-                  <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">${int.description}</div>
-                </div>
-              </div>
-              <div>
-                ${int.connected 
-                  ? `<span style="background: rgba(0,212,170,0.2); color: #00d4aa; padding: 4px 12px; border-radius: 12px; font-size: 0.7rem; font-weight: 600; border: 1px solid rgba(0,212,170,0.3);">✓ Conectado</span>`
-                  : `<span style="background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); padding: 4px 12px; border-radius: 12px; font-size: 0.7rem;">No conectado</span>`
-                }
-              </div>
-            </div>
-            
-            ${int.connected ? `
-              <div style="display: flex; gap: 8px; margin-top: 12px;">
-                <button onclick="sync${int.name}Data()" style="flex: 1; padding: 10px; background: ${int.color}; color: white; border: none; border-radius: 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
-                  🔄 Sincronizar
-                </button>
-                <button onclick="disconnect${int.name}()" style="padding: 10px 16px; background: rgba(239,68,68,0.2); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); border-radius: 12px; font-size: 0.85rem; cursor: pointer;">
-                  ✕
-                </button>
-              </div>
-              ${int.lastSync ? `<div style="font-size: 0.7rem; color: rgba(255,255,255,0.5); margin-top: 8px;">Última sincronización: ${new Date(int.lastSync).toLocaleString('es-MX')}</div>` : ''}
-            ` : `
-              <button onclick="connect${int.name}()" style="width: 100%; padding: 12px; background: ${int.color}; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; margin-top: 8px; opacity: 0.9;">
-                Conectar con ${int.name}
-              </button>
-            `}
-          </div>
-        `).join('')}
+      <div style="background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04)); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15); border-radius: 20px; padding: 32px 24px; text-align: center; color: white;">
+        <div style="font-size: 3rem; margin-bottom: 16px;">🔒</div>
+        <div style="font-weight: 700; font-size: 1.1rem; margin-bottom: 8px;">Integraciones próximamente</div>
+        <div style="font-size: 0.85rem; color: rgba(255,255,255,0.6); line-height: 1.5; margin-bottom: 20px;">
+          Fitbit/Garmin support is not enabled yet.<br>
+          Estamos trabajando para traerte esta función pronto.
+        </div>
+        <button onclick="showToast('Fitbit/Garmin support is not enabled yet.', 'info')" class="btn-modal-primary" style="max-width: 240px; margin: 0 auto;">
+          ℹ️ Más información
+        </button>
       </div>
     </div>
 
@@ -3053,76 +2931,37 @@ function renderIntegrations() {
       <div style="background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.03)); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); border-radius: 20px; padding: 20px;">
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
           <span style="font-size: 1.5rem;">ℹ️</span>
-          <span style="font-weight: 700; color: white; font-size: 1.05rem;">¿Cómo funciona?</span>
+          <span style="font-weight: 700; color: white; font-size: 1.05rem;">¿Cómo funcionará?</span>
         </div>
         <p style="font-size: 0.85rem; color: rgba(255,255,255,0.7); margin: 0; line-height: 1.6;">
-          Conecta tus dispositivos Fitbit o Garmin para sincronizar automáticamente tus datos de 
-          actividad física, frecuencia cardíaca, sueño y peso. Los datos se actualizarán cada vez 
-          que abras la app.
+          Pronto podrás conectar tus dispositivos Fitbit o Garmin para sincronizar automáticamente 
+          tus datos de actividad física, frecuencia cardíaca, sueño y peso. Los datos se actualizarán 
+          cada vez que abras la app.
         </p>
       </div>
     </div>
   `;
 }
 
-// Global functions for integration buttons
+// Global functions for integration buttons — DISABLED
 window.connectFitbit = function() {
-  // For demo, simulate connection
-  Integrations.saveConnection('fitbit', {
-    accessToken: 'demo_token_' + Date.now(),
-    userId: 'demo_user'
-  });
-  
-  // Simulate sync
-  Integrations.syncFitbitData().then(() => {
-    alert('✅ Fitbit conectado exitosamente');
-    renderIntegrations();
-  });
+  showToast('Fitbit integration is not enabled yet.', 'info');
 };
 
 window.connectGarmin = function() {
-  Integrations.connectGarmin();
+  showToast('Garmin integration is not enabled yet.', 'info');
 };
 
 window.syncFitbitData = async function() {
-  try {
-    const data = await Integrations.syncFitbitData();
-    
-    // Update local health data with synced values
-    if (data.weight) {
-      Store.addVitalEntry({
-        type: 'weight',
-        value: data.weight,
-        date: new Date().toISOString(),
-        notes: 'Sync from Fitbit',
-        source: 'fitbit'
-      });
-    }
-    
-    // Update steps
-    Store.setDailySteps(data.steps);
-    
-    alert('✅ Datos sincronizados exitosamente');
-    renderIntegrations();
-  } catch (error) {
-    alert('❌ Error al sincronizar: ' + error.message);
-  }
+  showToast('Fitbit sync is not enabled yet.', 'info');
 };
 
 window.disconnectFitbit = function() {
-  if (confirm('¿Desconectar Fitbit? Los datos sincronizados se mantendrán.')) {
-    Integrations.disconnect('fitbit');
-    renderIntegrations();
-    alert('Fitbit desconectado');
-  }
+  showToast('Fitbit integration is not enabled yet.', 'info');
 };
 
 window.disconnectGarmin = function() {
-  if (confirm('¿Desconectar Garmin?')) {
-    Integrations.disconnect('garmin');
-    renderIntegrations();
-    alert('Garmin desconectado');
-  }
+  showToast('Garmin integration is not enabled yet.', 'info');
 };
 
 
@@ -3398,7 +3237,7 @@ window.endFast = function() {
     if (window.fastTimerInterval) clearInterval(window.fastTimerInterval);
     FastingTracker.endFast();
     renderFasting();
-    alert('✅ ¡Felicitaciones! Completaste tu ayuno');
+    showToast('¡Ayuno completado!', 'success');
   }
 };
 
@@ -3586,7 +3425,7 @@ window.saveSleepLog = function(modal) {
   SleepTracker.logSleep(bedTime, wakeTime, quality, notes);
   modal.remove();
   renderSleep();
-  alert('✅ Sueño registrado');
+  showToast('Sueño registrado', 'success');
 };
 
 
@@ -3803,7 +3642,7 @@ window.saveCheckIn = function(modal) {
   CheckInSystem.createCheckIn(weight, measurements, photo, notes);
   modal.remove();
   renderCheckIn();
-  alert('✅ Check-in guardado. ¡Sigue así! 💪');
+  showToast('Check-in guardado. ¡Sigue así! 💪', 'success');
 };
 
 
@@ -3922,9 +3761,6 @@ function renderBody() {
         </button>
       </div>
     </div>
-    
-    <!-- Bottom spacing for nav -->
-    <div style="height: 80px;"></div>
   `;
 }
 
@@ -4014,7 +3850,7 @@ function renderProgress() {
     <!-- Recent Achievements -->
     <div style="padding: 0 1rem 1rem;">
       <div style="font-weight: 600; margin-bottom: 0.75rem;">🏅 Logros Recientes</div>
-      <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.5rem; scrollbar-width: none; -webkit-overflow-scrolling: touch;">
+      <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.5rem;">
         <div style="flex-shrink: 0; padding: 1rem; background: #f0fdf4; border-radius: 12px; text-align: center; min-width: 100px;">
           <div style="font-size: 2rem;">🏃</div>
           <div style="font-size: 0.7rem; color: #166534; margin-top: 0.25rem;">10k Pasos</div>
@@ -4074,7 +3910,7 @@ window.logMinutes = function(minutes) {
   
   document.querySelector('.modal-overlay')?.remove();
   renderHome();
-  alert(`✅ +${minutes} minutos registrados`);
+  showToast(`+${minutes} minutos registrados`, 'success');
 };
 
 // ============================================
@@ -4136,9 +3972,9 @@ window.showFoodLogModal = function() {
         </div>
       </div>
       
-      <div style="padding: 1rem; border-top: 1px solid var(--border); display: flex; gap: 0.5rem;">
-        <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.875rem; background: #f3f4f6; border: none; border-radius: 12px; cursor: pointer; font-weight: 500;">Cancelar</button>
-        <button onclick="saveFoodEntry()" style="flex: 1; padding: 0.875rem; background: #003366; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Agregar</button>
+      <div class="modal-actions-sticky">
+        <button onclick="this.closest('.modal-overlay').remove()" class="btn-modal-secondary">Cancelar</button>
+        <button onclick="saveFoodEntry()" class="btn-modal-primary">Agregar</button>
       </div>
     </div>
   `;
@@ -4207,7 +4043,7 @@ window.quickAddFood = function(foodKey, quantity) {
   
   document.querySelector('.modal-overlay')?.remove();
   renderHome();
-  alert(`✅ ${name} agregado: ${calories} kcal, ${protein}g proteína`);
+  showToast(`${name} agregado: ${calories} kcal, ${protein}g proteína`, 'success');
 };
 
 window.saveFoodEntry = function() {
@@ -4233,7 +4069,7 @@ window.saveFoodEntry = function() {
   
   document.querySelector('.modal-overlay')?.remove();
   renderHome();
-  alert(`✅ "${name}" agregado\n${calories > 0 ? calories + ' kcal' : ''} ${protein > 0 ? protein + 'g proteína' : ''}`);
+  showToast(`"${name}" agregado — ${calories > 0 ? calories + ' kcal' : ''} ${protein > 0 ? protein + 'g proteína' : ''}`, 'success');
 };
 
 window.deleteFoodItem = function(id) {
@@ -4253,7 +4089,7 @@ window.quickAddCalories = function(calories, mealType) {
   });
   document.querySelector('.modal-overlay')?.remove();
   renderHome();
-  alert(`✅ ${mealType} registrado: ${calories} kcal`);
+  showToast(`${mealType} registrado: ${calories} kcal`, 'success');
 };
 window.addCustomCalories = window.saveFoodEntry;
 
@@ -4306,7 +4142,7 @@ window.setActivityLevel = function(level) {
   Store.setActivityLevel(level);
   document.querySelector('.modal-overlay')?.remove();
   if (currentPage === 'settings') renderSettings();
-  alert('✅ Nivel de actividad actualizado');
+  showToast('Nivel de actividad actualizado', 'success');
 };
 
 window.showHealthGoalModal = function() {
@@ -4360,7 +4196,7 @@ window.setHealthGoalSimple = function(goal) {
   Store.setGoalTimeline(null);
   document.querySelector('.modal-overlay')?.remove();
   if (currentPage === 'settings') renderSettings();
-  alert('✅ Objetivo actualizado: Mantener peso');
+  showToast('Objetivo actualizado: Mantener peso', 'success');
 };
 
 // For lose/gain - need goal weight and timeline
@@ -4372,7 +4208,7 @@ window.selectGoalWithPlan = function(goal) {
   
   const modal = document.querySelector('.modal-overlay');
   modal.innerHTML = `
-    <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden; max-height: 90vh; overflow-y: auto;">
+    <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden;">
       <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, ${goal === 'lose' ? '#00A86B' : '#003366'}, ${goal === 'lose' ? '#008855' : '#1a4d7a'}); color: white;">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">${goal === 'lose' ? '📉' : '💪'}</div>
         <h3 style="margin: 0; font-size: 1.2rem;">${goal === 'lose' ? 'Perder Peso' : 'Ganar Masa'}</h3>
@@ -4582,7 +4418,7 @@ window.showGoalRecommendations = function(goal, goalWeight, timeline) {
           </div>
         ` : ''}
         
-        <button onclick="finishGoalSetup()" style="width: 100%; padding: 1rem; background: #003366; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; font-size: 1rem;">
+        <button onclick="finishGoalSetup()" class="btn-modal-primary" style="width: 100%;">
           ¡Entendido! Comenzar
         </button>
       </div>
@@ -4593,7 +4429,7 @@ window.showGoalRecommendations = function(goal, goalWeight, timeline) {
 window.finishGoalSetup = function() {
   document.querySelector('.modal-overlay')?.remove();
   if (currentPage === 'settings') renderSettings();
-  alert('✅ ¡Plan configurado! Tus metas de calorías y ejercicio han sido actualizadas.');
+  showToast('¡Plan configurado! Tus metas de calorías y ejercicio han sido actualizadas.', 'success');
 };
 
 
@@ -4601,52 +4437,8 @@ window.finishGoalSetup = function() {
 // SALUD PAGE - Medical Records, Prescriptions, Vaccines, Exams
 // ============================================
 
-async function renderSalud() {
-  let prescriptions = Store.getPrescriptions() || [];
-  let refillRequests = Store.getRefillRequests() || [];
-  
-  // Try loading Supabase data for authenticated users
-  if (FarmaciaAPI.isSupabaseAvailable() && currentAuthUser) {
-    try {
-      const sbPrescriptions = await FarmaciaAPI.getPrescriptions();
-      if (sbPrescriptions.length > 0 && sbPrescriptions[0]?.source === 'supabase') {
-        const localIds = new Set(prescriptions.map(p => p.id));
-        const mapped = sbPrescriptions
-          .filter(p => !localIds.has(p.id))
-          .map(p => ({
-            id: p.id,
-            medicine: p.type === 'document'
-              ? (p.notes ? `📷 ${p.notes.split('\n')[0].substring(0, 35)}` : '📷 Receta médica digital')
-              : (p.content ? `👨‍⚕️ ${p.content.split('\n')[0].substring(0, 35)}` : '👨‍⚕️ Nota médica'),
-            dose: p.type === 'document' ? (p.notes || '') : (p.content || ''),
-            frequency: p.type === 'document' ? 'Documento digital' : 'Nota del doctor',
-            instructions: p.type === 'document' && p.fileUrl ? 'Ver archivo →' : '',
-            status: 'active',
-            source: 'supabase',
-            createdAt: p.createdAt,
-            profileId: Store.getActiveProfileId(),
-            _supabaseType: p.type,
-            _fileUrl: p.fileUrl,
-            _docStatus: p.status || 'pending'
-          }));
-        prescriptions = [...mapped, ...prescriptions];
-      }
-    } catch (e) {
-      console.warn('[renderSalud] Supabase prescriptions failed:', e);
-    }
-    
-    try {
-      const sbPreorders = await FarmaciaAPI.getPreorders();
-      if (sbPreorders.length > 0 && sbPreorders[0]?.source === 'supabase') {
-        const localIds = new Set(refillRequests.map(r => r.id));
-        const mapped = sbPreorders.filter(p => !localIds.has(p.id));
-        refillRequests = [...mapped, ...refillRequests];
-      }
-    } catch (e) {
-      console.warn('[renderSalud] Supabase preorders failed:', e);
-    }
-  }
-  
+function renderSalud() {
+  const prescriptions = Store.getPrescriptions() || [];
   const reminders = Store.getMedicineReminders() || [];
   const schedules = Store.getMedicineSchedules() || [];
   const upcomingDoses = Store.getUpcomingDoses() || [];
@@ -4690,124 +4482,56 @@ async function renderSalud() {
       <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 0.25rem;">Historial, recetas y vacunas</div>
     </div>
 
-    <!-- Prescriptions Section -->
+    <!-- Prescription Scanner Section -->
     <div style="padding: 1rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-        <span style="font-weight: 600; color: white;">📄 Mis Recetas Médicas</span>
-        <button onclick="showUploadPrescriptionModal()" style="background: rgba(0,168,232,0.3); color: #00a8e8; border: 1px solid rgba(0,168,232,0.4); padding: 0.4rem 0.75rem; border-radius: 20px; font-size: 0.75rem; cursor: pointer;">+ Subir</button>
+        <span style="font-weight: 600;">📷 Recetas Médicas</span>
+        <button onclick="showManualPrescriptionModal()" style="background: none; border: none; color: var(--primary); font-size: 0.8rem; cursor: pointer;">+ Manual</button>
       </div>
-
+      
+      <!-- Scanner Card -->
+      <div class="glass-card" style="flex-direction: column; padding: 1.5rem; cursor: pointer; border: 2px dashed rgba(255,255,255,0.3);" onclick="showPrescriptionScanner()">
+        <div style="font-size: 3rem; margin-bottom: 0.5rem;">📸</div>
+        <div style="font-weight: 600; color: var(--teal-primary); margin-bottom: 0.25rem;">Escanear Receta</div>
+        <div style="font-size: 0.8rem; color: var(--text-muted); text-align: center;">Toma una foto y detectaremos el medicamento automáticamente</div>
+      </div>
+      
+      <!-- Active Prescriptions -->
       ${prescriptions.length > 0 ? `
-        <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+        <div style="margin-top: 1rem;">
+          <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Recetas activas:</div>
           ${prescriptions.map(p => {
             const refills = Store.getRefillRequestsByPrescription(p.id);
             const activeRefill = refills.find(r => r.status === 'pending' || r.status === 'confirmed');
-            const isSupabase = p.source === 'supabase';
             return `
-            <div class="glass-card" style="padding: 1rem; display: flex; align-items: center; gap: 0.75rem; ${isSupabase ? 'border-left: 3px solid #00d4aa;' : ''}">
-              <div style="width: 44px; height: 44px; background: ${isSupabase ? 'rgba(0,212,170,0.2)' : 'rgba(139,92,246,0.2)'}; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; flex-shrink: 0;">${isSupabase ? (p._supabaseType === 'document' ? '📷' : '👨‍⚕️') : '💊'}</div>
-              <div style="flex: 1; min-width: 0;">
-                <div style="font-weight: 600; color: white; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.medicine}</div>
-                <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${p.dose ? p.dose.substring(0, 40) : ''} ${p.frequency ? '• ' + p.frequency : ''}</div>
-                ${isSupabase && p._docStatus ? `
-                  <div style="font-size: 0.75rem; margin-top: 0.25rem;">
-                    <span style="background: ${
-                      p._docStatus === 'pending' ? 'rgba(245,158,11,0.2)' :
-                      p._docStatus === 'reviewed' ? 'rgba(59,130,246,0.2)' :
-                      p._docStatus === 'approved' ? 'rgba(0,212,170,0.2)' :
-                      p._docStatus === 'dispensed' ? 'rgba(139,92,246,0.2)' :
-                      'rgba(255,107,107,0.2)'
-                    }; color: ${
-                      p._docStatus === 'pending' ? '#fbbf24' :
-                      p._docStatus === 'reviewed' ? '#60a5fa' :
-                      p._docStatus === 'approved' ? '#00d4aa' :
-                      p._docStatus === 'dispensed' ? '#a78bfa' :
-                      '#ff6b6b'
-                    }; padding: 0.125rem 0.5rem; border-radius: 10px;">
-                      ${
-                        p._docStatus === 'pending' ? '🟡 Pendiente' :
-                        p._docStatus === 'reviewed' ? '🔵 Revisada' :
-                        p._docStatus === 'approved' ? '🟢 Aprobada' :
-                        p._docStatus === 'dispensed' ? '🟣 Surtida' :
-                        '🔴 Rechazada'
-                      }
-                    </span>
-                  </div>
-                ` : ''}
+            <div class="glass-card" style="margin-bottom: 0.5rem; padding: 1rem; display: flex; align-items: center; gap: 0.75rem;">
+              <div style="width: 48px; height: 48px; background: rgba(0,212,170,0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">💊</div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; color: var(--text-primary);">${p.medicine}</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">${p.dose} • ${p.frequency}</div>
+                ${p.instructions ? `<div style="font-size: 0.75rem; color: var(--text-muted);">${p.instructions}</div>` : ''}
                 ${activeRefill ? `
                   <div style="font-size: 0.75rem; margin-top: 0.25rem;">
                     <span style="background: ${activeRefill.status === 'confirmed' ? 'rgba(0,212,170,0.2)' : 'rgba(245,158,11,0.2)'}; color: ${activeRefill.status === 'confirmed' ? '#00d4aa' : '#f59e0b'}; padding: 0.125rem 0.5rem; border-radius: 10px;">
-                      🔄 ${activeRefill.statusText || activeRefill.status}
+                      🔄 ${activeRefill.statusText}
                     </span>
                   </div>
                 ` : ''}
-                ${isSupabase && p._fileUrl ? `<a href="${p._fileUrl}" target="_blank" style="font-size: 0.75rem; color: #00d4aa; text-decoration: none;">🔗 Ver archivo</a>` : ''}
               </div>
-              <div style="display: flex; flex-direction: column; gap: 0.25rem; flex-shrink: 0;">
-                ${!isSupabase ? `
-                  <button onclick="showReminderModal(${p.id})" style="background: rgba(0,212,170,0.2); color: #00d4aa; border: 1px solid rgba(0,212,170,0.3); padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.7rem; cursor: pointer;">⏰</button>
-                ` : ''}
+              <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                <button onclick="showReminderModal(${p.id})" style="background: rgba(0,212,170,0.2); color: var(--teal-primary); border: 1px solid rgba(0,212,170,0.3); padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.7rem; cursor: pointer;">⏰</button>
                 ${!activeRefill ? `
-                  <button onclick="showRefillRequestModal('${p.id}')" style="background: rgba(0,212,170,0.2); color: #00d4aa; border: 1px solid rgba(0,212,170,0.3); padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.7rem; cursor: pointer;">🔄</button>
+                  <button onclick="showRefillRequestModal(${p.id})" style="background: rgba(0,212,170,0.2); color: var(--teal-primary); border: 1px solid rgba(0,212,170,0.3); padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.7rem; cursor: pointer;">🔄</button>
                 ` : `
                   <button onclick="showRefillStatus('${activeRefill.id}')" style="background: rgba(0,168,232,0.2); color: #00a8e8; border: 1px solid rgba(0,168,232,0.3); padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.7rem; cursor: pointer;">📋</button>
                 `}
-                ${!isSupabase ? `
-                  <button onclick="deletePrescription(${p.id})" style="background: rgba(255,107,107,0.2); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.3); padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.7rem; cursor: pointer;">×</button>
-                ` : ''}
+                <button onclick="deletePrescription(${p.id})" style="background: rgba(255,107,107,0.2); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.3); padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.7rem; cursor: pointer;">×</button>
               </div>
             </div>
           `}).join('')}
         </div>
-      ` : `
-        <div class="glass-card" style="text-align: center; padding: 2rem; cursor: pointer;" onclick="showUploadPrescriptionModal()">
-          <div style="font-size: 3rem; margin-bottom: 0.5rem;">📄</div>
-          <div style="font-weight: 600; color: white; margin-bottom: 0.25rem;">No tienes recetas registradas</div>
-          <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6); margin-bottom: 1rem;">Sube tu primera receta para gestionar tus medicamentos</div>
-          <button style="padding: 0.625rem 1.25rem; background: #0ea5e9; color: white; border: none; border-radius: 10px; font-weight: 600; cursor: pointer;">+ Subir receta</button>
-        </div>
-      `}
-
-    <!-- Refill Requests Section -->
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-        <span style="font-weight: 600; color: white;">🔄 Solicitudes de Recarga</span>
-        <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.1); padding: 0.25rem 0.5rem; border-radius: 12px;">${refillRequests.length} total</span>
-      </div>
-
-      ${refillRequests.length > 0 ? `
-        <div style="display: flex; flex-direction: column; gap: 0.6rem;">
-          ${refillRequests.slice(0, 5).map(r => {
-            const statusColors = {
-              pending:    { bg: 'rgba(245,158,11,0.2)', color: '#fbbf24', text: 'Pendiente' },
-              confirmed:  { bg: 'rgba(59,130,246,0.2)',  color: '#60a5fa', text: 'Confirmada' },
-              ready:      { bg: 'rgba(0,212,170,0.2)',   color: '#00d4aa', text: 'Lista' },
-              picked_up:  { bg: 'rgba(148,163,184,0.2)', color: '#94a3b8', text: 'Recogida' },
-              completed:  { bg: 'rgba(148,163,184,0.2)', color: '#94a3b8', text: 'Completada' },
-              cancelled:  { bg: 'rgba(255,107,107,0.2)', color: '#ff6b6b', text: 'Cancelada' }
-            };
-            const st = statusColors[r.status] || statusColors.pending;
-            const dateStr = r.createdAt ? new Date(r.createdAt).toLocaleDateString('es-MX') : '';
-            return `
-              <div class="glass-card" style="padding: 1rem; display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                  <div style="font-weight: 600; font-size: 0.95rem; color: white;">${r.medicine || r.notes || 'Pedido'}</div>
-                  <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${r.quantity || 1} caja(s) • ${dateStr}</div>
-                </div>
-                <span style="background: ${st.bg}; color: ${st.color}; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; flex-shrink: 0;">${st.text}</span>
-              </div>
-            `;
-          }).join('')}
-        </div>
-        ${refillRequests.length > 5 ? `<div style="text-align: center; padding: 0.75rem; color: rgba(255,255,255,0.5); font-size: 0.85rem;">Ver ${refillRequests.length - 5} más...</div>` : ''}
-      ` : `
-        <div class="glass-card" style="text-align: center; padding: 2rem;">
-          <div style="font-size: 3rem; margin-bottom: 0.5rem;">🔄</div>
-          <div style="font-weight: 600; color: white; margin-bottom: 0.25rem;">Sin solicitudes de recarga</div>
-          <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">Selecciona una receta y solicita una recarga</div>
-        </div>
-      `}
-    </div>
-
+      ` : ''}
+      
       <!-- Upcoming Doses (Smart Schedule) - Glass Cards -->
       ${upcomingDoses.length > 0 ? `
         <div style="margin-top: 1.5rem;">
@@ -4954,12 +4678,12 @@ async function renderSalud() {
         <span style="font-size: 0.75rem; color: var(--text-muted);">Desliza →</span>
       </div>
       
-      <div class="health-guides" style="display: flex; gap: 12px; overflow-x: auto; padding: 4px 1rem 12px; scrollbar-width: none; -webkit-overflow-scrolling: touch; scroll-snap-type: x mandatory;">
+      <div style="display: flex; gap: 0.75rem; overflow-x: auto; padding: 0 1rem; scrollbar-width: none; -webkit-overflow-scrolling: touch;">
         <style>
           .health-guides::-webkit-scrollbar { display: none; }
         </style>
         ${healthGuides.map(guide => `
-          <div onclick="showHealthGuide('${guide.id}')" style="flex: 0 0 260px; scroll-snap-align: start; background: linear-gradient(135deg, ${guide.color}, ${guide.colorDark}); border-radius: 16px; padding: 1.25rem; color: white; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+          <div onclick="showHealthGuide('${guide.id}')" style="flex: 0 0 280px; background: linear-gradient(135deg, ${guide.color}, ${guide.colorDark}); border-radius: 16px; padding: 1.25rem; color: white; cursor: pointer;">
             <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">${guide.icon}</div>
             <div style="font-weight: 600; font-size: 1.1rem; margin-bottom: 0.25rem;">${guide.title}</div>
             <div style="font-size: 0.85rem; opacity: 0.9; line-height: 1.4;">${guide.description}</div>
@@ -5114,7 +4838,7 @@ window.showPrescriptionScanner = function() {
   modal.innerHTML = `
     <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; color: white;">
       <div style="font-size: 4rem; margin-bottom: 1rem;">📸</div>
-      <h2 style="margin: 0 0 0.5rem; font-size: 1.5rem;">Escanear Receta Médica</h2>
+      <h2 style="margin: 0 0 0.5rem; font-size: 1.5rem;">Escanear Receta</h2>
       <p style="margin: 0 0 2rem; opacity: 0.8; text-align: center;">Enfoca la receta dentro del cuadro</p>
       
       <!-- Camera Frame -->
@@ -5200,9 +4924,9 @@ window.showDetectedPrescriptions = function(medicines) {
           </div>
         `).join('')}
         
-        <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
-          <button onclick="showPrescriptionScanner()" style="flex: 1; padding: 0.875rem; background: #f3f4f6; border: none; border-radius: 12px; cursor: pointer;">↻ Reescanear</button>
-          <button onclick="saveDetectedPrescriptions(${medicines.length})" style="flex: 1; padding: 0.875rem; background: #003366; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar</button>
+        <div class="modal-actions-sticky" style="margin-top: 1rem;">
+          <button onclick="showPrescriptionScanner()" class="btn-modal-secondary">↻ Reescanear</button>
+          <button onclick="saveDetectedPrescriptions(${medicines.length})" class="btn-modal-primary">Guardar</button>
         </div>
       </div>
     </div>
@@ -5227,7 +4951,7 @@ window.saveDetectedPrescriptions = function(count) {
   
   document.querySelector('.modal-overlay')?.remove();
   renderSalud();
-  alert(`✅ ${count} medicamento(s) guardado(s)`);
+  showToast(`${count} medicamento(s) guardado(s)`, 'success');
 };
 
 window.showManualPrescriptionModal = function() {
@@ -5269,9 +4993,9 @@ window.showManualPrescriptionModal = function() {
           <input type="text" id="manual-med-instr" placeholder="Tomar con comida, etc." style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 8px;">
         </div>
         
-        <div style="display: flex; gap: 0.5rem;">
-          <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.875rem; background: #f3f4f6; border: none; border-radius: 12px; cursor: pointer;">Cancelar</button>
-          <button onclick="saveManualPrescription()" style="flex: 1; padding: 0.875rem; background: #003366; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar</button>
+        <div class="modal-actions-sticky">
+          <button onclick="this.closest('.modal-overlay').remove()" class="btn-modal-secondary">Cancelar</button>
+          <button onclick="saveManualPrescription()" class="btn-modal-primary">Guardar</button>
         </div>
       </div>
     </div>
@@ -5323,7 +5047,7 @@ window.saveManualPrescription = async function() {
   
   document.querySelector('.modal-overlay')?.remove();
   renderSalud();
-  alert(useSupabase ? '✅ Medicamento guardado en el sistema' : '✅ Medicamento guardado');
+  showToast(useSupabase ? 'Medicamento guardado en el sistema' : 'Medicamento guardado', 'success');
 };
 
 window.deletePrescription = function(id) {
@@ -5371,10 +5095,7 @@ window.showReminderModal = function(prescriptionId) {
           <div id="schedule-times" style="display: flex; flex-wrap: wrap; gap: 0.5rem;"></div>
         </div>
         
-        <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
-          <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.875rem; background: #f3f4f6; border: none; border-radius: 12px; cursor: pointer;">Cancelar</button>
-          <button onclick="saveSmartReminder(${prescriptionId})" style="flex: 1; padding: 0.875rem; background: #003366; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Crear Recordatorios</button>
-        </div>
+        <button onclick="saveSmartReminder(${prescriptionId})" class="btn-modal-primary" style="width: 100%;">Crear Recordatorios</button>
       </div>
     </div>
   `;
@@ -5519,7 +5240,7 @@ window.saveSmartReminder = function(prescriptionId) {
   
   document.querySelector('.modal-overlay')?.remove();
   renderSalud();
-  alert(`✅ ${doseTimes.length} recordatorios creados\n\n${doseTimes.slice(0, 3).join(', ')}${doseTimes.length > 3 ? '...' : ''}`);
+  showToast(`${doseTimes.length} recordatorios creados`, 'success');
 };
 
 window.toggleReminder = function(id) {
@@ -5630,16 +5351,16 @@ window.enableNotificationsFromSettings = async function() {
     }
     document.querySelector('.modal-overlay').remove();
     renderSettings();
-    alert('✅ Notificaciones activadas');
+    showToast('Notificaciones activadas', 'success');
   } else {
-    alert('❌ No se pudieron activar las notificaciones. Verifica los permisos de tu navegador.');
+    showToast('No se pudieron activar las notificaciones. Verifica los permisos de tu navegador.', 'error');
   }
 };
 
 window.disableNotifications = function() {
   // Note: We can't actually disable notifications programmatically
   // User has to do it in browser settings
-  alert('Para desactivar las notificaciones, ve a la configuración de tu navegador > Privacidad y seguridad > Notificaciones, y bloquea este sitio.');
+  showToast('Para desactivar notificaciones, ve a Configuración de tu navegador > Privacidad > Notificaciones.', 'info');
 };
 
 window.testNotification = function() {
@@ -5702,9 +5423,9 @@ window.showRefillRequestModal = function(prescriptionId) {
           </div>
         </div>
         
-        <div style="display: flex; gap: 0.5rem;">
-          <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.875rem; background: #f3f4f6; border: none; border-radius: 12px; cursor: pointer;">Cancelar</button>
-          <button onclick="submitRefillRequest(${prescriptionId})" style="flex: 1; padding: 0.875rem; background: #003366; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Solicitar</button>
+        <div class="modal-actions-sticky">
+          <button onclick="this.closest('.modal-overlay').remove()" class="btn-modal-secondary">Cancelar</button>
+          <button onclick="submitRefillRequest(${prescriptionId})" class="btn-modal-primary">Solicitar</button>
         </div>
       </div>
     </div>
@@ -5777,9 +5498,10 @@ window.submitRefillRequest = async function(prescriptionId) {
   
   document.querySelector('.modal-overlay').remove();
   renderSalud();
-  alert(useSupabase
-    ? `✅ Solicitud enviada al sistema\n\nNúmero: ${request.id}\nEstado: Pendiente de revisión`
-    : `✅ Solicitud enviada\n\nNúmero: ${request.id}\nEstado: Pendiente de revisión`
+  showToast(useSupabase
+    ? `Solicitud enviada al sistema — Número: ${request.id}`
+    : `Solicitud enviada — Número: ${request.id}`,
+    'success'
   );
 };
 
@@ -5859,7 +5581,7 @@ window.cancelRefillRequest = function(requestId) {
     Store.cancelRefillRequest(requestId);
     document.querySelector('.modal-overlay').remove();
     renderSalud();
-    alert('Solicitud cancelada');
+    showToast('Solicitud cancelada', 'info');
   }
 };
 
@@ -5876,7 +5598,7 @@ window.showVaccineModal = function(vaccineId) {
   modal.className = 'modal-overlay';
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
   modal.innerHTML = `
-    <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden; max-height: 90vh; overflow-y: auto;">
+    <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden;">
       <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #00A86B, #008855); color: white;">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">💉</div>
         <h3 style="margin: 0;">${vaccine.name}</h3>
@@ -5944,7 +5666,7 @@ window.saveVaccine = function(vaccineId) {
   
   document.querySelector('.modal-overlay')?.remove();
   renderSalud();
-  alert(`✅ ${vaccine.name} registrada`);
+  showToast(`${vaccine.name} registrada`, 'success');
 };
 
 window.showAllVaccines = function() {
@@ -6031,9 +5753,9 @@ window.showExamModal = function(examId) {
           <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Imagen o PDF del resultado</div>
         </div>
         
-        <div style="display: flex; gap: 0.5rem;">
-          <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.875rem; background: #f3f4f6; border: none; border-radius: 12px; cursor: pointer;">Cancelar</button>
-          <button onclick="saveExamResult()" style="flex: 1; padding: 0.875rem; background: #003366; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar</button>
+        <div class="modal-actions-sticky">
+          <button onclick="this.closest('.modal-overlay').remove()" class="btn-modal-secondary">Cancelar</button>
+          <button onclick="saveExamResult()" class="btn-modal-primary">Guardar</button>
         </div>
       </div>
     </div>
@@ -6073,7 +5795,7 @@ window.saveExamResult = function() {
   
   document.querySelector('.modal-overlay')?.remove();
   renderSalud();
-  alert('✅ Estudio guardado');
+  showToast('Estudio guardado', 'success');
 };
 
 window.showAllExams = function() {
@@ -6689,7 +6411,7 @@ window.addToCartFromChat = function(medicineName, price) {
   
   Store.addToCart(medicine.id, 1);
   updateCartBadge();
-  alert(`✅ ${medicineName} agregado al carrito`);
+  showToast(`${medicineName} agregado al carrito`, 'success');
 };
 
 window.showEmergencyInfo = function() {
@@ -6734,7 +6456,7 @@ window.showVideoConsulta = function() {
           </div>
         </div>
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; text-align: center; font-size: 0.75rem; color: var(--text-secondary);">
-          <div>✓ Receta médica digital</div>
+          <div>✓ Receta digital</div>
           <div>✓ 15-30 min</div>
           <div>✓ Chat seguro</div>
         </div>
@@ -6784,7 +6506,7 @@ window.showVideoBooking = function(doctorId) {
     <div style="background: white; height: 100%; display: flex; flex-direction: column;">
       <!-- Header -->
       <div style="padding: 1rem; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
-        <button onclick="this.closest('.modal-overlay').remove(); showVideoConsulta();" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
+        <button onclick="showVideoConsulta()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
         <div>
           <div style="font-weight: 600;">Agendar Video Consulta</div>
         </div>
@@ -6833,7 +6555,7 @@ window.showVideoBooking = function(doctorId) {
             <span style="font-weight: 600;">$350</span>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="color: var(--text-muted);">Receta médica digital incluida</span>
+            <span style="color: var(--text-muted);">Receta digital incluida</span>
             <span style="color: #00A86B; font-size: 0.85rem;">✓</span>
           </div>
         </div>
@@ -7027,7 +6749,7 @@ window.showLocationBooking = function(locationId) {
     <div style="background: white; height: 100%; display: flex; flex-direction: column;">
       <!-- Header -->
       <div style="padding: 1rem; background: linear-gradient(135deg, #00A86B, #008855); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
-        <button onclick="this.closest('.modal-overlay').remove(); showInPersonConsulta();" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
+        <button onclick="showInPersonConsulta()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
         <div>
           <div style="font-weight: 600;">Agendar Cita</div>
         </div>
@@ -7468,9 +7190,6 @@ async function renderAppointments() {
         </div>
       </div>
     </div>
-    
-    <!-- Bottom spacing for nav -->
-    <div style="height: 80px;"></div>
   `;
 }
 
@@ -7483,12 +7202,12 @@ window.joinVideoCall = function(videoId) {
     if (consultation.meetingUrl) {
       window.open(consultation.meetingUrl, '_blank');
     } else {
-      alert('📹 La videollamada aún no tiene enlace. Contacta a la farmacia.');
+      showToast('La videollamada aún no tiene enlace. Contacta a la farmacia.', 'info');
     }
     return;
   }
   
-  alert(`📹 Conectando con ${consultation.doctorName}...\n\nEn una app real, esto abriría la videollamada.`);
+  showToast(`Conectando con ${consultation.doctorName}...`, 'info');
 };
 
 window.rescheduleVideo = function(videoId) {
@@ -7496,15 +7215,13 @@ window.rescheduleVideo = function(videoId) {
   const video = allVideos.find(v => v.id === videoId) || Store.getVideoConsultations().find(v => v.id === videoId);
   
   if (video && video.source === 'supabase') {
-    alert('Las citas del sistema no se pueden reagendar desde la app aún. Contacta a la farmacia.');
+    showToast('Las citas del sistema no se pueden reagendar desde la app aún. Contacta a la farmacia.', 'info');
     return;
   }
   
-  if (confirm('¿Quieres reagendar esta cita?')) {
-    const consultations = Store.getVideoConsultations().filter(v => v.id !== videoId);
-    localStorage.setItem('videoConsultations', JSON.stringify(consultations));
-    showVideoBooking('next');
-  }
+  const consultations = Store.getVideoConsultations().filter(v => v.id !== videoId);
+  localStorage.setItem('videoConsultations', JSON.stringify(consultations));
+  showVideoBooking('next');
 };
 
 window.cancelVideo = function(videoId) {
@@ -7512,7 +7229,7 @@ window.cancelVideo = function(videoId) {
   const video = allVideos.find(v => v.id === videoId) || Store.getVideoConsultations().find(v => v.id === videoId);
   
   if (video && video.source === 'supabase') {
-    alert('Las citas del sistema no se pueden cancelar desde la app aún. Contacta a la farmacia.');
+    showToast('Las citas del sistema no se pueden cancelar desde la app aún. Contacta a la farmacia.', 'info');
     return;
   }
   
@@ -7522,7 +7239,7 @@ window.cancelVideo = function(videoId) {
     );
     localStorage.setItem('videoConsultations', JSON.stringify(consultations));
     renderAppointments();
-    alert('✅ Video consulta cancelada');
+    showToast('Video consulta cancelada', 'info');
   }
 };
 
@@ -7540,14 +7257,14 @@ window.cancelAppointment = function(appointmentId) {
   const appt = allAppts.find(a => a.id === appointmentId);
   
   if (appt && appt.source === 'supabase') {
-    alert('Las citas del sistema no se pueden cancelar desde la app aún. Contacta a la farmacia.');
+    showToast('Las citas del sistema no se pueden cancelar desde la app aún. Contacta a la farmacia.', 'info');
     return;
   }
   
   if (confirm('¿Estás seguro de cancelar esta cita?\n\nTu posición en la fila será liberada.')) {
     Store.cancelAppointment(appointmentId);
     renderAppointments();
-    alert('✅ Cita cancelada');
+    showToast('Cita cancelada', 'info');
   }
 };
 
@@ -7562,9 +7279,9 @@ async function renderRecetas() {
     <div style="padding: 1rem; background: linear-gradient(135deg, #003366, #1a4d7a); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">📄 Mis Recetas Médicas</h2>
+          <h2 style="margin: 0; font-size: 1.3rem;">📄 Mis Recetas</h2>
           <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">
-            ${activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas Médicas de ${activeProfile?.name}`}
+            ${activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas de ${activeProfile?.name}`}
           </p>
         </div>
         <button onclick="showUploadPrescriptionModal()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Subir</button>
@@ -7593,21 +7310,6 @@ async function renderRecetas() {
   } else {
     console.log('[renderRecetas] Prescriptions loaded from fallback');
   }
-
-  // Load refill requests from Supabase + localStorage
-  let refillRequests = Store.getRefillRequests() || [];
-  if (FarmaciaAPI.isSupabaseAvailable() && currentAuthUser) {
-    try {
-      const sbPreorders = await FarmaciaAPI.getPreorders();
-      if (sbPreorders.length > 0 && sbPreorders[0]?.source === 'supabase') {
-        const localIds = new Set(refillRequests.map(r => r.id));
-        const mapped = sbPreorders.filter(p => !localIds.has(p.id));
-        refillRequests = [...mapped, ...refillRequests];
-      }
-    } catch (e) {
-      console.warn('[renderRecetas] Supabase preorders failed:', e);
-    }
-  }
   
   // Get localStorage prescriptions
   const allPrescriptions = Store.getAllPrescriptions();
@@ -7627,9 +7329,9 @@ async function renderRecetas() {
     <div style="padding: 1rem; background: linear-gradient(135deg, #003366, #1a4d7a); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">📄 Mis Recetas Médicas</h2>
+          <h2 style="margin: 0; font-size: 1.3rem;">📄 Mis Recetas</h2>
           <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">
-            ${activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas Médicas de ${activeProfile?.name}`}
+            ${activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas de ${activeProfile?.name}`}
             ${activeCount > 0 ? `• ${activeCount} activas` : ''}
           </p>
         </div>
@@ -7641,18 +7343,16 @@ async function renderRecetas() {
     ${systemPrescriptions.length > 0 ? `
       <div style="padding: 1rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-          <span style="font-weight: 600; color: white;">🏥 Recetas Médicas del Sistema</span>
+          <span style="font-weight: 600; color: white;">🏥 Recetas del Sistema</span>
           <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.1); padding: 0.25rem 0.5rem; border-radius: 12px;">${systemPrescriptions.length} recetas</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-          ${systemPrescriptions.map(p => {
-            const title = p.notes ? p.notes.split('\n')[0].substring(0, 40) : (p.content ? p.content.split('\n')[0].substring(0, 40) : (p.type === 'document' ? '📷 Receta médica digital' : '👨‍⚕️ Nota médica'));
-            return `
+          ${systemPrescriptions.map(p => `
             <div class="glass-card" style="padding: 1rem; border-left: 4px solid ${p.type === 'document' ? '#00d4aa' : '#60a5fa'};">
               <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
                 <span style="font-size: 1.5rem;">${p.type === 'document' ? '📷' : '👨‍⚕️'}</span>
                 <div>
-                  <div style="font-weight: 600; color: white;">${title}</div>
+                  <div style="font-weight: 600; color: white;">${p.type === 'document' ? 'Receta digital' : 'Nota médica'}</div>
                   <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${new Date(p.createdAt).toLocaleDateString('es-MX')}</div>
                 </div>
               </div>
@@ -7663,8 +7363,7 @@ async function renderRecetas() {
                 <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.08); padding: 0.5rem; border-radius: 8px;">${p.content || p.notes}</div>
               ` : ''}
             </div>
-          `;
-          }).join('')}
+          `).join('')}
         </div>
       </div>
     ` : ''}
@@ -7673,7 +7372,7 @@ async function renderRecetas() {
     ${allProfiles.length > 1 ? `
       <div style="padding: 1rem; background: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.1);">
         <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">Ver recetas de:</div>
-        <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem; scrollbar-width: none; -webkit-overflow-scrolling: touch;">
+        <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem;">
           ${allProfiles.map(profile => `
             <button onclick="switchProfileForRecetas('${profile.id}')" style="flex-shrink: 0; padding: 0.5rem 1rem; background: ${profile.id === activeProfileId ? 'rgba(0,168,232,0.3)' : 'rgba(255,255,255,0.08)'}; color: white; border: 1px solid ${profile.id === activeProfileId ? 'rgba(0,168,232,0.5)' : 'rgba(255,255,255,0.15)'}; border-radius: 20px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
               <span>${profile.avatar || '👤'}</span>
@@ -7688,7 +7387,7 @@ async function renderRecetas() {
     <div style="padding: 1rem;">
       <div onclick="showUploadPrescriptionModal()" class="glass-card" style="border: 2px dashed rgba(14,165,233,0.5); border-radius: 16px; padding: 1.5rem; text-align: center; cursor: pointer; background: linear-gradient(135deg, rgba(14,165,233,0.1), rgba(14,165,233,0.05));">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📷</div>
-        <div style="font-weight: 600; color: #7dd3fc; margin-bottom: 0.25rem;">Subir Nueva Receta Médica</div>
+        <div style="font-weight: 600; color: #7dd3fc; margin-bottom: 0.25rem;">Subir Nueva Receta</div>
         <div style="font-size: 0.8rem; color: rgba(125,211,252,0.8);">Escanea o fotografía tu receta médica</div>
       </div>
     </div>
@@ -7696,7 +7395,7 @@ async function renderRecetas() {
     <!-- Active Prescriptions - Glass Cards -->
     <div style="padding: 0 1rem 1rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-        <span style="font-weight: 600; color: white;">💊 Recetas Médicas Activas</span>
+        <span style="font-weight: 600; color: white;">💊 Recetas Activas</span>
         <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.1); padding: 0.25rem 0.5rem; border-radius: 12px;">${activePrescriptions.filter(p => !p.status || p.status === 'active').length} recetas</span>
       </div>
       
@@ -7750,7 +7449,7 @@ async function renderRecetas() {
     <!-- Past Prescriptions - Glass -->
     ${activePrescriptions.filter(p => p.status === 'used').length > 0 ? `
       <div style="padding: 0 1rem 2rem;">
-        <div style="font-weight: 600; margin-bottom: 0.75rem; color: rgba(255,255,255,0.7);">📁 Historial de Recetas Médicas</div>
+        <div style="font-weight: 600; margin-bottom: 0.75rem; color: rgba(255,255,255,0.7);">📁 Historial de Recetas</div>
         <div class="glass-card" style="overflow: hidden; padding: 0;">
           ${activePrescriptions.filter(p => p.status === 'used').slice(0, 5).map(p => `
             <div style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
@@ -7767,14 +7466,14 @@ async function renderRecetas() {
 
     <!-- Refill Requests History - Glass -->
     ${(() => {
-      const _refillRequests = refillRequests;
-      if (_refillRequests.length === 0) return '';
+      const refillRequests = Store.getRefillRequests();
+      if (refillRequests.length === 0) return '';
       
       return `
         <div style="padding: 0 1rem 2rem;">
           <div style="font-weight: 600; margin-bottom: 0.75rem; color: rgba(255,255,255,0.7);">🔄 Historial de Recargas</div>
           <div class="glass-card" style="overflow: hidden; padding: 0;">
-            ${_refillRequests.slice(0, 5).map(r => {
+            ${refillRequests.slice(0, 5).map(r => {
               const statusColors = {
                 pending: { bg: 'rgba(245,158,11,0.2)', color: '#fbbf24', text: 'Pendiente' },
                 confirmed: { bg: 'rgba(59,130,246,0.2)', color: '#60a5fa', text: 'Confirmada' },
@@ -7794,7 +7493,7 @@ async function renderRecetas() {
               `;
             }).join('')}
           </div>
-          ${_refillRequests.length > 5 ? `
+          ${refillRequests.length > 5 ? `
             <div style="text-align: center; padding: 0.75rem; color: rgba(255,255,255,0.5); font-size: 0.85rem;">Ver ${refillRequests.length - 5} más...</div>
           ` : ''}
         </div>
@@ -7808,9 +7507,6 @@ async function renderRecetas() {
         <div>Las recetas de consultas médicas (video o presencial) se agregan automáticamente aquí. También puedes escanear recetas físicas.</div>
       </div>
     </div>
-    
-    <!-- Bottom spacing for nav -->
-    <div style="height: 80px;"></div>
   `;
 }
 
@@ -7830,7 +7526,7 @@ window.showUploadPrescriptionModal = function() {
     <div style="padding: 1rem; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
       <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
       <div>
-        <div style="font-weight: 600;">Subir Receta Médica</div>
+        <div style="font-weight: 600;">Subir Receta</div>
       </div>
     </div>
     
@@ -7839,8 +7535,8 @@ window.showUploadPrescriptionModal = function() {
       <div style="background: #f0f9ff; border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem;">
         <span style="font-size: 1.5rem;">${activeProfile?.avatar || '👤'}</span>
         <div>
-          <div style="font-size: 0.8rem; color: #334155; font-weight: 500;">Paciente:</div>
-          <div style="font-weight: 600; color: #0f172a;">${activeProfile?.name || 'Tú'}</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Receta para:</div>
+          <div style="font-weight: 600; color: #0369a1;">${activeProfile?.name || 'Yo'}</div>
         </div>
       </div>
       
@@ -7890,7 +7586,7 @@ window.showUploadPrescriptionModal = function() {
           <input type="text" id="manual-med-doctor" placeholder="Nombre del doctor" style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 10px;">
         </div>
         
-        <button onclick="saveManualPrescriptionForRecetas()" style="width: 100%; padding: 0.875rem; background: #0ea5e9; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar Receta Médica</button>
+        <button onclick="saveManualPrescriptionForRecetas()" style="width: 100%; padding: 0.875rem; background: #0ea5e9; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar Receta</button>
       </div>
     </div>
   `;
@@ -7931,7 +7627,6 @@ window.simulatePrescriptionCapture = async function() {
   let useSupabase = false;
   
   // Try Supabase if authenticated
-  let uploadError = null;
   if (FarmaciaAPI.isSupabaseAvailable() && currentAuthUser) {
     try {
       const { data, error } = await FarmaciaAPI.uploadPrescription({
@@ -7946,25 +7641,11 @@ window.simulatePrescriptionCapture = async function() {
         throw error || new Error('Unknown error');
       }
     } catch (e) {
-      uploadError = e.message || 'Error desconocido';
-      console.warn('[uploadPrescription] Supabase failed:', uploadError);
+      console.warn('[uploadPrescription] Supabase failed, falling back:', e.message);
     }
   }
-
+  
   if (!useSupabase) {
-    if (currentAuthUser) {
-      // Authenticated user — do NOT silently fallback. Show error.
-      modal.innerHTML = `
-        <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; text-align: center;">
-          <div style="font-size: 4rem; margin-bottom: 1rem;">❌</div>
-          <div style="font-size: 1.2rem; font-weight: 600; margin-bottom: 0.5rem; color: #dc2626;">Error al guardar</div>
-          <div style="color: var(--text-muted); margin-bottom: 2rem;">${uploadError || 'No se pudo guardar en el sistema'}</div>
-          <button onclick="this.closest('.modal-overlay').remove()" style="padding: 1rem 2rem; background: #dc2626; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Cerrar</button>
-        </div>
-      `;
-      return;
-    }
-    // Guest user — fallback to localStorage
     Store.addPrescription({
       medicine: 'Amoxicilina',
       dose: '500mg',
@@ -7979,10 +7660,10 @@ window.simulatePrescriptionCapture = async function() {
   modal.innerHTML = `
     <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; text-align: center;">
       <div style="font-size: 4rem; margin-bottom: 1rem;">✅</div>
-      <div style="font-size: 1.2rem; font-weight: 600; margin-bottom: 0.5rem;">¡Receta médica guardada!</div>
+      <div style="font-size: 1.2rem; font-weight: 600; margin-bottom: 0.5rem;">¡Receta guardada!</div>
       <div style="color: var(--text-muted); margin-bottom: 2rem;">Amoxicilina 500mg detectada</div>
       ${useSupabase ? `<div style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Guardada en el sistema</div>` : ''}
-      <button onclick="this.closest('.modal-overlay').remove(); renderRecetas();" style="padding: 1rem 2rem; background: #0ea5e9; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Ver mis recetas médicas</button>
+      <button onclick="this.closest('.modal-overlay').remove(); renderRecetas();" style="padding: 1rem 2rem; background: #0ea5e9; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Ver mis recetas</button>
     </div>
   `;
 };
@@ -7993,7 +7674,6 @@ window.handlePrescriptionUpload = async function(input) {
     let useSupabase = false;
     
     // Try Supabase if authenticated
-    let uploadError = null;
     if (FarmaciaAPI.isSupabaseAvailable() && currentAuthUser) {
       try {
         const { data, error } = await FarmaciaAPI.uploadPrescription(file);
@@ -8004,17 +7684,11 @@ window.handlePrescriptionUpload = async function(input) {
           throw error || new Error('Unknown error');
         }
       } catch (e) {
-        uploadError = e.message || 'Error desconocido';
-        console.warn('[uploadPrescription] Supabase failed:', uploadError);
+        console.warn('[uploadPrescription] Supabase failed, falling back:', e.message);
       }
     }
-
+    
     if (!useSupabase) {
-      if (currentAuthUser) {
-        alert('❌ Error al subir receta:\n\n' + (uploadError || 'No se pudo guardar en el sistema'));
-        return;
-      }
-      // Guest user — fallback to localStorage
       Store.addPrescription({
         medicine: 'Medicamento Recetado',
         dose: 'Ver imagen',
@@ -8027,7 +7701,7 @@ window.handlePrescriptionUpload = async function(input) {
     
     document.querySelector('.modal-overlay').remove();
     renderRecetas();
-    alert(useSupabase ? '✅ Receta subida al sistema' : '✅ Receta guardada localmente');
+    showToast(useSupabase ? 'Receta subida al sistema' : 'Receta guardada localmente', 'success');
   }
 };
 
@@ -8045,7 +7719,6 @@ window.saveManualPrescriptionForRecetas = async function() {
   let useSupabase = false;
   
   // Try Supabase if authenticated
-  let uploadError = null;
   if (FarmaciaAPI.isSupabaseAvailable() && currentAuthUser) {
     try {
       const { data, error } = await FarmaciaAPI.uploadPrescription({
@@ -8060,17 +7733,11 @@ window.saveManualPrescriptionForRecetas = async function() {
         throw error || new Error('Unknown error');
       }
     } catch (e) {
-      uploadError = e.message || 'Error desconocido';
-      console.warn('[uploadPrescription] Supabase failed:', uploadError);
+      console.warn('[uploadPrescription] Supabase failed, falling back:', e.message);
     }
   }
-
+  
   if (!useSupabase) {
-    if (currentAuthUser) {
-      alert('❌ Error al guardar receta:\n\n' + (uploadError || 'No se pudo guardar en el sistema'));
-      return;
-    }
-    // Guest user — fallback to localStorage
     Store.addPrescription({
       medicine: name,
       dose: dose || 'No especificada',
@@ -8083,7 +7750,7 @@ window.saveManualPrescriptionForRecetas = async function() {
   
   document.querySelector('.modal-overlay').remove();
   renderRecetas();
-  alert(useSupabase ? '✅ Receta guardada en el sistema' : '✅ Receta guardada');
+  showToast(useSupabase ? 'Receta guardada en el sistema' : 'Receta guardada', 'success');
 };
 
 window.orderPrescription = function(prescriptionId) {
@@ -8091,7 +7758,7 @@ window.orderPrescription = function(prescriptionId) {
   if (!prescription) return;
   
   if (prescription.source === 'supabase') {
-    alert('Las recetas del sistema no se pueden ordenar directamente aún. Contacta a la farmacia.');
+    showToast('Las recetas del sistema no se pueden ordenar directamente aún. Contacta a la farmacia.', 'info');
     return;
   }
   
@@ -8105,7 +7772,7 @@ window.orderPrescription = function(prescriptionId) {
   };
   
   Store.addToCart(medicine.id, 1);
-  alert(`🛒 "${prescription.medicine}" agregado al carrito\n\nRecuerda que algunos medicamentos requieren validación de receta.`);
+  showToast(`"${prescription.medicine}" agregado al carrito`, 'success');
 };
 
 window.setReminderForPrescription = function(prescriptionId) {
@@ -8113,7 +7780,7 @@ window.setReminderForPrescription = function(prescriptionId) {
   if (!prescription) return;
   
   if (prescription.source === 'supabase') {
-    alert('Los recordatorios solo están disponibles para recetas locales aún.');
+    showToast('Los recordatorios solo están disponibles para recetas locales aún.', 'info');
     return;
   }
   
@@ -8125,14 +7792,14 @@ window.setReminderForPrescription = function(prescriptionId) {
     frequency: prescription.frequency
   });
   
-  alert(`⏰ Recordatorio configurado para ${prescription.medicine}`);
+  showToast(`Recordatorio configurado para ${prescription.medicine}`, 'success');
 };
 
 window.markPrescriptionUsed = function(prescriptionId) {
   const prescription = (window.__prescriptionsCache || []).find(p => p.id === prescriptionId) || Store.getAllPrescriptions().find(p => p.id === prescriptionId);
   
   if (prescription && prescription.source === 'supabase') {
-    alert('Las recetas del sistema no se pueden modificar desde la app aún.');
+    showToast('Las recetas del sistema no se pueden modificar desde la app aún.', 'info');
     return;
   }
   
@@ -8248,7 +7915,7 @@ window.switchToProfile = function(profileId) {
     : `Has cambiado al perfil de ${profile?.name}`;
   
   renderCaregiver();
-  alert(`✅ ${message}`);
+  showToast(message, 'success');
 };
 
 window.deleteFamilyMember = function(profileId) {
@@ -8258,7 +7925,7 @@ window.deleteFamilyMember = function(profileId) {
   if (confirm(`¿Eliminar el perfil de ${profile.name}?\n\nSe perderán todas sus recetas y datos de salud.`)) {
     Store.deleteSubProfile(profileId);
     renderCaregiver();
-    alert(`✅ Perfil de ${profile.name} eliminado`);
+    showToast(`Perfil de ${profile.name} eliminado`, 'info');
   }
 };
 
@@ -8353,7 +8020,7 @@ window.saveNewFamilyMember = function() {
   
   document.querySelector('.modal-overlay').remove();
   renderCaregiver();
-  alert(`✅ Perfil de ${name} creado\n\nAhora puedes cambiar a este perfil para gestionar sus recetas y citas médicas.`);
+  showToast(`Perfil de ${name} creado. Ahora puedes cambiar a este perfil.`, 'success');
 };
 
 
@@ -8405,7 +8072,7 @@ async function renderShop() {
     
     <!-- Categories -->
     <div style="padding: 1rem; background: rgba(255,255,255,0.03);">
-      <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem; scrollbar-width: none; -webkit-overflow-scrolling: touch;">
+      <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem;">
         ${categories.map(cat => `
           <button onclick="filterByCategory('${cat.id}')" class="shop-cat-btn ${cat.id === 'all' ? 'active' : ''}" data-cat="${cat.id}" style="flex-shrink: 0; padding: 0.5rem 1rem; background: ${cat.id === 'all' ? 'rgba(245,158,11,0.3)' : 'rgba(255,255,255,0.08)'}; color: white; border: 1px solid ${cat.id === 'all' ? 'rgba(245,158,11,0.5)' : 'rgba(255,255,255,0.15)'}; border-radius: 20px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.25rem; backdrop-filter: blur(10px);">
             <span>${cat.icon}</span>
@@ -8495,11 +8162,6 @@ async function renderShop() {
       </div>
     `).join('');
   }
-  
-  // Bottom spacing for nav
-  const spacer = document.createElement('div');
-  spacer.style.height = '80px';
-  mainContent.appendChild(spacer);
 }
 
 // Shop filter functions
@@ -8608,7 +8270,7 @@ window.addToCartFromDetail = function(medicineId) {
   document.querySelector('.modal-overlay')?.remove();
   renderShop();
   updateCartBadge();
-  alert('✅ Producto agregado al carrito');
+  showToast('Producto agregado al carrito', 'success');
 };
 
 window.quickAddToCart = function(medicineId) {
@@ -8629,7 +8291,7 @@ window.showCart = function() {
   const total = Store.getCartTotal();
   
   if (cart.length === 0) {
-    alert('🛒 Tu carrito está vacío');
+    showToast('Tu carrito está vacío', 'info');
     return;
   }
   
@@ -8641,7 +8303,7 @@ window.showCart = function() {
     <div style="padding: 1rem; background: #003366; color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
       <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
       <div style="font-weight: 600; font-size: 1.1rem;">🛒 Tu Carrito</div>
-      <div style="margin-left: auto; font-size: 0.9rem;">${cart.length} artículo${cart.length > 1 ? 's' : ''}</div>
+      <div style="margin-left: auto; font-size: 0.9rem;">${cart.length} item${cart.length > 1 ? 's' : ''}</div>
     </div>
     
     <!-- Cart Items -->
@@ -8659,9 +8321,9 @@ window.showCart = function() {
                 <button onclick="updateCartItemQty('${item.medicineId}', 1)" style="width: 28px; height: 28px; background: #f3f4f6; border: none; border-radius: 6px; cursor: pointer;">+</button>
               </div>
             </div>
-            <div style="text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
+            <div style="text-align: right;">
               <div style="font-weight: 700; font-size: 1.1rem;">$${(item.price * item.quantity).toFixed(2)}</div>
-              <button onclick="removeCartItem('${item.medicineId}')" title="Eliminar" style="width: 32px; height: 32px; background: rgba(220,38,38,0.1); border: none; border-radius: 8px; color: #dc2626; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center;">🗑️</button>
+              <button onclick="removeCartItem('${item.medicineId}')" style="background: none; border: none; color: #dc2626; font-size: 0.8rem; cursor: pointer; margin-top: 0.25rem;">Eliminar</button>
             </div>
           </div>
         `).join('')}
@@ -8857,7 +8519,7 @@ window.processOrder = async function() {
         <div style="font-size: 0.8rem; color: #22c55e; margin-top: 0.5rem;">✓ Listo para recoger en ~30 min</div>
       </div>
       
-      <button onclick="this.closest('.modal-overlay').remove(); renderShop();" style="padding: 1rem 2rem; background: #003366; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Seguir comprando</button>
+      <button onclick="this.closest('.modal-overlay').remove(); renderShop();" class="btn-modal-primary">Seguir comprando</button>
     </div>
   `;
 };
@@ -9006,13 +8668,10 @@ async function renderOrders() {
         </button>
         <button onclick="renderRecetas()" class="glass-card" style="padding: 1rem; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 0.5rem;">
           <div style="font-size: 1.75rem;">📄</div>
-          <div style="font-size: 0.85rem; font-weight: 600; color: white;">Mis Recetas Médicas</div>
+          <div style="font-size: 0.85rem; font-weight: 600; color: white;">Mis Recetas</div>
         </button>
       </div>
     </div>
-    
-    <!-- Bottom spacing for nav -->
-    <div style="height: 80px;"></div>
   `;
 }
 
@@ -9143,7 +8802,7 @@ window.cancelOrder = function(orderId) {
   const order = allOrders.find(o => o.id === orderId);
   
   if (order && order.source === 'supabase') {
-    alert('Los pedidos del sistema no se pueden cancelar desde la app aún. Contacta a la farmacia.');
+    showToast('Los pedidos del sistema no se pueden cancelar desde la app aún. Contacta a la farmacia.', 'info');
     return;
   }
   
@@ -9161,7 +8820,7 @@ window.cancelOrder = function(orderId) {
   
   document.querySelector('.modal-overlay')?.remove();
   renderOrders();
-  alert('Pedido cancelado');
+  showToast('Pedido cancelado', 'info');
 };
 
 // ============================================
@@ -9607,89 +9266,5 @@ window.saveVaccineRecord = function(vaccineId) {
   
   document.querySelector('.modal-overlay')?.remove();
   renderVaccineTracker();
-  alert('✅ Vacuna registrada. ¡+25 puntos!');
+  showToast('Vacuna registrada. ¡+25 puntos!', 'success');
 };
-
-// ============================================
-// NOTIFICATION CENTER
-// ============================================
-
-async function loadNotificationCount() {
-  try {
-    const count = await FarmaciaAPI.getUnreadNotificationCount();
-    const badge = document.getElementById('notification-badge');
-    if (badge) {
-      badge.textContent = count > 99 ? '99+' : count;
-      badge.style.display = count > 0 ? 'block' : 'none';
-    }
-  } catch (e) {
-    console.warn('[Notifications] Could not load count:', e);
-  }
-}
-
-window.showNotifications = async function() {
-  const notifications = await FarmaciaAPI.getNotifications();
-  const modal = document.createElement('div');
-  modal.className = 'modal-overlay';
-  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; display: flex; align-items: flex-start; justify-content: center; padding-top: 60px;';
-  modal.innerHTML = `
-    <div style="background: white; border-radius: 16px; width: 90%; max-width: 420px; max-height: 70vh; overflow: hidden; display: flex; flex-direction: column;">
-      <div style="padding: 1rem; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
-        <h3 style="margin: 0; font-size: 1.1rem; font-weight: 700; color: #1e293b;">🔔 Notificaciones</h3>
-        <div style="display: flex; gap: 0.5rem;">
-          ${notifications.length > 0 ? `<button onclick="markAllNotificationsRead()" style="background: none; border: none; color: #3b82f6; font-size: 0.8rem; cursor: pointer; font-weight: 500;">Marcar todas</button>` : ''}
-          <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #94a3b8;">×</button>
-        </div>
-      </div>
-      <div style="overflow-y: auto; padding: 0.5rem;">
-        ${notifications.length === 0 ? `
-          <div style="text-align: center; padding: 2rem; color: #94a3b8;">
-            <div style="font-size: 2rem; margin-bottom: 0.5rem;">📭</div>
-            <div style="font-size: 0.9rem;">No tienes notificaciones</div>
-          </div>
-        ` : notifications.map(n => `
-          <div onclick="markNotificationRead('${n.id}')" style="padding: 0.75rem; border-radius: 10px; margin-bottom: 0.25rem; cursor: pointer; ${n.isRead ? 'background: #f8fafc;' : 'background: #eff6ff; border-left: 3px solid #3b82f6;'}">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
-              <div style="font-weight: 600; font-size: 0.85rem; color: #1e293b; flex: 1;">${n.title}</div>
-              <div style="font-size: 0.7rem; color: #94a3b8; white-space: nowrap;">${n.createdAt ? new Date(n.createdAt).toLocaleDateString('es-MX') : ''}</div>
-            </div>
-            ${n.message ? `<div style="font-size: 0.8rem; color: #64748b; margin-top: 0.25rem;">${n.message}</div>` : ''}
-          </div>
-        `).join('')}
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
-};
-
-window.markNotificationRead = async function(id) {
-  await FarmaciaAPI.markNotificationRead(id);
-  await loadNotificationCount();
-  window.showNotifications();
-};
-
-window.markAllNotificationsRead = async function() {
-  await FarmaciaAPI.markAllNotificationsRead();
-  await loadNotificationCount();
-  window.showNotifications();
-};
-
-// Update notification count periodically
-setInterval(loadNotificationCount, 30000);
-
-// ============================================
-// GLOBAL EXPOSURES (for inline onclick handlers)
-// ============================================
-window.handleLogin = handleLogin;
-window.handleSignup = handleSignup;
-window.renderHome = renderHome;
-window.renderShop = renderShop;
-window.renderLogin = renderLogin;
-window.renderRecetas = renderRecetas;
-window.renderConsulta = renderConsulta;
-window.renderSleep = renderSleep;
-window.renderCheckIn = renderCheckIn;
-window.renderSignup = renderSignup;
-window.renderBody = renderBody;
-window.renderPage = renderPage;
-window.navigateTo = renderPage;

@@ -33,8 +33,16 @@ BEGIN
   END IF;
 END $$;
 
--- Ensure existing rows have a valid status (idempotent)
-UPDATE customer_documents SET status = 'pending' WHERE status IS NULL;
+-- Ensure existing rows have a valid status (idempotent, guarded)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'customer_documents' AND column_name = 'status'
+  ) THEN
+    UPDATE customer_documents SET status = 'pending' WHERE status IS NULL;
+  END IF;
+END $$;
 
 -- Add named check constraint (drop any existing constraint on the column first)
 DO $$
