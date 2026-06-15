@@ -257,8 +257,9 @@ export const decrementInventory = async (items, referenceId = null, referenceTyp
     if (error) {
       console.error('[decrementInventory] RPC decrement_inventory failed:', error);
       // Fallback: manual update
-      const { error: updateError } = await supabase.from('inventory').update({
-        quantity: prevQty - item.quantity,
+      const newQty = Math.max(0, prevQty - item.quantity);
+    const { error: updateError } = await supabase.from('inventory').update({
+        quantity: newQty,
         sales_count: (current?.sales_count || 0) + item.quantity,
         updated_at: new Date().toISOString(),
       }).eq('id', inventoryId);
@@ -276,7 +277,7 @@ export const decrementInventory = async (items, referenceId = null, referenceTyp
         type: referenceType,
         quantity_change: -item.quantity,
         previous_quantity: prevQty,
-        new_quantity: prevQty - item.quantity,
+        new_quantity: newQty,
         reference_id: referenceId,
         reference_type: referenceType,
         reason: item.name || referenceType,
@@ -1081,10 +1082,12 @@ export const getCustomers = async () => {
 };
 
 export const getCustomerById = async (id) => {
+  const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('customers')
     .select('*')
     .eq('id', id)
+    .eq('org_id', orgId)
     .single();
   if (error) throw error;
   return data;
@@ -1577,11 +1580,21 @@ export const updateSaleStatus = async (id, status) => {
 
 export const getCustomerStats = async (customerId) => {
   const orgId = await getOrgId();
+  // Verify customer belongs to org before counting
+  const { data: customer, error: custError } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('id', customerId)
+    .eq('org_id', orgId)
+    .single();
+  if (custError || !customer) {
+    return { prescriptions: 0, preorders: 0, appointments: 0, orders: 0 };
+  }
   const [{ count: prescriptions }, { count: preorders }, { count: appointments }, { count: orders }] = await Promise.all([
     supabase.from('customer_documents').select('*', { count: 'exact', head: true }).eq('customer_id', customerId),
-    supabase.from('preorders').select('*', { count: 'exact', head: true }).eq('customer_id', customerId),
-    supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('customer_id', customerId),
-    supabase.from('sales').select('*', { count: 'exact', head: true }).eq('customer_id', customerId).eq('voided', false),
+    supabase.from('preorders').select('*', { count: 'exact', head: true }).eq('customer_id', customerId).eq('org_id', orgId),
+    supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('customer_id', customerId).eq('org_id', orgId),
+    supabase.from('sales').select('*', { count: 'exact', head: true }).eq('customer_id', customerId).eq('voided', false).eq('org_id', orgId),
   ]);
   return {
     prescriptions: prescriptions || 0,
@@ -1592,6 +1605,16 @@ export const getCustomerStats = async (customerId) => {
 };
 
 export const getCustomerPrescriptions = async (customerId) => {
+  const orgId = await getOrgId();
+  // Verify customer belongs to org (customer_documents may not have org_id column)
+  const { data: customer, error: custError } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('id', customerId)
+    .eq('org_id', orgId)
+    .single();
+  if (custError || !customer) return [];
+
   const { data, error } = await supabase
     .from('customer_documents')
     .select('*')
@@ -1602,31 +1625,37 @@ export const getCustomerPrescriptions = async (customerId) => {
 };
 
 export const getCustomerPreorders = async (customerId) => {
+  const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('preorders')
     .select('*, inventory(name, price)')
     .eq('customer_id', customerId)
+    .eq('org_id', orgId)
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data || [];
 };
 
 export const getCustomerAppointments = async (customerId) => {
+  const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('appointments')
     .select('*, profiles(full_name)')
     .eq('customer_id', customerId)
+    .eq('org_id', orgId)
     .order('appointment_date', { ascending: false });
   if (error) throw error;
   return data || [];
 };
 
 export const getCustomerOrders = async (customerId) => {
+  const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('sales')
     .select('*, sale_items(*)')
     .eq('customer_id', customerId)
     .eq('voided', false)
+    .eq('org_id', orgId)
     .order('timestamp', { ascending: false });
   if (error) throw error;
   return data || [];
@@ -1686,6 +1715,16 @@ export const markAllNotificationsRead = async (customerId = null, profileId = nu
 };
 
 // ── INVENTORY / REORDER ─────────────────────────────────────
+
+export const getInventoryQuantity = async (inventoryId) => {
+  const { data, error } = await supabase
+    .from('inventory')
+    .select('quantity, name')
+    .eq('id', inventoryId)
+    .single();
+  if (error) throw error;
+  return data;
+};
 
 export const decrementInventoryItem = async (inventoryId, quantity) => {
   const { data, error } = await supabase

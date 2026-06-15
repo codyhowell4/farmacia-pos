@@ -3,7 +3,7 @@ import { Search, ShoppingCart, UserCircle, Clock, Package, CheckCircle, XCircle,
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { getSales, updateSaleStatus, decrementInventoryItem, createNotification } from '@/lib/db';
+import { getSales, updateSaleStatus, decrementInventoryItem, incrementInventory, getInventoryQuantity, createNotification } from '@/lib/db';
 import { formatMXN } from '@/lib/currency';
 
 const statusConfig = {
@@ -54,7 +54,34 @@ const AdminOrders = () => {
     setUpdatingId(id);
     try {
       const sale = sales.find((s) => s.id === id);
+
+      // Pre-validate stock before completing
       if (newStatus === 'completed' && sale?.sale_items?.length > 0) {
+        for (const item of sale.sale_items) {
+          if (item.inventory_id && item.quantity > 0) {
+            try {
+              const inv = await getInventoryQuantity(item.inventory_id);
+              if (!inv || inv.quantity < item.quantity) {
+                toast({
+                  title: 'Stock insuficiente',
+                  description: `No hay suficiente stock para «${item.name}». Disponible: ${inv?.quantity || 0}, Requerido: ${item.quantity}`,
+                  variant: 'destructive',
+                });
+                setUpdatingId(null);
+                return;
+              }
+            } catch (err) {
+              toast({
+                title: 'Error de inventario',
+                description: `No se pudo verificar stock para ${item.name}: ${err.message}`,
+                variant: 'destructive',
+              });
+              setUpdatingId(null);
+              return;
+            }
+          }
+        }
+        // All items have sufficient stock — decrement now
         for (const item of sale.sale_items) {
           if (item.inventory_id && item.quantity > 0) {
             try {
@@ -71,6 +98,25 @@ const AdminOrders = () => {
           }
         }
       }
+
+      // Restore inventory on cancel
+      if (newStatus === 'cancelled' && sale?.sale_items?.length > 0) {
+        for (const item of sale.sale_items) {
+          if (item.inventory_id && item.quantity > 0) {
+            try {
+              await incrementInventory(
+                [{ inventory_id: item.inventory_id, quantity: item.quantity, name: item.name }],
+                sale.id,
+                'order_cancel'
+              );
+            } catch (invErr) {
+              console.warn('[Inventory] Failed to restore stock on cancel:', invErr);
+              // Non-blocking: continue with status update even if restore fails
+            }
+          }
+        }
+      }
+
       await updateSaleStatus(id, newStatus);
       if (sale?.customers?.id) {
         try {

@@ -34,6 +34,8 @@ const closeMenuBtn = document.getElementById('close-menu-btn');
 const menuOverlay = document.getElementById('menu-overlay');
 const menuPanel = document.getElementById('menu-panel');
 const menuItems = document.querySelectorAll('.menu-item');
+const notifBtn = document.getElementById('notif-btn');
+const notifBadge = document.getElementById('notif-badge');
 
 // Initialize
 // Auth state
@@ -65,6 +67,9 @@ document.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
     requestNotificationPermission();
   }, 2000);
+  
+  // Initialize notification center
+  initNotificationCenter();
   
   // Listen for dose taken/skipped events from service worker
   window.addEventListener('doseTaken', (e) => {
@@ -368,6 +373,163 @@ async function requestNotificationPermission() {
       }
     }
   }
+}
+
+// ============================================
+// NOTIFICATION CENTER
+// ============================================
+
+let notifPollInterval = null;
+let __notificationsCache = [];
+
+function initNotificationCenter() {
+  if (notifBtn) {
+    notifBtn.addEventListener('click', showNotificationModal);
+  }
+  // Initial poll
+  pollNotificationCount();
+  // Poll every 30 seconds
+  notifPollInterval = setInterval(pollNotificationCount, 30000);
+}
+
+async function pollNotificationCount() {
+  try {
+    const count = await FarmaciaAPI.getUnreadNotificationCount();
+    updateNotificationBadge(count);
+  } catch (err) {
+    console.log('[Notifications] Poll failed:', err.message);
+  }
+}
+
+function updateNotificationBadge(count) {
+  if (!notifBadge) return;
+  if (count > 0) {
+    notifBadge.textContent = count > 99 ? '99+' : count;
+    notifBadge.style.display = 'block';
+  } else {
+    notifBadge.style.display = 'none';
+  }
+}
+
+async function showNotificationModal() {
+  // Fetch notifications
+  let notifications = [];
+  try {
+    notifications = await FarmaciaAPI.getNotifications();
+    __notificationsCache = notifications;
+  } catch (err) {
+    console.error('[Notifications] Failed to load:', err);
+    showToast('No se pudieron cargar las notificaciones', 'error');
+    return;
+  }
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
+
+  const typeIcons = {
+    prescription: '📄',
+    refill: '💊',
+    appointment: '📅',
+    order: '📦',
+    default: '🔔'
+  };
+
+  const formatTime = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffMins < 1) return 'Ahora';
+    if (diffMins < 60) return `Hace ${diffMins} min`;
+    if (diffHours < 24) return `Hace ${diffHours} h`;
+    if (diffDays < 7) return `Hace ${diffDays} d`;
+    return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
+  };
+
+  const itemsHtml = notifications.length > 0
+    ? notifications.map(n => `
+      <div class="notification-item ${n.isRead ? '' : 'unread'}" data-id="${n.id}" onclick="markCustomerNotificationRead('${n.id}')">
+        <div class="notification-icon ${n.type || 'default'}">${typeIcons[n.type] || typeIcons.default}</div>
+        <div class="notification-content">
+          <div class="notification-title">${escapeHtml(n.title)}</div>
+          <div class="notification-message">${escapeHtml(n.message)}</div>
+          <div class="notification-time">${formatTime(n.createdAt)}</div>
+        </div>
+        ${n.isRead ? '' : '<div class="notification-dot"></div>'}
+      </div>
+    `).join('')
+    : `<div class="notification-empty">
+        <div class="icon">🔔</div>
+        <div>No tienes notificaciones</div>
+      </div>`;
+
+  const modal = document.createElement('div');
+  modal.className = 'notification-modal';
+  modal.id = 'notification-modal-overlay';
+  modal.innerHTML = `
+    <div class="notification-panel">
+      <div class="notification-header">
+        <h3>🔔 Notificaciones ${unreadCount > 0 ? `<span style="font-size:0.85rem;opacity:0.8;">(${unreadCount} sin leer)</span>` : ''}</h3>
+        <div style="display: flex; gap: 0.5rem;">
+          ${unreadCount > 0 ? `<button onclick="markAllCustomerNotificationsRead()">Marcar todas</button>` : ''}
+          <button onclick="closeNotificationModal()">Cerrar</button>
+        </div>
+      </div>
+      <div class="notification-list">
+        ${itemsHtml}
+      </div>
+    </div>
+  `;
+
+  // Close on backdrop click
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeNotificationModal();
+  });
+
+  document.body.appendChild(modal);
+}
+
+function closeNotificationModal() {
+  document.getElementById('notification-modal-overlay')?.remove();
+}
+
+async function markCustomerNotificationRead(id) {
+  try {
+    await FarmaciaAPI.markNotificationRead(id);
+    // Update local cache
+    const n = __notificationsCache.find(x => x.id === id);
+    if (n) n.isRead = true;
+    // Refresh badge
+    const unreadCount = __notificationsCache.filter(x => !x.isRead).length;
+    updateNotificationBadge(unreadCount);
+    // Re-render modal
+    closeNotificationModal();
+    showNotificationModal();
+  } catch (err) {
+    console.error('[Notifications] Failed to mark read:', err);
+  }
+}
+
+async function markAllCustomerNotificationsRead() {
+  try {
+    await FarmaciaAPI.markAllNotificationsRead();
+    // Update local cache
+    __notificationsCache.forEach(n => n.isRead = true);
+    updateNotificationBadge(0);
+    closeNotificationModal();
+    showNotificationModal();
+  } catch (err) {
+    console.error('[Notifications] Failed to mark all read:', err);
+  }
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 // Navigation

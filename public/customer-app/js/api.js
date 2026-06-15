@@ -52,108 +52,24 @@ window.FarmaciaAPI = (function () {
     }
   }
 
-  /**
-   * Shared helper: get or create the customers row linked to the current auth user.
-   * Queries by profile_id (auth.users.id). If missing, creates one using the
-   * linked profiles row and DEFAULT_ORG_ID.
-   * Never throws PGRST116; handles zero/one/many rows safely.
-   */
-  async function getOrCreateCustomer() {
-    const user = await getAuthUser();
-    if (!user) {
-      console.log('[Customer] No auth user');
-      return null;
-    }
-    console.log('[Customer] Auth user:', user.id, user.email);
-
-    try {
-      // 1. Try to find existing customer(s)
-      console.log('[Customer] Querying customers for profile_id =', user.id);
-      const { data: existingRows, error: findErr } = await sb
-        .from('customers')
-        .select('id, org_id, profile_id, full_name, email, phone, curp')
-        .eq('profile_id', user.id);
-
-      console.log('[Customer] Lookup result:', { existingRows: existingRows ? existingRows.length : 'null', error: findErr ? findErr.code + ' ' + findErr.message : 'none' });
-
-      if (findErr) {
-        console.error('[Customer] Lookup failed:', findErr.code, findErr.message);
-        throw findErr;
-      }
-
-      const rows = existingRows || [];
-      if (rows.length > 0) {
-        if (rows.length > 1) {
-          console.warn('[Customer] Duplicate customer rows found:', rows.length);
-        }
-        console.log('[Customer] Found existing customer:', rows[0].id, 'org_id=', rows[0].org_id);
-        return rows[0];
-      }
-
-      // 2. No customer row — fetch profiles data to create one
-      console.log('[Customer] No customer row found for profile_id', user.id, '— fetching profile...');
-      const { data: profileRows, error: profileErr } = await sb
-        .from('profiles')
-        .select('id, org_id, full_name, email')
-        .eq('id', user.id)
-        .limit(1);
-
-      console.log('[Customer] Profile lookup result:', { profileRows: profileRows ? profileRows.length : 'null', error: profileErr ? profileErr.code + ' ' + profileErr.message : 'none' });
-
-      if (profileErr) {
-        console.error('[Customer] Profile lookup failed:', profileErr.code, profileErr.message);
-        throw profileErr;
-      }
-
-      const profile = profileRows && profileRows[0];
-      const defaultOrgId = (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
-      const orgId = profile?.org_id || defaultOrgId;
-      console.log('[Customer] Resolved org_id:', orgId, '(profile org_id=', profile?.org_id, ', default=', defaultOrgId, ')');
-      if (!orgId) {
-        console.error('[Customer] Cannot create customer: org_id not available');
-        throw new Error('org_id not available');
-      }
-
-      const fullName = profile?.full_name
-        || user.user_metadata?.full_name
-        || user.email;
-      const email = profile?.email || user.email;
-
-      console.log('[Customer] Inserting customers row:', { org_id: orgId, profile_id: user.id, full_name: fullName, email: email });
-      const { data: newRow, error: createErr } = await sb
-        .from('customers')
-        .insert({
-          org_id: orgId,
-          profile_id: user.id,
-          full_name: fullName,
-          email: email,
-          phone: null,
-          curp: null,
-          address: null,
-          date_of_birth: null,
-          notes: null
-        })
-        .select('id, org_id, profile_id, full_name, email, phone, curp')
-        .single();
-
-      console.log('[Customer] Insert result:', { newRow: newRow ? newRow.id : 'null', error: createErr ? createErr.code + ' ' + createErr.message : 'none' });
-
-      if (createErr) {
-        console.error('[Customer] Failed to create customer:', createErr.code, createErr.message, createErr.details);
-        throw createErr;
-      }
-
-      console.log('[Customer] Created customer row:', newRow.id);
-      return newRow;
-    } catch (err) {
-      console.error('[Customer] getOrCreateCustomer failed:', err.message);
-      return null;
-    }
-  }
-
   async function getCustomerId() {
-    const customer = await getOrCreateCustomer();
-    return customer ? customer.id : null;
+    const user = await getAuthUser();
+    if (!user) return null;
+    try {
+      const { data, error } = await sb
+        .from('customers')
+        .select('id')
+        .eq('profile_id', user.id)
+        .single();
+      if (error) {
+        if (error.code === 'PGRST116') return null; // no rows
+        throw error;
+      }
+      return data ? data.id : null;
+    } catch (err) {
+      console.warn('[FarmaciaAPI] getCustomerId failed:', err.message);
+      return null;
+    }
   }
 
   // ------------------------------------------------------------------
@@ -255,22 +171,19 @@ window.FarmaciaAPI = (function () {
           return fallback();
         }
 
-        const { data: rows, error } = await sb
+        const { data, error } = await sb
           .from('customers')
           .select('id, full_name, phone, email, address, date_of_birth, profile_id')
-          .eq('profile_id', user.id);
+          .eq('profile_id', user.id)
+          .single();
 
         if (error) {
-          console.warn('[FarmaciaAPI] getCustomerProfile lookup error:', error.code, error.message);
-          return fallback();
+          if (error.code === 'PGRST116') {
+            console.log('[FarmaciaAPI] No customer record yet, profile fallback');
+            return fallback();
+          }
+          throw error;
         }
-
-        if (!rows || rows.length === 0) {
-          console.log('[FarmaciaAPI] No customer record yet, profile fallback');
-          return fallback();
-        }
-
-        const data = rows[0];
 
         console.log('[FarmaciaAPI] Customer profile loaded from Supabase');
         return {
@@ -406,16 +319,16 @@ window.FarmaciaAPI = (function () {
       }
 
       try {
-        const customerId = await getCustomerId();
-        if (!customerId) {
-          console.log('[FarmaciaAPI] No customer link, appointments fallback');
+        const user = await getAuthUser();
+        if (!user) {
+          console.log('[FarmaciaAPI] No auth user, appointments fallback');
           return fallback();
         }
 
         const { data, error } = await sb
           .from('appointments')
           .select('*')
-          .eq('customer_id', customerId)
+          .eq('customer_id', user.id)
           .order('appointment_date', { ascending: false });
 
         if (error) throw error;
@@ -458,20 +371,20 @@ window.FarmaciaAPI = (function () {
       }
 
       try {
-        const customerId = await getCustomerId();
-        if (!customerId) {
-          console.log('[FarmaciaAPI] No customer link, prescriptions fallback');
+        const user = await getAuthUser();
+        if (!user) {
+          console.log('[FarmaciaAPI] No auth user, prescriptions fallback');
           return fallback();
         }
 
         const [docsRes, notesRes] = await Promise.all([
           sb.from('customer_documents')
             .select('*')
-            .eq('customer_id', customerId)
+            .eq('customer_id', user.id)
             .eq('document_type', 'receta'),
           sb.from('medical_notes')
             .select('*')
-            .eq('customer_id', customerId)
+            .eq('customer_id', user.id)
         ]);
 
         const prescriptions = [];
@@ -483,7 +396,6 @@ window.FarmaciaAPI = (function () {
               type:      'document',
               fileUrl:   doc.file_url,
               notes:     doc.notes,
-              status:    doc.status || 'pending',
               createdAt: doc.created_at,
               source:    'supabase'
             });
@@ -550,8 +462,58 @@ window.FarmaciaAPI = (function () {
         console.log('[FarmaciaAPI] ensureCustomerProfile skipped - Supabase not available');
         return null;
       }
-      const customer = await getOrCreateCustomer();
-      return customer ? customer.id : null;
+      try {
+        const user = await getAuthUser();
+        if (!user) {
+          console.log('[FarmaciaAPI] ensureCustomerProfile skipped - no auth user');
+          return null;
+        }
+
+        // Check if customer record already exists
+        const { data: existing, error: checkErr } = await sb
+          .from('customers')
+          .select('id')
+          .eq('profile_id', user.id)
+          .single();
+
+        if (checkErr && checkErr.code !== 'PGRST116') {
+          throw checkErr;
+        }
+
+        if (existing) {
+          console.log('[FarmaciaAPI] Customer profile already exists');
+          return existing.id;
+        }
+
+        // Need org_id to create customer
+        const defaultOrgId = (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
+        if (!defaultOrgId) {
+          console.warn('[FarmaciaAPI] Cannot create customer: SUPABASE_CONFIG.DEFAULT_ORG_ID not set');
+          return null;
+        }
+
+        const { data: newCustomer, error: createErr } = await sb
+          .from('customers')
+          .insert({
+            org_id: defaultOrgId,
+            profile_id: user.id,
+            full_name: fullName || user.user_metadata?.full_name || user.email,
+            email: user.email,
+            phone: null,
+            address: null,
+            date_of_birth: null,
+            notes: null
+          })
+          .select('id')
+          .single();
+
+        if (createErr) throw createErr;
+        console.log('[FarmaciaAPI] Customer profile created:', newCustomer.id);
+        return newCustomer.id;
+      } catch (err) {
+        console.error('[FarmaciaAPI] ensureCustomerProfile failed:', err.message);
+        return null;
+      }
     },
 
     /**
@@ -566,9 +528,18 @@ window.FarmaciaAPI = (function () {
       if (!sb) {
         return { data: null, error: new Error('Supabase not available') };
       }
+      const user = await getAuthUser();
+      if (!user) {
+        return { data: null, error: new Error('Not authenticated') };
+      }
       try {
-        const customer = await getOrCreateCustomer();
-        if (!customer) return { data: null, error: new Error('Customer record not found') };
+        const { data: customer, error: custErr } = await sb
+          .from('customers')
+          .select('id, org_id')
+          .eq('profile_id', user.id)
+          .single();
+        if (custErr) throw custErr;
+        if (!customer) throw new Error('Customer record not found');
 
         const orgId = customer.org_id || (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
         if (!orgId) throw new Error('org_id not available');
@@ -607,9 +578,18 @@ window.FarmaciaAPI = (function () {
       if (!sb) {
         return { data: null, error: new Error('Supabase not available') };
       }
+      const user = await getAuthUser();
+      if (!user) {
+        return { data: null, error: new Error('Not authenticated') };
+      }
       try {
-        const customer = await getOrCreateCustomer();
-        if (!customer) return { data: null, error: new Error('Customer record not found') };
+        const { data: customer, error: custErr } = await sb
+          .from('customers')
+          .select('id, org_id')
+          .eq('profile_id', user.id)
+          .single();
+        if (custErr) throw custErr;
+        if (!customer) throw new Error('Customer record not found');
 
         const orgId = customer.org_id || (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
         if (!orgId) throw new Error('org_id not available');
@@ -622,7 +602,7 @@ window.FarmaciaAPI = (function () {
             .from('customer-documents')
             .upload(filePath, fileOrData);
           if (uploadErr) {
-            console.warn('[uploadPrescription] Storage upload failed:', uploadErr.message, '| Continuing with file_url=pending');
+            console.warn('[uploadPrescription] Storage upload failed:', uploadErr.message);
           } else {
             const { data: urlData } = sb.storage
               .from('customer-documents')
@@ -639,17 +619,13 @@ window.FarmaciaAPI = (function () {
           notes: fileOrData?.notes || fileOrData?.medicine || null
         };
 
-        console.log('[uploadPrescription] Inserting customer_documents row:', doc);
         const { data, error } = await sb
           .from('customer_documents')
           .insert(doc)
           .select()
           .single();
 
-        if (error) {
-          console.error('[uploadPrescription] Insert failed:', error.code, error.message, error.details);
-          throw new Error(`Insert failed: ${error.message} (${error.code})`);
-        }
+        if (error) throw error;
         console.log('[uploadPrescription] Supabase document uploaded:', data.id);
         return { data, error: null };
       } catch (err) {
@@ -661,60 +637,22 @@ window.FarmaciaAPI = (function () {
     /**
      * Create a refill/preorder request in Supabase preorders table.
      */
-    async getPreorders() {
-      const fallback = () => lsGet('refillRequests', []);
-
-      if (!sb) {
-        console.log('[FarmaciaAPI] getPreorders fallback');
-        return fallback();
-      }
-
-      try {
-        const customerId = await getCustomerId();
-        if (!customerId) {
-          console.log('[FarmaciaAPI] No customer link, preorders fallback');
-          return fallback();
-        }
-
-        const { data, error } = await sb
-          .from('preorders')
-          .select('*')
-          .eq('customer_id', customerId)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        if (data && data.length > 0) {
-          console.log('[FarmaciaAPI] Preorders loaded from Supabase:', data.length);
-          return data.map(p => ({
-            id: p.id,
-            medicine: p.notes || 'Pedido',
-            quantity: p.quantity || 1,
-            status: p.status || 'pending',
-            statusText: {
-              pending: 'Pendiente', approved: 'Aprobado', ready: 'Lista',
-              delivered: 'Entregado', completed: 'Completado', cancelled: 'Cancelada', picked_up: 'Recogida'
-            }[p.status] || 'Pendiente',
-            createdAt: p.created_at,
-            source: 'supabase'
-          }));
-        }
-
-        console.log('[FarmaciaAPI] No preorders from Supabase, fallback');
-        return fallback();
-      } catch (err) {
-        console.warn('[FarmaciaAPI] getPreorders error:', err.message);
-        return fallback();
-      }
-    },
-
     async requestRefill(refillData) {
       if (!sb) {
         return { data: null, error: new Error('Supabase not available') };
       }
+      const user = await getAuthUser();
+      if (!user) {
+        return { data: null, error: new Error('Not authenticated') };
+      }
       try {
-        const customer = await getOrCreateCustomer();
-        if (!customer) return { data: null, error: new Error('Customer record not found') };
+        const { data: customer, error: custErr } = await sb
+          .from('customers')
+          .select('id, org_id')
+          .eq('profile_id', user.id)
+          .single();
+        if (custErr) throw custErr;
+        if (!customer) throw new Error('Customer record not found');
 
         const orgId = customer.org_id || (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
         if (!orgId) throw new Error('org_id not available');
@@ -757,7 +695,13 @@ window.FarmaciaAPI = (function () {
 
       try {
         // 1. Get customer record
-        const customer = await getOrCreateCustomer();
+        const { data: customer, error: custErr } = await sb
+          .from('customers')
+          .select('id, org_id, full_name, curp')
+          .eq('profile_id', user.id)
+          .single();
+
+        if (custErr) throw custErr;
         if (!customer) throw new Error('Customer record not found');
 
         const orgId = customer.org_id || (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
@@ -879,6 +823,8 @@ window.FarmaciaAPI = (function () {
         console.error('[FarmaciaAPI] placeOrder failed:', err.message);
         return { order: null, error: err };
       }
+    },
+
     /**
      * Get notifications for the current user.
      */
