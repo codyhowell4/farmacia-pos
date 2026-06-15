@@ -22,6 +22,21 @@ import { VoiceAI, HealthFAQ } from './voiceAI.js';
 import { FastingTracker, SleepTracker, CheckInSystem } from './tracking.js';
 import { NotificationManager } from './notifications.js';
 
+// Toast notifications (CSS in style.css)
+function showToast(message, type = 'info') {
+  let container = document.querySelector('.toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
 // State
 let currentPage = 'home';
 
@@ -3413,6 +3428,16 @@ window.cancelFast = function() {
 
 // Expose to window for onclick handlers
 window.renderFasting = renderFasting;
+window.renderHome = renderHome;
+window.renderSignup = renderSignup;
+window.renderLogin = renderLogin;
+window.renderHealth = renderHealth;
+window.renderBody = renderBody;
+window.renderSleep = renderSleep;
+window.renderCheckIn = renderCheckIn;
+window.renderConsulta = renderConsulta;
+window.renderRecetas = renderRecetas;
+window.renderShop = renderShop;
 
 // ============================================
 // SLEEP TRACKER PAGE

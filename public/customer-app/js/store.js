@@ -4,7 +4,13 @@ import { STORAGE_KEYS, initializeStorage } from './data.js?v=8';
 initializeStorage();
 
 function get(key) {
-  return JSON.parse(localStorage.getItem(key));
+  try {
+    const value = localStorage.getItem(key);
+    return value ? JSON.parse(value) : null;
+  } catch (error) {
+    console.warn('Failed to parse localStorage key:', key, error);
+    return null;
+  }
 }
 
 function set(key, data) {
