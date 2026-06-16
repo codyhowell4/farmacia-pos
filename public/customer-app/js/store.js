@@ -98,7 +98,7 @@ export const Store = {
 
   // Fitness Tracking Methods
   getDailySteps() {
-    return get('dailySteps') || 8432;
+    return get('dailySteps') || 0;
   },
   
   setDailySteps(steps) {
@@ -1224,9 +1224,9 @@ export const Store = {
     return newProfile;
   },
   
-  // Update profile
-  updateProfile(profileId, updates) {
-    const profiles = this.getAllProfiles().map(p => 
+  // Update sub-profile (caregiver/multiple profiles)
+  updateSubProfile(profileId, updates) {
+    const profiles = this.getAllProfiles().map(p =>
       p.id === profileId ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p
     );
     set('allProfiles', profiles);

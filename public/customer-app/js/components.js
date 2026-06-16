@@ -176,8 +176,8 @@ export function renderMedicineDetailsModal(med) {
   if (med.category === 'vitamins') catIcon = ICONS.vitamins;
 
   const categoryLabel = {
-    'prescription': 'Con Receta',
-    'otc': 'Sin Receta',
+    'prescription': 'Con Prescripción',
+    'otc': 'Sin Prescripción',
     'vitamins': 'Vitaminas'
   }[med.category] || med.category;
 
@@ -235,7 +235,7 @@ export function renderCartItems(cartItems) {
       <div class="text-center mt-4 flex flex-col items-center gap-4" style="padding: 3rem 1rem;">
         <span style="font-size: 3rem; color: var(--text-muted);">${ICONS.cart}</span>
         <p style="color: var(--text-muted); font-weight: 600;">Tu carrito está vacío.</p>
-        <p style="font-size: 0.8rem; color: var(--text-muted);">Agrega medicamentos con o sin receta del catálogo.</p>
+        <p style="font-size: 0.8rem; color: var(--text-muted);">Agrega medicamentos con o sin prescripción del catálogo.</p>
       </div>
     `;
   }
@@ -248,7 +248,7 @@ export function renderCartItems(cartItems) {
         <div class="cart-item-price">${formatMXN(item.price * item.quantity)}</div>
         ${item.requiresPrescription ? `
           <div style="font-size: 0.7rem; color: var(--accent); font-weight: 700; margin-top: 0.25rem; display: flex; align-items: center; gap: 0.15rem;">
-            ${ICONS.prescription} Requiere Receta Aprobada
+            ${ICONS.prescription} Requiere Prescripción Aprobada
           </div>
         ` : ''}
       </div>
@@ -269,7 +269,7 @@ export function renderCartItems(cartItems) {
 // Renders list of uploaded prescriptions
 export function renderPrescriptionQueue(prescriptions, isAdmin = false) {
   if (prescriptions.length === 0) {
-    return `<p style="color: var(--text-muted);" class="text-center mt-4">No hay recetas enviadas aún.</p>`;
+    return `<p style="color: var(--text-muted);" class="text-center mt-4">No hay prescripciones enviadas aún.</p>`;
   }
 
   const statusLabels = {
@@ -355,7 +355,7 @@ export function renderOrdersHistory(orders, isAdmin = false) {
           <p><strong>Cliente:</strong> ${order.patientName}</p>
           <p><strong>Método de Entrega:</strong> ${order.deliveryType === 'delivery' ? 'Entrega a Domicilio' : 'Recoger en Tienda'}</p>
           ${order.address ? `<p><strong>Dirección:</strong> ${order.address}</p>` : ''}
-          ${order.prescriptionId ? `<p style="color: var(--accent); font-weight: 700;"><strong>Receta:</strong> Aprobada (${order.prescriptionId})</p>` : ''}
+          ${order.prescriptionId ? `<p style="color: var(--accent); font-weight: 700;"><strong>Prescripción:</strong> Aprobada (${order.prescriptionId})</p>` : ''}
           <div style="font-size: 1.1rem; font-weight: 800; color: var(--primary); margin-top: 0.5rem; display: flex; justify-content: space-between;">
             <span>Total:</span>
             <span>${formatMXN(order.total)}</span>
@@ -421,8 +421,8 @@ export function renderInventoryTable(medicines) {
         <tbody>
           ${medicines.map(med => {
             const categoryLabel = {
-              'prescription': 'Con Receta',
-              'otc': 'Sin Receta',
+              'prescription': 'Con Prescripción',
+              'otc': 'Sin Prescripción',
               'vitamins': 'Vitaminas'
             }[med.category] || med.category;
             

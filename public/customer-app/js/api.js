@@ -377,14 +377,24 @@ window.FarmaciaAPI = (function () {
           return fallback();
         }
 
+        const { data: customer, error: custErr } = await sb
+          .from('customers')
+          .select('id')
+          .eq('profile_id', user.id)
+          .single();
+        if (custErr || !customer) {
+          console.log('[FarmaciaAPI] No customer record, prescriptions fallback');
+          return fallback();
+        }
+
         const [docsRes, notesRes] = await Promise.all([
           sb.from('customer_documents')
             .select('*')
-            .eq('customer_id', user.id)
+            .eq('customer_id', customer.id)
             .eq('document_type', 'receta'),
           sb.from('medical_notes')
             .select('*')
-            .eq('customer_id', user.id)
+            .eq('customer_id', customer.id)
         ]);
 
         const prescriptions = [];

@@ -1739,8 +1739,9 @@ export const getInventoryLowStock = async () => {
     .from('inventory')
     .select('*, suppliers(name)')
     .eq('org_id', orgId)
-    .or('quantity.lte.low_stock_threshold,quantity.eq.0')
     .order('quantity', { ascending: true });
   if (error) throw error;
-  return data || [];
+  return (data || []).filter(item =>
+    item.quantity <= (item.low_stock_threshold || 10) || item.quantity === 0
+  );
 };
