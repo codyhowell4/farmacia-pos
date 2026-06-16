@@ -36,11 +36,10 @@ const StatusBadge = ({ status, config }) => {
 };
 
 const prescriptionStatusConfig = {
-  pending:    { label: 'Pendiente', className: 'bg-yellow-100 text-yellow-800' },
-  reviewed:   { label: 'Revisada',  className: 'bg-blue-100 text-blue-800' },
-  approved:   { label: 'Aprobada',  className: 'bg-green-100 text-green-800' },
-  dispensed:  { label: 'Surtida',   className: 'bg-purple-100 text-purple-800' },
-  rejected:   { label: 'Rechazada', className: 'bg-red-100 text-red-800' },
+  active:    { label: 'Activa',    className: 'bg-green-100 text-green-800' },
+  fulfilled: { label: 'Surtida',   className: 'bg-blue-100 text-blue-800' },
+  expired:   { label: 'Expirada',  className: 'bg-amber-100 text-amber-800' },
+  cancelled: { label: 'Cancelada', className: 'bg-red-100 text-red-800' },
 };
 
 const preorderStatusConfig = {
@@ -217,11 +216,20 @@ const AdminCustomerProfile = () => {
                   <div className="flex items-center gap-3">
                     <FileText className="w-4 h-4 text-slate-400" />
                     <div>
-                      <div className="text-sm font-medium text-slate-900">{p.notes || 'Receta médica'}</div>
-                      <div className="text-xs text-slate-500">{formatDate(p.created_at)}</div>
+                      <div className="text-sm font-medium text-slate-900">
+                        {p.medication || 'Receta médica'}
+                        {p.prescription_number && (
+                          <span className="ml-2 font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">{p.prescription_number}</span>
+                        )}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {p.profiles?.full_name ? `Dr. ${p.profiles.full_name}` : 'Médico no especificado'}
+                        {' · '}
+                        {formatDate(p.prescription_date || p.created_at)}
+                      </div>
                     </div>
                   </div>
-                  <StatusBadge status={p.status || 'pending'} config={prescriptionStatusConfig} />
+                  <StatusBadge status={p.status || 'active'} config={prescriptionStatusConfig} />
                 </div>
               ))}
             </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { Calendar, Package, Users, FileText, Clock } from 'lucide-react';
+import { Calendar, Users, FileText, Clock } from 'lucide-react';
 import { getDoctorDashboardStats, getAppointmentsByDoctor } from '@/lib/db';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -93,9 +93,9 @@ const DoctorOverview = () => {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard label="Citas hoy" value={stats?.appointmentsToday ?? 0} icon={Calendar} color="blue" />
-          <StatCard label="Preórdenes pendientes" value={stats?.pendingPreorders ?? 0} icon={Package} color="amber" />
           <StatCard label="Pacientes" value={stats?.totalCustomers ?? 0} icon={Users} color="green" />
-          <StatCard label="Notas médicas" value={stats?.medicalNotes ?? 0} icon={FileText} color="purple" />
+          <StatCard label="Recetas activas" value={stats?.activePrescriptions ?? 0} icon={FileText} color="amber" />
+          <StatCard label="Próximas citas" value={stats?.upcomingAppointments ?? 0} icon={Clock} color="purple" />
         </div>
       )}
 

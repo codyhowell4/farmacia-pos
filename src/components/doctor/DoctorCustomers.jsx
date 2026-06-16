@@ -1,26 +1,28 @@
 import { useState, useEffect } from 'react';
-import { Users, Search, ChevronRight, ShoppingCart, FileText, Phone, Mail, MapPin } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Users, Search, ChevronRight, Phone, Mail, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getCustomersForDoctor, getCustomerPurchaseHistory, getCustomerMedicalNoteCount } from '@/lib/db';
-import { formatMXN } from '@/lib/currency';
+import { Label } from '@/components/ui/label';
+import { getCustomersForDoctor, createCustomer } from '@/lib/db';
 import { toast } from 'sonner';
 
 const DoctorCustomers = () => {
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [purchaseHistory, setPurchaseHistory] = useState([]);
-  const [noteCount, setNoteCount] = useState(0);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newCustomer, setNewCustomer] = useState({
+    full_name: '', phone: '', email: '', date_of_birth: '', notes: '',
+  });
 
   const safeCustomers = Array.isArray(customers) ? customers : [];
-  const safeHistory = Array.isArray(purchaseHistory) ? purchaseHistory : [];
 
   useEffect(() => {
     loadCustomers();
@@ -55,30 +57,31 @@ const DoctorCustomers = () => {
     }
   };
 
-  const openDetail = async (customer) => {
-    if (!customer?.id) return;
-    setSelectedCustomer(customer);
-    setDetailLoading(true);
-    try {
-      const [history, notes] = await Promise.all([
-        getCustomerPurchaseHistory(customer.id),
-        getCustomerMedicalNoteCount(customer.id),
-      ]);
-      setPurchaseHistory(Array.isArray(history) ? history : []);
-      setNoteCount(typeof notes === 'number' ? notes : 0);
-    } catch (err) {
-      toast.error('Error cargando detalles del paciente');
-      console.error(err);
-      setPurchaseHistory([]);
-      setNoteCount(0);
-    } finally {
-      setDetailLoading(false);
+  const handleCreateCustomer = async () => {
+    if (!newCustomer.full_name.trim()) {
+      toast.error('El nombre es obligatorio');
+      return;
     }
-  };
-
-  const formatDate = (ts) => {
-    if (!ts) return '-';
-    return new Date(ts).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+    setCreating(true);
+    try {
+      const created = await createCustomer({
+        full_name: newCustomer.full_name.trim(),
+        phone: newCustomer.phone.trim() || null,
+        email: newCustomer.email.trim() || null,
+        date_of_birth: newCustomer.date_of_birth || null,
+        notes: newCustomer.notes.trim() || null,
+      });
+      toast.success('Paciente creado exitosamente');
+      setCreateDialogOpen(false);
+      setNewCustomer({ full_name: '', phone: '', email: '', date_of_birth: '', notes: '' });
+      // Navigate to the new patient's workspace
+      navigate(`/doctor/customers/${created.id}`);
+      loadCustomers();
+    } catch (err) {
+      toast.error(err.message || 'Error creando paciente');
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -88,6 +91,9 @@ const DoctorCustomers = () => {
           <h2 className="text-2xl font-bold text-slate-900">Pacientes</h2>
           <p className="text-slate-600">Consulta y gestiona tus pacientes</p>
         </div>
+        <Button onClick={() => setCreateDialogOpen(true)}>
+          <Plus className="w-4 h-4 mr-2" /> Nuevo Paciente
+        </Button>
       </div>
 
       <div className="relative">
@@ -117,7 +123,7 @@ const DoctorCustomers = () => {
             {filtered.map(c => (
               <button
                 key={c?.id || Math.random()}
-                onClick={() => openDetail(c)}
+                onClick={() => navigate(`/doctor/customers/${c.id}`)}
                 className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors text-left"
               >
                 <div className="min-w-0">
@@ -134,80 +140,67 @@ const DoctorCustomers = () => {
         </div>
       )}
 
-      {/* Detail Dialog */}
-      <Dialog open={!!selectedCustomer} onOpenChange={() => setSelectedCustomer(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* Create Patient Dialog */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-teal-600" />
-              {selectedCustomer?.full_name || 'Paciente'}
-            </DialogTitle>
+            <DialogTitle>Nuevo Paciente</DialogTitle>
           </DialogHeader>
-
-          {detailLoading ? (
-            <div className="space-y-3">
-              <Skeleton className="h-24 rounded-lg" />
-              <Skeleton className="h-40 rounded-lg" />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nombre completo *</Label>
+              <Input
+                placeholder="Nombre del paciente"
+                value={newCustomer.full_name}
+                onChange={(e) => setNewCustomer({ ...newCustomer, full_name: e.target.value })}
+              />
             </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Patient Info */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg">
-                {selectedCustomer?.phone && (
-                  <div className="flex items-center gap-2 text-sm text-slate-700">
-                    <Phone className="w-4 h-4 text-slate-400" />
-                    {selectedCustomer.phone}
-                  </div>
-                )}
-                {selectedCustomer?.email && (
-                  <div className="flex items-center gap-2 text-sm text-slate-700">
-                    <Mail className="w-4 h-4 text-slate-400" />
-                    {selectedCustomer.email}
-                  </div>
-                )}
-                {selectedCustomer?.address && (
-                  <div className="flex items-center gap-2 text-sm text-slate-700">
-                    <MapPin className="w-4 h-4 text-slate-400" />
-                    {selectedCustomer.address}
-                  </div>
-                )}
-                {selectedCustomer?.date_of_birth && (
-                  <div className="text-sm text-slate-700">
-                    <span className="text-slate-500">Nacimiento:</span> {formatDate(selectedCustomer.date_of_birth)}
-                  </div>
-                )}
-                <div className="flex items-center gap-2 text-sm text-slate-700">
-                  <FileText className="w-4 h-4 text-slate-400" />
-                  <span>{noteCount} nota{noteCount !== 1 ? 's' : ''} médica{noteCount !== 1 ? 's' : ''}</span>
-                </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Teléfono</Label>
+                <Input
+                  placeholder="555-123-4567"
+                  value={newCustomer.phone}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                />
               </div>
-
-              {/* Purchase History */}
-              <div>
-                <h4 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
-                  <ShoppingCart className="w-4 h-4" />
-                  Historial de compras
-                </h4>
-                {safeHistory.length === 0 ? (
-                  <p className="text-sm text-slate-500 italic">Sin compras registradas</p>
-                ) : (
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {safeHistory.map(sale => (
-                      <div key={sale?.id || Math.random()} className="flex items-center justify-between p-3 rounded-lg border text-sm">
-                        <div>
-                          <p className="font-medium text-slate-900">{formatDate(sale?.timestamp)}</p>
-                          <p className="text-slate-500">{sale?.sale_items?.length || 0} producto(s)</p>
-                        </div>
-                        <Badge variant="outline" className="font-mono">
-                          {formatMXN(sale?.total)}
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  placeholder="paciente@email.com"
+                  value={newCustomer.email}
+                  onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                />
               </div>
             </div>
-          )}
+            <div className="space-y-2">
+              <Label>Fecha de nacimiento</Label>
+              <Input
+                type="date"
+                value={newCustomer.date_of_birth}
+                onChange={(e) => setNewCustomer({ ...newCustomer, date_of_birth: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Notas</Label>
+              <Input
+                placeholder="Notas adicionales..."
+                value={newCustomer.notes}
+                onChange={(e) => setNewCustomer({ ...newCustomer, notes: e.target.value })}
+              />
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setCreateDialogOpen(false)}>Cancelar</Button>
+              <Button
+                className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600"
+                onClick={handleCreateCustomer}
+                disabled={creating}
+              >
+                {creating ? 'Guardando...' : 'Guardar Paciente'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -2,7 +2,11 @@ import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield, Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle, Stethoscope, Smartphone, ClipboardList, Pill, CalendarDays, AlertTriangle } from 'lucide-react';
+import {
+  Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield,
+  Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle, Stethoscope, Smartphone,
+  ClipboardList, Pill, CalendarDays, AlertTriangle, ChevronDown, ChevronRight,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminUsers from '@/components/admin/AdminUsers';
@@ -31,9 +35,12 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   
   const getCurrentTab = () => {
     const path = location.pathname;
+    if (path === '/admin') return 'overview';
     if (path.includes('/users')) return 'users';
     if (path.includes('/customers')) return 'customers';
     if (path.includes('/sales')) return 'sales';
@@ -62,56 +69,182 @@ const AdminDashboard = () => {
     navigate('/login');
   };
 
-  const navItems = [
-    { id: 'overview', label: 'Resumen', icon: BarChart3, path: '/admin' },
-    { id: 'users', label: 'Usuarios', icon: Users, path: '/admin/users' },
-    { id: 'customers', label: 'Clientes', icon: UserCircle, path: '/admin/customers' },
-    { id: 'doctors', label: 'Médicos', icon: Stethoscope, path: '/admin/doctors' },
-    { id: 'sales', label: 'Ventas', icon: ShoppingCart, path: '/admin/sales' },
-    { id: 'inventory', label: 'Inventario (Admin)', icon: Package, path: '/admin/inventory' },
-    { id: 'discounts', label: 'Descuentos', icon: Ticket, path: '/admin/discounts' },
-    { id: 'shifts', label: 'Turnos', icon: Clock, path: '/admin/shifts' },
-    { id: 'audit', label: 'Auditoría', icon: Shield, path: '/admin/audit' },
-    { id: 'suppliers', label: 'Proveedores', icon: Truck, path: '/admin/suppliers' },
-    { id: 'reports', label: 'Reportes COFEPRIS', icon: FileText, path: '/admin/reports' },
-    { id: 'analytics', label: 'Análisis', icon: TrendingUp, path: '/admin/analytics' },
-    { id: 'accounting', label: 'Contabilidad', icon: BookOpen, path: '/admin/accounting' },
-    { id: 'settings', label: 'Configuración', icon: Settings, path: '/admin/settings' },
-    { id: 'prescriptions', label: 'Recetas médicas', icon: ClipboardList, path: '/admin/prescriptions' },
-    { id: 'preorders', label: 'Solicitudes de recarga', icon: Pill, path: '/admin/preorders' },
-    { id: 'appointments', label: 'Citas', icon: CalendarDays, path: '/admin/appointments' },
-    { id: 'orders', label: 'Pedidos', icon: ShoppingCart, path: '/admin/orders' },
-    { id: 'reorder-report', label: 'Reporte de reorden', icon: AlertTriangle, path: '/admin/reorder-report' },
-    { id: 'customer-portal', label: 'Portal Cliente', icon: Smartphone, path: '/customer-app/', external: true },
-  ];
+  const navigateTo = (path, id) => {
+    setActiveTab(id);
+    navigate(path);
+    setIsMenuOpen(false);
+  };
+
+  const isActive = (id) => activeTab === id;
+
+  const navButtonClass = (active) =>
+    `w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
+      active
+        ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
+        : 'text-slate-600 hover:bg-slate-100'
+    }`;
+
+  const subNavButtonClass = (active) =>
+    `w-full flex items-center space-x-3 px-4 py-2 rounded-lg transition-all text-sm ${
+      active
+        ? 'bg-blue-50 text-blue-700 font-medium'
+        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+    }`;
 
   const SideNav = () => (
-    <nav className="space-y-2">
-      {navItems.map((item) => {
-        const Icon = item.icon;
-        return (
-          <button
-            key={item.id}
-            onClick={() => {
-              if (item.external) {
-                window.open(item.path, '_blank');
-              } else {
-                setActiveTab(item.id);
-                navigate(item.path);
-                setIsMenuOpen(false);
-              }
-            }}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
-              activeTab === item.id
-                ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-md'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Icon className="w-5 h-5" />
-            <span className="font-medium">{item.label}</span>
-          </button>
-        );
-      })}
+    <nav className="space-y-1">
+      {/* Portal Cliente — Prominent external link */}
+      <button
+        onClick={() => window.open('/customer-app/', '_blank')}
+        className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all border-2 border-dashed border-indigo-200 text-indigo-700 hover:bg-indigo-50 hover:border-indigo-300 mb-2"
+      >
+        <Smartphone className="w-5 h-5" />
+        <span className="font-semibold">Portal Cliente</span>
+      </button>
+
+      {/* Main nav items */}
+      <button onClick={() => navigateTo('/admin', 'overview')} className={navButtonClass(isActive('overview'))}>
+        <BarChart3 className="w-5 h-5" />
+        <span className="font-medium">Resumen</span>
+      </button>
+
+      <div className="py-2">
+        <div className="h-px bg-slate-200 mx-4" />
+      </div>
+
+      <button onClick={() => navigateTo('/admin/sales', 'sales')} className={navButtonClass(isActive('sales'))}>
+        <ShoppingCart className="w-5 h-5" />
+        <span className="font-medium">Ventas</span>
+      </button>
+      <button onClick={() => navigateTo('/admin/orders', 'orders')} className={navButtonClass(isActive('orders'))}>
+        <Package className="w-5 h-5" />
+        <span className="font-medium">Pedidos</span>
+      </button>
+      <button onClick={() => navigateTo('/admin/inventory', 'inventory')} className={navButtonClass(isActive('inventory'))}>
+        <Package className="w-5 h-5" />
+        <span className="font-medium">Inventario</span>
+      </button>
+      <button onClick={() => navigateTo('/admin/suppliers', 'suppliers')} className={navButtonClass(isActive('suppliers'))}>
+        <Truck className="w-5 h-5" />
+        <span className="font-medium">Proveedores</span>
+      </button>
+
+      <div className="py-2">
+        <div className="h-px bg-slate-200 mx-4" />
+      </div>
+
+      {/* Configuración — Collapsible submenu */}
+      <div>
+        <button
+          onClick={() => setConfigOpen(!configOpen)}
+          className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all ${
+            ['users', 'doctors', 'customers', 'appointments', 'audit', 'settings'].includes(activeTab)
+              ? 'bg-blue-50 text-blue-700'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <div className="flex items-center space-x-3">
+            <Settings className="w-5 h-5" />
+            <span className="font-medium">Configuración</span>
+          </div>
+          {configOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        </button>
+        <AnimatePresence>
+          {configOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden ml-2"
+            >
+              <div className="space-y-1 pt-1">
+                <button onClick={() => navigateTo('/admin/users', 'users')} className={subNavButtonClass(isActive('users'))}>
+                  <Users className="w-4 h-4" /><span>Usuarios</span>
+                </button>
+                <button onClick={() => navigateTo('/admin/doctors', 'doctors')} className={subNavButtonClass(isActive('doctors'))}>
+                  <Stethoscope className="w-4 h-4" /><span>Médicos</span>
+                </button>
+                <button onClick={() => navigateTo('/admin/customers', 'customers')} className={subNavButtonClass(isActive('customers'))}>
+                  <UserCircle className="w-4 h-4" /><span>Clientes</span>
+                </button>
+                <button onClick={() => navigateTo('/admin/appointments', 'appointments')} className={subNavButtonClass(isActive('appointments'))}>
+                  <CalendarDays className="w-4 h-4" /><span>Citas</span>
+                </button>
+                <button onClick={() => navigateTo('/admin/audit', 'audit')} className={subNavButtonClass(isActive('audit'))}>
+                  <Shield className="w-4 h-4" /><span>Auditoría</span>
+                </button>
+                <button onClick={() => navigateTo('/admin/settings', 'settings')} className={subNavButtonClass(isActive('settings'))}>
+                  <Settings className="w-4 h-4" /><span>General (IVA, Bancos)</span>
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <button onClick={() => navigateTo('/admin/prescriptions', 'prescriptions')} className={navButtonClass(isActive('prescriptions'))}>
+        <ClipboardList className="w-5 h-5" />
+        <span className="font-medium">Recetas médicas</span>
+      </button>
+
+      {/* Análisis — Collapsible submenu */}
+      <div>
+        <button
+          onClick={() => setAnalyticsOpen(!analyticsOpen)}
+          className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all ${
+            ['reports', 'reorder-report', 'analytics'].includes(activeTab)
+              ? 'bg-blue-50 text-blue-700'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <div className="flex items-center space-x-3">
+            <TrendingUp className="w-5 h-5" />
+            <span className="font-medium">Análisis</span>
+          </div>
+          {analyticsOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        </button>
+        <AnimatePresence>
+          {analyticsOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden ml-2"
+            >
+              <div className="space-y-1 pt-1">
+                <button onClick={() => navigateTo('/admin/reports', 'reports')} className={subNavButtonClass(isActive('reports'))}>
+                  <FileText className="w-4 h-4" /><span>Reporte COFEPRIS</span>
+                </button>
+                <button onClick={() => navigateTo('/admin/reorder-report', 'reorder-report')} className={subNavButtonClass(isActive('reorder-report'))}>
+                  <AlertTriangle className="w-4 h-4" /><span>Reporte Reorden</span>
+                </button>
+                <button onClick={() => navigateTo('/admin/analytics', 'analytics')} className={subNavButtonClass(isActive('analytics'))}>
+                  <TrendingUp className="w-4 h-4" /><span>Ventas e Inventario</span>
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div className="py-2">
+        <div className="h-px bg-slate-200 mx-4" />
+      </div>
+
+      <button onClick={() => navigateTo('/admin/discounts', 'discounts')} className={navButtonClass(isActive('discounts'))}>
+        <Ticket className="w-5 h-5" />
+        <span className="font-medium">Descuentos</span>
+      </button>
+      <button onClick={() => navigateTo('/admin/shifts', 'shifts')} className={navButtonClass(isActive('shifts'))}>
+        <Clock className="w-5 h-5" />
+        <span className="font-medium">Turnos</span>
+      </button>
+      <button onClick={() => navigateTo('/admin/accounting', 'accounting')} className={navButtonClass(isActive('accounting'))}>
+        <BookOpen className="w-5 h-5" />
+        <span className="font-medium">Contabilidad</span>
+      </button>
     </nav>
   );
 
@@ -169,7 +302,7 @@ const AdminDashboard = () => {
                         animate={{ x: 0 }}
                         exit={{ x: '-100%' }}
                         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                        className="fixed top-0 left-0 h-full w-72 bg-white shadow-xl p-4"
+                        className="fixed top-0 left-0 h-full w-72 bg-white shadow-xl p-4 overflow-y-auto"
                         onClick={e => e.stopPropagation()}
                     >
                         <div className="flex justify-between items-center mb-6">
@@ -195,7 +328,7 @@ const AdminDashboard = () => {
               <Routes>
                 <Route path="/" element={<AdminOverview />} />
                 <Route path="/users" element={<AdminUsers />} />
-          <Route path="/customers" element={<AdminCustomers />} />
+                <Route path="/customers" element={<AdminCustomers />} />
                 <Route path="/sales" element={<AdminSales />} />
                 <Route path="/inventory" element={<AdminInventory />} />
                 <Route path="/discounts" element={<AdminDiscounts />} />

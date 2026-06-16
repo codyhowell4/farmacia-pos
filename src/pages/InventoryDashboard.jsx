@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
-import { getInventory, upsertInventoryItem, deleteInventoryItem, createStockAdjustment, getInventoryMovements } from '@/lib/db';
+import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, createStockAdjustment, getInventoryMovements, getSuppliers } from '@/lib/db';
 
 const LOW_STOCK_THRESHOLD = 10;
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -44,17 +44,27 @@ const InventoryDashboard = () => {
     name: '', use: '', cost: '', price: '', quantity: '',
     lowStockThreshold: LOW_STOCK_THRESHOLD.toString(),
     pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '',
-    requiresPrescription: false, batchNumber: '',
+    requiresPrescription: false, batchNumber: '', supplierId: '',
   });
+  const [suppliers, setSuppliers] = useState([]);
   const [adjustmentForm, setAdjustmentForm] = useState({
     newQuantity: '', reason: '',
   });
 
-  useEffect(() => { loadInventory(); }, [user?.locationId]);
+  useEffect(() => { loadInventory(); loadSuppliers(); }, [user?.locationId]);
+
+  const loadSuppliers = async () => {
+    try {
+      const data = await getSuppliers();
+      setSuppliers(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const loadInventory = async () => {
     try {
-      const items = await getInventory(user?.locationId);
+      const items = await getInventoryWithSupplier(user?.locationId);
       setInventory(items);
     } catch (e) {
       console.error(e);
@@ -81,6 +91,7 @@ const InventoryDashboard = () => {
         expiration_date: formData.expirationDate || null,
         requires_prescription: formData.requiresPrescription,
         batch_number: formData.batchNumber || null,
+        supplier_id: formData.supplierId || null,
       };
       await upsertInventoryItem(item);
       logAudit({
@@ -113,6 +124,7 @@ const InventoryDashboard = () => {
       expirationDate: item.expiration_date || '',
       requiresPrescription: item.requires_prescription || false,
       batchNumber: item.batch_number || '',
+      supplierId: item.supplier_id || '',
     });
     setIsDialogOpen(true);
   };
@@ -194,7 +206,7 @@ const InventoryDashboard = () => {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false, batchNumber: '' });
+    setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false, batchNumber: '', supplierId: '' });
     setEditingItem(null);
   };
 
@@ -322,6 +334,19 @@ const InventoryDashboard = () => {
                         </div>
                       </div>
                       <div className="space-y-2"><Label>Ubicación en almacén</Label><Input value={formData.warehouseLocation} onChange={(e) => setFormData({ ...formData, warehouseLocation: e.target.value })} required placeholder="Ej. Pasillo 5, Estante B" /></div>
+                      <div className="space-y-2">
+                        <Label>Proveedor</Label>
+                        <select
+                          value={formData.supplierId}
+                          onChange={(e) => setFormData({ ...formData, supplierId: e.target.value })}
+                          className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                          <option value="">Sin proveedor</option>
+                          {suppliers.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </div>
                       <div className="md:col-span-2 flex items-center gap-3 pt-1">
                         <input
                           type="checkbox"
@@ -352,7 +377,7 @@ const InventoryDashboard = () => {
               <table className="w-full">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    {['Name','Use','Cost','Price','Qty','Rx','Expiration','Batch','Warehouse','Actions'].map(h => (
+                    {['Name','Use','Cost','Price','Qty','Rx','Expiration','Batch','Warehouse','Supplier','Actions'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-sm font-semibold text-slate-900">{h}</th>
                     ))}
                   </tr>
@@ -383,6 +408,7 @@ const InventoryDashboard = () => {
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.batch_number || '-'}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.warehouse_location}</td>
+                        <td className="px-4 py-3 text-sm text-slate-600">{item.suppliers?.name || '-'}</td>
                         <td className="px-4 py-3 text-sm">
                           <div className="flex space-x-2">
                             <button onClick={() => handleEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit className="w-4 h-4" /></button>

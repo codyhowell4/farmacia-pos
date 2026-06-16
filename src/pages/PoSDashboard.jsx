@@ -15,7 +15,7 @@ import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN, getTaxSettings, calcIVA } from '@/lib/currency';
 import {
   getInventory, createSale, createSaleWithPayments, getRecentSales, voidSale, findDiscount,
-  getTaxSettingsDb, getBankAccounts, createPrescription, searchCustomers, createCustomer,
+  getTaxSettingsDb, getBankAccounts, createPrescription, linkPrescriptionToSale, searchCustomers, createCustomer,
 } from '@/lib/db';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -481,32 +481,42 @@ const PoSDashboard = () => {
       
       console.log('Sale created successfully:', sale);
 
-      // Create prescription record if prescription data exists
+      // Create or link prescription record if prescription data exists
       if (prescription) {
         try {
-          const prescriptionRecord = {
-            sale_id: sale.id,
-            patient_name: prescription.patient_name,
-            patient_curp: prescription.patient_curp,
-            doctor_name: prescription.doctor_name,
-            doctor_license_number: prescription.doctor_license_number,
-            doctor_office_address: prescription.doctor_office_address,
-            doctor_phone: prescription.doctor_phone,
-            prescription_number: prescription.prescription_number,
-            prescription_date: prescription.prescription_date,
-          };
-          
-          const createdPrescription = await createPrescription(prescriptionRecord);
-          console.log('Prescription created:', createdPrescription);
-          
-          logAudit({ 
-            action: AUDIT_ACTIONS.PRESCRIPTION_ADDED, 
-            user, 
-            details: `Prescription #${prescription.prescription_number} for ${prescription.patient_name} - Dr. ${prescription.doctor_name}` 
-          });
+          if (prescription.linked_prescription_id) {
+            // Link existing doctor prescription to this sale
+            await linkPrescriptionToSale(prescription.linked_prescription_id, sale.id);
+            logAudit({ 
+              action: AUDIT_ACTIONS.PRESCRIPTION_ADDED, 
+              user, 
+              details: `Linked prescription ${prescription.prescription_number} to sale #${sale.id.slice(-6)}` 
+            });
+          } else {
+            // Create new COFEPRIS prescription record
+            const prescriptionRecord = {
+              sale_id: sale.id,
+              patient_name: prescription.patient_name,
+              patient_curp: prescription.patient_curp,
+              doctor_name: prescription.doctor_name,
+              doctor_license_number: prescription.doctor_license_number,
+              doctor_office_address: prescription.doctor_office_address,
+              doctor_phone: prescription.doctor_phone,
+              prescription_number: prescription.prescription_number,
+              prescription_date: prescription.prescription_date,
+            };
+            
+            const createdPrescription = await createPrescription(prescriptionRecord);
+            console.log('Prescription created:', createdPrescription);
+            
+            logAudit({ 
+              action: AUDIT_ACTIONS.PRESCRIPTION_ADDED, 
+              user, 
+              details: `Prescription #${prescription.prescription_number} for ${prescription.patient_name} - Dr. ${prescription.doctor_name}` 
+            });
+          }
         } catch (rxErr) {
           console.error('Failed to create prescription:', rxErr);
-          // Don't fail the sale if prescription fails, but log it
           toast({ 
             title: 'Advertencia', 
             description: 'La venta se completó pero hubo un error guardando la receta. Contacte al administrador.', 
@@ -1218,6 +1228,7 @@ const PoSDashboard = () => {
         onConfirm={handlePrescriptionConfirm}
         finalTotal={finalTotal}
         paymentMethod={paymentMethod}
+        selectedCustomer={selectedCustomer}
       />
       <ReturnModal open={returnOpen} onOpenChange={setReturnOpen} onReturnComplete={async () => {
         const updatedInventory = await getInventory(user?.locationId);

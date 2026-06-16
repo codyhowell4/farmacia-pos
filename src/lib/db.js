@@ -1348,29 +1348,31 @@ export const getDoctorDashboardStats = async (doctorId) => {
     .gte('appointment_date', `${today}T00:00:00`)
     .lte('appointment_date', `${today}T23:59:59`);
 
-  const { count: preorderCount } = await supabase
-    .from('preorders')
-    .select('*', { count: 'exact', head: true })
-    .eq('org_id', orgId)
-    .eq('doctor_id', doctorId)
-    .eq('status', 'pending');
-
   const { count: customerCount } = await supabase
     .from('customers')
     .select('*', { count: 'exact', head: true })
     .eq('org_id', orgId);
 
-  const { count: noteCount } = await supabase
-    .from('medical_notes')
+  const { count: rxCount } = await supabase
+    .from('prescriptions')
     .select('*', { count: 'exact', head: true })
     .eq('org_id', orgId)
-    .eq('doctor_id', doctorId);
+    .eq('doctor_id', doctorId)
+    .eq('status', 'active');
+
+  const { count: upcomingCount } = await supabase
+    .from('appointments')
+    .select('*', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .eq('doctor_id', doctorId)
+    .gte('appointment_date', `${today}T00:00:00`)
+    .in('status', ['pending', 'confirmed']);
 
   return {
     appointmentsToday: apptCount || 0,
-    pendingPreorders: preorderCount || 0,
     totalCustomers: customerCount || 0,
-    medicalNotes: noteCount || 0,
+    activePrescriptions: rxCount || 0,
+    upcomingAppointments: upcomingCount || 0,
   };
 };
 
@@ -1591,7 +1593,7 @@ export const getCustomerStats = async (customerId) => {
     return { prescriptions: 0, preorders: 0, appointments: 0, orders: 0 };
   }
   const [{ count: prescriptions }, { count: preorders }, { count: appointments }, { count: orders }] = await Promise.all([
-    supabase.from('customer_documents').select('*', { count: 'exact', head: true }).eq('customer_id', customerId),
+    supabase.from('prescriptions').select('*', { count: 'exact', head: true }).eq('customer_id', customerId).eq('org_id', orgId),
     supabase.from('preorders').select('*', { count: 'exact', head: true }).eq('customer_id', customerId).eq('org_id', orgId),
     supabase.from('appointments').select('*', { count: 'exact', head: true }).eq('customer_id', customerId).eq('org_id', orgId),
     supabase.from('sales').select('*', { count: 'exact', head: true }).eq('customer_id', customerId).eq('voided', false).eq('org_id', orgId),
@@ -1616,9 +1618,10 @@ export const getCustomerPrescriptions = async (customerId) => {
   if (custError || !customer) return [];
 
   const { data, error } = await supabase
-    .from('customer_documents')
-    .select('*')
+    .from('prescriptions')
+    .select('*, profiles:doctor_id(full_name)')
     .eq('customer_id', customerId)
+    .eq('org_id', orgId)
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data || [];
@@ -1744,4 +1747,175 @@ export const getInventoryLowStock = async () => {
   return (data || []).filter(item =>
     item.quantity <= (item.low_stock_threshold || 10) || item.quantity === 0
   );
+};
+
+// ── PHASE 2: DOCTOR PRESCRIPTIONS ────────────────────────────
+
+export const createDoctorPrescription = async (prescription) => {
+  const orgId = await getOrgId();
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  const { data, error } = await supabase
+    .from('prescriptions')
+    .insert({
+      ...prescription,
+      org_id: orgId,
+      doctor_id: user?.id,
+      created_by: user?.id,
+      status: prescription.status || 'active',
+    })
+    .select('*, customers(full_name), profiles:doctor_id(full_name)')
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const getDoctorPrescriptions = async (customerId = null) => {
+  const orgId = await getOrgId();
+  let query = supabase
+    .from('prescriptions')
+    .select('*, customers(full_name), profiles:doctor_id(full_name)')
+    .eq('org_id', orgId)
+    .not('doctor_id', 'is', null)
+    .order('created_at', { ascending: false });
+  
+  if (customerId) {
+    query = query.eq('customer_id', customerId);
+  }
+  
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+};
+
+export const getPrescriptionByNumber = async (number) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('prescriptions')
+    .select('*, customers(full_name, phone, curp), profiles:doctor_id(full_name)')
+    .eq('org_id', orgId)
+    .eq('prescription_number', number)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+};
+
+export const searchPrescriptions = async (query) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('prescriptions')
+    .select('*, customers(full_name, phone), profiles:doctor_id(full_name)')
+    .eq('org_id', orgId)
+    .or(`prescription_number.ilike.%${query}%,patient_name.ilike.%${query}%,customers.full_name.ilike.%${query}%`)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  if (error) throw error;
+  return data || [];
+};
+
+export const linkPrescriptionToSale = async (prescriptionId, saleId) => {
+  const { data, error } = await supabase
+    .from('prescriptions')
+    .update({
+      sale_id: saleId,
+      status: 'fulfilled',
+      fulfilled_at: new Date().toISOString(),
+    })
+    .eq('id', prescriptionId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const updatePrescriptionStatus = async (id, status) => {
+  const updates = { status };
+  if (status === 'fulfilled') {
+    updates.fulfilled_at = new Date().toISOString();
+  }
+  const { data, error } = await supabase
+    .from('prescriptions')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const cancelDoctorPrescription = async (id) => {
+  const { data, error } = await supabase
+    .from('prescriptions')
+    .update({ status: 'cancelled' })
+    .eq('id', id)
+    .eq('status', 'active')
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const getActivePrescriptionCount = async () => {
+  const orgId = await getOrgId();
+  const { count, error } = await supabase
+    .from('prescriptions')
+    .select('*', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .eq('status', 'active')
+    .not('doctor_id', 'is', null);
+  if (error) throw error;
+  return count || 0;
+};
+
+// ── PUBLIC CUSTOMER REGISTRATION ─────────────────────────────
+
+export const registerCustomer = async ({ email, password, fullName, phone }) => {
+  // Step 1: Create auth user with customer role
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        full_name: fullName,
+        role: 'customer',
+      },
+    },
+  });
+
+  if (authError) throw authError;
+  if (!authData.user) throw new Error('No se pudo crear el usuario.');
+
+  // Step 2: The handle_new_user trigger should have created profile + customer rows.
+  // But we need to update the customer record with phone number.
+  // Wait a moment for trigger to complete, then update.
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  const { data: customerRow, error: customerError } = await supabase
+    .from('customers')
+    .update({ phone })
+    .eq('profile_id', authData.user.id)
+    .select()
+    .single();
+
+  if (customerError) {
+    console.warn('[registerCustomer] Could not update phone:', customerError);
+  }
+
+  return {
+    user: authData.user,
+    customer: customerRow,
+  };
+};
+
+// ── INVENTORY WITH SUPPLIER ──────────────────────────────────
+
+export const getInventoryWithSupplier = async (locationId = null) => {
+  let query = supabase
+    .from('inventory')
+    .select('*, suppliers(id, name)')
+    .order('name');
+  if (locationId) query = query.eq('location_id', locationId);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data;
 };

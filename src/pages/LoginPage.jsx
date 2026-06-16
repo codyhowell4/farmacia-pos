@@ -51,8 +51,11 @@ const LoginPage = () => {
         navigate('/inventory');
       } else if (profile.role === 'doctor') {
         navigate('/doctor');
+      } else if (profile.role === 'customer') {
+        // Customer portal is a separate static app; full page navigation
+        window.location.href = '/customer-app/';
       } else {
-        // Fallback for customer or unknown roles
+        // Fallback for unknown roles
         navigate('/');
       }
     } catch (err) {

@@ -3,7 +3,7 @@ import { Helmet } from 'react-helmet';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BarChart3, Calendar, Users, Package, FileText, UserCircle,
+  BarChart3, Calendar, Users, UserCircle,
   LogOut, Stethoscope, Menu, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,9 +11,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import DoctorOverview from '@/components/doctor/DoctorOverview';
 import DoctorAppointments from '@/components/doctor/DoctorAppointments';
 import DoctorCustomers from '@/components/doctor/DoctorCustomers';
-import DoctorPreorders from '@/components/doctor/DoctorPreorders';
-import DoctorMedicalNotes from '@/components/doctor/DoctorMedicalNotes';
 import DoctorProfile from '@/components/doctor/DoctorProfile';
+import PatientWorkspace from '@/components/doctor/PatientWorkspace';
 
 const DoctorDashboard = () => {
   const { logout, user } = useAuth();
@@ -24,9 +23,8 @@ const DoctorDashboard = () => {
   const getCurrentTab = () => {
     const path = location.pathname;
     if (path.includes('/appointments')) return 'appointments';
+    if (path.includes('/customers/')) return 'customers';
     if (path.includes('/customers')) return 'customers';
-    if (path.includes('/preorders')) return 'preorders';
-    if (path.includes('/medical-notes')) return 'medical-notes';
     if (path.includes('/profile')) return 'profile';
     return 'overview';
   };
@@ -42,8 +40,6 @@ const DoctorDashboard = () => {
     { id: 'overview', label: 'Resumen', icon: BarChart3, path: '/doctor' },
     { id: 'appointments', label: 'Citas', icon: Calendar, path: '/doctor/appointments' },
     { id: 'customers', label: 'Pacientes', icon: Users, path: '/doctor/customers' },
-    { id: 'preorders', label: 'Preórdenes', icon: Package, path: '/doctor/preorders' },
-    { id: 'medical-notes', label: 'Notas médicas', icon: FileText, path: '/doctor/medical-notes' },
     { id: 'profile', label: 'Mi perfil', icon: UserCircle, path: '/doctor/profile' },
   ];
 
@@ -148,8 +144,7 @@ const DoctorDashboard = () => {
                 <Route path="/" element={<DoctorOverview />} />
                 <Route path="/appointments" element={<DoctorAppointments />} />
                 <Route path="/customers" element={<DoctorCustomers />} />
-                <Route path="/preorders" element={<DoctorPreorders />} />
-                <Route path="/medical-notes" element={<DoctorMedicalNotes />} />
+                <Route path="/customers/:customerId" element={<PatientWorkspace />} />
                 <Route path="/profile" element={<DoctorProfile />} />
               </Routes>
             </main>

@@ -15,7 +15,7 @@ const getExpiryStatus = (expirationDate) => {
   return null;
 };
 
-import { getInventory, getSalesInRange } from '@/lib/db';
+import { getInventoryWithSupplier, getSalesInRange } from '@/lib/db';
 
 const DAYS_WINDOW = 30;
 
@@ -33,7 +33,7 @@ const AdminInventory = () => {
     try {
       setLoading(true);
       const [inv, sales] = await Promise.all([
-        getInventory(),
+        getInventoryWithSupplier(),
         getSalesInRange(
           new Date(Date.now() - DAYS_WINDOW * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
           new Date().toISOString().split('T')[0]
@@ -169,6 +169,7 @@ const AdminInventory = () => {
                 <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">Vencimiento</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">Proyección</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">Almacén</th>
+                <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">Proveedor</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-slate-900">Código de barras</th>
               </tr>
             </thead>
@@ -209,6 +210,7 @@ const AdminInventory = () => {
                       )}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600">{item.warehouse_location}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">{item.suppliers?.name || '-'}</td>
                     <td className="px-4 py-3 text-sm text-slate-600">{item.barcode}</td>
                   </motion.tr>
                 );

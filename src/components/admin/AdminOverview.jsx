@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { DollarSign, Package, ShoppingCart, Users, TrendingUp, XCircle, UserCog, ClipboardList, Pill, Clock, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-import { getSales, getInventory, getUsers, getCustomerDocuments, getPreorders, getAppointments } from '@/lib/db';
+import { getSales, getInventory, getUsers, getActivePrescriptionCount, getPreorders, getAppointments } from '@/lib/db';
 
 const AdminOverview = () => {
   const [stats, setStats] = useState({
@@ -16,12 +16,12 @@ const AdminOverview = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    Promise.all([getSales(), getInventory(), getUsers(), getCustomerDocuments(), getPreorders(), getAppointments()])
-      .then(([sales, inventory, users, documents, preorders, appointments]) => {
+    Promise.all([getSales(), getInventory(), getUsers(), getActivePrescriptionCount(), getPreorders(), getAppointments()])
+      .then(([sales, inventory, users, activeRxCount, preorders, appointments]) => {
         const totalRevenue = sales.filter(s => !s.voided).reduce((sum, sale) => sum + sale.total, 0);
         const lowStockItems = inventory.filter(item => item.quantity > 0 && item.quantity < (item.low_stock_threshold || 10)).length;
         const outOfStockItems = inventory.filter(item => item.quantity === 0).length;
-        const pendingPrescriptions = documents.filter(d => (d.status || 'pending') === 'pending').length;
+        const pendingPrescriptions = activeRxCount;
         const pendingPreorders = preorders.filter(p => (p.status || 'pending') === 'pending').length;
         const today = new Date().toISOString().split('T')[0];
         const appointmentsToday = appointments.filter(a => a.appointment_date && a.appointment_date.startsWith(today)).length;
