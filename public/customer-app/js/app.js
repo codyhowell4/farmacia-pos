@@ -518,6 +518,7 @@ async function showNotificationModal() {
 function closeNotificationModal() {
   document.getElementById('notification-modal-overlay')?.remove();
 }
+window.closeNotificationModal = closeNotificationModal;
 
 async function markCustomerNotificationRead(id) {
   try {
@@ -548,6 +549,8 @@ async function markAllCustomerNotificationsRead() {
     console.error('[Notifications] Failed to mark all read:', err);
   }
 }
+window.markCustomerNotificationRead = markCustomerNotificationRead;
+window.markAllCustomerNotificationsRead = markAllCustomerNotificationsRead;
 
 function escapeHtml(text) {
   if (!text) return '';
@@ -2592,7 +2595,7 @@ window.saveGoal = function(goalIndex, modal) {
   const unit = modal.querySelector('#goal-unit')?.value || 'unidades';
   
   if (!name || !target) {
-    alert('Por favor completa el nombre y la meta objetivo');
+    showToast('Por favor completa el nombre y la meta objetivo', 'warning');
     return;
   }
   
@@ -2751,18 +2754,18 @@ window.saveVital = function(modal) {
   const notes = modal.querySelector('#vital-notes')?.value;
   
   if (!value) {
-    alert('Por favor ingresa un valor');
+    showToast('Por favor ingresa un valor', 'warning');
     return;
   }
   
   // Validate based on type
   if (type === 'bloodPressure' && !/^\d{2,3}\/\d{2,3}$/.test(value)) {
-    alert('Formato de presión arterial inválido. Usa: 120/80');
+    showToast('Formato de presión arterial inválido. Usa: 120/80', 'warning');
     return;
   }
   
   if (type !== 'bloodPressure' && isNaN(parseFloat(value))) {
-    alert('Por favor ingresa un número válido');
+    showToast('Por favor ingresa un número válido', 'warning');
     return;
   }
   
@@ -2910,7 +2913,7 @@ window.saveHeight = function(modal, hasCallback) {
   const height = parseInt(modal.querySelector('#profile-height')?.value);
   
   if (!height || height < 50 || height > 250) {
-    alert('Por favor ingresa una altura válida entre 50 y 250 cm');
+    showToast('Por favor ingresa una altura válida entre 50 y 250 cm', 'warning');
     return;
   }
   
@@ -3007,7 +3010,7 @@ window.completeOnboarding = function(modal) {
   const gender = modal.querySelector('#onboard-gender')?.value;
   
   if (!height || height < 50 || height > 250) {
-    alert('Por favor ingresa una altura válida (entre 50 y 250 cm)');
+    showToast('Por favor ingresa una altura válida (entre 50 y 250 cm)', 'warning');
     return;
   }
   
@@ -3015,7 +3018,7 @@ window.completeOnboarding = function(modal) {
   
   modal.remove();
   renderGoals(); // Refresh to show any BMI-related content
-  alert(`🎉 ¡Bienvenida, ${name.split(' ')[0]}! Tu perfil está listo.`);
+  showToast(`¡Bienvenida, ${name.split(' ')[0]}! Tu perfil está listo.`, 'success');
 };
 
 window.skipOnboarding = function(modal) {
@@ -3620,7 +3623,7 @@ window.saveSleepLog = function(modal) {
   const notes = modal.querySelector('#sleep-notes').value;
   
   if (!bedTime || !wakeTime) {
-    alert('Por favor ingresa las horas');
+    showToast('Por favor ingresa las horas', 'warning');
     return;
   }
   
@@ -3825,7 +3828,7 @@ window.showCheckInModal = function() {
 window.saveCheckIn = function(modal) {
   const weight = parseFloat(modal.querySelector('#checkin-weight').value);
   if (!weight) {
-    alert('Por favor ingresa tu peso');
+    showToast('Por favor ingresa tu peso', 'warning');
     return;
   }
   
@@ -4254,12 +4257,12 @@ window.saveFoodEntry = function() {
   const protein = parseInt(document.getElementById('food-protein')?.value) || 0;
   
   if (!name) {
-    alert('Por favor describe tu comida');
+    showToast('Por favor describe tu comida', 'warning');
     return;
   }
   
   if (calories <= 0 && protein <= 0) {
-    alert('Por favor ingresa al menos calorías o proteína');
+    showToast('Por favor ingresa al menos calorías o proteína', 'warning');
     return;
   }
   
@@ -4497,11 +4500,11 @@ window.saveGoalWithPlan = function(goal) {
   const timeline = parseInt(document.getElementById('selected-timeline')?.value);
   
   if (!goalWeight || goalWeight <= 0) {
-    alert('Por favor ingresa tu peso meta');
+    showToast('Por favor ingresa tu peso meta', 'warning');
     return;
   }
   if (!timeline) {
-    alert('Por favor selecciona un plazo');
+    showToast('Por favor selecciona un plazo', 'warning');
     return;
   }
   
@@ -5212,7 +5215,7 @@ window.saveManualPrescription = async function() {
   const instructions = document.getElementById('manual-med-instr')?.value?.trim();
   
   if (!name) {
-    alert('Por favor ingresa el nombre del medicamento');
+    showToast('Por favor ingresa el nombre del medicamento', 'warning');
     return;
   }
   
@@ -5409,7 +5412,7 @@ window.saveSmartReminder = function(prescriptionId) {
   const durationDays = parseInt(customDuration) || (selectedBtn ? parseInt(selectedBtn.dataset.days) : 7);
   
   if (!startTime) {
-    alert('Por favor selecciona la hora de la primera toma');
+    showToast('Por favor selecciona la hora de la primera toma', 'warning');
     return;
   }
   
@@ -5650,7 +5653,7 @@ window.submitRefillRequest = async function(prescriptionId) {
   const quantity = quantitySelect === 'custom' ? customQuantity : quantitySelect;
   
   if (!quantity || quantity < 1) {
-    alert('Por favor ingresa una cantidad válida');
+    showToast('Por favor ingresa una cantidad válida', 'warning');
     return;
   }
   
@@ -5832,7 +5835,7 @@ window.saveVaccine = function(vaccineId) {
   const location = document.getElementById('vaccine-location')?.value;
   
   if (!date) {
-    alert('Por favor selecciona la fecha');
+    showToast('Por favor selecciona la fecha', 'warning');
     return;
   }
   
@@ -5972,7 +5975,7 @@ window.saveExamResult = function() {
   const fileInput = document.getElementById('exam-file');
   
   if (!examType || !date) {
-    alert('Por favor completa los campos requeridos');
+    showToast('Por favor completa los campos requeridos', 'warning');
     return;
   }
   
@@ -6788,7 +6791,7 @@ window.confirmVideoBooking = async function(doctorId) {
   const reason = document.getElementById('video-reason')?.value;
   
   if (!date || !time) {
-    alert('Por favor selecciona fecha y hora');
+    showToast('Por favor selecciona fecha y hora', 'warning');
     return;
   }
   
@@ -7047,7 +7050,7 @@ window.confirmInPersonBooking = async function(locationId) {
   const notes = document.getElementById('consult-notes')?.value;
   
   if (!name) {
-    alert('Por favor ingresa tu nombre');
+    showToast('Por favor ingresa tu nombre', 'warning');
     return;
   }
   
@@ -7915,7 +7918,7 @@ window.saveManualPrescriptionForPrescripciones = async function() {
   const doctor = document.getElementById('manual-med-doctor')?.value?.trim();
   
   if (!name) {
-    alert('Por favor ingresa el nombre del medicamento');
+    showToast('Por favor ingresa el nombre del medicamento', 'warning');
     return;
   }
   
@@ -8210,7 +8213,7 @@ window.saveNewFamilyMember = function() {
   const birthdate = document.getElementById('new-profile-birthdate')?.value;
   
   if (!name) {
-    alert('Por favor ingresa un nombre');
+    showToast('Por favor ingresa un nombre', 'warning');
     return;
   }
   
@@ -9456,7 +9459,7 @@ window.saveVaccineRecord = function(vaccineId) {
   const notes = document.getElementById('vaccine-notes')?.value;
   
   if (!date) {
-    alert('Por favor ingresa la fecha de aplicación');
+    showToast('Por favor ingresa la fecha de aplicación', 'warning');
     return;
   }
   
