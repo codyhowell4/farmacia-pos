@@ -1919,3 +1919,61 @@ export const getInventoryWithSupplier = async (locationId = null) => {
   if (error) throw error;
   return data;
 };
+
+
+// ── INVENTORY INTELLIGENCE (PHASE 3) ─────────────────────────
+
+export const getInventorySettings = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('inventory_settings')
+    .select('*')
+    .eq('org_id', orgId)
+    .maybeSingle();
+  if (error) throw error;
+  // Return defaults if no row exists
+  return data || {
+    default_lead_time_days: 7,
+    critical_safety_stock_days: 7,
+    normal_safety_stock_days: 3,
+    reorder_lookback_days: 30,
+    critical_medication_types: ['prescription'],
+  };
+};
+
+export const upsertInventorySettings = async (settings) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('inventory_settings')
+    .upsert({
+      ...settings,
+      org_id: orgId,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'org_id' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const getInventoryIntelligence = async (locationId = null) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .rpc('get_inventory_intelligence', {
+      p_org_id: orgId,
+      p_location_id: locationId,
+    });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getReorderRecommendations = async (locationId = null) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .rpc('get_reorder_recommendations', {
+      p_org_id: orgId,
+      p_location_id: locationId,
+    });
+  if (error) throw error;
+  return data || [];
+};

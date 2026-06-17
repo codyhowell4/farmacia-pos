@@ -23,6 +23,7 @@ import {
   formatNumber,
 } from '../../services/dashboardReportsService';
 import { exportToCSV, downloadCSV } from '../../services/reportsService';
+import { getInventoryIntelligence } from '@/lib/db';
 import { toast } from 'sonner';
 
 export default function AdminReports() {
@@ -39,10 +40,12 @@ export default function AdminReports() {
     valuation: [],
     profit: [],
     shifts: [],
+    intelligence: [],
   });
 
   useEffect(() => {
     loadOverviewData();
+    loadIntelligenceData();
   }, []);
 
   const loadOverviewData = async () => {
@@ -59,6 +62,18 @@ export default function AdminReports() {
       toast.error('Error loading overview data');
     } finally {
       setLoading(prev => ({ ...prev, overview: false }));
+    }
+  };
+
+  const loadIntelligenceData = async () => {
+    setLoading(prev => ({ ...prev, intelligence: true }));
+    try {
+      const intel = await getInventoryIntelligence();
+      setData(prev => ({ ...prev, intelligence: intel }));
+    } catch (err) {
+      toast.error('Error loading intelligence data');
+    } finally {
+      setLoading(prev => ({ ...prev, intelligence: false }));
     }
   };
 
@@ -209,12 +224,13 @@ export default function AdminReports() {
       </Card>
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="overview">Resumen</TabsTrigger>
           <TabsTrigger value="sales">Ventas Diarias</TabsTrigger>
           <TabsTrigger value="profit">Ganancias</TabsTrigger>
           <TabsTrigger value="products">Top Productos</TabsTrigger>
           <TabsTrigger value="inventory">Inventario</TabsTrigger>
+          <TabsTrigger value="intelligence">Inteligencia</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -649,6 +665,163 @@ export default function AdminReports() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* INVENTORY INTELLIGENCE TAB */}
+        <TabsContent value="intelligence" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Valor de inventario</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {formatCurrency(data.intelligence.reduce((s, i) => s + (i.inventory_value || 0), 0))}
+                </div>
+                <div className="text-sm text-gray-500">{data.intelligence.length} productos</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Riesgo promedio</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {data.intelligence.length > 0
+                    ? Math.round(data.intelligence.reduce((s, i) => s + (i.stockout_risk_score || 0), 0) / data.intelligence.length)
+                    : 0}
+                </div>
+                <div className="text-sm text-gray-500">Escala 0-100</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Artículos críticos</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-red-600">
+                  {data.intelligence.filter(i => i.stockout_risk_score >= 80).length}
+                </div>
+                <div className="text-sm text-gray-500">Riesgo ≥ 80</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Rotación 90 días</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {(() => {
+                    const intel = data.intelligence.filter(i => i.turnover_90d > 0);
+                    return intel.length > 0
+                      ? (intel.reduce((s, i) => s + i.turnover_90d, 0) / intel.length).toFixed(1)
+                      : '0.0';
+                  })()}
+                </div>
+                <div className="text-sm text-gray-500">Promedio</div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Risk Distribution */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Distribución de riesgo de desabasto</CardTitle>
+              <CardDescription>Cantidad de productos por nivel de riesgo</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading.intelligence ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {(() => {
+                    const bands = [
+                      { label: 'Crítico (81-100)', min: 81, max: 100, color: 'bg-red-500' },
+                      { label: 'Alto (51-80)', min: 51, max: 80, color: 'bg-orange-500' },
+                      { label: 'Medio (21-50)', min: 21, max: 50, color: 'bg-yellow-500' },
+                      { label: 'Bajo (1-20)', min: 1, max: 20, color: 'bg-blue-500' },
+                      { label: 'Seguro (0)', min: 0, max: 0, color: 'bg-green-500' },
+                    ];
+                    const maxCount = Math.max(...bands.map(b => data.intelligence.filter(i => {
+                      if (b.min === 0 && b.max === 0) return i.stockout_risk_score === 0;
+                      return i.stockout_risk_score >= b.min && i.stockout_risk_score <= b.max;
+                    }).length), 1);
+                    return bands.map(band => {
+                      const count = data.intelligence.filter(i => {
+                        if (band.min === 0 && band.max === 0) return i.stockout_risk_score === 0;
+                        return i.stockout_risk_score >= band.min && i.stockout_risk_score <= band.max;
+                      }).length;
+                      const pct = data.intelligence.length > 0 ? (count / data.intelligence.length * 100).toFixed(0) : 0;
+                      return (
+                        <div key={band.label} className="flex items-center gap-3">
+                          <div className="w-32 text-sm text-gray-600">{band.label}</div>
+                          <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${band.color} rounded-full transition-all`}
+                              style={{ width: `${(count / maxCount * 100)}%` }}
+                            />
+                          </div>
+                          <div className="w-16 text-right text-sm font-medium">{count}</div>
+                          <div className="w-10 text-right text-xs text-gray-400">{pct}%</div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Top Fast Movers */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Top 10 — Más vendidos (30 días)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading.intelligence ? (
+                <div className="space-y-2"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /></div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium">Medicamento</th>
+                        <th className="px-3 py-2 text-right font-medium">Ventas 30d</th>
+                        <th className="px-3 py-2 text-right font-medium">Ventas/día</th>
+                        <th className="px-3 py-2 text-right font-medium">Días stock</th>
+                        <th className="px-3 py-2 text-right font-medium">Riesgo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.intelligence
+                        .filter(i => i.avg_daily_sales_30 > 0)
+                        .sort((a, b) => b.avg_daily_sales_30 - a.avg_daily_sales_30)
+                        .slice(0, 10)
+                        .map(item => (
+                          <tr key={item.id} className="border-b hover:bg-gray-50">
+                            <td className="px-3 py-2 font-medium">{item.name}</td>
+                            <td className="px-3 py-2 text-right">{item.sold_30d}</td>
+                            <td className="px-3 py-2 text-right">{item.avg_daily_sales_30?.toFixed(1)}</td>
+                            <td className="px-3 py-2 text-right">
+                              {item.days_of_inventory != null ? `${Math.round(item.days_of_inventory)}d` : '—'}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <Badge variant={item.stockout_risk_score >= 80 ? 'destructive' : item.stockout_risk_score >= 50 ? 'warning' : 'secondary'}>
+                                {item.stockout_risk_score}
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
