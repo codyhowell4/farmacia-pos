@@ -19,7 +19,7 @@ import {
   getCustomerById, getDoctorPrescriptions, createDoctorPrescription,
   getAppointmentsByDoctor, createAppointment, updateAppointment, deleteAppointment,
   getCustomerPurchaseHistory, getMedicalNotesByCustomer, createMedicalNote,
-  updateMedicalNote, deleteMedicalNote, getInventoryForDoctor,
+  updateMedicalNote, deleteMedicalNote, getInventoryForDoctor, updateCustomer,
 } from '@/lib/db';
 import { formatMXN } from '@/lib/currency';
 import { toast } from 'sonner';
@@ -58,11 +58,15 @@ const PatientWorkspace = () => {
   const [apptDialogOpen, setApptDialogOpen] = useState(false);
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
+  const [patientEditOpen, setPatientEditOpen] = useState(false);
+  const [patientForm, setPatientForm] = useState({ height: '', weight: '', notes: '' });
+  const [savingPatient, setSavingPatient] = useState(false);
 
   // Form states
   const [rxForm, setRxForm] = useState({
     medication: '', dosage: '', frequency: '', duration: '', notes: '',
     useInventory: false, inventoryId: '',
+    height_cm: '', weight_kg: '',
   });
   const [apptForm, setApptForm] = useState({
     appointment_date: '', status: 'pending', notes: '', type: 'in_person',
@@ -73,27 +77,58 @@ const PatientWorkspace = () => {
     if (!customerId) return;
     setLoading(true);
     try {
-      const [cust, rxs, appts, hist, meds, inv] = await Promise.all([
-        getCustomerById(customerId),
-        getDoctorPrescriptions(customerId),
-        getAppointmentsByDoctor(user?.id),
-        getCustomerPurchaseHistory(customerId),
-        getMedicalNotesByCustomer(customerId),
-        getInventoryForDoctor(),
-      ]);
+      // Load customer first — this must succeed
+      const cust = await getCustomerById(customerId);
       setCustomer(cust);
-      setPrescriptions(Array.isArray(rxs) ? rxs : []);
-      // Filter appointments for this customer
-      const customerAppts = Array.isArray(appts)
-        ? appts.filter(a => a.customer_id === customerId)
-        : [];
-      setAppointments(customerAppts);
-      setPurchases(Array.isArray(hist) ? hist : []);
-      setNotes(Array.isArray(meds) ? meds : []);
-      setInventory(Array.isArray(inv) ? inv : []);
     } catch (err) {
+      console.error('getCustomerById failed:', err);
       toast.error('Error cargando datos del paciente');
-      console.error(err);
+      setLoading(false);
+      return;
+    }
+
+    // Secondary data — load independently so one failure doesn't break everything
+    const loadSecondary = async () => {
+      const rxs = await getDoctorPrescriptions(customerId).catch(e => {
+        console.error('getDoctorPrescriptions failed:', e);
+        return [];
+      });
+      setPrescriptions(Array.isArray(rxs) ? rxs : []);
+
+      if (user?.id) {
+        const appts = await getAppointmentsByDoctor(user.id).catch(e => {
+          console.error('getAppointmentsByDoctor failed:', e);
+          return [];
+        });
+        const customerAppts = Array.isArray(appts)
+          ? appts.filter(a => a.customer_id === customerId)
+          : [];
+        setAppointments(customerAppts);
+      }
+
+      const hist = await getCustomerPurchaseHistory(customerId).catch(e => {
+        console.error('getCustomerPurchaseHistory failed:', e);
+        return [];
+      });
+      setPurchases(Array.isArray(hist) ? hist : []);
+
+      const meds = await getMedicalNotesByCustomer(customerId).catch(e => {
+        console.error('getMedicalNotesByCustomer failed:', e);
+        return [];
+      });
+      setNotes(Array.isArray(meds) ? meds : []);
+
+      const inv = await getInventoryForDoctor().catch(e => {
+        console.error('getInventoryForDoctor failed:', e);
+        return [];
+      });
+      setInventory(Array.isArray(inv) ? inv : []);
+    };
+
+    try {
+      await loadSecondary();
+    } catch (err) {
+      console.error('Unexpected secondary load error:', err);
     } finally {
       setLoading(false);
     }
@@ -133,11 +168,13 @@ const PatientWorkspace = () => {
         duration: rxForm.duration.trim() || null,
         notes: rxForm.notes.trim() || null,
         prescription_date: new Date().toISOString().split('T')[0],
+        height_cm: rxForm.height_cm ? parseFloat(rxForm.height_cm) : null,
+        weight_kg: rxForm.weight_kg ? parseFloat(rxForm.weight_kg) : null,
       };
       await createDoctorPrescription(payload);
       toast.success('Receta creada exitosamente');
       setRxDialogOpen(false);
-      setRxForm({ medication: '', dosage: '', frequency: '', duration: '', notes: '', useInventory: false, inventoryId: '' });
+      setRxForm({ medication: '', dosage: '', frequency: '', duration: '', notes: '', useInventory: false, inventoryId: '', height_cm: '', weight_kg: '' });
       loadAll();
     } catch (err) {
       toast.error(err.message || 'Error creando receta');
@@ -186,6 +223,35 @@ const PatientWorkspace = () => {
       loadAll();
     } catch (err) {
       toast.error('Error eliminando cita');
+    }
+  };
+
+  // ── PATIENT INFO HANDLERS ──
+  const openPatientEdit = () => {
+    setPatientForm({
+      height: customer?.height || '',
+      weight: customer?.weight || '',
+      notes: customer?.notes || '',
+    });
+    setPatientEditOpen(true);
+  };
+
+  const handleUpdatePatient = async () => {
+    setSavingPatient(true);
+    try {
+      await updateCustomer(customerId, {
+        height: patientForm.height ? parseFloat(patientForm.height) : null,
+        weight: patientForm.weight ? parseFloat(patientForm.weight) : null,
+        notes: patientForm.notes.trim() || null,
+      });
+      toast.success('Información del paciente actualizada');
+      setPatientEditOpen(false);
+      loadAll();
+    } catch (err) {
+      toast.error('Error actualizando paciente');
+      console.error(err);
+    } finally {
+      setSavingPatient(false);
     }
   };
 
@@ -311,14 +377,22 @@ const PatientWorkspace = () => {
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-6">
-            <h3 className="font-semibold text-slate-900 mb-4">Información del paciente</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-slate-900">Información del paciente</h3>
+              <Button size="sm" variant="outline" onClick={openPatientEdit}>
+                <Edit2 className="w-3 h-3 mr-1" /> Editar
+              </Button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
               <div><span className="text-slate-500">Nombre:</span> {customer.full_name}</div>
               <div><span className="text-slate-500">Email:</span> {customer.email || '-'}</div>
               <div><span className="text-slate-500">Teléfono:</span> {customer.phone || '-'}</div>
               <div><span className="text-slate-500">CURP:</span> {customer.curp || '-'}</div>
               <div><span className="text-slate-500">Nacimiento:</span> {formatDate(customer.date_of_birth)}</div>
               <div><span className="text-slate-500">Registro:</span> {formatDate(customer.created_at)}</div>
+              <div><span className="text-slate-500">Talla:</span> {customer.height ? `${customer.height} cm` : '-'}</div>
+              <div><span className="text-slate-500">Peso:</span> {customer.weight ? `${customer.weight} kg` : '-'}</div>
+              {customer.notes && <div className="col-span-full"><span className="text-slate-500">Notas:</span> {customer.notes}</div>}
             </div>
           </div>
         </TabsContent>
@@ -582,6 +656,28 @@ const PatientWorkspace = () => {
                 <Input placeholder="7 días" value={rxForm.duration} onChange={(e) => setRxForm({ ...rxForm, duration: e.target.value })} />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Talla (cm)</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  placeholder="Ej: 170"
+                  value={rxForm.height_cm}
+                  onChange={(e) => setRxForm({ ...rxForm, height_cm: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Peso (kg)</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  placeholder="Ej: 70"
+                  value={rxForm.weight_kg}
+                  onChange={(e) => setRxForm({ ...rxForm, weight_kg: e.target.value })}
+                />
+              </div>
+            </div>
             <div className="space-y-2">
               <Label>Notas adicionales</Label>
               <Textarea
@@ -660,6 +756,58 @@ const PatientWorkspace = () => {
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => setNoteDialogOpen(false)}>Cancelar</Button>
               <Button className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600" onClick={handleSaveNote}>Guardar</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Patient Edit Dialog */}
+      <Dialog open={patientEditOpen} onOpenChange={setPatientEditOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar información del paciente</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Talla (cm)</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  placeholder="Ej: 170"
+                  value={patientForm.height}
+                  onChange={(e) => setPatientForm({ ...patientForm, height: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Peso (kg)</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  placeholder="Ej: 70"
+                  value={patientForm.weight}
+                  onChange={(e) => setPatientForm({ ...patientForm, weight: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Notas generales</Label>
+              <Textarea
+                placeholder="Notas sobre el paciente..."
+                value={patientForm.notes}
+                onChange={(e) => setPatientForm({ ...patientForm, notes: e.target.value })}
+                rows={3}
+              />
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setPatientEditOpen(false)}>Cancelar</Button>
+              <Button
+                className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600"
+                onClick={handleUpdatePatient}
+                disabled={savingPatient}
+              >
+                {savingPatient ? 'Guardando...' : 'Guardar'}
+              </Button>
             </div>
           </div>
         </DialogContent>

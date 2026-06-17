@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, FileText, Pill, UserCircle, Stethoscope, Clock, XCircle, AlertCircle } from 'lucide-react';
+import { Search, FileText, Pill, UserCircle, Stethoscope, Clock, XCircle, AlertCircle, ClipboardList } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -187,10 +187,20 @@ const AdminPrescriptions = () => {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
-                      {searchTerm || statusFilter !== 'all'
-                        ? 'No se encontraron recetas con ese criterio'
-                        : 'No hay recetas médicas registradas.'}
+                    <td colSpan={8} className="px-4 py-8 text-center">
+                      <div className="flex flex-col items-center">
+                        <ClipboardList className="w-10 h-10 text-slate-300 mb-2" />
+                        <p className="text-slate-500">
+                          {searchTerm || statusFilter !== 'all'
+                            ? 'No se encontraron recetas con ese criterio'
+                            : 'No hay recetas médicas registradas.'}
+                        </p>
+                        {!searchTerm && statusFilter === 'all' && (
+                          <p className="text-xs text-slate-400 mt-1">
+                            Las recetas creadas por médicos aparecerán aquí automáticamente.
+                          </p>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )}

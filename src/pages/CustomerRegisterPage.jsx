@@ -3,19 +3,19 @@ import { Helmet } from 'react-helmet';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
-import { Pill, User, Mail, Phone, Lock, Smartphone, CheckCircle } from 'lucide-react';
+import { Pill, User, Mail, Phone, CheckCircle, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
-import { registerCustomer } from '@/lib/db';
+import { createCustomer } from '@/lib/db';
 
 const CustomerRegisterPage = () => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
@@ -25,41 +25,26 @@ const CustomerRegisterPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!fullName.trim() || !email.trim() || !phone.trim() || !password) {
-      toast({ title: 'Datos incompletos', description: 'Todos los campos son obligatorios.', variant: 'destructive' });
-      return;
-    }
-
-    if (password.length < 6) {
-      toast({ title: 'Contraseña muy corta', description: 'La contraseña debe tener al menos 6 caracteres.', variant: 'destructive' });
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      toast({ title: 'Contraseñas no coinciden', description: 'Verifica que ambas contraseñas sean iguales.', variant: 'destructive' });
+    if (!fullName.trim() || !phone.trim()) {
+      toast({ title: 'Datos incompletos', description: 'Nombre y teléfono son obligatorios.', variant: 'destructive' });
       return;
     }
 
     setSubmitting(true);
     try {
-      const result = await registerCustomer({
-        email: email.trim(),
-        password,
-        fullName: fullName.trim(),
+      const result = await createCustomer({
+        full_name: fullName.trim(),
+        email: email.trim() || null,
         phone: phone.trim(),
+        notes: notes.trim() || null,
       });
 
-      setRegisteredEmail(email.trim());
+      setRegisteredEmail(email.trim() || phone.trim());
       setSuccess(true);
-      toast({ title: '¡Registro exitoso!', description: 'Tu cuenta ha sido creada. Revisa tu correo para confirmar.' });
+      toast({ title: '¡Registro exitoso!', description: 'El cliente ha sido registrado en el sistema.' });
     } catch (err) {
       console.error('Registration error:', err);
-      let message = err.message;
-      if (err.message?.includes('already registered')) {
-        message = 'Este correo ya está registrado. Intenta iniciar sesión.';
-      } else if (err.message?.includes('valid email')) {
-        message = 'El correo electrónico no es válido.';
-      }
+      let message = err.message || 'Error al registrar el cliente';
       toast({ title: 'Error al registrarse', description: message, variant: 'destructive' });
     } finally {
       setSubmitting(false);
@@ -82,11 +67,7 @@ const CustomerRegisterPage = () => {
               </div>
               <h1 className="text-2xl font-bold text-slate-900 mb-2">¡Registro exitoso!</h1>
               <p className="text-slate-600 mb-4">
-                Tu cuenta ha sido creada con el correo <strong>{registeredEmail}</strong>.
-              </p>
-              <p className="text-sm text-slate-500 mb-6">
-                Revisa tu bandeja de entrada para confirmar tu correo electrónico.
-                Después podrás acceder al portal de cliente.
+                El cliente <strong>{fullName}</strong> ha sido registrado.
               </p>
               <div className="bg-slate-50 rounded-lg p-4 mb-6 flex flex-col items-center">
                 <p className="text-xs text-slate-500 mb-2">Escanea para acceder al portal:</p>
@@ -140,7 +121,7 @@ const CustomerRegisterPage = () => {
             <h1 className="text-2xl sm:text-3xl font-bold text-center mb-2 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
               Farmacia Apollo
             </h1>
-            <p className="text-center text-slate-600 mb-6">Crea tu cuenta de cliente</p>
+            <p className="text-center text-slate-600 mb-6">Registro rápido de cliente</p>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
@@ -152,22 +133,6 @@ const CustomerRegisterPage = () => {
                     placeholder="Juan Pérez"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    className="pl-10"
-                    disabled={submitting}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Correo electrónico *</Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="correo@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
                     className="pl-10"
                     disabled={submitting}
                   />
@@ -191,15 +156,15 @@ const CustomerRegisterPage = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Contraseña *</Label>
+                <Label htmlFor="email">Correo electrónico</Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
+                  <Mail className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
                   <Input
-                    id="password"
-                    type="password"
-                    placeholder="Mínimo 6 caracteres"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    id="email"
+                    type="email"
+                    placeholder="correo@email.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                     className="pl-10"
                     disabled={submitting}
                   />
@@ -207,16 +172,15 @@ const CustomerRegisterPage = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirmar contraseña *</Label>
+                <Label htmlFor="notes">Notas</Label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    placeholder="Repite tu contraseña"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="pl-10"
+                  <FileText className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
+                  <Textarea
+                    id="notes"
+                    placeholder="Alergias, preferencias, etc."
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="pl-10 min-h-[80px]"
                     disabled={submitting}
                   />
                 </div>
@@ -227,7 +191,7 @@ const CustomerRegisterPage = () => {
                 disabled={submitting}
                 className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition-all py-5"
               >
-                {submitting ? 'Creando cuenta...' : 'Crear cuenta'}
+                {submitting ? 'Guardando...' : 'Registrar cliente'}
               </Button>
             </form>
 
@@ -238,11 +202,6 @@ const CustomerRegisterPage = () => {
                   Inicia sesión
                 </Link>
               </p>
-            </div>
-
-            <div className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-400">
-              <Smartphone className="w-3 h-3" />
-              <span>Escanea el QR en la farmacia para registrarte</span>
             </div>
           </div>
         </motion.div>

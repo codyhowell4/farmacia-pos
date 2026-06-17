@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield,
   Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle, Stethoscope, Smartphone,
-  ClipboardList, Pill, CalendarDays, AlertTriangle, ChevronDown, ChevronRight,
+  ClipboardList, Pill, CalendarDays, AlertTriangle, ChevronDown, ChevronRight, UserPlus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -272,6 +272,10 @@ const AdminDashboard = () => {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <Button onClick={() => navigate('/customer-register')} variant="outline" className="hidden sm:flex items-center space-x-2 border-blue-200 text-blue-700 hover:bg-blue-50">
+                  <UserPlus className="w-4 h-4" />
+                  <span>Registrar cliente</span>
+                </Button>
                 <Button onClick={() => navigate('/pos')} className="bg-green-600 hover:bg-green-700 text-white hidden sm:flex border-none">
                   Punto de Venta
                 </Button>
