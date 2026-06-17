@@ -3,10 +3,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AlertTriangle, Stethoscope, User, FileText, Calendar, MapPin, Phone, Search, Link2, Printer } from 'lucide-react';
+import { AlertTriangle, Stethoscope, User, FileText, Calendar, MapPin, Phone, Search, Link2, Printer, FileDown } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { searchPrescriptions, linkPrescriptionToSale } from '@/lib/db';
 import PrintablePrescription from '@/components/doctor/PrintablePrescription';
+import { downloadPrescriptionPDF } from '@/lib/pdf';
 
 const PrescriptionModal = ({ 
   open, 
@@ -352,6 +353,9 @@ const PrescriptionModal = ({
               <div className="flex items-center gap-2 no-print">
                 <Button variant="outline" size="sm" onClick={() => setPrintOpen(false)}>
                   Volver
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => downloadPrescriptionPDF(linkedPrescription, linkedPrescription?.customers, `Receta_${linkedPrescription?.prescription_number || 'sinfolio'}.pdf`)}>
+                  <FileDown className="w-4 h-4 mr-2" /> Descargar PDF
                 </Button>
                 <Button size="sm" onClick={() => window.print()}>
                   <Printer className="w-4 h-4 mr-2" /> Imprimir

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Search, FileText, Pill, UserCircle, Stethoscope, Clock, XCircle, AlertCircle, ClipboardList, Printer, X } from 'lucide-react';
+import { Search, FileText, Pill, UserCircle, Stethoscope, Clock, XCircle, AlertCircle, ClipboardList, Printer, X, FileDown } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 import { getDoctorPrescriptions, updatePrescriptionStatus, cancelDoctorPrescription, getPrescriptionById } from '@/lib/db';
+import { downloadPrescriptionPDF } from '@/lib/pdf';
 import PrintablePrescription from '@/components/doctor/PrintablePrescription';
 
 const statusConfig = {
@@ -259,6 +260,9 @@ const AdminPrescriptions = () => {
             </div>
             <div className="flex justify-end gap-2 px-6 py-4 border-t no-print">
               <Button variant="outline" onClick={() => setPrintRxFull(null)}>Cerrar</Button>
+              <Button variant="outline" onClick={() => downloadPrescriptionPDF(printRxFull, printRxFull?.customers, `Receta_${printRxFull?.prescription_number || 'sinfolio'}.pdf`)}>
+                <FileDown className="w-4 h-4 mr-2" /> Descargar PDF
+              </Button>
               <Button onClick={() => window.print()}>
                 <Printer className="w-4 h-4 mr-2" /> Imprimir
               </Button>

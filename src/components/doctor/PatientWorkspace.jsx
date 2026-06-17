@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Users, ArrowLeft, Phone, Mail, Calendar, FileText, ShoppingCart,
   Pill, Clock, Plus, Edit2, Trash2, ChevronDown, ChevronUp,
-  CheckCircle, XCircle, AlertCircle, Printer
+  CheckCircle, XCircle, AlertCircle, Printer, FileDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,7 @@ import {
   updateMedicalNote, deleteMedicalNote, getInventoryForDoctor, updateCustomer,
 } from '@/lib/db';
 import PrintablePrescription from './PrintablePrescription';
+import { downloadPrescriptionPDF } from '@/lib/pdf';
 import { formatMXN } from '@/lib/currency';
 import { toast } from 'sonner';
 
@@ -880,6 +881,9 @@ const PatientWorkspace = () => {
           {printRx && <PrintablePrescription prescription={printRx} customer={customer} />}
           <div className="flex justify-end gap-2 no-print">
             <Button variant="outline" onClick={() => setPrintRx(null)}>Cerrar</Button>
+            <Button variant="outline" onClick={() => downloadPrescriptionPDF(printRx, customer, `Receta_${printRx?.prescription_number || 'sinfolio'}.pdf`)}>
+              <FileDown className="w-4 h-4 mr-2" /> Descargar PDF
+            </Button>
             <Button onClick={() => window.print()}>
               <Printer className="w-4 h-4 mr-2" /> Imprimir
             </Button>
