@@ -3,9 +3,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { AlertTriangle, Stethoscope, User, FileText, Calendar, MapPin, Phone, Search, Link2 } from 'lucide-react';
+import { AlertTriangle, Stethoscope, User, FileText, Calendar, MapPin, Phone, Search, Link2, Printer } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { searchPrescriptions, linkPrescriptionToSale } from '@/lib/db';
+import PrintablePrescription from '@/components/doctor/PrintablePrescription';
 
 const PrescriptionModal = ({ 
   open, 
@@ -34,6 +35,7 @@ const PrescriptionModal = ({
   const [searchResults, setSearchResults] = useState([]);
   const [linkedPrescription, setLinkedPrescription] = useState(null);
   const [searching, setSearching] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
 
   // Auto-fill from selected customer
   useEffect(() => {
@@ -185,11 +187,16 @@ const PrescriptionModal = ({
           {linkedPrescription && (
             <div className="mt-2 flex items-center justify-between bg-green-50 border border-green-200 rounded p-2">
               <span className="text-sm text-green-800">
-                Vinculada: <strong>{linkedPrescription.prescription_number}</strong> — {linkedPrescription.medication}
+                Vinculada: <strong>{linkedPrescription.prescription_number}</strong> — {linkedPrescription.patient_name}
               </span>
-              <Button size="sm" variant="ghost" className="text-red-600 h-6" onClick={clearLinkedPrescription}>
-                Quitar
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button size="sm" variant="ghost" className="text-blue-600 h-6" onClick={() => setPrintOpen(true)}>
+                  <Printer className="w-3.5 h-3.5 mr-1" /> Imprimir
+                </Button>
+                <Button size="sm" variant="ghost" className="text-red-600 h-6" onClick={clearLinkedPrescription}>
+                  Quitar
+                </Button>
+              </div>
             </div>
           )}
           {searchResults.length > 0 && (
@@ -336,6 +343,29 @@ const PrescriptionModal = ({
             Continuar al pago
           </Button>
         </div>
+
+        {/* Print Preview — inline toggle, no nested Dialog */}
+        {linkedPrescription && printOpen && (
+          <div className="mt-4 border rounded-lg bg-white">
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-slate-50">
+              <h3 className="font-semibold text-slate-900">Vista previa de receta</h3>
+              <div className="flex items-center gap-2 no-print">
+                <Button variant="outline" size="sm" onClick={() => setPrintOpen(false)}>
+                  Volver
+                </Button>
+                <Button size="sm" onClick={() => window.print()}>
+                  <Printer className="w-4 h-4 mr-2" /> Imprimir
+                </Button>
+              </div>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[60vh]">
+              <PrintablePrescription
+                prescription={linkedPrescription}
+                customer={linkedPrescription.customers}
+              />
+            </div>
+          </div>
+        )}
 
         <p className="text-xs text-slate-500 text-center mt-4">
           Esta información es requerida por COFEPRIS y no puede ser modificada después de guardar.

@@ -1792,7 +1792,7 @@ export const getPrescriptionByNumber = async (number) => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('prescriptions')
-    .select('*, customers(full_name, phone, curp), profiles:doctor_id(full_name)')
+    .select('*, customers(full_name, phone, curp, height, weight), profiles:doctor_id(full_name)')
     .eq('org_id', orgId)
     .eq('prescription_number', number)
     .maybeSingle();
@@ -1800,17 +1800,61 @@ export const getPrescriptionByNumber = async (number) => {
   return data;
 };
 
-export const searchPrescriptions = async (query) => {
+export const getPrescriptionById = async (id) => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('prescriptions')
+    .select('*, customers(full_name, phone, curp, height, weight), profiles:doctor_id(full_name)')
+    .eq('org_id', orgId)
+    .eq('id', id)
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const searchPrescriptions = async (query) => {
+  const orgId = await getOrgId();
+  const q = `%${query}%`;
+
+  // Search 1: direct prescription fields (prescription_number, patient_name)
+  // NOTE: PostgREST cannot parse .or() containing foreign table columns
+  // like customers.full_name. We search base table fields separately.
+  const { data: rxResults, error: rxErr } = await supabase
+    .from('prescriptions')
     .select('*, customers(full_name, phone), profiles:doctor_id(full_name)')
     .eq('org_id', orgId)
-    .or(`prescription_number.ilike.%${query}%,patient_name.ilike.%${query}%,customers.full_name.ilike.%${query}%`)
-    .order('created_at', { ascending: false })
+    .or(`prescription_number.ilike.${q},patient_name.ilike.${q}`)
     .limit(20);
-  if (error) throw error;
-  return data || [];
+  if (rxErr) throw rxErr;
+
+  // Search 2: find customers by name, then find their prescriptions
+  const { data: matchingCustomers } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('org_id', orgId)
+    .ilike('full_name', q);
+
+  let customerResults = [];
+  if (matchingCustomers?.length > 0) {
+    const customerIds = matchingCustomers.map(c => c.id);
+    const { data: custRx, error: custErr } = await supabase
+      .from('prescriptions')
+      .select('*, customers(full_name, phone), profiles:doctor_id(full_name)')
+      .eq('org_id', orgId)
+      .in('customer_id', customerIds)
+      .limit(20);
+    if (custErr) throw custErr;
+    customerResults = custRx || [];
+  }
+
+  // Merge and deduplicate by id
+  const all = [...(rxResults || []), ...customerResults];
+  const seen = new Set();
+  return all.filter(r => {
+    if (seen.has(r.id)) return false;
+    seen.add(r.id);
+    return true;
+  });
 };
 
 export const linkPrescriptionToSale = async (prescriptionId, saleId) => {

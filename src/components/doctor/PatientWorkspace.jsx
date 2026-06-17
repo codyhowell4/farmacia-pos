@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Users, ArrowLeft, Phone, Mail, Calendar, FileText, ShoppingCart,
   Pill, Clock, Plus, Edit2, Trash2, ChevronDown, ChevronUp,
-  CheckCircle, XCircle, AlertCircle
+  CheckCircle, XCircle, AlertCircle, Printer
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +21,7 @@ import {
   getCustomerPurchaseHistory, getMedicalNotesByCustomer, createMedicalNote,
   updateMedicalNote, deleteMedicalNote, getInventoryForDoctor, updateCustomer,
 } from '@/lib/db';
+import PrintablePrescription from './PrintablePrescription';
 import { formatMXN } from '@/lib/currency';
 import { toast } from 'sonner';
 
@@ -61,12 +62,15 @@ const PatientWorkspace = () => {
   const [patientEditOpen, setPatientEditOpen] = useState(false);
   const [patientForm, setPatientForm] = useState({ height: '', weight: '', notes: '' });
   const [savingPatient, setSavingPatient] = useState(false);
+  const [printRx, setPrintRx] = useState(null);
 
   // Form states
   const [rxForm, setRxForm] = useState({
-    medication: '', dosage: '', frequency: '', duration: '', notes: '',
+    medications: [{ medication: '', dosage: '', frequency: '', duration: '', notes: '' }],
     useInventory: false, inventoryId: '',
     height_cm: '', weight_kg: '',
+    edad: '', temperatura: '', ta: '', fc: '', fr: '', so2: '', glicemia: '', alergias: '',
+    next_appointment: '',
   });
   const [apptForm, setApptForm] = useState({
     appointment_date: '', status: 'pending', notes: '', type: 'in_person',
@@ -150,31 +154,55 @@ const PatientWorkspace = () => {
   };
 
   // ── PRESCRIPTION HANDLERS ──
+  const validMeds = rxForm.medications.filter(m => m.medication.trim());
   const handleCreateRx = async () => {
-    if (!rxForm.medication.trim()) {
-      toast.error('El medicamento es obligatorio');
+    if (validMeds.length === 0) {
+      toast.error('Agrega al menos un medicamento');
       return;
     }
     try {
+      const first = validMeds[0];
       const payload = {
         customer_id: customerId,
         patient_name: customer?.full_name || '',
         patient_curp: customer?.curp || null,
         doctor_name: user?.name || user?.email || '',
         doctor_license_number: '', // Could be fetched from doctor_profiles
-        medication: rxForm.medication.trim(),
-        dosage: rxForm.dosage.trim() || null,
-        frequency: rxForm.frequency.trim() || null,
-        duration: rxForm.duration.trim() || null,
-        notes: rxForm.notes.trim() || null,
+        medication: first.medication.trim(),
+        dosage: first.dosage.trim() || null,
+        frequency: first.frequency.trim() || null,
+        duration: first.duration.trim() || null,
+        notes: first.notes.trim() || null,
         prescription_date: new Date().toISOString().split('T')[0],
         height_cm: rxForm.height_cm ? parseFloat(rxForm.height_cm) : null,
         weight_kg: rxForm.weight_kg ? parseFloat(rxForm.weight_kg) : null,
+        medications: validMeds.map(m => ({
+          medication: m.medication.trim(),
+          dosage: m.dosage.trim() || null,
+          frequency: m.frequency.trim() || null,
+          duration: m.duration.trim() || null,
+          notes: m.notes.trim() || null,
+        })),
+        edad: rxForm.edad ? parseInt(rxForm.edad) : null,
+        temperatura: rxForm.temperatura.trim() || null,
+        ta: rxForm.ta.trim() || null,
+        fc: rxForm.fc.trim() || null,
+        fr: rxForm.fr.trim() || null,
+        so2: rxForm.so2.trim() || null,
+        glicemia: rxForm.glicemia.trim() || null,
+        alergias: rxForm.alergias.trim() || null,
+        next_appointment: rxForm.next_appointment || null,
       };
       await createDoctorPrescription(payload);
       toast.success('Receta creada exitosamente');
       setRxDialogOpen(false);
-      setRxForm({ medication: '', dosage: '', frequency: '', duration: '', notes: '', useInventory: false, inventoryId: '', height_cm: '', weight_kg: '' });
+      setRxForm({
+        medications: [{ medication: '', dosage: '', frequency: '', duration: '', notes: '' }],
+        useInventory: false, inventoryId: '',
+        height_cm: '', weight_kg: '',
+        edad: '', temperatura: '', ta: '', fc: '', fr: '', so2: '', glicemia: '', alergias: '',
+        next_appointment: '',
+      });
       loadAll();
     } catch (err) {
       toast.error(err.message || 'Error creando receta');
@@ -413,33 +441,52 @@ const PatientWorkspace = () => {
             </div>
           ) : (
             <div className="space-y-3">
-              {prescriptions.map(rx => (
-                <div key={rx.id} className="bg-white rounded-xl border border-slate-200 p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Pill className="w-4 h-4 text-teal-600" />
-                        <span className="font-semibold text-slate-900">{rx.medication}</span>
-                        <Badge className={statusConfig[rx.status]?.className || 'bg-gray-100'}>
-                          {statusConfig[rx.status]?.label || rx.status}
-                        </Badge>
+              {prescriptions.map(rx => {
+                const meds = Array.isArray(rx.medications) && rx.medications.length > 0
+                  ? rx.medications
+                  : rx.medication ? [{ medication: rx.medication, dosage: rx.dosage, frequency: rx.frequency, duration: rx.duration, notes: rx.notes }] : [];
+                return (
+                  <div key={rx.id} className="bg-white rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Pill className="w-4 h-4 text-teal-600" />
+                          <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded">{rx.prescription_number}</span>
+                          <Badge className={statusConfig[rx.status]?.className || 'bg-gray-100'}>
+                            {statusConfig[rx.status]?.label || rx.status}
+                          </Badge>
+                          <span className="text-xs text-slate-400">{formatDate(rx.created_at)}</span>
+                        </div>
+                        <div className="mt-2 space-y-1">
+                          {meds.map((med, i) => (
+                            <div key={i} className="text-sm">
+                              <span className="font-semibold text-slate-900">{med.medication}</span>
+                              {(med.dosage || med.frequency || med.duration) && (
+                                <span className="text-slate-500">
+                                  {med.dosage && ` · ${med.dosage}`}
+                                  {med.frequency && ` · ${med.frequency}`}
+                                  {med.duration && ` · ${med.duration}`}
+                                </span>
+                              )}
+                              {med.notes && <p className="text-xs text-slate-400 italic">{med.notes}</p>}
+                            </div>
+                          ))}
+                        </div>
+                        {(rx.height_cm || rx.weight_kg) && (
+                          <p className="text-xs text-slate-400 mt-2">
+                            {rx.height_cm && <span>Talla: {rx.height_cm} cm</span>}
+                            {rx.height_cm && rx.weight_kg && ' · '}
+                            {rx.weight_kg && <span>Peso: {rx.weight_kg} kg</span>}
+                          </p>
+                        )}
                       </div>
-                      <p className="text-sm text-slate-500 mt-1">
-                        <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded">{rx.prescription_number}</span>
-                        {' · '}{formatDate(rx.created_at)}
-                      </p>
-                      {(rx.dosage || rx.frequency || rx.duration) && (
-                        <p className="text-sm text-slate-600 mt-2">
-                          {rx.dosage && <span>{rx.dosage}</span>}
-                          {rx.frequency && <span> · {rx.frequency}</span>}
-                          {rx.duration && <span> · {rx.duration}</span>}
-                        </p>
-                      )}
-                      {rx.notes && <p className="text-sm text-slate-500 mt-1 italic">{rx.notes}</p>}
+                      <Button size="sm" variant="ghost" className="text-slate-500 shrink-0" onClick={() => setPrintRx(rx)}>
+                        <Printer className="w-4 h-4" />
+                      </Button>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </TabsContent>
@@ -598,95 +645,106 @@ const PatientWorkspace = () => {
 
       {/* Prescription Dialog */}
       <Dialog open={rxDialogOpen} onOpenChange={setRxDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nueva Receta</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Medicamento *</Label>
-              <div className="flex gap-2">
-                <Select
-                  value={rxForm.useInventory ? 'inventory' : 'custom'}
-                  onValueChange={(v) => setRxForm({ ...rxForm, useInventory: v === 'inventory' })}
-                >
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="custom">Personalizado</SelectItem>
-                    <SelectItem value="inventory">De inventario</SelectItem>
-                  </SelectContent>
-                </Select>
-                {rxForm.useInventory ? (
-                  <Select value={rxForm.inventoryId} onValueChange={(v) => {
-                    const item = inventory.find(i => i.id === v);
-                    setRxForm({ ...rxForm, inventoryId: v, medication: item?.name || '' });
-                  }}>
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Seleccionar medicamento..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {inventory.map(item => (
-                        <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    className="flex-1"
-                    placeholder="Ej: Amoxicilina 500mg"
-                    value={rxForm.medication}
-                    onChange={(e) => setRxForm({ ...rxForm, medication: e.target.value })}
+            {/* Medications */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Medicamentos *</Label>
+                <Button size="sm" variant="outline" onClick={() => setRxForm({
+                  ...rxForm,
+                  medications: [...rxForm.medications, { medication: '', dosage: '', frequency: '', duration: '', notes: '' }]
+                })}>
+                  <Plus className="w-3 h-3 mr-1" /> Agregar medicamento
+                </Button>
+              </div>
+              {rxForm.medications.map((med, idx) => (
+                <div key={idx} className="bg-slate-50 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-500">Medicamento {idx + 1}</span>
+                    {rxForm.medications.length > 1 && (
+                      <Button size="sm" variant="ghost" className="text-red-600 h-6 px-2" onClick={() => {
+                        const updated = rxForm.medications.filter((_, i) => i !== idx);
+                        setRxForm({ ...rxForm, medications: updated });
+                      }}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <Input
+                      placeholder="Nombre del medicamento *"
+                      value={med.medication}
+                      onChange={(e) => {
+                        const updated = [...rxForm.medications];
+                        updated[idx].medication = e.target.value;
+                        setRxForm({ ...rxForm, medications: updated });
+                      }}
+                    />
+                    <Input
+                      placeholder="Dosis"
+                      value={med.dosage}
+                      onChange={(e) => {
+                        const updated = [...rxForm.medications];
+                        updated[idx].dosage = e.target.value;
+                        setRxForm({ ...rxForm, medications: updated });
+                      }}
+                    />
+                    <Input
+                      placeholder="Frecuencia"
+                      value={med.frequency}
+                      onChange={(e) => {
+                        const updated = [...rxForm.medications];
+                        updated[idx].frequency = e.target.value;
+                        setRxForm({ ...rxForm, medications: updated });
+                      }}
+                    />
+                    <Input
+                      placeholder="Duración"
+                      value={med.duration}
+                      onChange={(e) => {
+                        const updated = [...rxForm.medications];
+                        updated[idx].duration = e.target.value;
+                        setRxForm({ ...rxForm, medications: updated });
+                      }}
+                    />
+                  </div>
+                  <Textarea
+                    placeholder="Notas del medicamento..."
+                    value={med.notes}
+                    onChange={(e) => {
+                      const updated = [...rxForm.medications];
+                      updated[idx].notes = e.target.value;
+                      setRxForm({ ...rxForm, medications: updated });
+                    }}
+                    rows={2}
+                    className="text-sm"
                   />
-                )}
-              </div>
+                </div>
+              ))}
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-2">
-                <Label>Dosis</Label>
-                <Input placeholder="500mg" value={rxForm.dosage} onChange={(e) => setRxForm({ ...rxForm, dosage: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Frecuencia</Label>
-                <Input placeholder="Cada 8h" value={rxForm.frequency} onChange={(e) => setRxForm({ ...rxForm, frequency: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label>Duración</Label>
-                <Input placeholder="7 días" value={rxForm.duration} onChange={(e) => setRxForm({ ...rxForm, duration: e.target.value })} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Talla (cm)</Label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  placeholder="Ej: 170"
-                  value={rxForm.height_cm}
-                  onChange={(e) => setRxForm({ ...rxForm, height_cm: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Peso (kg)</Label>
-                <Input
-                  type="number"
-                  step="0.1"
-                  placeholder="Ej: 70"
-                  value={rxForm.weight_kg}
-                  onChange={(e) => setRxForm({ ...rxForm, weight_kg: e.target.value })}
-                />
-              </div>
-            </div>
+
+            {/* Vitals */}
             <div className="space-y-2">
-              <Label>Notas adicionales</Label>
-              <Textarea
-                placeholder="Instrucciones especiales..."
-                value={rxForm.notes}
-                onChange={(e) => setRxForm({ ...rxForm, notes: e.target.value })}
-                rows={3}
-              />
+              <Label className="text-sm font-semibold">Signos vitales y antropometría</Label>
+              <div className="grid grid-cols-3 gap-2">
+                <Input placeholder="Edad" value={rxForm.edad} onChange={(e) => setRxForm({ ...rxForm, edad: e.target.value })} />
+                <Input placeholder="Talla (cm)" value={rxForm.height_cm} onChange={(e) => setRxForm({ ...rxForm, height_cm: e.target.value })} />
+                <Input placeholder="Peso (kg)" value={rxForm.weight_kg} onChange={(e) => setRxForm({ ...rxForm, weight_kg: e.target.value })} />
+                <Input placeholder="Temp" value={rxForm.temperatura} onChange={(e) => setRxForm({ ...rxForm, temperatura: e.target.value })} />
+                <Input placeholder="T/A" value={rxForm.ta} onChange={(e) => setRxForm({ ...rxForm, ta: e.target.value })} />
+                <Input placeholder="FC" value={rxForm.fc} onChange={(e) => setRxForm({ ...rxForm, fc: e.target.value })} />
+                <Input placeholder="FR" value={rxForm.fr} onChange={(e) => setRxForm({ ...rxForm, fr: e.target.value })} />
+                <Input placeholder="So2%" value={rxForm.so2} onChange={(e) => setRxForm({ ...rxForm, so2: e.target.value })} />
+                <Input placeholder="Glicemia" value={rxForm.glicemia} onChange={(e) => setRxForm({ ...rxForm, glicemia: e.target.value })} />
+              </div>
+              <Input placeholder="Alergias" value={rxForm.alergias} onChange={(e) => setRxForm({ ...rxForm, alergias: e.target.value })} />
+              <Input type="date" placeholder="Próxima cita" value={rxForm.next_appointment} onChange={(e) => setRxForm({ ...rxForm, next_appointment: e.target.value })} />
             </div>
+
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => setRxDialogOpen(false)}>Cancelar</Button>
               <Button className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600" onClick={handleCreateRx}>Guardar Receta</Button>
@@ -809,6 +867,22 @@ const PatientWorkspace = () => {
                 {savingPatient ? 'Guardando...' : 'Guardar'}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Print Prescription Dialog */}
+      <Dialog open={!!printRx} onOpenChange={() => setPrintRx(null)}>
+        <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Vista previa de receta</DialogTitle>
+          </DialogHeader>
+          {printRx && <PrintablePrescription prescription={printRx} customer={customer} />}
+          <div className="flex justify-end gap-2 no-print">
+            <Button variant="outline" onClick={() => setPrintRx(null)}>Cerrar</Button>
+            <Button onClick={() => window.print()}>
+              <Printer className="w-4 h-4 mr-2" /> Imprimir
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

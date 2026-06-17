@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Search, FileText, Pill, UserCircle, Stethoscope, Clock, XCircle, AlertCircle, ClipboardList } from 'lucide-react';
+import { Search, FileText, Pill, UserCircle, Stethoscope, Clock, XCircle, AlertCircle, ClipboardList, Printer, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
-import { getDoctorPrescriptions, updatePrescriptionStatus, cancelDoctorPrescription } from '@/lib/db';
+import { getDoctorPrescriptions, updatePrescriptionStatus, cancelDoctorPrescription, getPrescriptionById } from '@/lib/db';
+import PrintablePrescription from '@/components/doctor/PrintablePrescription';
 
 const statusConfig = {
   active: { label: 'Activa', className: 'bg-green-100 text-green-800' },
@@ -20,6 +21,7 @@ const AdminPrescriptions = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
+  const [printRxFull, setPrintRxFull] = useState(null);
   const { toast } = useToast();
 
   const loadPrescriptions = async () => {
@@ -120,71 +122,100 @@ const AdminPrescriptions = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filtered.map((rx) => (
-                  <tr key={rx.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 text-sm">
-                      <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded">{rx.prescription_number}</span>
-                    </td>
-                    <td className="px-4 py-3 text-sm">
-                      <div className="flex items-center gap-2">
-                        <UserCircle className="w-4 h-4 text-slate-400" />
-                        <span className="font-medium text-slate-900">
-                          {rx.customers?.full_name || rx.patient_name || '—'}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm">
-                      <div className="flex items-center gap-1.5">
-                        <Stethoscope className="w-3.5 h-3.5 text-slate-400" />
-                        <span>{rx.profiles?.full_name || '—'}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm font-medium text-slate-900">
-                      <div className="flex items-center gap-1.5">
-                        <Pill className="w-3.5 h-3.5 text-teal-500" />
-                        {rx.medication || '—'}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-600">
-                      {rx.dosage && <span>{rx.dosage}</span>}
-                      {rx.frequency && <span className="text-slate-400"> · {rx.frequency}</span>}
-                      {rx.duration && <span className="text-slate-400"> · {rx.duration}</span>}
-                      {!rx.dosage && !rx.frequency && !rx.duration && '—'}
-                    </td>
-                    <td className="px-4 py-3 text-sm">
-                      <Badge className={statusConfig[rx.status]?.className || 'bg-gray-100'}>
-                        {statusConfig[rx.status]?.label || rx.status}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-slate-400" />
-                        {formatDate(rx.prescription_date || rx.created_at)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm">
-                      {rx.status === 'active' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={updatingId === rx.id}
-                          onClick={() => handleCancel(rx.id)}
-                          className="text-xs h-7 px-2 border-red-200 text-red-700 hover:bg-red-50"
-                        >
-                          {updatingId === rx.id ? (
-                            <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
-                          ) : (
-                            <XCircle className="w-3 h-3 mr-0.5" />
+                {filtered.map((rx) => {
+                  const meds = Array.isArray(rx.medications) && rx.medications.length > 0
+                    ? rx.medications
+                    : rx.medication ? [{ medication: rx.medication, dosage: rx.dosage, frequency: rx.frequency, duration: rx.duration }] : [];
+                  return (
+                    <tr key={rx.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 text-sm">
+                        <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded">{rx.prescription_number}</span>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <div className="flex items-center gap-2">
+                          <UserCircle className="w-4 h-4 text-slate-400" />
+                          <span className="font-medium text-slate-900">
+                            {rx.customers?.full_name || rx.patient_name || '—'}
+                          </span>
+                        </div>
+                        {(rx.height_cm || rx.weight_kg) && (
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {rx.height_cm && `Talla: ${rx.height_cm}cm`}
+                            {rx.height_cm && rx.weight_kg && ' · '}
+                            {rx.weight_kg && `Peso: ${rx.weight_kg}kg`}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <div className="flex items-center gap-1.5">
+                          <Stethoscope className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{rx.profiles?.full_name || '—'}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                        <div className="space-y-0.5">
+                          {meds.map((med, i) => (
+                            <div key={i} className="flex items-center gap-1.5">
+                              <Pill className="w-3 h-3 text-teal-500" />
+                              <span>{med.medication}</span>
+                            </div>
+                          ))}
+                          {meds.length === 0 && '—'}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-600">
+                        {meds.map((med, i) => (
+                          <div key={i}>
+                            {med.dosage && <span>{med.dosage}</span>}
+                            {med.frequency && <span className="text-slate-400"> · {med.frequency}</span>}
+                            {med.duration && <span className="text-slate-400"> · {med.duration}</span>}
+                          </div>
+                        ))}
+                        {meds.length === 0 && '—'}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <Badge className={statusConfig[rx.status]?.className || 'bg-gray-100'}>
+                          {statusConfig[rx.status]?.label || rx.status}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          {formatDate(rx.prescription_date || rx.created_at)}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <div className="flex items-center gap-1">
+                          <Button size="sm" variant="ghost" className="text-slate-500 h-7 px-1" onClick={async () => {
+                            const full = await getPrescriptionById(rx.id);
+                            setPrintRxFull(full);
+                          }}>
+                            <Printer className="w-3.5 h-3.5" />
+                          </Button>
+                          {rx.status === 'active' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={updatingId === rx.id}
+                              onClick={() => handleCancel(rx.id)}
+                              className="text-xs h-7 px-2 border-red-200 text-red-700 hover:bg-red-50"
+                            >
+                              {updatingId === rx.id ? (
+                                <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1" />
+                              ) : (
+                                <XCircle className="w-3 h-3 mr-0.5" />
+                              )}
+                              Cancelar
+                            </Button>
                           )}
-                          Cancelar
-                        </Button>
-                      )}
-                      {rx.status !== 'active' && (
-                        <span className="text-xs text-slate-400">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                          {rx.status !== 'active' && (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-4 py-8 text-center">
@@ -209,6 +240,32 @@ const AdminPrescriptions = () => {
           </div>
         )}
       </div>
+
+      {/* Print Preview Overlay — plain div, no Dialog import needed */}
+      {printRxFull && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full my-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b">
+              <h2 className="text-lg font-semibold">Vista previa de receta</h2>
+              <button
+                onClick={() => setPrintRxFull(null)}
+                className="rounded-full p-1.5 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[70vh]">
+              <PrintablePrescription prescription={printRxFull} customer={printRxFull.customers} />
+            </div>
+            <div className="flex justify-end gap-2 px-6 py-4 border-t no-print">
+              <Button variant="outline" onClick={() => setPrintRxFull(null)}>Cerrar</Button>
+              <Button onClick={() => window.print()}>
+                <Printer className="w-4 h-4 mr-2" /> Imprimir
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
