@@ -1546,7 +1546,6 @@ export const getInventoryForDoctor = async () => {
     .from('inventory')
     .select('id, name, quantity, price, requires_prescription, barcode')
     .eq('org_id', orgId)
-    .gt('quantity', 0)
     .order('name');
   if (error) throw error;
   return data || [];

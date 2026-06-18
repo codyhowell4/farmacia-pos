@@ -710,25 +710,38 @@ const PatientWorkspace = () => {
                                 </div>
                               );
                             }
-                            return matches.map(item => (
-                              <button
-                                key={item.id}
-                                type="button"
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors"
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  const updated = [...rxForm.medications];
-                                  updated[idx].medication = item.name;
-                                  setRxForm({ ...rxForm, medications: updated });
-                                  setMedSearchOpen(prev => ({ ...prev, [idx]: false }));
-                                }}
-                              >
-                                <span className="font-medium">{item.name}</span>
-                                {item.requires_prescription && (
-                                  <span className="ml-1.5 text-[10px] bg-amber-100 text-amber-700 px-1 rounded">Rx</span>
-                                )}
-                              </button>
-                            ));
+                            return matches.map(item => {
+                              const stockColor = item.quantity > 10 ? 'bg-green-500' : item.quantity > 0 ? 'bg-yellow-500' : 'bg-red-500';
+                              const stockText = item.quantity === 0
+                                ? 'Agotado (0 unidades)'
+                                : `Stock: ${item.quantity} unidad${item.quantity !== 1 ? 'es' : ''}`;
+                              const stockTextColor = item.quantity === 0 ? 'text-red-600 font-medium' : 'text-slate-500';
+                              return (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    const updated = [...rxForm.medications];
+                                    updated[idx].medication = item.name;
+                                    setRxForm({ ...rxForm, medications: updated });
+                                    setMedSearchOpen(prev => ({ ...prev, [idx]: false }));
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-medium">{item.name}</span>
+                                    {item.requires_prescription && (
+                                      <span className="text-[10px] bg-amber-100 text-amber-700 px-1 rounded">Rx</span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${stockColor}`} />
+                                    <span className={`text-xs ${stockTextColor}`}>{stockText}</span>
+                                  </div>
+                                </button>
+                              );
+                            });
                           })()}
                         </div>
                       )}
