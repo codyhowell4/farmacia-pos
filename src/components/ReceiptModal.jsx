@@ -10,9 +10,12 @@ const ReceiptModal = ({ open, onOpenChange, sale, autoPrint = false }) => {
   const { toast } = useToast();
   const hasAutoPrinted = useRef(false);
 
+  // Guard: Don't render if no sale data
+  if (!sale) return null;
+
   // Auto-print when modal opens
   useEffect(() => {
-    if (open && autoPrint && sale && !hasAutoPrinted.current) {
+    if (open && autoPrint && !hasAutoPrinted.current) {
       hasAutoPrinted.current = true;
       // Small delay to ensure content is rendered
       setTimeout(() => {
@@ -23,7 +26,7 @@ const ReceiptModal = ({ open, onOpenChange, sale, autoPrint = false }) => {
     if (!open) {
       hasAutoPrinted.current = false;
     }
-  }, [open, autoPrint, sale]);
+  }, [open, autoPrint]);
 
   const paymentMethod = sale.payment_method || sale.paymentMethod || sale.payments?.[0]?.payment_method || 'cash';
   const paymentLabels = {
