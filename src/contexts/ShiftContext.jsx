@@ -47,10 +47,10 @@ export const ShiftProvider = ({ children }) => {
       new Date(s.timestamp) >= new Date(activeShift.opened_at)
     );
 
-    const totalCash = shiftSales.filter(s => s.payment_method === 'cash' || !s.payment_method).reduce((sum, s) => sum + s.total, 0);
-    const totalCard = shiftSales.filter(s => s.payment_method === 'card').reduce((sum, s) => sum + s.total, 0);
-    const totalInsurance = shiftSales.filter(s => s.payment_method === 'insurance').reduce((sum, s) => sum + s.total, 0);
-    const totalRevenue = shiftSales.reduce((sum, s) => sum + s.total, 0);
+    const totalCash = shiftSales.filter(s => s && (s.payment_method === 'cash' || !s.payment_method)).reduce((sum, s) => sum + (s?.total || 0), 0);
+    const totalCard = shiftSales.filter(s => s && s.payment_method === 'card').reduce((sum, s) => sum + (s?.total || 0), 0);
+    const totalInsurance = shiftSales.filter(s => s && s.payment_method === 'insurance').reduce((sum, s) => sum + (s?.total || 0), 0);
+    const totalRevenue = shiftSales.filter(s => s).reduce((sum, s) => sum + (s?.total || 0), 0);
     const expectedCash = activeShift.starting_cash + totalCash;
     const variance = parseFloat(closingCash) - expectedCash;
 
