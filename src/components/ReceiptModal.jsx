@@ -1,15 +1,29 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Printer, X } from 'lucide-react';
 import { formatMXN } from '@/lib/currency';
 import { useToast } from '@/components/ui/use-toast';
 
-const ReceiptModal = ({ open, onOpenChange, sale }) => {
+const ReceiptModal = ({ open, onOpenChange, sale, autoPrint = false }) => {
   const printRef = useRef(null);
   const { toast } = useToast();
+  const hasAutoPrinted = useRef(false);
 
-  if (!sale) return null;
+  // Auto-print when modal opens
+  useEffect(() => {
+    if (open && autoPrint && sale && !hasAutoPrinted.current) {
+      hasAutoPrinted.current = true;
+      // Small delay to ensure content is rendered
+      setTimeout(() => {
+        handlePrint();
+      }, 500);
+    }
+    // Reset flag when modal closes
+    if (!open) {
+      hasAutoPrinted.current = false;
+    }
+  }, [open, autoPrint, sale]);
 
   const paymentMethod = sale.payment_method || sale.paymentMethod || sale.payments?.[0]?.payment_method || 'cash';
   const paymentLabels = {
@@ -22,6 +36,30 @@ const ReceiptModal = ({ open, onOpenChange, sale }) => {
 
   const handlePrint = () => {
     const content = printRef.current.innerHTML;
+    const win = window.open('', '_blank', 'width=400,height=700');
+    win.document.write(`
+      <!DOCTYPE html><html><head><title>Recibo #${sale.id.slice(-8).toUpperCase()}</title>
+      <style>
+        body { font-family: 'Courier New', monospace; font-size: 12px; width: 300px; margin: 0 auto; padding: 16px; color: #000; }
+        h2 { text-align: center; font-size: 16px; margin: 0 0 4px; }
+        p { margin: 2px 0; }
+        .center { text-align: center; }
+        .divider { border-top: 1px dashed #000; margin: 8px 0; }
+        .row { display: flex; justify-content: space-between; }
+        .bold { font-weight: bold; }
+        .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; }
+        @media print { body { width: 100%; } }
+      </style></head>
+      <body>${content}</body></html>
+    `);
+    win.document.close();
+    setTimeout(() => { win.focus(); win.print(); win.close(); }, 300);
+  };
+
+  const handlePrint = () => {
+    const content = printRef.current?.innerHTML;
+    if (!content) return;
+    
     const win = window.open('', '_blank', 'width=400,height=700');
     win.document.write(`
       <!DOCTYPE html><html><head><title>Recibo #${sale.id.slice(-8).toUpperCase()}</title>

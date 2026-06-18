@@ -74,7 +74,9 @@ const AdminReorderReport = () => {
       setLoading(true);
       const locationId = selectedLocation || null;
       const data = await getReorderRecommendations(locationId);
-      setItems(data || []);
+      // Only show items that need to be ordered (recommended_qty >= 1)
+      const filteredData = (data || []).filter(item => item.recommended_qty >= 1);
+      setItems(filteredData);
     } catch (e) {
       console.error(e);
       toast({ title: 'Error', description: 'No se pudo cargar el reporte', variant: 'destructive' });
@@ -181,7 +183,8 @@ const AdminReorderReport = () => {
         <div className="py-16 text-center text-slate-500">
           <Package className="w-12 h-12 mx-auto mb-3 text-slate-300" />
           <p className="text-lg font-medium">¡Inventario saludable!</p>
-          <p className="text-sm">No hay medicamentos que requieran reorden en este momento.</p>
+          <p className="text-sm">No hay medicamentos que necesiten ser reordenados.</p>
+          <p className="text-xs text-slate-400 mt-2">Solo se muestran productos con cantidad sugerida ≥ 1</p>
         </div>
       );
     }
@@ -275,7 +278,8 @@ const AdminReorderReport = () => {
         <div className="py-16 text-center text-slate-500">
           <Truck className="w-12 h-12 mx-auto mb-3 text-slate-300" />
           <p className="text-lg font-medium">Sin recomendaciones</p>
-          <p className="text-sm">No hay medicamentos que requieran reorden agrupados por proveedor.</p>
+          <p className="text-sm">No hay medicamentos que necesiten ser reordenados.</p>
+          <p className="text-xs text-slate-400 mt-2">Solo se muestran productos con cantidad sugerida ≥ 1</p>
         </div>
       );
     }

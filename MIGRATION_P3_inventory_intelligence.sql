@@ -354,9 +354,15 @@ BEGIN
     ROUND((c.ads30 * c.lt_days) + (c.ads30 * c.ss_days), 1) AS reorder_point,
 
     -- Recommended quantity
-    GREATEST(0,
-      ROUND((c.ads30 * 30 + c.ads30 * c.ss_days) - c.inv_quantity)::integer
-    ) AS recommended_qty,
+    -- If no sales data, max recommendation is 1 (only if out of stock)
+    CASE
+      WHEN c.ads30 IS NULL OR c.ads30 = 0 THEN
+        CASE WHEN c.inv_quantity = 0 THEN 1 ELSE 0 END
+      ELSE
+        GREATEST(0,
+          ROUND((c.ads30 * 30 + c.ads30 * c.ss_days) - c.inv_quantity)::integer
+        )
+    END AS recommended_qty,
 
     -- Stockout risk score (0-100)
     -- Expired items are forced to 100 (can't sell expired stock)

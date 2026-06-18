@@ -44,7 +44,7 @@ const InventoryDashboard = () => {
     name: '', use: '', cost: '', price: '', quantity: '',
     lowStockThreshold: LOW_STOCK_THRESHOLD.toString(),
     pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '',
-    requiresPrescription: false, batchNumber: '', supplierId: '',
+    requiresPrescription: false, batchNumber: '', supplierId: '', department: '', itemType: 'product',
   });
   const [suppliers, setSuppliers] = useState([]);
   const [adjustmentForm, setAdjustmentForm] = useState({
@@ -92,6 +92,8 @@ const InventoryDashboard = () => {
         requires_prescription: formData.requiresPrescription,
         batch_number: formData.batchNumber || null,
         supplier_id: formData.supplierId || null,
+        department: formData.department || null,
+        item_type: formData.itemType || 'product',
       };
       await upsertInventoryItem(item);
       logAudit({
@@ -125,6 +127,8 @@ const InventoryDashboard = () => {
       requiresPrescription: item.requires_prescription || false,
       batchNumber: item.batch_number || '',
       supplierId: item.supplier_id || '',
+      department: item.department || '',
+      itemType: item.item_type || 'product',
     });
     setIsDialogOpen(true);
   };
@@ -206,7 +210,7 @@ const InventoryDashboard = () => {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false, batchNumber: '', supplierId: '' });
+    setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false, batchNumber: '', supplierId: '', department: '', itemType: 'product' });
     setEditingItem(null);
   };
 
@@ -226,6 +230,8 @@ const InventoryDashboard = () => {
         lowStockThreshold: (existingItem.low_stock_threshold || LOW_STOCK_THRESHOLD).toString(),
         warehouseLocation: existingItem.warehouse_location || '',
         requiresPrescription: existingItem.requires_prescription || false,
+        department: existingItem.department || '',
+        itemType: existingItem.item_type || 'product',
         barcode: barcode,
       });
       toast({ title: 'Producto encontrado', description: 'Datos pre-llenados del producto existente' });
@@ -313,6 +319,18 @@ const InventoryDashboard = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2"><Label>Nombre del medicamento</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
                       <div className="space-y-2"><Label>Indicación</Label><Input value={formData.use} onChange={(e) => setFormData({ ...formData, use: e.target.value })} required /></div>
+                      <div className="space-y-2"><Label>Departamento</Label><Input value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })} placeholder="Ej. Analgésicos, Antibióticos" /></div>
+                      <div className="space-y-2">
+                        <Label>Tipo</Label>
+                        <select
+                          value={formData.itemType}
+                          onChange={(e) => setFormData({ ...formData, itemType: e.target.value })}
+                          className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                          <option value="product">Producto</option>
+                          <option value="service">Servicio</option>
+                        </select>
+                      </div>
                       <div className="space-y-2"><Label>Costo (MXN)</Label><Input type="number" step="0.01" value={formData.cost} onChange={(e) => setFormData({ ...formData, cost: e.target.value })} required /></div>
                       <div className="space-y-2"><Label>Precio de venta (MXN)</Label><Input type="number" step="0.01" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} required /></div>
                       <div className="space-y-2"><Label>Cantidad</Label><Input type="number" value={formData.quantity} onChange={(e) => setFormData({ ...formData, quantity: e.target.value })} required /></div>
@@ -377,7 +395,7 @@ const InventoryDashboard = () => {
               <table className="w-full">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    {['Name','Use','Cost','Price','Qty','Rx','Expiration','Batch','Warehouse','Supplier','Actions'].map(h => (
+                    {['Nombre','Indicación','Depto','Costo','Precio','Cant','Receta','Vencimiento','Lote','Almacén','Proveedor','Acciones'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-sm font-semibold text-slate-900">{h}</th>
                     ))}
                   </tr>
@@ -390,6 +408,7 @@ const InventoryDashboard = () => {
                       <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-4 py-3 text-sm font-medium text-slate-900">{item.name}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.use}</td>
+                        <td className="px-4 py-3 text-sm text-slate-600">{item.department || '-'}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{formatMXN(item.cost)}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-green-600">{formatMXN(item.price)}</td>
                         <td className="px-4 py-3 text-sm">

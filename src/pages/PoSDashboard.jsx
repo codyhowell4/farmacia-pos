@@ -1219,7 +1219,7 @@ const PoSDashboard = () => {
         </DialogContent>
       </Dialog>
       <CloseShiftModal open={closeShiftOpen} onOpenChange={setCloseShiftOpen} />
-      <ReceiptModal open={receiptOpen} onOpenChange={setReceiptOpen} sale={completedSale} />
+      <ReceiptModal open={receiptOpen} onOpenChange={setReceiptOpen} sale={completedSale} autoPrint={true} />
       <PatientModal open={patientModalOpen} onOpenChange={setPatientModalOpen} onConfirm={handlePatientConfirm} />
       <PrescriptionModal 
         open={prescriptionModalOpen} 

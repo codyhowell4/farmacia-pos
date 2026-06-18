@@ -1,8 +1,10 @@
 import { formatMXN } from '@/lib/currency';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, Package, ShoppingCart, Users, TrendingUp, XCircle, UserCog, ClipboardList, Pill, Clock, AlertTriangle } from 'lucide-react';
+import { DollarSign, Package, ShoppingCart, Users, TrendingUp, XCircle, UserCog, ClipboardList, Pill, Clock, AlertTriangle, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 import { getSales, getInventory, getUsers, getActivePrescriptionCount, getPreorders, getAppointments } from '@/lib/db';
 
@@ -13,34 +15,58 @@ const AdminOverview = () => {
     pendingPrescriptions: 0, pendingPreorders: 0,
     appointmentsToday: 0, pendingOrders: 0,
   });
+  const [dateRange, setDateRange] = useState({
+    startDate: '',
+    endDate: '',
+  });
   const navigate = useNavigate();
 
   useEffect(() => {
-    Promise.all([getSales(), getInventory(), getUsers(), getActivePrescriptionCount(), getPreorders(), getAppointments()])
-      .then(([sales, inventory, users, activeRxCount, preorders, appointments]) => {
-        const totalRevenue = sales.filter(s => !s.voided).reduce((sum, sale) => sum + sale.total, 0);
-        const lowStockItems = inventory.filter(item => item.quantity > 0 && item.quantity < (item.low_stock_threshold || 10)).length;
-        const outOfStockItems = inventory.filter(item => item.quantity === 0).length;
-        const pendingPrescriptions = activeRxCount;
-        const pendingPreorders = preorders.filter(p => (p.status || 'pending') === 'pending').length;
-        const today = new Date().toISOString().split('T')[0];
-        const appointmentsToday = appointments.filter(a => a.appointment_date && a.appointment_date.startsWith(today)).length;
-        const pendingOrders = sales.filter(s => !s.voided && (s.status === 'pending' || s.status === 'processing')).length;
-        setStats({
-          totalSales: sales.filter(s => !s.voided).length,
-          totalRevenue,
-          totalInventory: inventory.length,
-          totalUsers: users.length,
-          lowStockItems,
-          outOfStockItems,
-          pendingPrescriptions,
-          pendingPreorders,
-          appointmentsToday,
-          pendingOrders,
-        });
-      })
-      .catch(console.error);
-  }, []);
+    loadData();
+  }, [dateRange]);
+
+  const loadData = async () => {
+    try {
+      const [sales, inventory, users, activeRxCount, preorders, appointments] = 
+        await Promise.all([getSales(), getInventory(), getUsers(), getActivePrescriptionCount(), getPreorders(), getAppointments()]);
+      
+      // Filter sales by date range if specified
+      let filteredSales = sales.filter(s => !s.voided);
+      if (dateRange.startDate) {
+        const start = new Date(dateRange.startDate);
+        filteredSales = filteredSales.filter(s => new Date(s.created_at) >= start);
+      }
+      if (dateRange.endDate) {
+        const end = new Date(dateRange.endDate);
+        end.setHours(23, 59, 59, 999);
+        filteredSales = filteredSales.filter(s => new Date(s.created_at) <= end);
+      }
+      
+      const totalRevenue = filteredSales.reduce((sum, sale) => sum + sale.total, 0);
+      const lowStockItems = inventory.filter(item => item.quantity > 0 && item.quantity < (item.low_stock_threshold || 10)).length;
+      const outOfStockItems = inventory.filter(item => item.quantity === 0).length;
+      const pendingPrescriptions = activeRxCount;
+      const pendingPreorders = preorders.filter(p => (p.status || 'pending') === 'pending').length;
+      const today = new Date().toISOString().split('T')[0];
+      const appointmentsToday = appointments.filter(a => a.appointment_date && a.appointment_date.startsWith(today)).length;
+      const pendingOrders = sales.filter(s => !s.voided && (s.status === 'pending' || s.status === 'processing')).length;
+      
+      setStats({
+        totalSales: filteredSales.length,
+        totalRevenue,
+        totalInventory: inventory.length,
+        totalUsers: users.length,
+        lowStockItems,
+        outOfStockItems,
+        pendingPrescriptions,
+        pendingPreorders,
+        appointmentsToday,
+        pendingOrders,
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   const statCards = [
     { label: 'Ingresos totales', value: formatMXN(stats.totalRevenue), icon: DollarSign, color: 'from-green-500 to-emerald-600', path: '/admin/sales' },
@@ -62,6 +88,44 @@ const AdminOverview = () => {
         <p className="text-slate-600">Bienvenido al sistema de gestión de farmacia</p>
       </div>
 
+      {/* Date Range Selector */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white rounded-xl shadow p-4 border border-slate-200"
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <Calendar className="w-5 h-5 text-slate-500" />
+          <h3 className="font-semibold text-slate-900">Filtrar por fecha</h3>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label className="text-sm text-slate-600">Fecha inicio</Label>
+            <Input
+              type="date"
+              value={dateRange.startDate}
+              onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-sm text-slate-600">Fecha fin</Label>
+            <Input
+              type="date"
+              value={dateRange.endDate}
+              onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
+            />
+          </div>
+        </div>
+        {(dateRange.startDate || dateRange.endDate) && (
+          <button
+            onClick={() => setDateRange({ startDate: '', endDate: '' })}
+            className="mt-3 text-sm text-blue-600 hover:text-blue-800 underline"
+          >
+            Limpiar filtros
+          </button>
+        )}
+      </motion.div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         {statCards.map((stat, index) => {
           const Icon = stat.icon;
@@ -71,15 +135,15 @@ const AdminOverview = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.08 }}
-              className="bg-white rounded-xl shadow-lg p-6 border border-slate-200 hover:shadow-xl hover:ring-2 hover:ring-blue-500 transition-all cursor-pointer"
+              className="bg-white rounded-xl shadow-lg p-6 border border-slate-200 hover:shadow-xl hover:ring-2 hover:ring-blue-500 transition-all cursor-pointer overflow-hidden"
               onClick={() => navigate(stat.path)}
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-600 mb-1">{stat.label}</p>
+              <div className="flex items-center justify-between relative">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-slate-600 mb-1 truncate">{stat.label}</p>
                   <p className="text-3xl font-bold text-slate-900">{stat.value}</p>
                 </div>
-                <div className={`bg-gradient-to-br ${stat.color} p-3 rounded-lg`}>
+                <div className={`bg-gradient-to-br ${stat.color} p-3 rounded-lg shrink-0 ml-2`}>
                   <Icon className="w-8 h-8 text-white" />
                 </div>
               </div>

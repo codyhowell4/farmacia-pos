@@ -4,7 +4,7 @@ import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BarChart3, Calendar, Users, UserCircle,
-  LogOut, Stethoscope, Menu, X,
+  LogOut, Stethoscope, Menu, X, Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,6 +12,7 @@ import DoctorOverview from '@/components/doctor/DoctorOverview';
 import DoctorAppointments from '@/components/doctor/DoctorAppointments';
 import DoctorCustomers from '@/components/doctor/DoctorCustomers';
 import DoctorProfile from '@/components/doctor/DoctorProfile';
+import DoctorExpiringProducts from '@/components/doctor/DoctorExpiringProducts';
 import PatientWorkspace from '@/components/doctor/PatientWorkspace';
 
 const DoctorDashboard = () => {
@@ -23,6 +24,7 @@ const DoctorDashboard = () => {
   const getCurrentTab = () => {
     const path = location.pathname;
     if (path.includes('/appointments')) return 'appointments';
+    if (path.includes('/expiring')) return 'expiring';
     if (path.includes('/customers/')) return 'customers';
     if (path.includes('/customers')) return 'customers';
     if (path.includes('/profile')) return 'profile';
@@ -40,6 +42,7 @@ const DoctorDashboard = () => {
     { id: 'overview', label: 'Resumen', icon: BarChart3, path: '/doctor' },
     { id: 'appointments', label: 'Citas', icon: Calendar, path: '/doctor/appointments' },
     { id: 'customers', label: 'Pacientes', icon: Users, path: '/doctor/customers' },
+    { id: 'expiring', label: 'Productos Por Vencer', icon: Clock, path: '/doctor/expiring' },
     { id: 'profile', label: 'Mi perfil', icon: UserCircle, path: '/doctor/profile' },
   ];
 
@@ -145,6 +148,7 @@ const DoctorDashboard = () => {
                 <Route path="/appointments" element={<DoctorAppointments />} />
                 <Route path="/customers" element={<DoctorCustomers />} />
                 <Route path="/customers/:customerId" element={<PatientWorkspace />} />
+                <Route path="/expiring" element={<DoctorExpiringProducts />} />
                 <Route path="/profile" element={<DoctorProfile />} />
               </Routes>
             </main>
