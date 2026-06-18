@@ -439,7 +439,7 @@ const PoSDashboard = () => {
     }
 
     try {
-      const cashPayment = payments.find(p => p.payment_method === 'cash');
+      const cashPayment = payments?.find(p => p?.payment_method === 'cash');
       
       const saleRecord = {
         location_id: user.locationId,
@@ -831,7 +831,7 @@ const PoSDashboard = () => {
                   <h3 className="font-semibold text-sm mb-2">Pagos agregados:</h3>
                   {splitPayments.map((payment, idx) => (
                     <div key={idx} className="flex justify-between items-center text-sm py-1 border-b border-slate-200 last:border-0">
-                      <span className="capitalize">{PAYMENT_METHODS.find(m => m.id === payment.payment_method)?.label}</span>
+                      <span className="capitalize">{PAYMENT_METHODS.find(m => m.id === payment?.payment_method)?.label || 'N/A'}</span>
                       <div className="flex items-center gap-2">
                         <span className="font-semibold">{formatMXN(payment.amount)}</span>
                         <button onClick={() => removeSplitPayment(idx)} className="text-red-500 hover:text-red-700">
