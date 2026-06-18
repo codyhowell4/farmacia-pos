@@ -19,6 +19,7 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
   const [summary, setSummary] = useState(null);
   const [shiftSales, setShiftSales] = useState({ cash: 0, card: 0, insurance: 0, transferencia: 0, total: 0, count: 0, sales: [] });
   const [inventory, setInventory] = useState([]);
+  const [closedShift, setClosedShift] = useState(null); // Snapshot after closing
   const reportRef = useRef(null);
 
   useEffect(() => {
@@ -87,9 +88,20 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
   };
 
   const handleConfirmClose = async () => {
-    const closed = await closeShift(closingCash, notes);
-    toast({ title: 'Turno cerrado', description: `Variación: ${formatMXN(closed?.variance || 0)}` });
-    setStep('report'); // Show the detailed report
+    try {
+      // Snapshot shift info before closeShift nulls activeShift
+      setClosedShift(activeShift ? { ...activeShift } : null);
+      const closed = await closeShift(closingCash, notes);
+      if (!closed) {
+        toast({ title: 'Error al cerrar turno', variant: 'destructive' });
+        return;
+      }
+      toast({ title: 'Turno cerrado', description: `Variación: ${formatMXN(closed?.variance || 0)}` });
+      setStep('report'); // Show the detailed report
+    } catch (err) {
+      console.error(err);
+      toast({ title: 'Error al cerrar turno', description: err?.message || 'Intenta de nuevo', variant: 'destructive' });
+    }
   };
 
   const handleFinish = () => {
@@ -98,6 +110,7 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
     setClosingCash('');
     setNotes('');
     setSummary(null);
+    setClosedShift(null);
     onOpenChange(false);
   };
 
@@ -106,6 +119,7 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
     setClosingCash(''); 
     setNotes(''); 
     setSummary(null); 
+    setClosedShift(null);
     onOpenChange(false); 
   };
 
@@ -113,7 +127,7 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
     const content = reportRef.current.innerHTML;
     const win = window.open('', '_blank', 'width=400,height=700');
     win.document.write(`
-      <!DOCTYPE html><html><head><title>Reporte de Turno - ${activeShift?.opened_by_name}</title>
+      <!DOCTYPE html><html><head><title>Reporte de Turno - ${reportShift?.opened_by_name}</title>
       <style>
         body { font-family: 'Courier New', monospace; font-size: 11px; width: 300px; margin: 0 auto; padding: 16px; color: #000; }
         h2 { text-align: center; font-size: 14px; margin: 0 0 4px; }
@@ -133,35 +147,33 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
     setTimeout(() => { win.focus(); win.print(); win.close(); }, 300);
   };
 
-  const duration = activeShift ? (() => {
-    const ms = new Date() - new Date(activeShift.opened_at);
+  const reportShift = closedShift || activeShift;
+  const duration = reportShift ? (() => {
+    const ms = new Date() - new Date(reportShift.opened_at);
     const h = Math.floor(ms / 3600000);
     const m = Math.floor((ms % 3600000) / 60000);
     return `${h}h ${m}m`;
   })() : '';
 
-  // Calculate report data
+  // Calculate report data (always return an object so report renders even with 0 sales)
   const calculateReportData = () => {
-    if (!shiftSales.sales.length) return null;
-
-    // Sales by department
     const deptSales = {};
     const typeSales = { product: 0, service: 0 };
-    
+
     shiftSales.sales.forEach(sale => {
       (sale.sale_items || []).forEach(item => {
         const invItem = inventory.find(i => i.id === item.inventory_id);
         const dept = invItem?.department || 'Sin departamento';
         const itemType = invItem?.item_type || 'product';
         const itemTotal = (item.price || 0) * (item.quantity || 0);
-        
+
         // By department
         if (!deptSales[dept]) {
           deptSales[dept] = { amount: 0, count: 0 };
         }
         deptSales[dept].amount += itemTotal;
         deptSales[dept].count += item.quantity || 0;
-        
+
         // By type (product vs service)
         typeSales[itemType] += itemTotal;
       });
@@ -276,7 +288,7 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
           </motion.div>
         )}
 
-        {step === 'report' && reportData && (
+        {step === 'report' && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
             {/* Receipt-style Report */}
             <div ref={reportRef} className="font-mono text-xs bg-white p-4 border border-dashed border-slate-300 rounded space-y-3">
@@ -287,11 +299,11 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
                 <div className="divider"></div>
                 <div className="row">
                   <span>Cajero:</span>
-                  <span className="font-bold">{activeShift?.opened_by_name}</span>
+                  <span className="font-bold">{reportShift?.opened_by_name}</span>
                 </div>
                 <div className="row">
                   <span>Apertura:</span>
-                  <span>{activeShift ? new Date(activeShift.opened_at).toLocaleString('es-MX') : ''}</span>
+                  <span>{reportShift ? new Date(reportShift.opened_at).toLocaleString('es-MX') : ''}</span>
                 </div>
                 <div className="row">
                   <span>Cierre:</span>
@@ -368,7 +380,7 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
                 <h3>RESUMEN DE CAJA</h3>
                 <div className="row">
                   <span>Efectivo inicial:</span>
-                  <span>{formatMXN(activeShift?.starting_cash)}</span>
+                  <span>{formatMXN(reportShift?.starting_cash)}</span>
                 </div>
                 <div className="row">
                   <span>Ventas en efectivo:</span>
