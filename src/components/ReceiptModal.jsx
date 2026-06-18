@@ -56,30 +56,6 @@ const ReceiptModal = ({ open, onOpenChange, sale, autoPrint = false }) => {
     setTimeout(() => { win.focus(); win.print(); win.close(); }, 300);
   };
 
-  const handlePrint = () => {
-    const content = printRef.current?.innerHTML;
-    if (!content) return;
-    
-    const win = window.open('', '_blank', 'width=400,height=700');
-    win.document.write(`
-      <!DOCTYPE html><html><head><title>Recibo #${sale.id.slice(-8).toUpperCase()}</title>
-      <style>
-        body { font-family: 'Courier New', monospace; font-size: 12px; width: 300px; margin: 0 auto; padding: 16px; color: #000; }
-        h2 { text-align: center; font-size: 16px; margin: 0 0 4px; }
-        p { margin: 2px 0; }
-        .center { text-align: center; }
-        .divider { border-top: 1px dashed #000; margin: 8px 0; }
-        .row { display: flex; justify-content: space-between; }
-        .bold { font-weight: bold; }
-        .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 14px; }
-        @media print { body { width: 100%; } }
-      </style></head>
-      <body>${content}</body></html>
-    `);
-    win.document.close();
-    setTimeout(() => { win.focus(); win.print(); win.close(); }, 300);
-  };
-
   const subtotalBeforeDiscount = (sale.items || []).reduce((s, i) => s + (i.originalPrice || i.price) * i.quantity, 0);
   const discountAmt = sale.discount?.amount || 0;
   const subtotalAfterDiscount = subtotalBeforeDiscount - discountAmt;
