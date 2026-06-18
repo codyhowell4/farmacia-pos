@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Users, ArrowLeft, Phone, Mail, Calendar, FileText, ShoppingCart,
   Pill, Clock, Plus, Edit2, Trash2, ChevronDown, ChevronUp,
-  CheckCircle, XCircle, AlertCircle, Printer, FileDown
+  CheckCircle, XCircle, AlertCircle, Printer, FileDown, Search
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -64,6 +64,7 @@ const PatientWorkspace = () => {
   const [patientForm, setPatientForm] = useState({ height: '', weight: '', notes: '' });
   const [savingPatient, setSavingPatient] = useState(false);
   const [printRx, setPrintRx] = useState(null);
+  const [medSearchOpen, setMedSearchOpen] = useState({}); // { [idx]: boolean }
 
   // Form states
   const [rxForm, setRxForm] = useState({
@@ -676,15 +677,62 @@ const PatientWorkspace = () => {
                     )}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <Input
-                      placeholder="Nombre del medicamento *"
-                      value={med.medication}
-                      onChange={(e) => {
-                        const updated = [...rxForm.medications];
-                        updated[idx].medication = e.target.value;
-                        setRxForm({ ...rxForm, medications: updated });
-                      }}
-                    />
+                    {/* Medication search with inventory autocomplete */}
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                      <Input
+                        placeholder="Nombre del medicamento *"
+                        value={med.medication}
+                        className="pl-8"
+                        onChange={(e) => {
+                          const updated = [...rxForm.medications];
+                          updated[idx].medication = e.target.value;
+                          setRxForm({ ...rxForm, medications: updated });
+                          setMedSearchOpen({ ...medSearchOpen, [idx]: true });
+                        }}
+                        onFocus={() => setMedSearchOpen({ ...medSearchOpen, [idx]: true })}
+                        onBlur={() => {
+                          // Small delay so click on dropdown item registers first
+                          setTimeout(() => setMedSearchOpen(prev => ({ ...prev, [idx]: false })), 150);
+                        }}
+                      />
+                      {medSearchOpen[idx] && med.medication.trim().length >= 1 && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                          {(() => {
+                            const q = med.medication.toLowerCase();
+                            const matches = inventory.filter(item =>
+                              item.name.toLowerCase().includes(q)
+                            ).slice(0, 5);
+                            if (matches.length === 0) {
+                              return (
+                                <div className="px-3 py-2 text-xs text-slate-500">
+                                  No encontrado en inventario. Puede escribir un medicamento manualmente.
+                                </div>
+                              );
+                            }
+                            return matches.map(item => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors"
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  const updated = [...rxForm.medications];
+                                  updated[idx].medication = item.name;
+                                  setRxForm({ ...rxForm, medications: updated });
+                                  setMedSearchOpen(prev => ({ ...prev, [idx]: false }));
+                                }}
+                              >
+                                <span className="font-medium">{item.name}</span>
+                                {item.requires_prescription && (
+                                  <span className="ml-1.5 text-[10px] bg-amber-100 text-amber-700 px-1 rounded">Rx</span>
+                                )}
+                              </button>
+                            ));
+                          })()}
+                        </div>
+                      )}
+                    </div>
                     <Input
                       placeholder="Dosis"
                       value={med.dosage}
