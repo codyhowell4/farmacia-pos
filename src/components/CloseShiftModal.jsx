@@ -39,9 +39,12 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
         let cash = 0, card = 0, insurance = 0, transferencia = 0;
         
         sales.forEach(sale => {
+          if (!sale) return; // Skip null sales
+          
           if (sale.is_split_payment && sale.sale_payments?.length > 0) {
             // Handle split payments
             sale.sale_payments.forEach(payment => {
+              if (!payment) return; // Skip null payments
               const amount = payment.amount || 0;
               switch(payment.payment_method) {
                 case 'cash': cash += amount; break;
