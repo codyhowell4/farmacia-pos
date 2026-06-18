@@ -87,7 +87,7 @@ const ShiftGate = ({ children }) => {
           </div>
 
           <div className="grid grid-cols-3 gap-2">
-            {[100, 200, 300].map(v => (
+            {[100, 200, 1000].map(v => (
               <Button key={v} type="button" variant="outline" onClick={() => setStartingCash(v.toString())}>
                 ${v}
               </Button>
