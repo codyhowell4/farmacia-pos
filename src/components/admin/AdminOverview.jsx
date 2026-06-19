@@ -1,7 +1,7 @@
 import { formatMXN } from '@/lib/currency';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, Package, ShoppingCart, TrendingUp, XCircle, ClipboardList, Pill, Clock, AlertTriangle, Calendar } from 'lucide-react';
+import { DollarSign, Package, ShoppingCart, TrendingUp, XCircle, UserCog, ClipboardList, Pill, Clock, AlertTriangle, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
