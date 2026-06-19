@@ -87,17 +87,22 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
     setStep('summary');
   };
 
-  const handleConfirmClose = async () => {
+  const handleViewReport = () => {
+    // Snapshot shift info and show the report BEFORE actually closing.
+    // The shift remains active so ShiftGate does not redirect away while the report is visible.
+    setClosedShift(activeShift ? { ...activeShift } : null);
+    setStep('report');
+  };
+
+  const handleFinalClose = async () => {
     try {
-      // Snapshot shift info before closeShift nulls activeShift
-      setClosedShift(activeShift ? { ...activeShift } : null);
       const closed = await closeShift(closingCash, notes);
       if (!closed) {
         toast({ title: 'Error al cerrar turno', variant: 'destructive' });
         return;
       }
       toast({ title: 'Turno cerrado', description: `Variación: ${formatMXN(closed?.variance || 0)}` });
-      setStep('report'); // Show the detailed report
+      handleFinish(); // Reset and close; ShiftGate will redirect to open-shift screen
     } catch (err) {
       console.error(err);
       toast({ title: 'Error al cerrar turno', description: err?.message || 'Intenta de nuevo', variant: 'destructive' });
@@ -281,8 +286,8 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
 
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => setStep('count')}>Atrás</Button>
-              <Button onClick={handleConfirmClose} className="flex-1 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
-                Confirmar cierre y ver reporte
+              <Button onClick={handleViewReport} className="flex-1 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
+                Ver reporte
               </Button>
             </div>
           </motion.div>
@@ -414,13 +419,18 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
               </div>
             </div>
 
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={handleFinish}>
-                Cerrar
+            <div className="flex flex-col gap-3">
+              <Button onClick={handleFinalClose} className="w-full bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600">
+                Confirmar cierre
               </Button>
-              <Button onClick={handlePrintReport} className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600">
-                <Printer className="w-4 h-4 mr-2" /> Imprimir Reporte
-              </Button>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={handlePrintReport}>
+                  <Printer className="w-4 h-4 mr-2" /> Imprimir
+                </Button>
+                <Button variant="ghost" className="flex-1" onClick={handleFinish}>
+                  Cancelar
+                </Button>
+              </div>
             </div>
           </motion.div>
         )}
