@@ -1,17 +1,17 @@
 import { formatMXN } from '@/lib/currency';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, Package, ShoppingCart, Users, TrendingUp, XCircle, UserCog, ClipboardList, Pill, Clock, AlertTriangle, Calendar } from 'lucide-react';
+import { DollarSign, Package, ShoppingCart, TrendingUp, XCircle, ClipboardList, Pill, Clock, AlertTriangle, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-import { getSales, getInventory, getUsers, getActivePrescriptionCount, getPreorders, getAppointments } from '@/lib/db';
+import { getSales, getInventory, getActivePrescriptionCount, getPreorders, getAppointments } from '@/lib/db';
 
 const AdminOverview = () => {
   const [stats, setStats] = useState({
     totalSales: 0, totalRevenue: 0, totalInventory: 0,
-    totalUsers: 0, lowStockItems: 0, outOfStockItems: 0,
+    lowStockItems: 0, outOfStockItems: 0,
     pendingPrescriptions: 0, pendingPreorders: 0,
     appointmentsToday: 0, pendingOrders: 0,
   });
@@ -27,8 +27,8 @@ const AdminOverview = () => {
 
   const loadData = async () => {
     try {
-      const [sales, inventory, users, activeRxCount, preorders, appointments] = 
-        await Promise.all([getSales(), getInventory(), getUsers(), getActivePrescriptionCount(), getPreorders(), getAppointments()]);
+      const [sales, inventory, activeRxCount, preorders, appointments] = 
+        await Promise.all([getSales(), getInventory(), getActivePrescriptionCount(), getPreorders(), getAppointments()]);
       
       // Filter sales by date range if specified
       let filteredSales = sales.filter(s => !s.voided);
@@ -55,7 +55,6 @@ const AdminOverview = () => {
         totalSales: filteredSales.length,
         totalRevenue,
         totalInventory: inventory.length,
-        totalUsers: users.length,
         lowStockItems,
         outOfStockItems,
         pendingPrescriptions,
@@ -72,7 +71,7 @@ const AdminOverview = () => {
     { label: 'Ingresos totales', value: formatMXN(stats.totalRevenue), icon: DollarSign, color: 'from-green-500 to-emerald-600', path: '/admin/sales' },
     { label: 'Total de ventas', value: stats.totalSales, icon: ShoppingCart, color: 'from-blue-500 to-indigo-600', path: '/admin/sales' },
     { label: 'Artículos en inventario', value: stats.totalInventory, icon: Package, color: 'from-purple-500 to-pink-600', path: '/admin/inventory' },
-    { label: 'Usuarios totales', value: stats.totalUsers, icon: Users, color: 'from-sky-500 to-cyan-600', path: '/admin/users' },
+
     { label: 'Stock bajo', value: stats.lowStockItems, icon: TrendingUp, color: 'from-yellow-500 to-orange-600', path: '/admin/inventory' },
     { label: 'Sin existencias', value: stats.outOfStockItems, icon: XCircle, color: 'from-red-500 to-rose-600', path: '/admin/inventory' },
     { label: 'Recetas pendientes', value: stats.pendingPrescriptions, icon: ClipboardList, color: 'from-amber-500 to-yellow-600', path: '/admin/prescriptions' },
@@ -126,7 +125,7 @@ const AdminOverview = () => {
         )}
       </motion.div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {statCards.map((stat, index) => {
           const Icon = stat.icon;
           return (
