@@ -135,17 +135,15 @@ const AdminOverview = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.08 }}
-              className="bg-white rounded-xl shadow-lg p-6 border border-slate-200 hover:shadow-xl hover:ring-2 hover:ring-blue-500 transition-all cursor-pointer"
+              className="bg-white rounded-xl shadow-lg p-6 border border-slate-200 hover:shadow-xl hover:ring-2 hover:ring-blue-500 transition-all cursor-pointer relative overflow-hidden"
               onClick={() => navigate(stat.path)}
             >
-              <div className="flex items-center justify-between relative overflow-hidden">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-slate-600 mb-1 truncate">{stat.label}</p>
-                  <p className="text-3xl font-bold text-slate-900">{stat.value}</p>
-                </div>
-                <div className={`bg-gradient-to-br ${stat.color} p-3 rounded-lg shrink-0 ml-2 overflow-hidden`}>
-                  <Icon className="w-8 h-8 text-white" />
-                </div>
+              <div className="relative z-10">
+                <p className="text-sm text-slate-600 mb-1 truncate pr-10">{stat.label}</p>
+                <p className="text-3xl font-bold text-slate-900">{stat.value}</p>
+              </div>
+              <div className={`absolute top-4 right-4 bg-gradient-to-br ${stat.color} p-2 rounded-lg opacity-20 hover:opacity-40 transition-opacity`}>
+                <Icon className="w-6 h-6 text-white" />
               </div>
             </motion.div>
           );
