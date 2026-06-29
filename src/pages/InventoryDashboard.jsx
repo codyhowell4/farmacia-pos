@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
-import { Package, Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal, Upload, FileSpreadsheet } from 'lucide-react';
+import { Package, Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal, Upload, FileSpreadsheet, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -58,6 +58,8 @@ const InventoryDashboard = () => {
   const [importFileName, setImportFileName] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [lowStockExpanded, setLowStockExpanded] = useState(false);
+  const [expiringExpanded, setExpiringExpanded] = useState(false);
 
   useEffect(() => { loadInventory(); loadSuppliers(); }, [user?.locationId]);
 
@@ -401,31 +403,57 @@ const InventoryDashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
           <>
             {lowStockItems.length > 0 && (
-              <div
-                className={`flex items-center justify-between p-4 rounded-xl shadow cursor-pointer border-2 transition-all ${alertFilter === 'low_stock' ? 'bg-orange-100 border-orange-500' : 'bg-orange-50 border-orange-200 hover:border-orange-400'}`}
-                onClick={() => setAlertFilter(alertFilter === 'low_stock' ? null : 'low_stock')}>
-                <div className="flex items-center space-x-3">
-                  <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0" />
-                  <div>
+              <div className={`rounded-xl shadow border-2 transition-all ${alertFilter === 'low_stock' ? 'bg-orange-100 border-orange-500' : 'bg-orange-50 border-orange-200'}`}>
+                <div
+                  className="flex items-center justify-between p-4 cursor-pointer hover:border-orange-400"
+                  onClick={() => setAlertFilter(alertFilter === 'low_stock' ? null : 'low_stock')}>
+                  <div className="flex items-center space-x-3">
+                    <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0" />
                     <p className="font-semibold text-orange-800">{lowStockItems.length} item{lowStockItems.length > 1 ? 's' : ''} running low on stock</p>
-                    <p className="text-sm text-orange-600">{lowStockItems.map(i => i.name).join(', ')}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-orange-600 font-medium whitespace-nowrap">{alertFilter === 'low_stock' ? 'Mostrar todos' : 'Ver artículos'}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setLowStockExpanded(v => !v); }}
+                      className="p-1 rounded hover:bg-orange-200 text-orange-700"
+                      title={lowStockExpanded ? 'Ocultar lista' : 'Ver lista'}>
+                      {lowStockExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
                   </div>
                 </div>
-                <span className="text-xs text-orange-600 font-medium whitespace-nowrap ml-4">{alertFilter === 'low_stock' ? 'Mostrar todos' : 'Ver artículos'}</span>
+                {lowStockExpanded && (
+                  <div className="px-4 pb-4">
+                    <p className="text-sm text-orange-700">{lowStockItems.map(i => i.name).join(', ')}</p>
+                  </div>
+                )}
               </div>
             )}
             {expiringItems.length > 0 && (
-              <div
-                className={`flex items-center justify-between p-4 rounded-xl shadow cursor-pointer border-2 transition-all ${alertFilter === 'expiring' ? 'bg-red-100 border-red-500' : 'bg-red-50 border-red-200 hover:border-red-400'}`}
-                onClick={() => setAlertFilter(alertFilter === 'expiring' ? null : 'expiring')}>
-                <div className="flex items-center space-x-3">
-                  <Clock className="w-5 h-5 text-red-600 flex-shrink-0" />
-                  <div>
+              <div className={`rounded-xl shadow border-2 transition-all ${alertFilter === 'expiring' ? 'bg-red-100 border-red-500' : 'bg-red-50 border-red-200'}`}>
+                <div
+                  className="flex items-center justify-between p-4 cursor-pointer hover:border-red-400"
+                  onClick={() => setAlertFilter(alertFilter === 'expiring' ? null : 'expiring')}>
+                  <div className="flex items-center space-x-3">
+                    <Clock className="w-5 h-5 text-red-600 flex-shrink-0" />
                     <p className="font-semibold text-red-800">{expiringItems.length} item{expiringItems.length > 1 ? 's' : ''} expiring within 90 days</p>
-                    <p className="text-sm text-red-600">{expiringItems.map(i => i.name).join(', ')}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-red-600 font-medium whitespace-nowrap">{alertFilter === 'expiring' ? 'Mostrar todos' : 'Ver artículos'}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setExpiringExpanded(v => !v); }}
+                      className="p-1 rounded hover:bg-red-200 text-red-700"
+                      title={expiringExpanded ? 'Ocultar lista' : 'Ver lista'}>
+                      {expiringExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
                   </div>
                 </div>
-                <span className="text-xs text-red-600 font-medium whitespace-nowrap ml-4">{alertFilter === 'expiring' ? 'Mostrar todos' : 'Ver artículos'}</span>
+                {expiringExpanded && (
+                  <div className="px-4 pb-4">
+                    <p className="text-sm text-red-700">{expiringItems.map(i => i.name).join(', ')}</p>
+                  </div>
+                )}
               </div>
             )}
           </>
