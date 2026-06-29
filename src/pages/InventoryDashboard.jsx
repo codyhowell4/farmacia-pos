@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
-import { Package, Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal } from 'lucide-react';
+import { Package, Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal, Upload, FileSpreadsheet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
-import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, createStockAdjustment, getInventoryMovements, getSuppliers } from '@/lib/db';
+import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory } from '@/lib/db';
 
 const LOW_STOCK_THRESHOLD = 10;
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -50,6 +50,14 @@ const InventoryDashboard = () => {
   const [adjustmentForm, setAdjustmentForm] = useState({
     newQuantity: '', reason: '',
   });
+
+  // CSV import state
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importRows, setImportRows] = useState([]);
+  const [importErrors, setImportErrors] = useState([]);
+  const [importFileName, setImportFileName] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
 
   useEffect(() => { loadInventory(); loadSuppliers(); }, [user?.locationId]);
 
@@ -214,6 +222,125 @@ const InventoryDashboard = () => {
     setEditingItem(null);
   };
 
+  // CSV import helpers
+  const parseMoney = (value) => {
+    if (value === null || value === undefined || String(value).trim() === '') return 0;
+    const cleaned = String(value).replace(/^\$/, '').replace(/,/g, '').trim();
+    const number = parseFloat(cleaned);
+    return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0;
+  };
+
+  const parseQuantity = (value) => {
+    if (value === null || value === undefined || String(value).trim() === '') return 0;
+    const cleaned = String(value).replace(/,/g, '').trim();
+    const number = parseFloat(cleaned);
+    return Number.isFinite(number) ? Math.round(number) : 0;
+  };
+
+  const normalizeName = (value) => (value || '').toString().trim().replace(/\s+/g, ' ');
+  const normalizeDepartment = (value) => (value || '').toString().trim();
+
+  const parseCsvRows = (records) => {
+    const rows = [];
+    const errors = [];
+
+    records.forEach((record, index) => {
+      const line = index + 2;
+      const name = normalizeName(record.Producto ?? record.producto ?? record.Nombre ?? record.nombre);
+      const cost = parseMoney(record.Costo ?? record.costo ?? record.COSTO);
+      const price = parseMoney(record.Venta ?? record.venta ?? record.VENTA);
+      const quantity = parseQuantity(record.Existencia ?? record.existencia ?? record.EXISTENCIA ?? record.stock ?? record.cantidad);
+      const department = normalizeDepartment(record.Departamento ?? record.departamento ?? record.DEPARTAMENTO);
+
+      if (!name) {
+        errors.push({ line, reason: 'Falta el nombre del producto', record });
+        return;
+      }
+
+      rows.push({
+        name,
+        cost,
+        price,
+        quantity,
+        department: department || null,
+        use: department || null,
+        low_stock_threshold: LOW_STOCK_THRESHOLD,
+        location_id: user?.locationId || null,
+        barcode: null,
+        warehouse_location: null,
+        expiration_date: null,
+        requires_prescription: false,
+        batch_number: null,
+        supplier_id: null,
+        item_type: 'product',
+        sales_count: 0,
+      });
+    });
+
+    return { rows, errors };
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportFileName(file.name);
+    setImportRows([]);
+    setImportErrors([]);
+    setImportResult(null);
+
+    try {
+      const { parse } = await import('csv-parse/browser/esm/sync');
+      const text = await file.text();
+      const records = parse(text, { columns: true, skip_empty_lines: true, trim: true });
+      const { rows, errors } = parseCsvRows(records);
+      setImportRows(rows);
+      setImportErrors(errors);
+      if (rows.length === 0) {
+        toast({ title: 'CSV vacío o inválido', description: 'No se encontraron productos válidos.', variant: 'destructive' });
+      }
+    } catch (err) {
+      toast({ title: 'Error leyendo CSV', description: err.message, variant: 'destructive' });
+      setImportFileName('');
+    }
+  };
+
+  const handleImport = async () => {
+    if (importRows.length === 0) return;
+    setIsImporting(true);
+    try {
+      const { inserted, errors } = await bulkInsertInventory(importRows);
+      setImportResult({ inserted, errors: errors.length });
+      logAudit({ action: AUDIT_ACTIONS.INVENTORY_ADD, user, details: `CSV import: ${inserted} products from ${importFileName}` });
+      toast({ title: 'Importación completada', description: `${inserted} productos importados.` });
+      if (errors.length === 0) {
+        setTimeout(() => {
+          setIsImportDialogOpen(false);
+          resetImportState();
+          loadInventory();
+        }, 1500);
+      } else {
+        loadInventory();
+      }
+    } catch (err) {
+      toast({ title: 'Error al importar', description: err.message, variant: 'destructive' });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const resetImportState = () => {
+    setImportRows([]);
+    setImportErrors([]);
+    setImportFileName('');
+    setImportResult(null);
+  };
+
+  const closeImportDialog = () => {
+    setIsImportDialogOpen(false);
+    resetImportState();
+  };
+
   // Handle barcode scan in form
   const handleBarcodeScan = async (barcode) => {
     if (!barcode) return;
@@ -309,6 +436,9 @@ const InventoryDashboard = () => {
                 <Search className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
                 <Input placeholder="Buscar medicamentos..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
               </div>
+              <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
+                <Upload className="w-4 h-4 mr-2" />Importar CSV
+              </Button>
               <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
                 <DialogTrigger asChild>
                   <Button className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700"><Plus className="w-4 h-4 mr-2" />Agregar medicamento</Button>
@@ -478,6 +608,105 @@ const InventoryDashboard = () => {
               <div className="flex gap-2">
                 <Button onClick={submitAdjustment} className="flex-1">Guardar ajuste</Button>
                 <Button variant="outline" onClick={closeAdjustmentModal}>Cancelar</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* CSV Import Modal */}
+        <Dialog open={isImportDialogOpen} onOpenChange={(open) => { if (!open) closeImportDialog(); }}>
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-purple-600" />
+                Importar inventario desde CSV
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+                <p className="font-semibold mb-1">Columnas esperadas:</p>
+                <p><code>Producto, Costo, Venta, Existencia, Departamento</code></p>
+                <p className="mt-1 text-blue-700">Los campos faltantes (código de barras, lote, vencimiento, receta, etc.) los podrás completar después editando cada producto.</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Archivo CSV</Label>
+                <Input
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={handleImportFile}
+                  disabled={isImporting}
+                />
+              </div>
+
+              {importFileName && importRows.length > 0 && (
+                <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                  <p className="font-medium text-slate-900">{importFileName}</p>
+                  <p className="text-sm text-slate-600">Productos listos para importar: <strong>{importRows.length}</strong></p>
+                  {importErrors.length > 0 && (
+                    <p className="text-sm text-orange-600 mt-1">Filas con error (se omitirán): <strong>{importErrors.length}</strong></p>
+                  )}
+
+                  <div className="mt-3 max-h-48 overflow-y-auto border border-slate-200 rounded">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-100 sticky top-0">
+                        <tr>
+                          <th className="px-2 py-1 text-left">Nombre</th>
+                          <th className="px-2 py-1 text-right">Costo</th>
+                          <th className="px-2 py-1 text-right">Venta</th>
+                          <th className="px-2 py-1 text-right">Cant</th>
+                          <th className="px-2 py-1 text-left">Depto</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {importRows.slice(0, 20).map((row, idx) => (
+                          <tr key={idx}>
+                            <td className="px-2 py-1 text-slate-900">{row.name}</td>
+                            <td className="px-2 py-1 text-right">{formatMXN(row.cost)}</td>
+                            <td className="px-2 py-1 text-right">{formatMXN(row.price)}</td>
+                            <td className="px-2 py-1 text-right">{row.quantity}</td>
+                            <td className="px-2 py-1 text-slate-600">{row.department || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {importRows.length > 20 && (
+                      <p className="text-xs text-slate-500 p-2 text-center">...y {importRows.length - 20} productos más</p>
+                    )}
+                  </div>
+
+                  {importErrors.length > 0 && (
+                    <div className="mt-3 max-h-32 overflow-y-auto">
+                      <p className="text-xs font-semibold text-orange-700 mb-1">Errores encontrados:</p>
+                      {importErrors.slice(0, 5).map((err, idx) => (
+                        <p key={idx} className="text-xs text-orange-600">Fila {err.line}: {err.reason}</p>
+                      ))}
+                      {importErrors.length > 5 && (
+                        <p className="text-xs text-orange-600">...y {importErrors.length - 5} errores más</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {importResult && (
+                <div className={`rounded-lg p-4 border ${importResult.errors === 0 ? 'bg-green-50 border-green-200 text-green-800' : 'bg-orange-50 border-orange-200 text-orange-800'}`}>
+                  <p className="font-medium">
+                    {importResult.errors === 0 ? '✅ Importación exitosa' : '⚠️ Importación parcial'}
+                  </p>
+                  <p className="text-sm">Insertados: <strong>{importResult.inserted}</strong> | Errores: <strong>{importResult.errors}</strong></p>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <Button
+                  onClick={handleImport}
+                  disabled={importRows.length === 0 || isImporting}
+                  className="flex-1 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700"
+                >
+                  {isImporting ? 'Importando...' : `Importar ${importRows.length} productos`}
+                </Button>
+                <Button variant="outline" onClick={closeImportDialog} disabled={isImporting}>Cancelar</Button>
               </div>
             </div>
           </DialogContent>

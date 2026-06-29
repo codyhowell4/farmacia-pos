@@ -672,6 +672,32 @@ export const addInventoryBatch = async (batch) => {
   return data;
 };
 
+export const bulkInsertInventory = async (rows) => {
+  const orgId = await getOrgId();
+  const BATCH_SIZE = 500;
+  let inserted = 0;
+  const errors = [];
+
+  const now = new Date().toISOString();
+  const rowsWithOrg = rows.map((r) => ({
+    ...r,
+    org_id: orgId,
+    updated_at: now,
+  }));
+
+  for (let i = 0; i < rowsWithOrg.length; i += BATCH_SIZE) {
+    const batch = rowsWithOrg.slice(i, i + BATCH_SIZE);
+    const { error } = await supabase.from('inventory').insert(batch);
+    if (error) {
+      errors.push({ batchIndex: i / BATCH_SIZE, error });
+    } else {
+      inserted += batch.length;
+    }
+  }
+
+  return { inserted, errors };
+};
+
 // ── STOCK ADJUSTMENTS ────────────────────────────────────────
 
 export const createStockAdjustment = async (adjustment) => {
