@@ -3,7 +3,7 @@
  * Bulk import / replace inventory from a CSV file.
  *
  * CSV expected columns:
- *   Producto,Costo,Venta,Existencia,Departamento
+ *   Producto,Costo,Venta,Existencia,Departamento,Codigo
  *
  * Usage:
  *   node tools/import-inventory-csv.js <path-to-csv> [options]
@@ -142,6 +142,12 @@ function normalizeName(value) {
   return String(value).trim().replace(/\s+/g, ' ');
 }
 
+function normalizeBarcode(value) {
+  if (value === null || value === undefined) return null;
+  const cleaned = String(value).trim();
+  return cleaned === '' ? null : cleaned;
+}
+
 function stripBom(buffer) {
   if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
     return buffer.subarray(3);
@@ -183,6 +189,13 @@ function buildInventoryRows(records, orgId, locationId, mergeDuplicates, departm
     const department = normalizeDepartment(
       record.Departamento ?? record.departamento ?? record.DEPARTAMENTO ?? record.category ?? record.categoria
     );
+    const barcode = normalizeBarcode(
+      record.Codigo ?? record.codigo ?? record.CODIGO ??
+      record['Codigo de Barras'] ?? record['codigo de barras'] ?? record['CODIGO DE BARRAS'] ??
+      record.Barcode ?? record.barcode ?? record.BARCODE ??
+      record.UPC ?? record.upc ?? record.EAN ?? record.ean ??
+      record.Clave ?? record.clave ?? record.CLAVE
+    );
 
     if (!name) {
       errors.push({ line, reason: 'Falta el nombre del producto', record });
@@ -202,7 +215,7 @@ function buildInventoryRows(records, orgId, locationId, mergeDuplicates, departm
       price,
       quantity,
       low_stock_threshold: 10,
-      barcode: null,
+      barcode,
       warehouse_location: null,
       expiration_date: null,
       requires_prescription: false,
