@@ -35,3 +35,31 @@ body {
 * {
   @apply border-border;
 }
+
+/* ── Thermal receipt printing (58mm) ─────────────────────────
+   Only active while body has .receipt-print-mode (set by
+   ReceiptModal.handlePrint), so other print flows are unaffected. */
+@media print {
+  body.receipt-print-mode * {
+    visibility: hidden;
+  }
+  body.receipt-print-mode #receipt-print-area,
+  body.receipt-print-mode #receipt-print-area * {
+    visibility: visible;
+  }
+  body.receipt-print-mode #receipt-print-area {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 58mm;
+    max-width: 58mm;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: #000;
+  }
+  body.receipt-print-mode #receipt-print-area .p-4 {
+    padding: 2mm;
+  }
+}

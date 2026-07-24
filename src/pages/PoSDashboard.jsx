@@ -180,15 +180,19 @@ const PoSDashboard = () => {
     setRxNumbers(prev => { const n = { ...prev }; delete n[id]; return n; });
   };
 
-  const handleSearch = (e, updateGrid = false) => {
+  const handleSearch = (e, updateGrid = false, rawTerm) => {
     e?.preventDefault();
-    const lowerSearchTerm = searchTerm.toLowerCase();
+    // Use the freshly-typed value when provided (onChange passes it) —
+    // reading `searchTerm` state here would lag one keystroke behind,
+    // which breaks rapid barcode-scanner input.
+    const term = (rawTerm ?? searchTerm).trim();
+    const lowerSearchTerm = term.toLowerCase();
     const results = inventory.filter(item =>
-      (item.barcode === searchTerm || item.name.toLowerCase().includes(lowerSearchTerm) || item.use?.toLowerCase().includes(lowerSearchTerm)) && isSellable(item)
+      (item.barcode === term || item.name.toLowerCase().includes(lowerSearchTerm) || item.use?.toLowerCase().includes(lowerSearchTerm)) && isSellable(item)
     );
-    
+
     // Barcode scanner auto-add: if exact barcode match and only 1 result, add to cart immediately
-    if (results.length === 1 && results[0].barcode === searchTerm) {
+    if (term && results.length === 1 && results[0].barcode === term) {
       addToCart(results[0]);
       setSearchTerm('');
       setSearchResults([]);
@@ -197,11 +201,11 @@ const PoSDashboard = () => {
       audio.play().catch(() => {});
       return;
     }
-    
+
     if (updateGrid) {
       setDisplayItems(results); setIsSearching(true); setSearchResults([]);
     } else {
-      if (!searchTerm) { setSearchResults([]); return; }
+      if (!term) { setSearchResults([]); return; }
       setSearchResults(results);
     }
   };
@@ -1033,7 +1037,7 @@ const PoSDashboard = () => {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
                   <Barcode className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                  <Input ref={searchInputRef} placeholder="Buscar o escanear código de barras..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); handleSearch(e); }} className="pl-10 pr-10" />
+                  <Input ref={searchInputRef} placeholder="Buscar o escanear código de barras..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); handleSearch(null, false, e.target.value); }} className="pl-10 pr-10" />
                 </div>
                 {searchResults.length > 0 && (
                   <div className="absolute top-full mt-2 w-full bg-white rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
