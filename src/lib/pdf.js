@@ -63,11 +63,11 @@ export const downloadPrescriptionPDF = (prescription, customer, filename = 'rece
   const CONTENT_W = CONTENT_R - CONTENT_L; // 7.05
 
   const VIT_X = CONTENT_L;
-  const VIT_LABEL_W = 0.55;
-  const VIT_LINE_W = 0.60;
-  const VIT_GAP = 0.22;
+  const VIT_LABEL_W = 0.48;
+  const VIT_LINE_W = 0.45;
+  const VIT_GAP = 0.18;
 
-  const MAIN_X = CONTENT_L + 1.55;
+  const MAIN_X = CONTENT_L + 1.30;
   const MAIN_R = CONTENT_R;
 
   // ── Calculate dynamic height ──────────────────────────────────────
@@ -179,14 +179,22 @@ export const downloadPrescriptionPDF = (prescription, customer, filename = 'rece
 
   vitalsList.forEach(([label, value], i) => {
     const y = BODY_Y + i * VIT_GAP * scale;
-    setFont('bold', 9);
+    setFont('bold', 8);
     txt(label, VIT_X, y);
-    setFont('normal', 9);
+    setFont('normal', 8);
     const valX = VIT_X + VIT_LABEL_W + 0.02;
-    txt(String(value || ''), valX, y);
-    // underline clearly below text
-    line(valX, y + 0.07 * scale, valX + VIT_LINE_W, y + 0.07 * scale);
+    // Wrap long values (e.g. allergies) so they stay inside the vitals column
+    const maxValW = MAIN_X - valX - 0.15;
+    const wrapped = pdf.splitTextToSize(String(value || ''), maxValW);
+    txt(wrapped, valX, y);
+    // underline clearly below first line of text
+    line(valX, y + 0.06 * scale, valX + VIT_LINE_W, y + 0.06 * scale);
   });
+
+  // Vertical divider between vitals column and main area
+  pdf.setLineWidth((1 / INCH) * scale);
+  const DIV_X = MAIN_X - 0.12;
+  line(DIV_X, BODY_Y - 0.10 * scale, DIV_X, BODY_Y + 10 * VIT_GAP * scale + 0.15);
 
   // ── Patient header ──
   const HDR_Y = BODY_Y;

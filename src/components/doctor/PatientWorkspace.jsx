@@ -22,6 +22,7 @@ import {
   updateMedicalNote, deleteMedicalNote, getInventoryForDoctor, updateCustomer,
 } from '@/lib/db';
 import PrintablePrescription from './PrintablePrescription';
+import PatientMedicalHistory from './PatientMedicalHistory';
 import { downloadPrescriptionPDF } from '@/lib/pdf';
 import { formatMXN } from '@/lib/currency';
 import { toast } from 'sonner';
@@ -78,6 +79,21 @@ const PatientWorkspace = () => {
     appointment_date: '', status: 'pending', notes: '', type: 'in_person',
   });
   const [noteForm, setNoteForm] = useState({ note: '' });
+
+  // Positive allergy entries from the patient's clinical history
+  const historyAllergies = (customer?.medical_history?.alergias || [])
+    .filter((e) => e.status !== 'denied')
+    .map((e) => (e.value ? `${e.label}: ${e.value}` : e.label))
+    .join('; ');
+
+  // Open the Nueva Receta dialog, pre-filling allergies from the history (if empty)
+  const openRxDialog = () => {
+    setRxForm((prev) => ({
+      ...prev,
+      alergias: prev.alergias || historyAllergies,
+    }));
+    setRxDialogOpen(true);
+  };
 
   const loadAll = useCallback(async () => {
     if (!customerId) return;
@@ -377,8 +393,9 @@ const PatientWorkspace = () => {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-5 w-full">
+        <TabsList className="grid grid-cols-6 w-full">
           <TabsTrigger value="resumen">Resumen</TabsTrigger>
+          <TabsTrigger value="historia">Historia</TabsTrigger>
           <TabsTrigger value="recetas">Recetas</TabsTrigger>
           <TabsTrigger value="citas">Citas</TabsTrigger>
           <TabsTrigger value="compras">Compras</TabsTrigger>
@@ -406,6 +423,13 @@ const PatientWorkspace = () => {
             </div>
           </div>
 
+          {historyAllergies && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-red-700"><span className="font-semibold">Alergias:</span> {historyAllergies}</p>
+            </div>
+          )}
+
           <div className="bg-white rounded-xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-slate-900">Información del paciente</h3>
@@ -427,11 +451,16 @@ const PatientWorkspace = () => {
           </div>
         </TabsContent>
 
+        {/* HISTORIA CLÍNICA TAB */}
+        <TabsContent value="historia">
+          <PatientMedicalHistory customer={customer} onSaved={loadAll} />
+        </TabsContent>
+
         {/* RECETAS TAB */}
         <TabsContent value="recetas" className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">Recetas médicas</h3>
-            <Button onClick={() => setRxDialogOpen(true)} size="sm">
+            <Button onClick={openRxDialog} size="sm">
               <Plus className="w-4 h-4 mr-1" /> Nueva Receta
             </Button>
           </div>

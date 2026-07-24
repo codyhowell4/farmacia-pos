@@ -553,7 +553,7 @@ const InventoryDashboard = () => {
               <table className="w-full">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    {['Nombre','Indicación','Depto','Costo','Precio','Cant','Receta','Vencimiento','Lote','Almacén','Proveedor','Acciones'].map(h => (
+                    {['Acciones','Nombre','Indicación','Depto','Costo','Precio','Cant','Receta','Vencimiento','Lote','Almacén','Proveedor'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-sm font-semibold text-slate-900">{h}</th>
                     ))}
                   </tr>
@@ -564,6 +564,14 @@ const InventoryDashboard = () => {
                     const isLow = item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD);
                     return (
                       <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-4 py-3 text-sm">
+                          <div className="flex space-x-2">
+                            <button onClick={() => handleEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit className="w-4 h-4" /></button>
+                            <button onClick={() => handleAdjustStock(item)} className="text-orange-600 hover:text-orange-800" title="Ajustar stock"><SlidersHorizontal className="w-4 h-4" /></button>
+                            <button onClick={() => viewAdjustmentHistory(item)} className="text-purple-600 hover:text-purple-800" title="Historial"><History className="w-4 h-4" /></button>
+                            <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 className="w-4 h-4" /></button>
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-sm font-medium text-slate-900">{item.name}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.use}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.department || '-'}</td>
@@ -586,14 +594,6 @@ const InventoryDashboard = () => {
                         <td className="px-4 py-3 text-sm text-slate-600">{item.batch_number || '-'}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.warehouse_location}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.suppliers?.name || '-'}</td>
-                        <td className="px-4 py-3 text-sm">
-                          <div className="flex space-x-2">
-                            <button onClick={() => handleEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit className="w-4 h-4" /></button>
-                            <button onClick={() => handleAdjustStock(item)} className="text-orange-600 hover:text-orange-800" title="Ajustar stock"><SlidersHorizontal className="w-4 h-4" /></button>
-                            <button onClick={() => viewAdjustmentHistory(item)} className="text-purple-600 hover:text-purple-800" title="Historial"><History className="w-4 h-4" /></button>
-                            <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 className="w-4 h-4" /></button>
-                          </div>
-                        </td>
                       </tr>
                     );
                   })}

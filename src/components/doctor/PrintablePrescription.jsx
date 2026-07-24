@@ -23,7 +23,7 @@ const PrintablePrescription = ({ prescription, customer }) => {
   const nextDate = formatDateMX(prescription.next_appointment);
 
   const vitals = {
-    edad: prescription.edad || customer?.date_of_birth ? calculateAge(customer.date_of_birth) : '',
+    edad: prescription.edad || (customer?.date_of_birth ? calculateAge(customer.date_of_birth) : ''),
     peso: prescription.weight_kg || customer?.weight || '',
     talla: prescription.height_cm || customer?.height || '',
     temp: prescription.temperatura || '',
@@ -119,29 +119,35 @@ const PrintablePrescription = ({ prescription, customer }) => {
         }
         .rx-body {
           display: flex;
-          gap: 0.2in;
+          gap: 0.15in;
           margin-top: 0.1in;
           flex: 1;
           min-height: 0;
         }
         .rx-vitals {
-          width: 1.3in;
-          font-size: 9pt;
-          line-height: 1.9;
+          width: 1.0in;
+          font-size: 8pt;
+          line-height: 1.55;
           flex-shrink: 0;
+          border-right: 1px solid #1a1a1a;
+          padding-right: 0.1in;
         }
         .rx-vitals label {
           font-weight: 700;
           display: inline-block;
-          width: 0.55in;
+          width: 0.48in;
+          font-size: 7.5pt;
         }
         .rx-vitals .vline {
           display: inline-block;
-          width: 0.6in;
+          width: 0.4in;
           border-bottom: 1px solid #1a1a1a;
           margin-left: 2px;
           text-align: center;
-          font-size: 9pt;
+          font-size: 8pt;
+          white-space: normal;
+          vertical-align: bottom;
+          line-height: 1.2;
         }
         .rx-main {
           flex: 1;
