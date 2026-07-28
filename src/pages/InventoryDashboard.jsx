@@ -45,6 +45,7 @@ const InventoryDashboard = () => {
     lowStockThreshold: LOW_STOCK_THRESHOLD.toString(),
     pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '',
     requiresPrescription: false, batchNumber: '', supplierId: '', department: '', itemType: 'product',
+    notes: '',
   });
   const [suppliers, setSuppliers] = useState([]);
   const [adjustmentForm, setAdjustmentForm] = useState({
@@ -104,6 +105,7 @@ const InventoryDashboard = () => {
         supplier_id: formData.supplierId || null,
         department: formData.department || null,
         item_type: formData.itemType || 'product',
+        notes: formData.notes.trim() || null,
       };
       await upsertInventoryItem(item);
       logAudit({
@@ -139,6 +141,7 @@ const InventoryDashboard = () => {
       supplierId: item.supplier_id || '',
       department: item.department || '',
       itemType: item.item_type || 'product',
+      notes: item.notes || '',
     });
     setIsDialogOpen(true);
   };
@@ -220,7 +223,7 @@ const InventoryDashboard = () => {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false, batchNumber: '', supplierId: '', department: '', itemType: 'product' });
+    setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false, batchNumber: '', supplierId: '', department: '', itemType: 'product', notes: '' });
     setEditingItem(null);
   };
 
@@ -476,7 +479,7 @@ const InventoryDashboard = () => {
                   <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2"><Label>Nombre del medicamento</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
-                      <div className="space-y-2"><Label>Indicación</Label><Input value={formData.use} onChange={(e) => setFormData({ ...formData, use: e.target.value })} required /></div>
+                      <div className="space-y-2"><Label>Para Que Es</Label><Input value={formData.use} onChange={(e) => setFormData({ ...formData, use: e.target.value })} required /></div>
                       <div className="space-y-2"><Label>Departamento</Label><Input value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })} placeholder="Ej. Analgésicos, Antibióticos" /></div>
                       <div className="space-y-2">
                         <Label>Tipo</Label>
@@ -534,6 +537,15 @@ const InventoryDashboard = () => {
                         <Label htmlFor="requiresPrescription" className="cursor-pointer">
                           Requiere receta médica (Rx) — el cajero debe ingresar el número de receta al cobrar
                         </Label>
+                      </div>
+                      <div className="md:col-span-2 space-y-2">
+                        <Label>Notas generales</Label>
+                        <Textarea
+                          value={formData.notes}
+                          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                          placeholder="Notas internas sobre este medicamento (opcional)"
+                          rows={3}
+                        />
                       </div>
                     </div>
                     <Button type="submit" className="w-full">{editingItem ? 'Actualizar medicamento' : 'Agregar medicamento'}</Button>
