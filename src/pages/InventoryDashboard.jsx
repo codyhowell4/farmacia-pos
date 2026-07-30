@@ -52,6 +52,12 @@ const InventoryDashboard = () => {
     newQuantity: '', reason: '',
   });
 
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+  const [isBulkProcessing, setIsBulkProcessing] = useState(false);
+  const [bulkEditForm, setBulkEditForm] = useState({ department: '', supplierId: '', itemType: '', requiresPrescription: 'keep' });
+
   // CSV import state
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [importRows, setImportRows] = useState([]);
@@ -220,6 +226,90 @@ const InventoryDashboard = () => {
     } catch (e) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     }
+  };
+
+  // ── BULK SELECTION HANDLERS ──
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (filteredInventory.length > 0 && selectedIds.size === filteredInventory.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredInventory.map(i => i.id)));
+    }
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`¿Eliminar ${selectedIds.size} medicamento(s)? Esta acción no se puede deshacer.`)) return;
+    setIsBulkProcessing(true);
+    let failed = 0;
+    for (const id of selectedIds) {
+      try {
+        await deleteInventoryItem(id);
+      } catch {
+        failed++;
+      }
+    }
+    const succeeded = selectedIds.size - failed;
+    logAudit({ action: AUDIT_ACTIONS.INVENTORY_DELETE, user, details: `Bulk deleted ${succeeded} item(s)${failed ? ` | ${failed} failed` : ''}` });
+    toast({
+      title: failed ? 'Eliminación parcial' : 'Medicamentos eliminados',
+      description: failed ? `${succeeded} eliminados, ${failed} con error` : `${succeeded} medicamento(s) eliminados`,
+      variant: failed ? 'destructive' : 'default',
+    });
+    clearSelection();
+    setIsBulkProcessing(false);
+    await loadInventory();
+  };
+
+  const openBulkEdit = () => {
+    setBulkEditForm({ department: '', supplierId: '', itemType: '', requiresPrescription: 'keep' });
+    setIsBulkEditOpen(true);
+  };
+
+  const handleBulkEdit = async () => {
+    const updates = {};
+    if (bulkEditForm.department.trim()) updates.department = bulkEditForm.department.trim();
+    if (bulkEditForm.supplierId) updates.supplier_id = bulkEditForm.supplierId;
+    if (bulkEditForm.itemType) updates.item_type = bulkEditForm.itemType;
+    if (bulkEditForm.requiresPrescription !== 'keep') updates.requires_prescription = bulkEditForm.requiresPrescription === 'yes';
+
+    if (Object.keys(updates).length === 0) {
+      toast({ title: 'Sin cambios', description: 'Selecciona al menos un campo para actualizar', variant: 'destructive' });
+      return;
+    }
+
+    setIsBulkProcessing(true);
+    let failed = 0;
+    for (const id of selectedIds) {
+      const item = inventory.find(i => i.id === id);
+      if (!item) { failed++; continue; }
+      try {
+        await upsertInventoryItem({ ...item, ...updates });
+      } catch {
+        failed++;
+      }
+    }
+    const succeeded = selectedIds.size - failed;
+    logAudit({ action: AUDIT_ACTIONS.INVENTORY_EDIT, user, details: `Bulk edited ${succeeded} item(s): ${Object.keys(updates).join(', ')}${failed ? ` | ${failed} failed` : ''}` });
+    toast({
+      title: failed ? 'Edición parcial' : 'Medicamentos actualizados',
+      description: failed ? `${succeeded} actualizados, ${failed} con error` : `${succeeded} medicamento(s) actualizados`,
+      variant: failed ? 'destructive' : 'default',
+    });
+    setIsBulkEditOpen(false);
+    clearSelection();
+    setIsBulkProcessing(false);
+    await loadInventory();
   };
 
   const resetForm = () => {
@@ -561,10 +651,33 @@ const InventoryDashboard = () => {
               </div>
             )}
 
+            {/* Bulk actions toolbar — visible when items are selected */}
+            {selectedIds.size > 0 && (
+              <div className="mb-4 flex items-center gap-3 bg-purple-50 border border-purple-200 rounded-lg px-4 py-2.5">
+                <span className="text-sm font-semibold text-purple-900">{selectedIds.size} seleccionado(s)</span>
+                <Button size="sm" variant="outline" onClick={openBulkEdit} disabled={isBulkProcessing}>
+                  <Edit className="w-4 h-4 mr-1" />Editar seleccionados
+                </Button>
+                <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={handleBulkDelete} disabled={isBulkProcessing}>
+                  <Trash2 className="w-4 h-4 mr-1" />Eliminar seleccionados
+                </Button>
+                <button onClick={clearSelection} className="ml-auto text-xs text-purple-700 underline">Limpiar selección</button>
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
+                    <th className="px-4 py-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={filteredInventory.length > 0 && selectedIds.size === filteredInventory.length}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 rounded border-slate-300 text-purple-600 cursor-pointer"
+                        title="Seleccionar todos"
+                      />
+                    </th>
                     {['Acciones','Nombre','Indicación','Depto','Costo','Precio','Cant','Receta','Vencimiento','Lote','Almacén','Proveedor'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-sm font-semibold text-slate-900">{h}</th>
                     ))}
@@ -574,8 +687,17 @@ const InventoryDashboard = () => {
                   {filteredInventory.map((item) => {
                     const expiryStatus = getExpiryStatus(item.expiration_date);
                     const isLow = item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD);
+                    const isSelected = selectedIds.has(item.id);
                     return (
-                      <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                      <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-purple-50' : ''}`}>
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelect(item.id)}
+                            className="w-4 h-4 rounded border-slate-300 text-purple-600 cursor-pointer"
+                          />
+                        </td>
                         <td className="px-4 py-3 text-sm">
                           <div className="flex space-x-2">
                             <button onClick={() => handleEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit className="w-4 h-4" /></button>
@@ -615,6 +737,66 @@ const InventoryDashboard = () => {
             </div>
           </div>
         </div>
+
+        {/* Bulk Edit Modal */}
+        <Dialog open={isBulkEditOpen} onOpenChange={setIsBulkEditOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Editar {selectedIds.size} medicamento(s)</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-slate-500">Solo se actualizarán los campos que modifiques. Los demás quedan igual.</p>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Departamento</Label>
+                <Input
+                  value={bulkEditForm.department}
+                  onChange={(e) => setBulkEditForm({ ...bulkEditForm, department: e.target.value })}
+                  placeholder="Dejar vacío para no cambiar"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Proveedor</Label>
+                <select
+                  value={bulkEditForm.supplierId}
+                  onChange={(e) => setBulkEditForm({ ...bulkEditForm, supplierId: e.target.value })}
+                  className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="">No cambiar</option>
+                  {suppliers.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Tipo</Label>
+                <select
+                  value={bulkEditForm.itemType}
+                  onChange={(e) => setBulkEditForm({ ...bulkEditForm, itemType: e.target.value })}
+                  className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="">No cambiar</option>
+                  <option value="product">Producto</option>
+                  <option value="service">Servicio</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Requiere receta (Rx)</Label>
+                <select
+                  value={bulkEditForm.requiresPrescription}
+                  onChange={(e) => setBulkEditForm({ ...bulkEditForm, requiresPrescription: e.target.value })}
+                  className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="keep">No cambiar</option>
+                  <option value="yes">Sí requiere receta</option>
+                  <option value="no">No requiere receta</option>
+                </select>
+              </div>
+              <Button onClick={handleBulkEdit} disabled={isBulkProcessing} className="w-full bg-gradient-to-r from-purple-500 to-pink-600">
+                {isBulkProcessing ? 'Aplicando...' : `Aplicar a ${selectedIds.size} medicamento(s)`}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Stock Adjustment Modal */}
         <Dialog open={isAdjustmentDialogOpen} onOpenChange={(open) => { if (!open) closeAdjustmentModal(); }}>
