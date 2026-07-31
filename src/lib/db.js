@@ -698,6 +698,20 @@ export const bulkInsertInventory = async (rows) => {
   return { inserted, errors };
 };
 
+// Delete ALL inventory for the org (optionally scoped to a location).
+// Used by CSV import "replace" mode.
+export const deleteAllInventory = async (locationId = null) => {
+  const orgId = await getOrgId();
+  let query = supabase.from('inventory').delete().eq('org_id', orgId);
+  if (locationId) {
+    query = query.eq('location_id', locationId);
+  } else {
+    query = query.is('location_id', null);
+  }
+  const { error } = await query;
+  if (error) throw error;
+};
+
 // ── STOCK ADJUSTMENTS ────────────────────────────────────────
 
 export const createStockAdjustment = async (adjustment) => {

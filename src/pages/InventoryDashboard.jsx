@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
-import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory } from '@/lib/db';
+import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory } from '@/lib/db';
 
 const LOW_STOCK_THRESHOLD = 0;
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -65,6 +65,7 @@ const InventoryDashboard = () => {
   const [importFileName, setImportFileName] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [importMode, setImportMode] = useState('add'); // 'add' | 'replace'
   const [lowStockExpanded, setLowStockExpanded] = useState(false);
   const [expiringExpanded, setExpiringExpanded] = useState(false);
 
@@ -334,6 +335,38 @@ const InventoryDashboard = () => {
 
   const normalizeName = (value) => (value || '').toString().trim().replace(/\s+/g, ' ');
   const normalizeDepartment = (value) => (value || '').toString().trim();
+  const normalizeText = (value) => {
+    const s = (value ?? '').toString().trim();
+    return s === '' ? null : s;
+  };
+
+  // Accepts YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY — returns YYYY-MM-DD or null
+  const parseDate = (value) => {
+    const s = (value ?? '').toString().trim();
+    if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (m) {
+      const [, a, b, y] = m;
+      const month = String(Math.min(Math.max(parseInt(b), 1), 12)).padStart(2, '0');
+      const day = String(Math.min(Math.max(parseInt(a), 1), 31)).padStart(2, '0');
+      return `${y}-${month}-${day}`;
+    }
+    return null;
+  };
+
+  const parseBool = (value) => {
+    const s = (value ?? '').toString().trim().toLowerCase();
+    return ['si', 'sí', 'yes', 'true', '1', 'rx'].includes(s);
+  };
+
+  // Look up a value from a CSV record trying multiple header variants
+  const pick = (record, ...keys) => {
+    for (const k of keys) {
+      if (record[k] !== undefined && record[k] !== null && String(record[k]).trim() !== '') return record[k];
+    }
+    return undefined;
+  };
 
   const parseCsvRows = (records) => {
     const rows = [];
@@ -341,15 +374,33 @@ const InventoryDashboard = () => {
 
     records.forEach((record, index) => {
       const line = index + 2;
-      const name = normalizeName(record.Producto ?? record.producto ?? record.Nombre ?? record.nombre);
-      const cost = parseMoney(record.Costo ?? record.costo ?? record.COSTO);
-      const price = parseMoney(record.Venta ?? record.venta ?? record.VENTA);
-      const quantity = parseQuantity(record.Existencia ?? record.existencia ?? record.EXISTENCIA ?? record.stock ?? record.cantidad);
-      const department = normalizeDepartment(record.Departamento ?? record.departamento ?? record.DEPARTAMENTO);
+      const name = normalizeName(pick(record, 'Producto', 'producto', 'PRODUCTO', 'Nombre', 'nombre', 'NOMBRE', 'Name', 'name'));
+      const use = normalizeDepartment(pick(record, 'Para Que Es', 'para que es', 'ParaQueEs', 'Indicación', 'Indicacion', 'indicación', 'Uso', 'uso', 'Use', 'use'));
+      const cost = parseMoney(pick(record, 'Costo', 'costo', 'COSTO', 'Cost', 'cost'));
+      const price = parseMoney(pick(record, 'Venta', 'venta', 'VENTA', 'Precio', 'precio', 'Price', 'price'));
+      const quantity = parseQuantity(pick(record, 'Existencia', 'existencia', 'EXISTENCIA', 'Cantidad', 'cantidad', 'Stock', 'stock', 'Quantity', 'quantity'));
+      const department = normalizeDepartment(pick(record, 'Departamento', 'departamento', 'DEPARTAMENTO', 'Depto', 'depto', 'Categoria', 'Categoría', 'Category', 'category'));
+      const threshold = pick(record, 'Umbral', 'umbral', 'Stock Mínimo', 'Stock Minimo', 'stock_minimo', 'Min Stock', 'low_stock_threshold');
+      const barcode = normalizeText(pick(record, 'Codigo', 'codigo', 'CODIGO', 'Código', 'código', 'Codigo de Barras', 'codigo de barras', 'Código de Barras', 'Barcode', 'barcode', 'UPC', 'upc', 'EAN', 'ean', 'Clave', 'clave'));
+      const expirationDate = parseDate(pick(record, 'Vencimiento', 'vencimiento', 'Caducidad', 'caducidad', 'Fecha de Vencimiento', 'Expiration', 'expiration_date', 'Expira'));
+      const batchNumber = normalizeText(pick(record, 'Lote', 'lote', 'LOTE', 'Batch', 'batch_number', 'Numero de Lote', 'Número de Lote'));
+      const warehouseLocation = normalizeText(pick(record, 'Almacén', 'almacen', 'Almacen', 'ALMACÉN', 'Ubicación', 'Ubicacion', 'ubicacion', 'Warehouse', 'warehouse_location', 'Pasillo'));
+      const requiresPrescription = parseBool(pick(record, 'Receta', 'receta', 'Rx', 'rx', 'RX', 'Requiere Receta', 'requiere_receta', 'Prescription'));
+      const supplierName = normalizeText(pick(record, 'Proveedor', 'proveedor', 'PROVEEDOR', 'Supplier', 'supplier'));
+      const itemTypeRaw = (pick(record, 'Tipo', 'tipo', 'Type', 'item_type') ?? '').toString().trim().toLowerCase();
+      const itemType = ['servicio', 'service'].includes(itemTypeRaw) ? 'service' : 'product';
+      const notes = normalizeText(pick(record, 'Notas', 'notas', 'NOTAS', 'Notes', 'notes', 'Notas Generales'));
 
       if (!name) {
         errors.push({ line, reason: 'Falta el nombre del producto', record });
         return;
+      }
+
+      // Resolve supplier by name (case-insensitive); if not found, import without supplier
+      let supplierId = null;
+      if (supplierName) {
+        const match = suppliers.find(s => s.name.toLowerCase() === supplierName.toLowerCase());
+        if (match) supplierId = match.id;
       }
 
       rows.push({
@@ -358,16 +409,17 @@ const InventoryDashboard = () => {
         price,
         quantity,
         department: department || null,
-        use: department || null,
-        low_stock_threshold: LOW_STOCK_THRESHOLD,
+        use: use || department || null,
+        low_stock_threshold: threshold !== undefined ? parseQuantity(threshold) : LOW_STOCK_THRESHOLD,
         location_id: user?.locationId || null,
-        barcode: null,
-        warehouse_location: null,
-        expiration_date: null,
-        requires_prescription: false,
-        batch_number: null,
-        supplier_id: null,
-        item_type: 'product',
+        barcode,
+        warehouse_location: warehouseLocation,
+        expiration_date: expirationDate,
+        requires_prescription: requiresPrescription,
+        batch_number: batchNumber,
+        supplier_id: supplierId,
+        item_type: itemType,
+        notes,
         sales_count: 0,
       });
     });
@@ -402,11 +454,23 @@ const InventoryDashboard = () => {
 
   const handleImport = async () => {
     if (importRows.length === 0) return;
+
+    if (importMode === 'replace') {
+      const ok = confirm(
+        `⚠️ MODO REEMPLAZO: Se eliminarán TODOS los productos actuales del inventario y se reemplazarán con los ${importRows.length} del CSV.\n\n¿Estás seguro de continuar?`
+      );
+      if (!ok) return;
+    }
+
     setIsImporting(true);
     try {
+      if (importMode === 'replace') {
+        await deleteAllInventory(user?.locationId);
+        logAudit({ action: AUDIT_ACTIONS.INVENTORY_DELETE, user, details: `CSV replace: wiped inventory before importing ${importFileName}` });
+      }
       const { inserted, errors } = await bulkInsertInventory(importRows);
       setImportResult({ inserted, errors: errors.length });
-      logAudit({ action: AUDIT_ACTIONS.INVENTORY_ADD, user, details: `CSV import: ${inserted} products from ${importFileName}` });
+      logAudit({ action: AUDIT_ACTIONS.INVENTORY_ADD, user, details: `CSV import (${importMode}): ${inserted} products from ${importFileName}` });
       toast({ title: 'Importación completada', description: `${inserted} productos importados.` });
       if (errors.length === 0) {
         setTimeout(() => {
@@ -846,9 +910,39 @@ const InventoryDashboard = () => {
             </DialogHeader>
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
-                <p className="font-semibold mb-1">Columnas esperadas:</p>
-                <p><code>Producto, Costo, Venta, Existencia, Departamento</code></p>
-                <p className="mt-1 text-blue-700">Los campos faltantes (código de barras, lote, vencimiento, receta, etc.) los podrás completar después editando cada producto.</p>
+                <p className="font-semibold mb-1">Columnas soportadas (todas opcionales excepto Producto):</p>
+                <p><code>Producto, Para Que Es, Costo, Venta, Existencia, Departamento, Umbral, Codigo, Vencimiento, Lote, Almacén, Receta, Proveedor, Tipo, Notas</code></p>
+                <p className="mt-1 text-blue-700">También se aceptan variantes en inglés (Name, Price, Stock, Barcode, UPC, Batch, Supplier, Notes...). El Proveedor se relaciona por nombre.</p>
+              </div>
+
+              {/* Import mode selector */}
+              <div className="space-y-2">
+                <Label>Modo de importación</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setImportMode('add')}
+                    disabled={isImporting}
+                    className={`p-3 rounded-lg border-2 text-left transition-all ${importMode === 'add' ? 'border-purple-500 bg-purple-50' : 'border-slate-200 hover:border-slate-300'}`}
+                  >
+                    <p className={`text-sm font-semibold ${importMode === 'add' ? 'text-purple-700' : 'text-slate-700'}`}>Agregar</p>
+                    <p className="text-xs text-slate-500">Conserva los productos actuales y agrega los del CSV</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImportMode('replace')}
+                    disabled={isImporting}
+                    className={`p-3 rounded-lg border-2 text-left transition-all ${importMode === 'replace' ? 'border-red-500 bg-red-50' : 'border-slate-200 hover:border-slate-300'}`}
+                  >
+                    <p className={`text-sm font-semibold ${importMode === 'replace' ? 'text-red-700' : 'text-slate-700'}`}>Reemplazar</p>
+                    <p className="text-xs text-slate-500">Borra todo el inventario y sube solo los del CSV</p>
+                  </button>
+                </div>
+                {importMode === 'replace' && (
+                  <p className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> Se pedirá confirmación antes de borrar el inventario actual.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -878,6 +972,8 @@ const InventoryDashboard = () => {
                           <th className="px-2 py-1 text-right">Venta</th>
                           <th className="px-2 py-1 text-right">Cant</th>
                           <th className="px-2 py-1 text-left">Depto</th>
+                          <th className="px-2 py-1 text-left">Código</th>
+                          <th className="px-2 py-1 text-left">Rx</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200">
@@ -888,6 +984,8 @@ const InventoryDashboard = () => {
                             <td className="px-2 py-1 text-right">{formatMXN(row.price)}</td>
                             <td className="px-2 py-1 text-right">{row.quantity}</td>
                             <td className="px-2 py-1 text-slate-600">{row.department || '-'}</td>
+                            <td className="px-2 py-1 text-slate-600">{row.barcode || '-'}</td>
+                            <td className="px-2 py-1 text-slate-600">{row.requires_prescription ? 'Sí' : 'No'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -926,7 +1024,7 @@ const InventoryDashboard = () => {
                   disabled={importRows.length === 0 || isImporting}
                   className="flex-1 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700"
                 >
-                  {isImporting ? 'Importando...' : `Importar ${importRows.length} productos`}
+                  {isImporting ? 'Importando...' : importMode === 'replace' ? `Reemplazar con ${importRows.length} productos` : `Importar ${importRows.length} productos`}
                 </Button>
                 <Button variant="outline" onClick={closeImportDialog} disabled={isImporting}>Cancelar</Button>
               </div>
