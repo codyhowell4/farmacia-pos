@@ -1770,7 +1770,7 @@ export const getInventoryLowStock = async () => {
     .order('quantity', { ascending: true });
   if (error) throw error;
   return (data || []).filter(item =>
-    item.quantity <= (item.low_stock_threshold || 10) || item.quantity === 0
+    item.quantity <= (item.low_stock_threshold ?? 0) || item.quantity === 0
   );
 };
 

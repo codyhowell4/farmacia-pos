@@ -235,7 +235,7 @@ window.FarmaciaAPI = (function () {
             stock:                item.quantity || 0,
             requiresPrescription: item.requires_prescription || false,
             imageUrl:             item.image_url || null,
-            lowStockThreshold:    item.low_stock_threshold || 10,
+            lowStockThreshold:    item.low_stock_threshold ?? 0,
             source:               'supabase'
           }));
         }

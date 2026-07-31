@@ -188,7 +188,7 @@ const AdminSuppliers = () => {
       for (const item of inventory) {
         const sold30 = salesMap[item.id] || 0;
         const avgDaily = sold30 / 30;
-        const threshold = item.low_stock_threshold || 10;
+        const threshold = item.low_stock_threshold ?? 0;
         const current = item.quantity || 0;
 
         // Suggest reorder if stock will run out within 30 days OR below threshold

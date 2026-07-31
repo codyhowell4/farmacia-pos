@@ -231,7 +231,7 @@ The canonical schema is **`supabase_schema.sql`**. Additional migration/fix file
 - Inventory is decremented via `decrement_inventory` RPC (with manual fallback).
 
 ### Inventory (`InventoryDashboard.jsx`)
-- Low-stock threshold per item (default 10).
+- Low-stock threshold per item (default 0 — alerts only when out of stock).
 - Expiry alerts: orange (< 30 days), yellow (< 90 days), red (expired).
 - Stock adjustments require a reason and are logged in `stock_adjustments`.
 

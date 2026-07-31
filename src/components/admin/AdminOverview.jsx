@@ -43,7 +43,7 @@ const AdminOverview = () => {
       }
       
       const totalRevenue = filteredSales.reduce((sum, sale) => sum + sale.total, 0);
-      const lowStockItems = inventory.filter(item => item.quantity > 0 && item.quantity < (item.low_stock_threshold || 10)).length;
+      const lowStockItems = inventory.filter(item => item.quantity > 0 && item.quantity < (item.low_stock_threshold ?? 0)).length;
       const outOfStockItems = inventory.filter(item => item.quantity === 0).length;
       const pendingPrescriptions = activeRxCount;
       const pendingPreorders = preorders.filter(p => (p.status || 'pending') === 'pending').length;

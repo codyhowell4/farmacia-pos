@@ -214,7 +214,7 @@ function buildInventoryRows(records, orgId, locationId, mergeDuplicates, departm
       cost,
       price,
       quantity,
-      low_stock_threshold: 10,
+      low_stock_threshold: 0,
       barcode,
       warehouse_location: null,
       expiration_date: null,

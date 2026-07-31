@@ -13,7 +13,7 @@ import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
 import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory } from '@/lib/db';
 
-const LOW_STOCK_THRESHOLD = 10;
+const LOW_STOCK_THRESHOLD = 0;
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
 
 const getExpiryStatus = (expirationDate) => {
