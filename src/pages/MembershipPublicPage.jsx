@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/supabase';
 import { tokenizeCard, isOpenPayConfigured, maskCardNumber } from '@/lib/openpay';
-import { Users, User, CreditCard, Banknote, CheckCircle, Activity, MapPin } from 'lucide-react';
+import { Users, User, CreditCard, Banknote, CheckCircle, Activity, MapPin, ArrowLeft } from 'lucide-react';
 
 const PLANS = {
   individual: {
@@ -219,6 +219,10 @@ const MembershipPublicPage = () => {
 
   const renderForm = () => (
     <div className="max-w-2xl mx-auto space-y-6">
+      <Button variant="outline" onClick={() => setStep('plans')} className="flex items-center gap-2">
+        <ArrowLeft className="w-4 h-4" /> Volver a planes
+      </Button>
+
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
         <div>
           <p className="font-bold text-blue-900">{plan.name}</p>
