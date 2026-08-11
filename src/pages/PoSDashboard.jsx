@@ -100,8 +100,12 @@ const PoSDashboard = () => {
           .slice(0, 10)
       );
     }).catch(console.error);
-    ensureMembershipConsultationProduct(user.locationId)
-      .then(setMembershipConsultationProduct)
+    ensureMembershipConsultationProduct()
+      .then((product) => {
+        setMembershipConsultationProduct(product);
+        setInventory((prev) => (prev.some((i) => i.id === product.id) ? prev : [...prev, product]));
+        setDisplayItems((prev) => (prev.some((i) => i.id === product.id) ? prev : [...prev, product]));
+      })
       .catch(console.error);
     processMembershipRenewals().catch(console.error);
     getTaxSettingsDb().then(setTaxSettings).catch(console.error);

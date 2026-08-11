@@ -2246,37 +2246,36 @@ export const decrementMembershipVisits = async (membershipId, count) => {
   if (error) throw error;
 };
 
-export const ensureMembershipConsultationProduct = async (locationId) => {
+export const ensureMembershipConsultationProduct = async () => {
   const orgId = await getOrgId();
 
-  // Prefer a product tied to the current POS location
-  const { data: byLocation, error: locErr } = await supabase
+  // Look for an existing org-wide membership consultation product
+  const { data: existing, error: fetchErr } = await supabase
     .from('inventory')
     .select('*')
     .eq('org_id', orgId)
-    .eq('location_id', locationId)
     .eq('is_membership_consultation', true)
-    .maybeSingle();
-  if (locErr) throw locErr;
-  if (byLocation) return byLocation;
-
-  // Fall back to an org-wide product if one already exists
-  const { data: orgWide, error: orgErr } = await supabase
-    .from('inventory')
-    .select('*')
-    .eq('org_id', orgId)
     .is('location_id', null)
+    .maybeSingle();
+  if (fetchErr) throw fetchErr;
+  if (existing) return existing;
+
+  // Also support legacy location-specific products if they exist
+  const { data: legacy, error: legacyErr } = await supabase
+    .from('inventory')
+    .select('*')
+    .eq('org_id', orgId)
     .eq('is_membership_consultation', true)
     .maybeSingle();
-  if (orgErr) throw orgErr;
-  if (orgWide) return orgWide;
+  if (legacyErr) throw legacyErr;
+  if (legacy) return legacy;
 
-  // Create it for this location
+  // Create an org-wide product so it is valid at every location
   const { data: created, error: createErr } = await supabase
     .from('inventory')
     .insert({
       org_id: orgId,
-      location_id: locationId,
+      location_id: null,
       name: 'CONSULTA MEDICA MEMBRESIA',
       item_type: 'servicio',
       department: 'consultorio',

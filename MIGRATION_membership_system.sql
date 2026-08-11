@@ -108,3 +108,72 @@ create policy membership_members_org_isolation on membership_members
   with check (
     membership_id in (select id from memberships where org_id = get_my_org_id())
   );
+
+-- Public signup RPC (security definer so anonymous users can register)
+create or replace function public_signup_membership(
+  p_org_id uuid,
+  p_customer jsonb,
+  p_membership jsonb,
+  p_member_names text[] default array[]::text[]
+) returns jsonb language plpgsql security definer as $$
+declare
+  v_customer_id uuid;
+  v_membership memberships%rowtype;
+  v_start date;
+  v_next date;
+  v_day int;
+  i int;
+begin
+  insert into customers (org_id, full_name, email, phone)
+  values (
+    p_org_id,
+    p_customer->>'full_name',
+    p_customer->>'email',
+    p_customer->>'phone'
+  )
+  returning id into v_customer_id;
+
+  v_start := current_date;
+  v_day := extract(day from v_start)::int;
+  v_next := v_start + interval '1 month';
+  if extract(day from v_next) < v_day then
+    v_next := date_trunc('month', v_next) + interval '1 month' - interval '1 day';
+  end if;
+
+  insert into memberships (
+    org_id, customer_id, plan_type, status, discount_percent,
+    visits_remaining, visits_limit, premium_trackers, monthly_amount,
+    payment_method, next_renewal_date, renewal_day,
+    card_token, card_last4, payment_processor,
+    processor_customer_id, processor_subscription_id
+  ) values (
+    p_org_id, v_customer_id,
+    p_membership->>'plan_type', 'active', (p_membership->>'discount_percent')::numeric,
+    (p_membership->>'visits_limit')::int, (p_membership->>'visits_limit')::int,
+    (p_membership->>'premium_trackers')::int, (p_membership->>'monthly_amount')::numeric,
+    p_membership->>'payment_method', v_next, v_day,
+    p_membership->>'card_token', p_membership->>'card_last4',
+    p_membership->>'payment_processor',
+    p_membership->>'processor_customer_id', p_membership->>'processor_subscription_id'
+  )
+  returning * into v_membership;
+
+  insert into membership_members (membership_id, sub_id, name, is_owner)
+  values (v_membership.id, v_membership.plan_id || '-1', p_customer->>'full_name', true);
+
+  if p_member_names is not null then
+    for i in 1..array_length(p_member_names, 1) loop
+      insert into membership_members (membership_id, sub_id, name, is_owner)
+      values (v_membership.id, v_membership.plan_id || '-' || (i+1), p_member_names[i], false);
+    end loop;
+  end if;
+
+  return jsonb_build_object(
+    'membership', to_jsonb(v_membership),
+    'customer', to_jsonb((select row_to_json(c) from customers c where c.id = v_customer_id)),
+    'members', (select coalesce(jsonb_agg(row_to_json(m)), '[]'::jsonb) from membership_members m where m.membership_id = v_membership.id)
+  );
+end;
+$$;
+
+grant execute on function public_signup_membership(uuid, jsonb, jsonb, text[]) to anon, authenticated;
