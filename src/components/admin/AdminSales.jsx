@@ -173,15 +173,14 @@ const AdminSales = () => {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200"><tr><th className="px-4 py-3 text-left font-semibold text-slate-900 w-10"></th><th className="px-4 py-3 text-left font-semibold text-slate-900">Fecha y hora</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Vendedor</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Farmacia</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Artículos</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Pago</th><th className="px-4 py-3 text-left font-semibold text-slate-900">IVA</th>
-              <th className="px-4 py-3 text-left font-semibold text-slate-900">Descuento</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Total</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Akaunting</th></tr></thead>
+            <thead className="bg-slate-50 border-b border-slate-200"><tr><th className="px-4 py-3 text-left font-semibold text-slate-900 w-10"></th><th className="px-4 py-3 text-left font-semibold text-slate-900">Fecha y hora</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Farmacia</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Artículos</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Pago</th><th className="px-4 py-3 text-left font-semibold text-slate-900">IVA</th>
+              <th className="px-4 py-3 text-left font-semibold text-slate-900">Descuento</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Total</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Akaunting</th><th className="px-4 py-3 text-left font-semibold text-slate-900">Vendedor</th></tr></thead>
             <tbody className="divide-y divide-slate-200">
               {filteredSales.map((sale) => (
                 <React.Fragment key={sale.id}>
                 <tr className={`hover:bg-slate-50 transition-colors cursor-pointer ${sale.voided ? 'opacity-50' : ''}`} onClick={() => toggleExpand(sale.id)}>
                   <td className="px-4 py-3 text-center">{expandedSale === sale.id ? <ChevronUp className="w-4 h-4"/> : <ChevronDown className="w-4 h-4"/>}</td>
                   <td className="px-4 py-3 text-slate-600">{new Date(sale.timestamp).toLocaleString()}</td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{sale.salesperson}</td>
                   <td className="px-4 py-3 text-slate-600">{sale.location_id}</td>
                   <td className="px-4 py-3 text-slate-600">{sale.sale_items ? sale.sale_items.length : 0}</td>
                   <td className="px-4 py-3"><PaymentBadge method={sale.payment_method} /></td>
@@ -213,6 +212,7 @@ const AdminSales = () => {
                       )}
                     </div>
                   </td>
+                  <td className="px-4 py-3 font-medium text-slate-900">{sale.salesperson}</td>
                 </tr>
                 {expandedSale === sale.id && (
                     <tr>

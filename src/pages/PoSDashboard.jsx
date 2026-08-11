@@ -465,6 +465,7 @@ const PoSDashboard = () => {
         timestamp: new Date().toISOString(),
         voided: false,
         is_split_payment: isSplitPayment,
+        status: 'completed',
       };
 
       const saleItems = cart.map(item => ({
