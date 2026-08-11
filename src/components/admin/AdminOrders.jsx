@@ -33,6 +33,7 @@ const AdminOrders = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
+  const [cancellingAll, setCancellingAll] = useState(false);
   const { toast } = useToast();
 
   const loadSales = async () => {
@@ -142,6 +143,48 @@ const AdminOrders = () => {
     }
   };
 
+  const cancelAllOrders = async () => {
+    const toCancel = sales.filter((s) => !s.voided && s.status !== 'cancelled');
+    if (toCancel.length === 0) {
+      toast({ title: 'No hay pedidos para cancelar' });
+      return;
+    }
+    if (!window.confirm(`¿Cancelar ${toCancel.length} pedido(s)? Esta acción no se puede deshacer.`)) return;
+
+    setCancellingAll(true);
+    let cancelled = 0;
+    let errors = 0;
+
+    for (const sale of toCancel) {
+      try {
+        if (sale.sale_items?.length > 0) {
+          for (const item of sale.sale_items) {
+            if (item.inventory_id && item.quantity > 0) {
+              await incrementInventory(
+                [{ inventory_id: item.inventory_id, quantity: item.quantity, name: item.name }],
+                sale.id,
+                'order_cancel'
+              );
+            }
+          }
+        }
+        await updateSaleStatus(sale.id, 'cancelled');
+        cancelled++;
+      } catch (err) {
+        console.error(err);
+        errors++;
+      }
+    }
+
+    setCancellingAll(false);
+    toast({
+      title: 'Cancelación masiva finalizada',
+      description: `${cancelled} pedido(s) cancelado(s)${errors ? `, ${errors} error(es)` : ''}.`,
+      variant: errors ? 'destructive' : 'default',
+    });
+    await loadSales();
+  };
+
   const filtered = sales.filter((s) => {
     if (s.voided) return false;
     const matchesSearch =
@@ -217,6 +260,15 @@ const AdminOrders = () => {
             <option value="completed">Completado</option>
             <option value="cancelled">Cancelado</option>
           </select>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={cancellingAll || isLoading}
+            onClick={cancelAllOrders}
+          >
+            {cancellingAll ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <XCircle className="w-4 h-4 mr-1" />}
+            Cancelar todos
+          </Button>
         </div>
 
         {isLoading ? (

@@ -259,6 +259,12 @@ const AdminSales = () => {
                                     </li>
                                 ))}
                                </ul>
+                               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+                                 <div className="text-slate-600">Pago: <PaymentBadge method={sale.payment_method} /></div>
+                                 <div className="text-slate-900">
+                                   Total: <span className={`text-lg font-bold ${sale.voided ? 'text-slate-500 line-through' : 'text-green-600'}`}>{formatMXN(sale.total || 0)}</span>
+                                 </div>
+                               </div>
                             </motion.div>
                         </td>
                     </tr>
