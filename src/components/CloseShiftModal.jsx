@@ -134,17 +134,18 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
     win.document.write(`
       <!DOCTYPE html><html><head><title>Reporte de Turno - ${reportShift?.opened_by_name}</title>
       <style>
-        body { font-family: 'Courier New', monospace; font-size: 11px; width: 300px; margin: 0 auto; padding: 16px; color: #000; }
-        h2 { text-align: center; font-size: 14px; margin: 0 0 4px; }
-        h3 { text-align: center; font-size: 12px; margin: 8px 0 4px; border-top: 1px dashed #000; padding-top: 8px; }
-        p { margin: 2px 0; }
+        @page { margin: 0; size: 48mm 210mm; }
+        body { font-family: 'Courier New', 'Lucida Console', monospace; font-size: 10pt; font-weight: bold; line-height: 1.25; width: 48mm; max-width: 48mm; margin: 0; padding: 2mm; color: #000; box-sizing: border-box; word-break: break-word; overflow-wrap: break-word; }
+        h2 { text-align: center; font-size: 11pt; font-weight: 900; margin: 0 0 2mm; }
+        h3 { text-align: center; font-size: 10pt; font-weight: 900; margin: 2mm 0 1mm; border-top: 1px dashed #000; padding-top: 2mm; }
+        p { margin: 1mm 0; }
         .center { text-align: center; }
-        .divider { border-top: 1px dashed #000; margin: 8px 0; }
-        .row { display: flex; justify-content: space-between; }
-        .bold { font-weight: bold; }
-        .total-row { display: flex; justify-content: space-between; font-weight: bold; font-size: 12px; }
-        .section { margin: 8px 0; }
-        @media print { body { width: 100%; } }
+        .divider { border-top: 1px dashed #000; margin: 2mm 0; }
+        .row { display: flex; justify-content: space-between; gap: 2mm; }
+        .bold { font-weight: 900; }
+        .total-row { display: flex; justify-content: space-between; font-weight: 900; font-size: 11pt; }
+        .section { margin: 2mm 0; }
+        @media print { body { width: 100%; padding: 2mm; margin: 0; } }
       </style></head>
       <body>${content}</body></html>
     `);

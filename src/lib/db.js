@@ -2060,3 +2060,234 @@ export const getReorderRecommendations = async (locationId = null) => {
   if (error) throw error;
   return data || [];
 };
+
+// ── MEMBERSHIPS ─────────────────────────────────────────────
+
+const addMonthsWithLastDayRule = (date, months) => {
+  const d = new Date(date);
+  const originalDay = d.getDate();
+  d.setMonth(d.getMonth() + months);
+  if (d.getDate() !== originalDay) {
+    // Month is shorter than the original day; use its last day
+    d.setDate(0);
+  }
+  return d;
+};
+
+export const processMembershipRenewals = async () => {
+  const orgId = await getOrgId();
+  const today = new Date().toISOString().split('T')[0];
+  const { data: due, error } = await supabase
+    .from('memberships')
+    .select('*')
+    .eq('org_id', orgId)
+    .lte('next_renewal_date', today)
+    .in('status', ['active', 'paused']);
+  if (error) throw error;
+  if (!due?.length) return 0;
+
+  for (const m of due) {
+    const newDate = addMonthsWithLastDayRule(m.next_renewal_date, 1);
+    const nextRenewal = newDate.toISOString().split('T')[0];
+    const renewalDay = newDate.getDate();
+
+    if (m.payment_method === 'cash') {
+      await supabase.from('memberships').update({
+        status: 'pending_payment',
+        next_renewal_date: nextRenewal,
+        renewal_day: renewalDay,
+        updated_at: new Date().toISOString(),
+      }).eq('id', m.id);
+    } else {
+      await supabase.from('memberships').update({
+        visits_remaining: m.visits_limit,
+        next_renewal_date: nextRenewal,
+        renewal_day: renewalDay,
+        status: 'active',
+        updated_at: new Date().toISOString(),
+      }).eq('id', m.id);
+    }
+  }
+  return due.length;
+};
+
+export const createMembership = async ({ customer, membership, familyMembers = [] }) => {
+  const orgId = await getOrgId();
+  const createdCustomer = await createCustomer(customer);
+
+  const startDate = new Date();
+  const nextRenewal = addMonthsWithLastDayRule(startDate, 1);
+
+  const { data: membershipRow, error } = await supabase
+    .from('memberships')
+    .insert({
+      ...membership,
+      org_id: orgId,
+      customer_id: createdCustomer.id,
+      visits_remaining: membership.visits_limit,
+      next_renewal_date: nextRenewal.toISOString().split('T')[0],
+      renewal_day: nextRenewal.getDate(),
+    })
+    .select('*, customers(*)')
+    .single();
+  if (error) throw error;
+
+  const members = [
+    {
+      membership_id: membershipRow.id,
+      sub_id: `${membershipRow.plan_id}-1`,
+      name: customer.full_name,
+      is_owner: true,
+    },
+  ];
+  (familyMembers || []).forEach((name, idx) => {
+    members.push({
+      membership_id: membershipRow.id,
+      sub_id: `${membershipRow.plan_id}-${idx + 2}`,
+      name,
+      is_owner: false,
+    });
+  });
+
+  if (members.length > 0) {
+    const { error: mErr } = await supabase.from('membership_members').insert(members);
+    if (mErr) throw mErr;
+  }
+
+  return { ...membershipRow, membership_members: members };
+};
+
+export const getMemberships = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('memberships')
+    .select('*, customers(*), membership_members(*)')
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const searchMemberships = async (searchTerm) => {
+  const orgId = await getOrgId();
+  const term = (searchTerm || '').trim().toLowerCase();
+  const { data, error } = await supabase
+    .from('memberships')
+    .select('*, customers(*), membership_members(*)')
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  if (!term) return data || [];
+
+  return (data || []).filter((m) => {
+    const inMembership =
+      (m.plan_id || '').toLowerCase().includes(term) ||
+      (m.status || '').toLowerCase().includes(term);
+    const inCustomer =
+      (m.customers?.full_name || '').toLowerCase().includes(term) ||
+      (m.customers?.phone || '').toLowerCase().includes(term) ||
+      (m.customers?.email || '').toLowerCase().includes(term);
+    const inMembers = (m.membership_members || []).some(
+      (mm) =>
+        (mm.sub_id || '').toLowerCase().includes(term) ||
+        (mm.name || '').toLowerCase().includes(term)
+    );
+    return inMembership || inCustomer || inMembers;
+  });
+};
+
+export const getMembershipById = async (id) => {
+  const { data, error } = await supabase
+    .from('memberships')
+    .select('*, customers(*), membership_members(*)')
+    .eq('id', id)
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const updateMembership = async (id, { customerUpdates, membershipUpdates }) => {
+  const { data: current, error: fetchErr } = await supabase
+    .from('memberships')
+    .select('customer_id')
+    .eq('id', id)
+    .single();
+  if (fetchErr) throw fetchErr;
+
+  if (customerUpdates && Object.keys(customerUpdates).length > 0) {
+    await updateCustomer(current.customer_id, customerUpdates);
+  }
+
+  if (membershipUpdates && Object.keys(membershipUpdates).length > 0) {
+    const { error } = await supabase
+      .from('memberships')
+      .update({ ...membershipUpdates, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
+  }
+
+  return getMembershipById(id);
+};
+
+export const decrementMembershipVisits = async (membershipId, count) => {
+  if (!membershipId || count <= 0) return;
+  const { data: current, error: fetchErr } = await supabase
+    .from('memberships')
+    .select('visits_remaining')
+    .eq('id', membershipId)
+    .single();
+  if (fetchErr) throw fetchErr;
+
+  const newValue = Math.max(0, (current?.visits_remaining || 0) - count);
+  const { error } = await supabase
+    .from('memberships')
+    .update({ visits_remaining: newValue, updated_at: new Date().toISOString() })
+    .eq('id', membershipId);
+  if (error) throw error;
+};
+
+export const ensureMembershipConsultationProduct = async (locationId) => {
+  const orgId = await getOrgId();
+
+  // Prefer a product tied to the current POS location
+  const { data: byLocation, error: locErr } = await supabase
+    .from('inventory')
+    .select('*')
+    .eq('org_id', orgId)
+    .eq('location_id', locationId)
+    .eq('is_membership_consultation', true)
+    .maybeSingle();
+  if (locErr) throw locErr;
+  if (byLocation) return byLocation;
+
+  // Fall back to an org-wide product if one already exists
+  const { data: orgWide, error: orgErr } = await supabase
+    .from('inventory')
+    .select('*')
+    .eq('org_id', orgId)
+    .is('location_id', null)
+    .eq('is_membership_consultation', true)
+    .maybeSingle();
+  if (orgErr) throw orgErr;
+  if (orgWide) return orgWide;
+
+  // Create it for this location
+  const { data: created, error: createErr } = await supabase
+    .from('inventory')
+    .insert({
+      org_id: orgId,
+      location_id: locationId,
+      name: 'CONSULTA MEDICA MEMBRESIA',
+      item_type: 'servicio',
+      department: 'consultorio',
+      price: 100,
+      cost: 0,
+      quantity: 9999,
+      low_stock_threshold: 0,
+      is_membership_consultation: true,
+    })
+    .select()
+    .single();
+  if (createErr) throw createErr;
+  return created;
+};

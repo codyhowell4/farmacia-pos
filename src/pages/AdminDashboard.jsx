@@ -6,6 +6,7 @@ import {
   Users, Package, ShoppingCart, LogOut, BarChart3, Store, Ticket, Menu, X, Clock, Shield,
   Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle, Stethoscope, Smartphone,
   ClipboardList, Pill, CalendarDays, AlertTriangle, ChevronDown, ChevronRight, UserPlus,
+  Award,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -29,6 +30,8 @@ import AdminAppointments from '@/components/admin/AdminAppointments';
 import AdminOrders from '@/components/admin/AdminOrders';
 import AdminCustomerProfile from '@/components/admin/AdminCustomerProfile';
 import AdminReorderReport from '@/components/admin/AdminReorderReport';
+import MembershipRegistration from '@/components/admin/MembershipRegistration';
+import AdminMemberships from '@/components/admin/AdminMemberships';
 
 const AdminDashboard = () => {
   const { logout, user } = useAuth();
@@ -58,6 +61,8 @@ const AdminDashboard = () => {
     if (path.includes('/preorders')) return 'preorders';
     if (path.includes('/appointments')) return 'appointments';
     if (path.includes('/orders')) return 'orders';
+    if (path.includes('/membership-register')) return 'membership-register';
+    if (path.includes('/memberships')) return 'memberships';
     if (path.includes('/reorder-report')) return 'reorder-report';
     return 'overview';
   };
@@ -187,6 +192,10 @@ const AdminDashboard = () => {
         <ClipboardList className="w-5 h-5" />
         <span className="font-medium">Recetas médicas</span>
       </button>
+      <button onClick={() => navigateTo('/admin/memberships', 'memberships')} className={navButtonClass(isActive('memberships'))}>
+        <Award className="w-5 h-5" />
+        <span className="font-medium">Membresía</span>
+      </button>
 
       {/* Análisis — Collapsible submenu */}
       <div>
@@ -276,6 +285,10 @@ const AdminDashboard = () => {
                   <UserPlus className="w-4 h-4" />
                   <span>Registrar cliente</span>
                 </Button>
+                <Button onClick={() => navigate('/admin/membership-register')} variant="outline" className="hidden sm:flex items-center space-x-2 border-amber-200 text-amber-700 hover:bg-amber-50">
+                  <Award className="w-4 h-4" />
+                  <span>Registrar Membresía</span>
+                </Button>
                 <Button onClick={() => navigate('/pos')} className="bg-green-600 hover:bg-green-700 text-white hidden sm:flex border-none">
                   Punto de Venta
                 </Button>
@@ -347,6 +360,8 @@ const AdminDashboard = () => {
                 <Route path="/preorders" element={<AdminPreorders />} />
                 <Route path="/appointments" element={<AdminAppointments />} />
                 <Route path="/orders" element={<AdminOrders />} />
+                <Route path="/membership-register" element={<MembershipRegistration />} />
+                <Route path="/memberships" element={<AdminMemberships />} />
                 <Route path="/customers/:customerId" element={<AdminCustomerProfile />} />
                 <Route path="/reorder-report" element={<AdminReorderReport />} />
                 <Route path="/settings" element={<AdminSettings />} />

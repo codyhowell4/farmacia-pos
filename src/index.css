@@ -36,30 +36,58 @@ body {
   @apply border-border;
 }
 
-/* ── Thermal receipt printing (58mm) ─────────────────────────
+/* ── Thermal receipt printing (48 x 210mm) ───────────────────
    Only active while body has .receipt-print-mode (set by
    ReceiptModal.handlePrint), so other print flows are unaffected. */
 @media print {
+  @page {
+    margin: 0;
+    size: 48mm 210mm;
+  }
+
   body.receipt-print-mode * {
     visibility: hidden;
   }
   body.receipt-print-mode #receipt-print-area,
   body.receipt-print-mode #receipt-print-area * {
     visibility: visible;
+    color: #000 !important;
+    background: #fff !important;
   }
   body.receipt-print-mode #receipt-print-area {
     display: block !important;
     position: absolute;
     left: 0;
     top: 0;
-    width: 58mm;
-    max-width: 58mm;
+    width: 48mm;
+    max-width: 48mm;
     margin: 0;
     padding: 0;
     background: #fff;
     color: #000;
+    font-family: 'Courier New', 'Lucida Console', monospace;
+    font-size: 10pt;
+    font-weight: bold;
+    line-height: 1.25;
   }
   body.receipt-print-mode #receipt-print-area .p-4 {
-    padding: 2mm;
+    padding: 1.5mm;
+  }
+  body.receipt-print-mode #receipt-print-area .font-mono {
+    font-family: 'Courier New', 'Lucida Console', monospace;
+  }
+  body.receipt-print-mode #receipt-print-area .text-xs,
+  body.receipt-print-mode #receipt-print-area .text-sm,
+  body.receipt-print-mode #receipt-print-area .text-base {
+    font-size: 10pt;
+  }
+  body.receipt-print-mode #receipt-print-area .font-bold,
+  body.receipt-print-mode #receipt-print-area .font-semibold {
+    font-weight: 900;
+  }
+  body.receipt-print-mode #receipt-print-area .truncate {
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: break-word;
   }
 }

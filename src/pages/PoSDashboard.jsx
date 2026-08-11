@@ -11,11 +11,13 @@ import ReceiptModal from '@/components/ReceiptModal';
 import PatientModal from '@/components/PatientModal';
 import ReturnModal from '@/components/ReturnModal';
 import PrescriptionModal from '@/components/PrescriptionModal';
+import MembershipPosLookup from '@/components/MembershipPosLookup';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN, getTaxSettings, calcIVA } from '@/lib/currency';
 import {
   getInventory, createSale, createSaleWithPayments, getRecentSales, voidSale, findDiscount,
   getTaxSettingsDb, getBankAccounts, createPrescription, linkPrescriptionToSale, searchCustomers, createCustomer,
+  processMembershipRenewals, ensureMembershipConsultationProduct, decrementMembershipVisits,
 } from '@/lib/db';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -84,6 +86,8 @@ const PoSDashboard = () => {
   const [returnOpen, setReturnOpen] = useState(false);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [prescriptionData, setPrescriptionData] = useState(null);
+  const [selectedMembership, setSelectedMembership] = useState(null);
+  const [membershipConsultationProduct, setMembershipConsultationProduct] = useState(null);
   const searchInputRef = useRef(null);
 
   useEffect(() => {
@@ -96,6 +100,10 @@ const PoSDashboard = () => {
           .slice(0, 10)
       );
     }).catch(console.error);
+    ensureMembershipConsultationProduct(user.locationId)
+      .then(setMembershipConsultationProduct)
+      .catch(console.error);
+    processMembershipRenewals().catch(console.error);
     getTaxSettingsDb().then(setTaxSettings).catch(console.error);
     getBankAccounts().then(accounts => {
       setBankAccounts(accounts);
@@ -127,6 +135,11 @@ const PoSDashboard = () => {
 
   const isSellable = (item) => {
     return item && item.quantity > 0 && !isExpired(item);
+  };
+
+  const isMembershipConsultation = (item) => {
+    if (!item) return false;
+    return item.is_membership_consultation === true || item.name === 'CONSULTA MEDICA MEMBRESIA';
   };
 
   const addToCart = (medicine, quantity = 1) => {
@@ -445,6 +458,35 @@ const PoSDashboard = () => {
     try {
       const cashPayment = payments?.find(p => p?.payment_method === 'cash');
       
+      let remainingVisits = selectedMembership?.visits_remaining || 0;
+      let usedVisits = 0;
+      const saleItems = cart.map((item) => {
+        let price = item.price;
+        let originalPrice = item.originalPrice;
+        if (selectedMembership && isMembershipConsultation(item)) {
+          const freeQty = Math.max(0, Math.min(item.quantity, remainingVisits));
+          const paidQty = item.quantity - freeQty;
+          remainingVisits -= freeQty;
+          usedVisits += freeQty;
+          if (freeQty === item.quantity) {
+            price = 0;
+          } else if (paidQty === item.quantity) {
+            price = item.price * 0.5;
+          } else {
+            price = (paidQty * item.price * 0.5) / item.quantity;
+          }
+        }
+        return {
+          inventory_id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          price,
+          original_price: originalPrice,
+          override_by: item.overrideBy || null,
+          rx_number: rxNumbers[item.id] || null,
+        };
+      });
+
       const saleRecord = {
         location_id: user.locationId,
         org_id: user.orgId,
@@ -453,8 +495,8 @@ const PoSDashboard = () => {
         payment_method: isSplitPayment ? (payments[0]?.payment_method || 'cash') : paymentMethod,
         amount_given: cashPayment ? cashPayment.amount : null,
         change_due: cashPayment ? (cashPayment.amount - (cashPayment.amountApplied || cashPayment.amount)) : null,
-        discount_code: discount?.code || null,
-        discount_value: discount?.value || null,
+        discount_code: useMembershipDiscount ? 'MEMBRESIA' : (discount?.code || null),
+        discount_value: useMembershipDiscount ? selectedMembership.discount_percent : (discount?.value || null),
         discount_amount: discountAmount || null,
         iva_enabled: taxSettings.ivaEnabled,
         iva_rate: taxSettings.ivaRate,
@@ -466,24 +508,23 @@ const PoSDashboard = () => {
         voided: false,
         is_split_payment: isSplitPayment,
         status: 'completed',
+        membership_id: selectedMembership?.id || null,
       };
-
-      const saleItems = cart.map(item => ({
-        inventory_id: item.id,
-        name: item.name,
-        quantity: item.quantity,
-        price: item.price,
-        original_price: item.originalPrice,
-        override_by: item.overrideBy || null,
-        rx_number: rxNumbers[item.id] || null,
-      }));
 
       console.log('Creating sale with record:', saleRecord);
       console.log('Sale items:', saleItems);
       console.log('Payments:', payments);
       
       const sale = await createSaleWithPayments(saleRecord, saleItems, payments);
-      
+
+      if (selectedMembership && usedVisits > 0) {
+        try {
+          await decrementMembershipVisits(selectedMembership.id, usedVisits);
+        } catch (visitErr) {
+          console.warn('Failed to decrement membership visits:', visitErr);
+        }
+      }
+
       console.log('Sale created successfully:', sale);
 
       // Create or link prescription record if prescription data exists
@@ -591,7 +632,7 @@ const PoSDashboard = () => {
         setPaymentMethod('cash'); setView('main'); setRxNumbers({});
         setSplitPayments([]); setIsSplitPayment(false);
         setTransferenciaReference(''); setCardReference('');
-        setSelectedCustomer(null);
+        setSelectedCustomer(null); setSelectedMembership(null);
         searchInputRef.current?.focus();
       }, 500);
     } catch (e) {
@@ -626,9 +667,44 @@ const PoSDashboard = () => {
     }
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const discountAmount = discount ? subtotal * (discount.value / 100) : 0;
-  const subtotalAfterDiscount = subtotal - discountAmount;
+  // Membership-aware totals
+  const originalSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const regularItems = cart.filter((item) => !isMembershipConsultation(item));
+  const consultationItems = cart.filter((item) => isMembershipConsultation(item));
+  const regularSubtotal = regularItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const originalConsultationSubtotal = consultationItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+  let consultationEffectiveTotal = originalConsultationSubtotal;
+  let membershipVisitsUsed = 0;
+  if (selectedMembership && consultationItems.length > 0) {
+    let remaining = selectedMembership.visits_remaining || 0;
+    consultationEffectiveTotal = 0;
+    consultationItems.forEach((item) => {
+      const qty = item.quantity;
+      const freeQty = Math.max(0, Math.min(qty, remaining));
+      const paidQty = qty - freeQty;
+      remaining -= freeQty;
+      membershipVisitsUsed += freeQty;
+      consultationEffectiveTotal += paidQty * (item.price * 0.5); // 50% off remaining visits
+    });
+  }
+
+  const membershipProductDiscount = selectedMembership
+    ? regularSubtotal * (selectedMembership.discount_percent / 100)
+    : 0;
+  const membershipConsultationSavings = originalConsultationSubtotal - consultationEffectiveTotal;
+  const membershipTotalSavings = membershipProductDiscount + membershipConsultationSavings;
+  const codeDiscountAmount = discount ? originalSubtotal * (discount.value / 100) : 0;
+
+  const useMembershipDiscount = selectedMembership && membershipTotalSavings >= codeDiscountAmount;
+  const appliedDiscountAmount = useMembershipDiscount ? membershipProductDiscount : codeDiscountAmount;
+  const appliedDiscountLabel = useMembershipDiscount
+    ? `Membresía ${selectedMembership.discount_percent}%`
+    : discount?.code || null;
+
+  const subtotal = originalSubtotal;
+  const discountAmount = appliedDiscountAmount;
+  const subtotalAfterDiscount = regularSubtotal - appliedDiscountAmount + consultationEffectiveTotal;
   const ivaAmount = calcIVA(subtotalAfterDiscount, taxSettings);
   const finalTotal = subtotalAfterDiscount + ivaAmount;
 
@@ -704,7 +780,7 @@ const PoSDashboard = () => {
               </div>
               <div className="border-t pt-4 space-y-2 text-sm sm:text-base">
                 <div className="flex justify-between"><p>Subtotal:</p><p>{formatMXN(subtotal)}</p></div>
-                {discount && <div className="flex justify-between text-red-600"><p>Descuento ({discount.value}%):</p><p>-{formatMXN(discountAmount)}</p></div>}
+                {appliedDiscountLabel && <div className="flex justify-between text-red-600"><p>Descuento ({appliedDiscountLabel}):</p><p>-{formatMXN(discountAmount)}</p></div>}
                 {taxSettings.ivaEnabled && <div className="flex justify-between text-slate-500"><p>IVA ({taxSettings.ivaRate}%):</p><p>{formatMXN(ivaAmount)}</p></div>}
                 <div className="flex justify-between text-lg sm:text-2xl font-bold">
                   <p>Total:</p>
@@ -1164,9 +1240,14 @@ const PoSDashboard = () => {
                   <Input placeholder="Código de descuento" value={discountCode} onChange={e => setDiscountCode(e.target.value)} />
                   <Button onClick={applyDiscount} variant="outline" size="icon"><Ticket className="w-4 h-4" /></Button>
                 </div>
+                <MembershipPosLookup
+                  selectedMembership={selectedMembership}
+                  onSelect={setSelectedMembership}
+                  onClear={() => setSelectedMembership(null)}
+                />
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between"><p>Subtotal:</p><p>{formatMXN(subtotal)}</p></div>
-                  {discount && <div className="flex justify-between text-red-600"><p>Descuento ({discount.value}%):</p><p>-{formatMXN(discountAmount)}</p></div>}
+                  {appliedDiscountLabel && <div className="flex justify-between text-red-600"><p>Descuento ({appliedDiscountLabel}):</p><p>-{formatMXN(discountAmount)}</p></div>}
                   {taxSettings.ivaEnabled && <div className="flex justify-between text-slate-500 text-sm"><p>IVA ({taxSettings.ivaRate}%):</p><p>{formatMXN(ivaAmount)}</p></div>}
                 </div>
                 <div className="flex justify-between items-center text-xl sm:text-2xl font-bold"><p>Total:</p><p className="text-green-600">{formatMXN(finalTotal)}</p></div>
