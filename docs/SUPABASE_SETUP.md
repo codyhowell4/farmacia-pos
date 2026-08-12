@@ -15,7 +15,7 @@
 
 1. En el panel de Supabase, ve a **SQL Editor**
 2. Clic en **New query**
-3. Pega todo el contenido del archivo `supabase_schema.sql`
+3. Pega todo el contenido del archivo `supabase/schemas/supabase_schema.sql`
 4. Clic en **Run** (botón verde)
 5. Verifica que aparezca "Success. No rows returned"
 
@@ -131,6 +131,6 @@ where id = '<USER_UUID>';
 | `src/lib/db.js` | Todas las operaciones de base de datos |
 | `src/contexts/AuthContext.jsx` | Autenticación con Supabase Auth |
 | `src/contexts/ShiftContext.jsx` | Turnos en Supabase |
-| `supabase_schema.sql` | Schema completo de la base de datos |
+| `supabase/schemas/supabase_schema.sql` | Schema completo de la base de datos |
 | `.env.example` | Template de variables de entorno |
 

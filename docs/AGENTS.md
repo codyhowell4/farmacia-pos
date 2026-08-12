@@ -88,7 +88,7 @@ pharmacy-pos/
 ├── public/
 │   ├── .htaccess
 │   └── llms.txt                # Generated at build time
-├── supabase_schema.sql         # Canonical database schema with RLS policies
+├── supabase/schemas/supabase_schema.sql         # Canonical database schema with RLS policies
 ├── SUPABASE_SETUP.md           # Human onboarding guide for Supabase setup
 ├── .env.example                # VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 ├── vite.config.js              # Vite config with custom plugins, @/ alias, error handling
@@ -216,7 +216,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key-here
 - `prescriptions` — COFEPRIS prescription records
 
 ### Schema File
-The canonical schema is **`supabase_schema.sql`**. Additional migration/fix files exist (`PHASE1_SCHEMA.sql` through `PHASE5_SCHEMA.sql`, `COMPLETE_DATABASE_FIX.sql`, etc.) — these are historical; the single source of truth for new setups is `supabase_schema.sql`.
+The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional migration/fix files exist (`supabase/schemas/PHASE1_SCHEMA.sql` through `supabase/schemas/PHASE5_SCHEMA.sql`, `supabase/schemas/COMPLETE_DATABASE_FIX.sql`, etc.) — these are historical; the single source of truth for new setups is `supabase/schemas/supabase_schema.sql`.
 
 ---
 
@@ -273,7 +273,7 @@ The canonical schema is **`supabase_schema.sql`**. Additional migration/fix file
 | `src/contexts/AuthContext.jsx` | Login/logout/session. Modify auth behavior here. |
 | `src/App.jsx` | Route definitions. Add new top-level pages here. |
 | `src/pages/AdminDashboard.jsx` | Admin shell with nested routes. Add new admin tabs here. |
-| `supabase_schema.sql` | Database schema. Keep in sync with `src/lib/db.js`. |
+| `supabase/schemas/supabase_schema.sql` | Database schema. Keep in sync with `src/lib/db.js`. |
 
 ---
 

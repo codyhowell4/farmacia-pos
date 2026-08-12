@@ -8,7 +8,7 @@
 
 ## 1. Remaining NOT NULL Constraints Audit
 
-### After MIGRATION_P2_fix_prescription_null_constraints.sql, the prescriptions table has these NOT NULL columns:
+### After supabase/migrations/MIGRATION_P2_fix_prescription_null_constraints.sql, the prescriptions table has these NOT NULL columns:
 
 | Column | Source | Set By | Blocks Doctor RX? |
 |--------|--------|--------|-------------------|
@@ -46,7 +46,7 @@
 
 | File | Change |
 |------|--------|
-| `MIGRATION_P2_final_compatibility.sql` | Adds `DEFAULT CURRENT_DATE` to `prescriptions.prescription_date`. Includes 7 verification queries. |
+| `supabase/migrations/MIGRATION_P2_final_compatibility.sql` | Adds `DEFAULT CURRENT_DATE` to `prescriptions.prescription_date`. Includes 7 verification queries. |
 
 ### db.js Functions (3 fixes + 1 new)
 
@@ -122,23 +122,23 @@ Promise.all([..., getActivePrescriptionCount(), ...])
 ## 5. Deployment Order
 
 ```
-STEP 1: Run MIGRATION_P2_fix_prescription_null_constraints.sql  (if not already done)
+STEP 1: Run supabase/migrations/MIGRATION_P2_fix_prescription_null_constraints.sql  (if not already done)
         -> Makes doctor_name and doctor_license_number nullable
 
-STEP 2: Run MIGRATION_P2_final_compatibility.sql
+STEP 2: Run supabase/migrations/MIGRATION_P2_final_compatibility.sql
         -> Adds DEFAULT CURRENT_DATE to prescription_date
 
 STEP 3: Deploy frontend build (already built, 0 errors)
         -> Contains fixed db.js + AdminCustomerProfile + AdminOverview
 
-STEP 4: Verify with the verification query in MIGRATION_P2_final_compatibility.sql
+STEP 4: Verify with the verification query in supabase/migrations/MIGRATION_P2_final_compatibility.sql
 ```
 
 ---
 
 ## 6. Verification Checklist
 
-- [ ] Run `MIGRATION_P2_final_compatibility.sql` in Supabase SQL Editor
+- [ ] Run `supabase/migrations/MIGRATION_P2_final_compatibility.sql` in Supabase SQL Editor
 - [ ] V1 shows PASS — prescription_date has DEFAULT
 - [ ] V2-V4 show PASS — patient_name, prescription_number, prescription_date still NOT NULL
 - [ ] V5-V6 show PASS — doctor_name, doctor_license_number are nullable

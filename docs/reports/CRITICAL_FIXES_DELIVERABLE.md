@@ -10,7 +10,7 @@
 
 ### Primary Migration
 
-**File:** `MIGRATION_CRITICAL_FIXES.sql` (278 lines)
+**File:** `supabase/migrations/MIGRATION_CRITICAL_FIXES.sql` (278 lines)
 
 Run this **in the Supabase SQL Editor, top to bottom, do not skip**.
 
@@ -37,7 +37,7 @@ Run this **in the Supabase SQL Editor, top to bottom, do not skip**.
 
 #### Rollback (if needed):
 ```sql
--- Restore old trigger (from supabase_schema_fixed.sql)
+-- Restore old trigger (from supabase/schemas/supabase_schema_fixed.sql)
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
@@ -65,7 +65,7 @@ $$;
 
 | File | Purpose |
 |------|---------|
-| `MIGRATION_CRITICAL_FIXES.sql` | Single consolidated migration fixing CR-2, CR-3, CR-4 + backfill + RLS + verification |
+| `supabase/migrations/MIGRATION_CRITICAL_FIXES.sql` | Single consolidated migration fixing CR-2, CR-3, CR-4 + backfill + RLS + verification |
 
 ### Unchanged (but dependent on migration)
 
@@ -122,7 +122,7 @@ $$;
 ### Deployment (Run in Supabase SQL Editor)
 
 - [ ] Open SQL Editor
-- [ ] Copy entire contents of `MIGRATION_CRITICAL_FIXES.sql`
+- [ ] Copy entire contents of `supabase/migrations/MIGRATION_CRITICAL_FIXES.sql`
 - [ ] Run top to bottom
 - [ ] Review verification query results at the bottom
 - [ ] Confirm V1–V4 show `PASS`
@@ -194,7 +194,7 @@ $$;
 ┌─────────────────────────────────────────────────────────────┐
 │  STEP 1: Backup production database                         │
 ├─────────────────────────────────────────────────────────────┤
-│  STEP 2: Run MIGRATION_CRITICAL_FIXES.sql                   │
+│  STEP 2: Run supabase/migrations/MIGRATION_CRITICAL_FIXES.sql                   │
 │          in Supabase SQL Editor                             │
 ├─────────────────────────────────────────────────────────────┤
 │  STEP 3: Review verification queries (V1–V5)                │
@@ -205,8 +205,8 @@ $$;
 ├─────────────────────────────────────────────────────────────┤
 │  STEP 6: ONLY AFTER all critical fixes pass:                │
 │          Run Phase 2 migrations                             │
-│          (MIGRATION_P2_extend_prescriptions.sql             │
-│           + MIGRATION_P2_rx_number_trigger.sql)             │
+│          (supabase/migrations/MIGRATION_P2_extend_prescriptions.sql             │
+│           + supabase/migrations/MIGRATION_P2_rx_number_trigger.sql)             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -216,14 +216,14 @@ $$;
 
 ### Why These 4 Bugs Existed
 
-1. **CR-3 (Role constraint):** The original schema `supabase_schema_fixed.sql` was designed for a 3-role system (admin/pos/inventory). When doctor portal and customer portal were added later, the constraint was updated in `DAY1_MIGRATION_FINAL.sql` but that file was never run in production.
+1. **CR-3 (Role constraint):** The original schema `supabase/schemas/supabase_schema_fixed.sql` was designed for a 3-role system (admin/pos/inventory). When doctor portal and customer portal were added later, the constraint was updated in `supabase/migrations/DAY1_MIGRATION_FINAL.sql` but that file was never run in production.
 
-2. **CR-2 (Trigger):** The original trigger hardcoded `role='pos'` because the app only had staff users. When customer self-registration was added, `MIGRATION_backfill_missing_customers.sql` fixed the trigger but was also never deployed.
+2. **CR-2 (Trigger):** The original trigger hardcoded `role='pos'` because the app only had staff users. When customer self-registration was added, `supabase/migrations/MIGRATION_backfill_missing_customers.sql` fixed the trigger but was also never deployed.
 
 3. **CR-1 (Redirect loop):** The React router has `/` → `/login`. No one noticed because customer login had never been tested end-to-end — there was no customer role in the database to test with.
 
-4. **CR-4 (Missing column):** `customers.profile_id` was added in `MIGRATION_customer_portal_prerequisites.sql` but its deployment status was unclear. The `registerCustomer()` function assumed it existed.
+4. **CR-4 (Missing column):** `customers.profile_id` was added in `supabase/migrations/MIGRATION_customer_portal_prerequisites.sql` but its deployment status was unclear. The `registerCustomer()` function assumed it existed.
 
 ### The Fix Strategy
 
-Rather than running 3+ separate migrations in uncertain order, `MIGRATION_CRITICAL_FIXES.sql` consolidates everything into one safe, idempotent, self-verifying script.
+Rather than running 3+ separate migrations in uncertain order, `supabase/migrations/MIGRATION_CRITICAL_FIXES.sql` consolidates everything into one safe, idempotent, self-verifying script.

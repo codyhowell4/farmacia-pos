@@ -534,14 +534,14 @@ END $$;
 ## Phase A: Database & Foundation (1-2 hours)
 
 ### Task A1: Run Migration — Extend prescriptions Table
-- File: `MIGRATION_P2_extend_prescriptions.sql`
+- File: `supabase/migrations/MIGRATION_P2_extend_prescriptions.sql`
 - Add 9 new columns to `prescriptions`
 - Replace `UNIQUE(sale_id)` with partial unique index
 - Add indexes for search/filter
 - Add doctor RLS policies
 
 ### Task A2: Run Migration — Auto-Generate RX Number
-- File: `MIGRATION_P2_rx_number_trigger.sql`
+- File: `supabase/migrations/MIGRATION_P2_rx_number_trigger.sql`
 - Create `generate_rx_number()` trigger function
 - Attach trigger to `prescriptions` table
 

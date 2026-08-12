@@ -5,11 +5,11 @@
 
 ---
 
-## 1. Did MIGRATION_P2_extend_prescriptions.sql remove legacy NOT NULL constraints?
+## 1. Did supabase/migrations/MIGRATION_P2_extend_prescriptions.sql remove legacy NOT NULL constraints?
 
 ### ❌ NO.
 
-`MIGRATION_P2_extend_prescriptions.sql` (62 lines) only does the following:
+`supabase/migrations/MIGRATION_P2_extend_prescriptions.sql` (62 lines) only does the following:
 
 | Action | What it does |
 |--------|--------------|
@@ -135,7 +135,7 @@ CREATE TABLE prescriptions (
 -- From original schema
 idx_prescriptions_date ON prescriptions(prescription_date)
 
--- From MIGRATION_P2_extend_prescriptions.sql
+-- From supabase/migrations/MIGRATION_P2_extend_prescriptions.sql
 idx_prescriptions_number ON prescriptions(prescription_number)
 idx_prescriptions_customer ON prescriptions(customer_id) WHERE customer_id IS NOT NULL
 idx_prescriptions_status ON prescriptions(status)
@@ -147,7 +147,7 @@ idx_prescriptions_sale_unique ON prescriptions(sale_id) WHERE sale_id IS NOT NUL
 
 ## 4. Verification Query
 
-Run this in the Supabase SQL Editor after applying `MIGRATION_P2_fix_prescription_null_constraints.sql`:
+Run this in the Supabase SQL Editor after applying `supabase/migrations/MIGRATION_P2_fix_prescription_null_constraints.sql`:
 
 ```sql
 -- ============================================================
@@ -290,26 +290,26 @@ ORDER BY ordinal_position;
 
 ### Immediate (do this now):
 
-1. **Run `MIGRATION_P2_fix_prescription_null_constraints.sql`** in Supabase SQL Editor
+1. **Run `supabase/migrations/MIGRATION_P2_fix_prescription_null_constraints.sql`** in Supabase SQL Editor
 2. **Run the verification query above** and confirm V1–V10 all pass
 3. **Test end-to-end**: Create a doctor prescription from the Doctor Portal
 
 ### Already done (confirm status):
 
-- ✅ `MIGRATION_P2_rx_number_trigger.sql` — RX number generation confirmed working
-- ⚠️ `MIGRATION_P2_extend_prescriptions.sql` — columns added, but NOT NULL issue discovered
+- ✅ `supabase/migrations/MIGRATION_P2_rx_number_trigger.sql` — RX number generation confirmed working
+- ⚠️ `supabase/migrations/MIGRATION_P2_extend_prescriptions.sql` — columns added, but NOT NULL issue discovered
 
 ### Sequence of all P2 migrations to run:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  1. MIGRATION_CRITICAL_FIXES.sql      (already done ✅)     │
+│  1. supabase/migrations/MIGRATION_CRITICAL_FIXES.sql      (already done ✅)     │
 ├─────────────────────────────────────────────────────────────┤
-│  2. MIGRATION_P2_extend_prescriptions.sql (done ✅)         │
+│  2. supabase/migrations/MIGRATION_P2_extend_prescriptions.sql (done ✅)         │
 ├─────────────────────────────────────────────────────────────┤
-│  3. MIGRATION_P2_rx_number_trigger.sql  (done ✅)           │
+│  3. supabase/migrations/MIGRATION_P2_rx_number_trigger.sql  (done ✅)           │
 ├─────────────────────────────────────────────────────────────┤
-│  4. MIGRATION_P2_fix_prescription_null_constraints.sql      │
+│  4. supabase/migrations/MIGRATION_P2_fix_prescription_null_constraints.sql      │
 │     ← RUN THIS NOW to fix the NOT NULL failure              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -318,6 +318,6 @@ ORDER BY ordinal_position;
 
 ## 6. Root Cause
 
-The original `prescriptions` table (from `PHASE1_SCHEMA.sql`) was designed exclusively for COFEPRIS compliance records where a POS operator manually typed in doctor name and license. When Phase 2 added doctor-created prescriptions with a proper `doctor_id` foreign key, the legacy `NOT NULL` constraints were never revisited. The P2 migration added new columns but did not relax the old constraints.
+The original `prescriptions` table (from `supabase/schemas/PHASE1_SCHEMA.sql`) was designed exclusively for COFEPRIS compliance records where a POS operator manually typed in doctor name and license. When Phase 2 added doctor-created prescriptions with a proper `doctor_id` foreign key, the legacy `NOT NULL` constraints were never revisited. The P2 migration added new columns but did not relax the old constraints.
 
 Additionally, the POS `PrescriptionModal.jsx` already treats `doctor_name` and `doctor_license_number` as optional UI fields (passing `null` when empty), which means the existing COFEPRIS flow had a **latent bug** that would surface whenever staff skipped those optional fields.

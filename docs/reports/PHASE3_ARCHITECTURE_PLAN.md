@@ -294,7 +294,7 @@ Add "Inventario Inteligente" section with:
 
 ### 3.1 New Table + Function Migration
 
-File: `MIGRATION_P3_inventory_intelligence.sql`
+File: `supabase/migrations/MIGRATION_P3_inventory_intelligence.sql`
 
 Contains:
 1. `inventory_settings` table creation
@@ -397,7 +397,7 @@ Contains:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  1. Run MIGRATION_P3_inventory_intelligence.sql             │
+│  1. Run supabase/migrations/MIGRATION_P3_inventory_intelligence.sql             │
 │     in Supabase SQL Editor                                  │
 │     • Creates inventory_settings table                      │
 │     • Creates 2 PostgreSQL functions                        │

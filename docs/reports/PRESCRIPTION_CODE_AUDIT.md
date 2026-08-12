@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-05
 **Scope:** Every React file and db.js function that touches the prescriptions table
-**Goal:** Confirm column name consistency before deploying MIGRATION_P2_fix_prescription_null_constraints.sql
+**Goal:** Confirm column name consistency before deploying supabase/migrations/MIGRATION_P2_fix_prescription_null_constraints.sql
 
 ---
 
@@ -35,7 +35,7 @@ All files that read/write prescriptions.prescription_number:
 | 5 | src/components/admin/AdminPrescriptions.jsx | 56, 126 | Filter and display prescription_number |
 | 6 | src/pages/PoSDashboard.jsx | 493, 505, 515 | Create COFEPRIS prescription with prescription_number, log it |
 | 7 | src/pages/ReportsPage.jsx | 105, 298 | CSV export header + display prescription_number |
-| 8 | MIGRATION_P2_rx_number_trigger.sql | 12 | Trigger sets NEW.prescription_number |
+| 8 | supabase/migrations/MIGRATION_P2_rx_number_trigger.sql | 12 | Trigger sets NEW.prescription_number |
 
 ### SEPARATE TABLE: rx_number is on sale_items, NOT prescriptions
 
@@ -45,7 +45,7 @@ rx_number appears in these files but they target sale_items.rx_number:
 |------|---------|---------|
 | src/pages/PoSDashboard.jsx | 473, 559 | sale_items.rx_number — tracks per-item controlled substance numbers at POS checkout |
 | src/pages/ReportsPage.jsx | 109, 305 | CSV export for controlled substances report — reads item.rx_number from sale_items |
-| supabase_schema_fixed.sql | 186 | Column definition: sale_items.rx_number text |
+| supabase/schemas/supabase_schema_fixed.sql | 186 | Column definition: sale_items.rx_number text |
 
 **Conclusion:** rx_number and prescription_number are two different fields on two different tables. There is NO naming conflict.
 
@@ -159,7 +159,7 @@ prescriptions TABLE:
 
 ### Note on org_id
 
-The prescriptions table in PHASE1_SCHEMA.sql defines org_id without NOT NULL. However, all INSERT code paths call getOrgId() which should return a valid UUID. The RLS policy doctor_prescriptions_insert requires org_id = get_my_org_id(). If org_id is NULL, the policy will reject the insert.
+The prescriptions table in supabase/schemas/PHASE1_SCHEMA.sql defines org_id without NOT NULL. However, all INSERT code paths call getOrgId() which should return a valid UUID. The RLS policy doctor_prescriptions_insert requires org_id = get_my_org_id(). If org_id is NULL, the policy will reject the insert.
 
 **Recommendation:** Consider adding NOT NULL to org_id in a future migration. For now, all code paths always provide it.
 
@@ -234,7 +234,7 @@ Promise.all([..., getCustomerDocuments(), ...])
 
 ### Immediate (before any user testing):
 
-1. Deploy MIGRATION_P2_fix_prescription_null_constraints.sql — doctor_name / doctor_license_number nullable
+1. Deploy supabase/migrations/MIGRATION_P2_fix_prescription_null_constraints.sql — doctor_name / doctor_license_number nullable
 
 ### High Priority (after NOT NULL fix):
 

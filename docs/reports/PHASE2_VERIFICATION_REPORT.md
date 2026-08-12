@@ -56,7 +56,7 @@ Customer logs in → navigate('/') → redirect to '/login' → login page
 
 ### CR-2: `handle_new_user` Trigger Does NOT Create Customer Profiles Correctly
 
-**File:** `supabase_schema_fixed.sql:44-56` (currently deployed) vs `MIGRATION_backfill_missing_customers.sql:78-111` (ready but NOT run)
+**File:** `supabase/schemas/supabase_schema_fixed.sql:44-56` (currently deployed) vs `supabase/migrations/MIGRATION_backfill_missing_customers.sql:78-111` (ready but NOT run)
 
 **Problem:**
 The currently-deployed trigger hardcodes `role = 'pos'` and does NOT create a `customers` row:
@@ -74,7 +74,7 @@ The `registerCustomer()` function passes `role: 'customer'` in metadata, but the
 2. No `customers` row is created, so the phone update in `registerCustomer()` fails
 3. The registered "customer" could potentially log into the staff POS system
 
-**Fix:** Run `MIGRATION_backfill_missing_customers.sql` in Supabase SQL Editor. It contains the corrected trigger:
+**Fix:** Run `supabase/migrations/MIGRATION_backfill_missing_customers.sql` in Supabase SQL Editor. It contains the corrected trigger:
 ```sql
 v_role := COALESCE(new.raw_user_meta_data->>'role', 'customer');
 -- ... creates both profiles AND customers rows
@@ -84,7 +84,7 @@ v_role := COALESCE(new.raw_user_meta_data->>'role', 'customer');
 
 ### CR-3: `profiles` Role Check Constraint Excludes `customer` and `doctor`
 
-**File:** `supabase_schema_fixed.sql:38`
+**File:** `supabase/schemas/supabase_schema_fixed.sql:38`
 
 **Problem:**
 ```sql
@@ -102,7 +102,7 @@ ALTER TABLE profiles ADD CONSTRAINT profiles_role_check
   CHECK (role IN ('admin', 'pos', 'inventory', 'doctor', 'customer'));
 ```
 
-> ⚠️ This must be done BEFORE running `MIGRATION_backfill_missing_customers.sql`, or the trigger will fail.
+> ⚠️ This must be done BEFORE running `supabase/migrations/MIGRATION_backfill_missing_customers.sql`, or the trigger will fail.
 
 ---
 
@@ -116,7 +116,7 @@ The `registerCustomer()` function does:
 await supabase.from('customers').update({ phone }).eq('profile_id', authData.user.id)
 ```
 
-This requires `customers.profile_id` to exist. The column was added in `MIGRATION_customer_portal_prerequisites.sql:46`:
+This requires `customers.profile_id` to exist. The column was added in `supabase/migrations/MIGRATION_customer_portal_prerequisites.sql:46`:
 ```sql
 add column if not exists profile_id uuid references profiles(id) on delete set null;
 ```
@@ -137,7 +137,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS customers_profile_id_unique ON customers(profi
 
 ### MJ-1: POS COFEPRIS Prescriptions May Fail RLS
 
-**File:** `MIGRATION_P2_extend_prescriptions.sql:32-38`
+**File:** `supabase/migrations/MIGRATION_P2_extend_prescriptions.sql:32-38`
 
 **Problem:**
 The migration adds this insert policy:
@@ -285,17 +285,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS customers_profile_id_unique ON customers(profi
 
 ### Step 3: Run backfill migration (CR-2)
 ```sql
--- Run the full contents of MIGRATION_backfill_missing_customers.sql
+-- Run the full contents of supabase/migrations/MIGRATION_backfill_missing_customers.sql
 ```
 
 ### Step 4: Run P2 prescription extensions
 ```sql
--- Run the full contents of MIGRATION_P2_extend_prescriptions.sql
+-- Run the full contents of supabase/migrations/MIGRATION_P2_extend_prescriptions.sql
 ```
 
 ### Step 5: Run P2 RX number trigger
 ```sql
--- Run the full contents of MIGRATION_P2_rx_number_trigger.sql
+-- Run the full contents of supabase/migrations/MIGRATION_P2_rx_number_trigger.sql
 ```
 
 ### Step 6: Fix customer login redirect (CR-1)

@@ -279,7 +279,7 @@ If execution time > 1 second, consider adding a materialized view refreshed nigh
 ### ✅ APPROVED for production deployment
 
 **Conditions:**
-1. Run `MIGRATION_P3_inventory_intelligence.sql` in Supabase SQL Editor
+1. Run `supabase/migrations/MIGRATION_P3_inventory_intelligence.sql` in Supabase SQL Editor
 2. Verify all 8 verification queries return PASS
 3. Deploy frontend build
 4. Run `EXPLAIN ANALYZE` on the function in production to confirm sub-second performance

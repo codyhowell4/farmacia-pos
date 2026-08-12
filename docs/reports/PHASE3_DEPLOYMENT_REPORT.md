@@ -10,7 +10,7 @@
 
 ### 1.1 Database Layer (SQL Migration)
 
-**File:** `MIGRATION_P3_inventory_intelligence.sql`
+**File:** `supabase/migrations/MIGRATION_P3_inventory_intelligence.sql`
 
 | Object | Purpose |
 |--------|---------|
@@ -91,7 +91,7 @@ src/lib/db.js                                ← Appended 4 new functions only
 Open the Supabase SQL Editor and run the entire contents of:
 
 ```
-MIGRATION_P3_inventory_intelligence.sql
+supabase/migrations/MIGRATION_P3_inventory_intelligence.sql
 ```
 
 **Expected output:** 7 verification queries should all show `PASS`.

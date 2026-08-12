@@ -1043,7 +1043,7 @@ organizations
 
 **Purpose:** Store customer-uploaded prescription images and documents.
 
-**Created by:** `MIGRATION_create_storage_bucket_customer_documents.sql`
+**Created by:** `supabase/migrations/MIGRATION_create_storage_bucket_customer_documents.sql`
 
 **RLS Policies:**
 - Authenticated users can upload (`INSERT`)
@@ -1426,7 +1426,7 @@ Admin changes status (e.g., approves prescription)
 │           ├── notifications.js   # Push notification manager
 │           ├── voiceAI.js         # Voice assistant
 │           └── components.js      # Shared components
-├── supabase_schema_fixed.sql      # Base schema
+├── supabase/schemas/supabase_schema_fixed.sql      # Base schema
 ├── MIGRATION_*.sql                # Various migrations
 └── .env / .env.local              # Supabase credentials
 ```
