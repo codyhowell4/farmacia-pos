@@ -17,6 +17,7 @@ import {
   getInventoryValuation,
   getProfitReport,
   getShiftReport,
+  getSalesByShift,
   closeShift,
   closeAllOpenShifts,
   formatCurrency,
@@ -40,6 +41,7 @@ export default function AdminReports() {
     valuation: [],
     profit: [],
     shifts: [],
+    salesByShift: [],
     intelligence: [],
   });
 
@@ -98,6 +100,18 @@ export default function AdminReports() {
       toast.error('Error loading profit report');
     } finally {
       setLoading(prev => ({ ...prev, profit: false }));
+    }
+  };
+
+  const loadSalesByShift = async () => {
+    setLoading(prev => ({ ...prev, salesByShift: true }));
+    try {
+      const salesByShift = await getSalesByShift(startDate, endDate);
+      setData(prev => ({ ...prev, salesByShift }));
+    } catch (err) {
+      toast.error('Error loading sales-by-shift report');
+    } finally {
+      setLoading(prev => ({ ...prev, salesByShift: false }));
     }
   };
 
@@ -219,14 +233,19 @@ export default function AdminReports() {
               <TrendingUp className="h-4 w-4 mr-2" />
               Cargar Ganancias
             </Button>
+            <Button variant="outline" onClick={loadSalesByShift}>
+              <Clock className="h-4 w-4 mr-2" />
+              Cargar Turnos
+            </Button>
           </div>
         </CardContent>
       </Card>
 
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           <TabsTrigger value="overview">Resumen</TabsTrigger>
           <TabsTrigger value="sales">Ventas Diarias</TabsTrigger>
+          <TabsTrigger value="shifts">Ventas por Turno</TabsTrigger>
           <TabsTrigger value="profit">Ganancias</TabsTrigger>
           <TabsTrigger value="products">Top Productos</TabsTrigger>
           <TabsTrigger value="inventory">Inventario</TabsTrigger>
@@ -417,6 +436,88 @@ export default function AdminReports() {
                           <td className="px-3 py-2 text-right text-red-600">{formatCurrency(sale.total_discounts)}</td>
                           <td className="px-3 py-2 text-right">{formatCurrency(sale.total_tax)}</td>
                           <td className="px-3 py-2 text-xs">{sale.sellers}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Sales by Shift Tab */}
+        <TabsContent value="shifts">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Ventas por Turno</CardTitle>
+              <Button 
+                variant="outline" 
+                onClick={() => handleExport('shifts', data.salesByShift, [
+                  { key: 'closed_at', label: 'Fecha de cierre' },
+                  { key: 'cashier_name', label: 'Cajero/Vendedor' },
+                  { key: 'location_name', label: 'Ubicación' },
+                  { key: 'total_sales', label: '# Ventas' },
+                  { key: 'total_cash', label: 'Efectivo' },
+                  { key: 'total_card', label: 'Tarjeta' },
+                  { key: 'total_transferencia', label: 'Transferencia' },
+                  { key: 'total_insurance', label: 'Seguro' },
+                  { key: 'total_discounts', label: 'Descuentos' },
+                  { key: 'total_tax', label: 'Impuestos' },
+                  { key: 'total_revenue', label: 'Total' },
+                  { key: 'variance', label: 'Variación' },
+                ], `ventas_por_turno_${startDate}_${endDate}`)}
+                disabled={data.salesByShift.length === 0}
+              >
+                <FileDown className="h-4 w-4 mr-2" />
+                Exportar
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {loading.salesByShift ? (
+                <Skeleton className="h-48 w-full" />
+              ) : data.salesByShift.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">Seleccione fechas y haga clic en "Cargar Turnos"</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Fecha de cierre</th>
+                        <th className="px-3 py-2 text-left">Cajero / Vendedor</th>
+                        <th className="px-3 py-2 text-left">Ubicación</th>
+                        <th className="px-3 py-2 text-center"># Ventas</th>
+                        <th className="px-3 py-2 text-right">Efectivo</th>
+                        <th className="px-3 py-2 text-right">Tarjeta</th>
+                        <th className="px-3 py-2 text-right">Transferencia</th>
+                        <th className="px-3 py-2 text-right">Seguro</th>
+                        <th className="px-3 py-2 text-right">Descuentos</th>
+                        <th className="px-3 py-2 text-right">Impuestos</th>
+                        <th className="px-3 py-2 text-right">Total</th>
+                        <th className="px-3 py-2 text-right">Variación</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.salesByShift.map((shift) => (
+                        <tr key={shift.shift_id} className="border-b hover:bg-gray-50">
+                          <td className="px-3 py-2">
+                            {shift.closed_at 
+                              ? new Date(shift.closed_at).toLocaleString('es-MX') 
+                              : '—'}
+                          </td>
+                          <td className="px-3 py-2 font-medium">{shift.cashier_name || '—'}</td>
+                          <td className="px-3 py-2">{shift.location_name || '—'}</td>
+                          <td className="px-3 py-2 text-center">{shift.total_sales || 0}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(shift.total_cash)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(shift.total_card)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(shift.total_transferencia)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(shift.total_insurance)}</td>
+                          <td className="px-3 py-2 text-right text-red-600">{formatCurrency(shift.total_discounts)}</td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(shift.total_tax)}</td>
+                          <td className="px-3 py-2 text-right font-medium">{formatCurrency(shift.total_revenue)}</td>
+                          <td className={`px-3 py-2 text-right ${(shift.variance || 0) < 0 ? 'text-red-600' : (shift.variance || 0) > 0 ? 'text-green-600' : ''}`}>
+                            {formatCurrency(shift.variance)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

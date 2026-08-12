@@ -87,7 +87,7 @@ const AdminSales = () => {
           ${filteredSales.map(s => `
             <tr>
               <td>${new Date(s.timestamp).toLocaleString()}</td>
-              <td>${s.salesperson}</td>
+              <td>${s.salesperson_name || s.salesperson || 'N/A'}</td>
               <td>${s.location_id}</td>
               <td>${(s.sale_items || []).length}</td>
               <td>${s.payment_method || 'cash'}</td>
@@ -121,7 +121,7 @@ const AdminSales = () => {
   };
 
   const filteredSales = sales.filter(sale => {
-    const matchesSearch = (sale.salesperson && sale.salesperson.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    const matchesSearch = ((sale.salesperson_name || sale.salesperson) && (sale.salesperson_name || sale.salesperson).toLowerCase().includes(searchTerm.toLowerCase())) ||
       (sale.location_id && sale.location_id.toLowerCase().includes(searchTerm.toLowerCase()));
     if (!showVoided && sale.voided) return false;
     return matchesSearch;
@@ -212,7 +212,7 @@ const AdminSales = () => {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3 font-medium text-slate-900">{sale.salesperson}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">{sale.salesperson_name || sale.salesperson || 'N/A'}</td>
                 </tr>
                 {expandedSale === sale.id && (
                     <tr>

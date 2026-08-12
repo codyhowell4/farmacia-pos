@@ -126,7 +126,7 @@ export const mapSaleToInvoice = (sale, saleItems, taxId, categoryId, contactInfo
     category_id: categoryId ? Number(categoryId) : null,
     contact_id: contactInfo?.contactId ? Number(contactInfo.contactId) : null,
     contact_name: contactInfo?.contactName || sale.patient_name || sale.customer_name || 'Cliente general',
-    notes: `Venta Farmacia POS #${sale.id} | Cajero: ${sale.salesperson || 'N/A'}`.trim(),
+    notes: `Venta Farmacia POS #${sale.id} | Cajero: ${sale.salesperson_name || sale.salesperson || 'N/A'}`.trim(),
     items,
   };
 };

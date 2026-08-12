@@ -39,12 +39,10 @@ export const ShiftProvider = ({ children }) => {
   const closeShift = async (closingCash, notes = '') => {
     if (!activeShift) return null;
 
-    // Calculate shift totals from DB sales
+    // Calculate shift totals from DB sales using shift_id for accuracy
     const allSales = await getSales();
     const shiftSales = allSales.filter(s =>
-      !s.voided &&
-      s.location_id === activeShift.location_id &&
-      new Date(s.timestamp) >= new Date(activeShift.opened_at)
+      !s.voided && s.shift_id === activeShift.id
     );
 
     const totalCash = shiftSales.filter(s => s && (s.payment_method === 'cash' || !s.payment_method)).reduce((sum, s) => sum + (s?.total || 0), 0);

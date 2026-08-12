@@ -87,6 +87,23 @@ export async function getShiftReport() {
 }
 
 /**
+ * Get sales-by-shift report for date range
+ * @param {string} startDate - ISO date string
+ * @param {string} endDate - ISO date string
+ */
+export async function getSalesByShift(startDate, endDate) {
+  const { data, error } = await supabase
+    .from('sales_by_shift')
+    .select('*')
+    .gte('closed_at', `${startDate}T00:00:00`)
+    .lte('closed_at', `${endDate}T23:59:59`)
+    .order('closed_at', { ascending: false });
+  
+  if (error) throw error;
+  return data || [];
+}
+
+/**
  * Close a specific shift
  * @param {string} shiftId - Shift UUID
  * @param {number} finalCash - Final cash amount

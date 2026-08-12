@@ -11,7 +11,7 @@ export const exportSalesCSV = (sales) => {
       `"#${(sale.id || '').slice(-8).toUpperCase()}"`,
       `"${sale.id}"`,
       `"${new Date(sale.timestamp).toLocaleString()}"`,
-      `"${sale.salesperson}"`,
+      `"${sale.salesperson_name || sale.salesperson || ''}"`,
       `"${sale.location_id || sale.pharmacyLocation || ''}"`,
       `"${sale.payment_method || sale.paymentMethod || 'cash'}"`,
       `"${sale.voided ? 'Anulada' : 'Completada'}"`,

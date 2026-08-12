@@ -494,7 +494,9 @@ const PoSDashboard = () => {
       const saleRecord = {
         location_id: user.locationId,
         org_id: user.orgId,
-        salesperson: user.name,
+        shift_id: activeShift?.id || null,
+        salesperson_id: user?.id || null,
+        salesperson_name: user?.name || null,
         total: finalTotal,
         payment_method: isSplitPayment ? (payments[0]?.payment_method || 'cash') : paymentMethod,
         amount_given: cashPayment ? cashPayment.amount : null,
@@ -1289,7 +1291,7 @@ const PoSDashboard = () => {
                     className={`w-full text-left p-3 rounded-lg border transition-all ${voidSaleId === sale.id ? 'border-red-400 bg-red-50' : 'border-slate-200 hover:border-slate-300'}`}>
                     <div className="flex justify-between items-center">
                       <div>
-                        <p className="text-sm font-medium">#{sale.id.slice(-6)} &middot; {sale.salesperson}</p>
+                        <p className="text-sm font-medium">#{sale.id.slice(-6)} &middot; {sale.salesperson_name || sale.salesperson || 'N/A'}</p>
                         <p className="text-xs text-slate-500">{new Date(sale.timestamp).toLocaleString()}</p>
                       </div>
                       <p className="font-bold text-green-600">{formatMXN(sale.total)}</p>
