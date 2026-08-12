@@ -417,7 +417,7 @@ const PoSDashboard = () => {
         bankAccountId = selectedBankAccount?.id;
       } else if (paymentMethod === 'card') {
         if (!cardReference.trim()) {
-          toast({ title: 'Autorización requerida', description: 'Ingresa el número de autorización', variant: 'destructive' });
+          toast({ title: 'Aprobación requerida', description: 'Ingresa el número de aprobación', variant: 'destructive' });
           return;
         }
         reference = cardReference;
@@ -735,7 +735,7 @@ const PoSDashboard = () => {
         bankAccountId = selectedBankAccount?.id;
       } else if (paymentMethod === 'card') {
         if (!cardReference.trim()) {
-          toast({ title: 'Autorización requerida', description: 'Ingresa el número de autorización', variant: 'destructive' });
+          toast({ title: 'Aprobación requerida', description: 'Ingresa el número de aprobación', variant: 'destructive' });
           return;
         }
         reference = cardReference;
@@ -998,9 +998,9 @@ const PoSDashboard = () => {
                 {/* Card Payment */}
                 {paymentMethod === 'card' && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
-                    <Label>Número de autorización</Label>
+                    <Label>Número de Aprobación</Label>
                     <Input 
-                      placeholder="Ingresa número de autorización" 
+                      placeholder="Ingresa número de aprobación" 
                       value={cardReference}
                       onChange={e => setCardReference(e.target.value)}
                     />
