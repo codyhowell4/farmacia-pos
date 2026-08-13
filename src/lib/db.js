@@ -398,6 +398,12 @@ export const closeShiftDb = async (id, updates) => {
   return data;
 };
 
+export const updateShift = async (id, updates) => {
+  const { data, error } = await supabase.from('shifts').update(updates).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+};
+
 export const getShifts = async () => {
   const { data, error } = await supabase.from('shifts').select('*, locations(name)').order('opened_at', { ascending: false });
   if (error) throw error;

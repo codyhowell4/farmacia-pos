@@ -9,7 +9,7 @@ import { Search } from 'lucide-react';
 import { exportShiftsCSV, printReport } from '@/lib/exportUtils';
 import { useToast } from '@/components/ui/use-toast';
 
-import { getShifts, getSales, closeShiftDb } from '@/lib/db';
+import { getShifts, getSales, closeShiftDb, updateShift } from '@/lib/db';
 
 const formatShiftDate = (value) => {
   if (!value) return '-';
@@ -35,6 +35,10 @@ const AdminShifts = () => {
   const [closingCash, setClosingCash] = useState({});
   const [closingNotes, setClosingNotes] = useState({});
   const [closingId, setClosingId] = useState(null);
+  const [editingShift, setEditingShift] = useState(null);
+  const [editClosingCash, setEditClosingCash] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -149,6 +153,48 @@ const AdminShifts = () => {
     }
   };
 
+  const handleEditStart = (shift) => {
+    setEditingShift(shift.id);
+    setEditClosingCash((shift.closing_cash || 0).toString());
+    setEditNotes(shift.notes || '');
+  };
+
+  const handleEditSave = async (shift) => {
+    const cash = parseFloat(editClosingCash);
+    if (Number.isNaN(cash) || cash < 0) {
+      toast({ title: 'Cantidad inválida', description: 'Ingresa un monto válido.', variant: 'destructive' });
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      const expectedCash = shift.expected_cash || (shift.starting_cash || 0) + (shift.total_cash || 0);
+      const variance = cash - expectedCash;
+
+      await updateShift(shift.id, {
+        closing_cash: cash,
+        notes: editNotes,
+        variance,
+      });
+
+      const updated = await getShifts();
+      setShifts(updated);
+      setEditingShift(null);
+      toast({ title: 'Turno actualizado' });
+    } catch (err) {
+      console.error(err);
+      toast({ title: 'Error al actualizar turno', description: err?.message || 'Intenta de nuevo', variant: 'destructive' });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleEditCancel = () => {
+    setEditingShift(null);
+    setEditClosingCash('');
+    setEditNotes('');
+  };
+
   const duration = (shift) => {
     if (!shift.closed_at) return 'Abierto';
     return formatShiftDuration(shift);
@@ -237,44 +283,7 @@ const AdminShifts = () => {
                   {expandedShift === shift.id && (
                     <tr>
                       <td colSpan="9" className="p-0">
-                        {shift.status === 'closed' ? (
-                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-slate-50 px-8 py-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="space-y-1">
-                              <p className="text-xs text-slate-500">Efectivo inicial</p>
-                              <p className="font-semibold">{formatMXN(shift.starting_cash || 0)}</p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-xs text-slate-500 flex items-center gap-1"><DollarSign className="w-3 h-3" />Ventas en efectivo</p>
-                              <p className="font-semibold">{formatMXN(shift.total_cash || 0)}</p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-xs text-slate-500 flex items-center gap-1"><CreditCard className="w-3 h-3" />Ventas con tarjeta</p>
-                              <p className="font-semibold">{formatMXN(shift.total_card || 0)}</p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-xs text-slate-500 flex items-center gap-1"><Stethoscope className="w-3 h-3" />Seguro</p>
-                              <p className="font-semibold">{formatMXN(shift.total_insurance || 0)}</p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-xs text-slate-500">Efectivo esperado</p>
-                              <p className="font-semibold">{formatMXN(shift.expected_cash || 0)}</p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-xs text-slate-500">Efectivo contado</p>
-                              <p className="font-semibold">{formatMXN(shift.closing_cash || 0)}</p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-xs text-slate-500">Cerrado a las</p>
-                              <p className="font-semibold">{new Date(shift.closed_at).toLocaleTimeString()}</p>
-                            </div>
-                            {shift.notes && (
-                              <div className="space-y-1 md:col-span-1">
-                                <p className="text-xs text-slate-500">Notas</p>
-                                <p className="text-sm italic text-slate-600">{shift.notes}</p>
-                              </div>
-                            )}
-                          </motion.div>
-                        ) : (
+                        {shift.status === 'open' ? (
                           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-slate-50 px-8 py-4 space-y-4">
                             <p className="text-sm font-medium text-slate-900">Cerrar turno manualmente</p>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -308,6 +317,88 @@ const AdminShifts = () => {
                               >
                                 {closingId === shift.id ? 'Cerrando...' : 'Cerrar turno'}
                               </Button>
+                            </div>
+                          </motion.div>
+                        ) : editingShift === shift.id ? (
+                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-slate-50 px-8 py-4 space-y-4">
+                            <p className="text-sm font-medium text-slate-900">Editar turno cerrado</p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div className="space-y-2">
+                                <Label htmlFor={`edit-closing-cash-${shift.id}`}>Efectivo contado (MXN)</Label>
+                                <Input
+                                  id={`edit-closing-cash-${shift.id}`}
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="0.00"
+                                  value={editClosingCash}
+                                  onChange={e => setEditClosingCash(e.target.value)}
+                                />
+                              </div>
+                              <div className="md:col-span-2 space-y-2">
+                                <Label htmlFor={`edit-notes-${shift.id}`}>Notas</Label>
+                                <Input
+                                  id={`edit-notes-${shift.id}`}
+                                  placeholder="Notas del cierre"
+                                  value={editNotes}
+                                  onChange={e => setEditNotes(e.target.value)}
+                                />
+                              </div>
+                            </div>
+                            <div className="flex justify-end gap-2">
+                              <Button variant="outline" onClick={handleEditCancel}>Cancelar</Button>
+                              <Button
+                                onClick={() => handleEditSave(shift)}
+                                disabled={savingEdit}
+                                className="bg-blue-500 hover:bg-blue-600"
+                              >
+                                {savingEdit ? 'Guardando...' : 'Guardar'}
+                              </Button>
+                            </div>
+                          </motion.div>
+                        ) : (
+                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-slate-50 px-8 py-4 space-y-4">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-medium text-slate-900">Detalle del turno</p>
+                              <Button variant="outline" size="sm" onClick={() => handleEditStart(shift)}>
+                                Editar
+                              </Button>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                              <div className="space-y-1">
+                                <p className="text-xs text-slate-500">Efectivo inicial</p>
+                                <p className="font-semibold">{formatMXN(shift.starting_cash || 0)}</p>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-xs text-slate-500 flex items-center gap-1"><DollarSign className="w-3 h-3" />Ventas en efectivo</p>
+                                <p className="font-semibold">{formatMXN(shift.total_cash || 0)}</p>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-xs text-slate-500 flex items-center gap-1"><CreditCard className="w-3 h-3" />Ventas con tarjeta</p>
+                                <p className="font-semibold">{formatMXN(shift.total_card || 0)}</p>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-xs text-slate-500 flex items-center gap-1"><Stethoscope className="w-3 h-3" />Seguro</p>
+                                <p className="font-semibold">{formatMXN(shift.total_insurance || 0)}</p>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-xs text-slate-500">Efectivo esperado</p>
+                                <p className="font-semibold">{formatMXN(shift.expected_cash || 0)}</p>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-xs text-slate-500">Efectivo contado</p>
+                                <p className="font-semibold">{formatMXN(shift.closing_cash || 0)}</p>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-xs text-slate-500">Cerrado a las</p>
+                                <p className="font-semibold">{new Date(shift.closed_at).toLocaleTimeString()}</p>
+                              </div>
+                              {shift.notes && (
+                                <div className="space-y-1 md:col-span-1">
+                                  <p className="text-xs text-slate-500">Notas</p>
+                                  <p className="text-sm italic text-slate-600">{shift.notes}</p>
+                                </div>
+                              )}
                             </div>
                           </motion.div>
                         )}
