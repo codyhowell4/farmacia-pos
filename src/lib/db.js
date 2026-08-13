@@ -404,6 +404,12 @@ export const updateShift = async (id, updates) => {
   return data;
 };
 
+export const updateSale = async (id, updates) => {
+  const { data, error } = await supabase.from('sales').update(updates).eq('id', id).select().single();
+  if (error) throw error;
+  return data;
+};
+
 export const getShifts = async () => {
   const { data, error } = await supabase.from('shifts').select('*, locations(name)').order('opened_at', { ascending: false });
   if (error) throw error;
@@ -459,6 +465,16 @@ export const getSalesInRange = async (startDate, endDate) => {
     .eq('voided', false)
     .gte('timestamp', startDate)
     .lte('timestamp', endDate + 'T23:59:59')
+    .order('timestamp', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getSalesSince = async (since) => {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('*, sale_payments(*)')
+    .gte('timestamp', since)
     .order('timestamp', { ascending: false });
   if (error) throw error;
   return data || [];

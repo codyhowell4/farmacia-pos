@@ -9,7 +9,7 @@ import { Search } from 'lucide-react';
 import { exportShiftsCSV, printReport } from '@/lib/exportUtils';
 import { useToast } from '@/components/ui/use-toast';
 
-import { getShifts, getSales, closeShiftDb, updateShift } from '@/lib/db';
+import { getShifts, getSales, getSalesSince, closeShiftDb, updateShift, updateSale, createShift } from '@/lib/db';
 
 const formatShiftDate = (value) => {
   if (!value) return '-';
@@ -39,6 +39,8 @@ const AdminShifts = () => {
   const [editClosingCash, setEditClosingCash] = useState('');
   const [editNotes, setEditNotes] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  const [reconciling, setReconciling] = useState(false);
+  const [editStartingCash, setEditStartingCash] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -155,24 +157,28 @@ const AdminShifts = () => {
 
   const handleEditStart = (shift) => {
     setEditingShift(shift.id);
+    setEditStartingCash((shift.starting_cash || 0).toString());
     setEditClosingCash((shift.closing_cash || 0).toString());
     setEditNotes(shift.notes || '');
   };
 
   const handleEditSave = async (shift) => {
+    const startingCash = parseFloat(editStartingCash);
     const cash = parseFloat(editClosingCash);
-    if (Number.isNaN(cash) || cash < 0) {
-      toast({ title: 'Cantidad inválida', description: 'Ingresa un monto válido.', variant: 'destructive' });
+    if (Number.isNaN(startingCash) || startingCash < 0 || Number.isNaN(cash) || cash < 0) {
+      toast({ title: 'Cantidad inválida', description: 'Ingresa montos válidos.', variant: 'destructive' });
       return;
     }
 
     setSavingEdit(true);
     try {
-      const expectedCash = shift.expected_cash || (shift.starting_cash || 0) + (shift.total_cash || 0);
+      const expectedCash = startingCash + (shift.total_cash || 0);
       const variance = cash - expectedCash;
 
       await updateShift(shift.id, {
+        starting_cash: startingCash,
         closing_cash: cash,
+        expected_cash: expectedCash,
         notes: editNotes,
         variance,
       });
@@ -191,8 +197,108 @@ const AdminShifts = () => {
 
   const handleEditCancel = () => {
     setEditingShift(null);
+    setEditStartingCash('');
     setEditClosingCash('');
     setEditNotes('');
+  };
+
+  const handleReconciliation = async () => {
+    if (!confirm('¿Crear turnos de reconciliación para ventas de las últimas 24 horas sin turno asignado?')) return;
+
+    setReconciling(true);
+    try {
+      const now = new Date();
+      const since = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+      const sales = await getSalesSince(since);
+      const unlinked = sales.filter(s => !s.voided && !s.shift_id);
+
+      if (unlinked.length === 0) {
+        toast({ title: 'No hay ventas pendientes', description: 'Todas las ventas de las últimas 24 horas ya están en un turno.' });
+        return;
+      }
+
+      // Group by org, location, date
+      const groups = {};
+      unlinked.forEach(sale => {
+        const key = `${sale.org_id || 'null'}|${sale.location_id || 'null'}|${new Date(sale.timestamp).toISOString().split('T')[0]}`;
+        if (!groups[key]) {
+          groups[key] = {
+            org_id: sale.org_id,
+            location_id: sale.location_id,
+            date: new Date(sale.timestamp).toISOString().split('T')[0],
+            sales: [],
+          };
+        }
+        groups[key].sales.push(sale);
+      });
+
+      let createdCount = 0;
+      for (const group of Object.values(groups)) {
+        const sorted = group.sales.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        const firstSale = sorted[0];
+        const lastSale = sorted[sorted.length - 1];
+
+        let totalCash = 0, totalCard = 0, totalInsurance = 0, totalTransferencia = 0;
+        group.sales.forEach(sale => {
+          if (sale.is_split_payment && sale.sale_payments?.length > 0) {
+            sale.sale_payments.forEach(payment => {
+              const amount = payment.amount || 0;
+              switch (payment.payment_method) {
+                case 'cash': totalCash += amount; break;
+                case 'card': totalCard += amount; break;
+                case 'insurance': totalInsurance += amount; break;
+                case 'transferencia': totalTransferencia += amount; break;
+              }
+            });
+          } else {
+            switch (sale.payment_method) {
+              case 'cash': totalCash += sale.total; break;
+              case 'card': totalCard += sale.total; break;
+              case 'insurance': totalInsurance += sale.total; break;
+              case 'transferencia': totalTransferencia += sale.total; break;
+              default: totalCash += sale.total;
+            }
+          }
+        });
+
+        const totalRevenue = group.sales.reduce((sum, s) => sum + (s.total || 0), 0);
+        const startingCash = 1000;
+        const expectedCash = startingCash + totalCash;
+        const closingCash = startingCash + totalCash;
+
+        const shift = await createShift({
+          location_id: group.location_id,
+          opened_at: new Date(new Date(firstSale.timestamp).getTime() - 60 * 1000).toISOString(),
+          closed_at: lastSale.timestamp,
+          status: 'closed',
+          starting_cash: startingCash,
+          closing_cash: closingCash,
+          expected_cash: expectedCash,
+          variance: 0,
+          notes: `Turno de reconciliación ${group.date}`,
+          total_sales: group.sales.length,
+          total_revenue: totalRevenue,
+          total_cash: totalCash,
+          total_card: totalCard,
+          total_insurance: totalInsurance,
+        });
+
+        // Link sales to the new shift
+        for (const sale of group.sales) {
+          await updateSale(sale.id, { shift_id: shift.id });
+        }
+        createdCount++;
+      }
+
+      const updated = await getShifts();
+      setShifts(updated);
+      toast({ title: 'Reconciliación completada', description: `${createdCount} turno(s) creado(s) para ${unlinked.length} venta(s).` });
+    } catch (err) {
+      console.error(err);
+      toast({ title: 'Error en reconciliación', description: err?.message || 'Intenta de nuevo', variant: 'destructive' });
+    } finally {
+      setReconciling(false);
+    }
   };
 
   const duration = (shift) => {
@@ -232,9 +338,19 @@ const AdminShifts = () => {
       </div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-white rounded-xl shadow-lg p-6">
-        <div className="mb-6 relative">
-          <Search className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-          <Input placeholder="Buscar por cajero o ubicación..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10" />
+        <div className="mb-6 flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
+            <Input placeholder="Buscar por cajero o ubicación..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-10" />
+          </div>
+          <Button
+            variant="outline"
+            onClick={handleReconciliation}
+            disabled={reconciling}
+            className="border-blue-200 text-blue-600 hover:bg-blue-50"
+          >
+            {reconciling ? 'Reconciliando...' : 'Reconciliación'}
+          </Button>
         </div>
 
         <div className="overflow-x-auto">
@@ -324,6 +440,18 @@ const AdminShifts = () => {
                             <p className="text-sm font-medium text-slate-900">Editar turno cerrado</p>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                               <div className="space-y-2">
+                                <Label htmlFor={`edit-starting-cash-${shift.id}`}>Efectivo inicial (MXN)</Label>
+                                <Input
+                                  id={`edit-starting-cash-${shift.id}`}
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="0.00"
+                                  value={editStartingCash}
+                                  onChange={e => setEditStartingCash(e.target.value)}
+                                />
+                              </div>
+                              <div className="space-y-2">
                                 <Label htmlFor={`edit-closing-cash-${shift.id}`}>Efectivo contado (MXN)</Label>
                                 <Input
                                   id={`edit-closing-cash-${shift.id}`}
@@ -335,7 +463,7 @@ const AdminShifts = () => {
                                   onChange={e => setEditClosingCash(e.target.value)}
                                 />
                               </div>
-                              <div className="md:col-span-2 space-y-2">
+                              <div className="space-y-2">
                                 <Label htmlFor={`edit-notes-${shift.id}`}>Notas</Label>
                                 <Input
                                   id={`edit-notes-${shift.id}`}
