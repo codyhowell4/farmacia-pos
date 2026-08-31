@@ -18,6 +18,7 @@ import {
   getInventory, createSale, createSaleWithPayments, getRecentSales, voidSale, findDiscount,
   getTaxSettingsDb, getBankAccounts, createPrescription, linkPrescriptionToSale, searchCustomers, createCustomer,
   processMembershipRenewals, ensureMembershipConsultationProduct, decrementMembershipVisits,
+  fulfillMembershipTrackers, getMembershipById,
 } from '@/lib/db';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -51,6 +52,7 @@ const PoSDashboard = () => {
   const [inventory, setInventory] = useState([]);
   const [displayItems, setDisplayItems] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [isCompletingSale, setIsCompletingSale] = useState(false);
   const [view, setView] = useState('main');
   const [amountGiven, setAmountGiven] = useState('');
   const [change, setChange] = useState(0);
@@ -87,6 +89,7 @@ const PoSDashboard = () => {
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [prescriptionData, setPrescriptionData] = useState(null);
   const [selectedMembership, setSelectedMembership] = useState(null);
+  const [fulfillingTrackers, setFulfillingTrackers] = useState(false);
   const [membershipConsultationProduct, setMembershipConsultationProduct] = useState(null);
   const searchInputRef = useRef(null);
 
@@ -127,6 +130,26 @@ const PoSDashboard = () => {
   };
 
   const handleLogout = () => { logout(); navigate('/login'); };
+
+  const handleFulfillTracker = async () => {
+    if (!selectedMembership) return;
+    setFulfillingTrackers(true);
+    try {
+      const result = await fulfillMembershipTrackers(selectedMembership.id, 1);
+      toast({
+        title: 'Rastreador entregado',
+        description: `Se entregó ${result.fulfilled} rastreador(es).`,
+      });
+      // Refresh selected membership data.
+      const updated = await getMembershipById(selectedMembership.id);
+      if (updated) setSelectedMembership(updated);
+    } catch (err) {
+      console.error(err);
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setFulfillingTrackers(false);
+    }
+  };
 
   const isExpired = (item) => {
     if (!item?.expiration_date) return false;
@@ -388,262 +411,267 @@ const PoSDashboard = () => {
   };
 
   const completeSale = async (patient, prescription) => {
-    // Build payments array
-    let payments = [];
-    
-    if (isSplitPayment) {
-      // Use split payments
-      if (splitPayments.length === 0) {
-        toast({ title: 'Error', description: 'Agrega al menos un pago', variant: 'destructive' });
-        return;
-      }
-      const totalPaid = splitPayments.reduce((sum, p) => sum + p.amount, 0);
-      if (Math.abs(totalPaid - finalTotal) > 0.01) {
-        toast({ title: 'Error', description: `El total de pagos (${formatMXN(totalPaid)}) no coincide con el total (${formatMXN(finalTotal)})`, variant: 'destructive' });
-        return;
-      }
-      payments = splitPayments;
-    } else {
-      // Single payment - build from current state
-      let reference = '';
-      let bankAccountId = null;
-      
-      if (paymentMethod === 'transferencia') {
-        if (!transferenciaReference.trim()) {
-          toast({ title: 'Referencia requerida', description: 'Ingresa el número de referencia de la transferencia', variant: 'destructive' });
-          return;
-        }
-        reference = transferenciaReference;
-        bankAccountId = selectedBankAccount?.id;
-      } else if (paymentMethod === 'card') {
-        if (!cardReference.trim()) {
-          toast({ title: 'Aprobación requerida', description: 'Ingresa el número de aprobación', variant: 'destructive' });
-          return;
-        }
-        reference = cardReference;
-      }
-      
-      if (paymentMethod === 'cash') {
-        if (finalTotal > parseFloat(amountGiven || 0)) {
-          toast({ title: 'Fondos insuficientes', description: 'El efectivo entregado es menor al total', variant: 'destructive' });
-          return;
-        }
-      }
-      
-      payments = [{
-        payment_method: paymentMethod,
-        amount: finalTotal,
-        reference_number: reference || null,
-        bank_account_id: bankAccountId,
-      }];
-    }
-
-    const missingRx = cart.filter(item => item.requires_prescription && !rxNumbers[item.id]?.trim());
-    if (missingRx.length > 0) {
-      toast({ title: 'Número de receta requerido', description: `Ingresa Rx # para: ${missingRx.map(i => i.name).join(', ')}`, variant: 'destructive' });
-      return;
-    }
-
-    // Revalidate cart items for expiry and stock before finalizing
-    const expiredCartItems = cart.map(item => inventory.find(i => i.id === item.id)).filter((invItem, idx) => invItem && isExpired(invItem));
-    if (expiredCartItems.length > 0) {
-      toast({ title: 'Productos caducados en carrito', description: `Retira del carrito: ${expiredCartItems.map(i => i.name).join(', ')}`, variant: 'destructive' });
-      return;
-    }
-    const outOfStockItems = cart.filter(item => {
-      const invItem = inventory.find(i => i.id === item.id);
-      return !invItem || item.quantity > invItem.quantity;
-    });
-    if (outOfStockItems.length > 0) {
-      toast({ title: 'Stock insuficiente', description: `Cantidad no disponible para: ${outOfStockItems.map(i => i.name).join(', ')}`, variant: 'destructive' });
-      return;
-    }
-
+    setIsCompletingSale(true);
     try {
-      const cashPayment = payments?.find(p => p?.payment_method === 'cash');
-      
-      let remainingVisits = selectedMembership?.visits_remaining || 0;
-      let usedVisits = 0;
-      const saleItems = cart.map((item) => {
-        let price = item.price;
-        let originalPrice = item.originalPrice;
-        if (selectedMembership && isMembershipConsultation(item)) {
-          const freeQty = Math.max(0, Math.min(item.quantity, remainingVisits));
-          const paidQty = item.quantity - freeQty;
-          remainingVisits -= freeQty;
-          usedVisits += freeQty;
-          if (freeQty === item.quantity) {
-            price = 0;
-          } else if (paidQty === item.quantity) {
-            price = item.price * 0.5;
-          } else {
-            price = (paidQty * item.price * 0.5) / item.quantity;
+      // Build payments array
+      let payments = [];
+
+      if (isSplitPayment) {
+        // Use split payments
+        if (splitPayments.length === 0) {
+          toast({ title: 'Error', description: 'Agrega al menos un pago', variant: 'destructive' });
+          return;
+        }
+        const totalPaid = splitPayments.reduce((sum, p) => sum + p.amount, 0);
+        if (Math.abs(totalPaid - finalTotal) > 0.01) {
+          toast({ title: 'Error', description: `El total de pagos (${formatMXN(totalPaid)}) no coincide con el total (${formatMXN(finalTotal)})`, variant: 'destructive' });
+          return;
+        }
+        payments = splitPayments;
+      } else {
+        // Single payment - build from current state
+        let reference = '';
+        let bankAccountId = null;
+
+        if (paymentMethod === 'transferencia') {
+          if (!transferenciaReference.trim()) {
+            toast({ title: 'Referencia requerida', description: 'Ingresa el número de referencia de la transferencia', variant: 'destructive' });
+            return;
+          }
+          reference = transferenciaReference;
+          bankAccountId = selectedBankAccount?.id;
+        } else if (paymentMethod === 'card') {
+          if (!cardReference.trim()) {
+            toast({ title: 'Aprobación requerida', description: 'Ingresa el número de aprobación', variant: 'destructive' });
+            return;
+          }
+          reference = cardReference;
+        }
+
+        if (paymentMethod === 'cash') {
+          if (finalTotal > parseFloat(amountGiven || 0)) {
+            toast({ title: 'Fondos insuficientes', description: 'El efectivo entregado es menor al total', variant: 'destructive' });
+            return;
           }
         }
-        return {
-          inventory_id: item.id,
-          name: item.name,
-          quantity: item.quantity,
-          price,
-          original_price: originalPrice,
-          override_by: item.overrideBy || null,
-          rx_number: rxNumbers[item.id] || null,
-        };
+
+        payments = [{
+          payment_method: paymentMethod,
+          amount: finalTotal,
+          reference_number: reference || null,
+          bank_account_id: bankAccountId,
+        }];
+      }
+
+      const missingRx = cart.filter(item => item.requires_prescription && !rxNumbers[item.id]?.trim());
+      if (missingRx.length > 0) {
+        toast({ title: 'Número de receta requerido', description: `Ingresa Rx # para: ${missingRx.map(i => i.name).join(', ')}`, variant: 'destructive' });
+        return;
+      }
+
+      // Revalidate cart items for expiry and stock before finalizing
+      const expiredCartItems = cart.map(item => inventory.find(i => i.id === item.id)).filter((invItem, idx) => invItem && isExpired(invItem));
+      if (expiredCartItems.length > 0) {
+        toast({ title: 'Productos caducados en carrito', description: `Retira del carrito: ${expiredCartItems.map(i => i.name).join(', ')}`, variant: 'destructive' });
+        return;
+      }
+      const outOfStockItems = cart.filter(item => {
+        const invItem = inventory.find(i => i.id === item.id);
+        return !invItem || item.quantity > invItem.quantity;
       });
-
-      const saleRecord = {
-        location_id: user.locationId,
-        org_id: user.orgId,
-        shift_id: activeShift?.id || null,
-        salesperson_id: user?.id || null,
-        salesperson_name: user?.name || null,
-        total: finalTotal,
-        payment_method: isSplitPayment ? (payments[0]?.payment_method || 'cash') : paymentMethod,
-        amount_given: cashPayment ? cashPayment.amount : null,
-        change_due: cashPayment ? (cashPayment.amount - (cashPayment.amountApplied || cashPayment.amount)) : null,
-        discount_code: useMembershipDiscount ? 'MEMBRESIA' : (discount?.code || null),
-        discount_value: useMembershipDiscount ? selectedMembership.discount_percent : (discount?.value || null),
-        discount_amount: discountAmount || null,
-        iva_enabled: taxSettings.ivaEnabled,
-        iva_rate: taxSettings.ivaRate,
-        iva_amount: ivaAmount || null,
-        customer_id: selectedCustomer?.id || null,
-        patient_name: patient?.name || selectedCustomer?.full_name || null,
-        patient_curp: patient?.curp || selectedCustomer?.curp || null,
-        timestamp: new Date().toISOString(),
-        voided: false,
-        is_split_payment: isSplitPayment,
-        status: 'completed',
-        membership_id: selectedMembership?.id || null,
-      };
-
-      console.log('Creating sale with record:', saleRecord);
-      console.log('Sale items:', saleItems);
-      console.log('Payments:', payments);
-      
-      const sale = await createSaleWithPayments(saleRecord, saleItems, payments);
-
-      if (selectedMembership && usedVisits > 0) {
-        try {
-          await decrementMembershipVisits(selectedMembership.id, usedVisits);
-        } catch (visitErr) {
-          console.warn('Failed to decrement membership visits:', visitErr);
-        }
+      if (outOfStockItems.length > 0) {
+        toast({ title: 'Stock insuficiente', description: `Cantidad no disponible para: ${outOfStockItems.map(i => i.name).join(', ')}`, variant: 'destructive' });
+        return;
       }
 
-      console.log('Sale created successfully:', sale);
+      try {
+        const cashPayment = payments?.find(p => p?.payment_method === 'cash');
 
-      // Create or link prescription record if prescription data exists
-      if (prescription) {
-        try {
-          if (prescription.linked_prescription_id) {
-            // Link existing doctor prescription to this sale
-            await linkPrescriptionToSale(prescription.linked_prescription_id, sale.id);
-            logAudit({ 
-              action: AUDIT_ACTIONS.PRESCRIPTION_ADDED, 
-              user, 
-              details: `Linked prescription ${prescription.prescription_number} to sale #${sale.id.slice(-6)}` 
-            });
-          } else {
-            // Create new COFEPRIS prescription record
-            const prescriptionRecord = {
-              sale_id: sale.id,
-              patient_name: prescription.patient_name,
-              patient_curp: prescription.patient_curp,
-              doctor_name: prescription.doctor_name,
-              doctor_license_number: prescription.doctor_license_number,
-              doctor_office_address: prescription.doctor_office_address,
-              doctor_phone: prescription.doctor_phone,
-              prescription_number: prescription.prescription_number,
-              prescription_date: prescription.prescription_date,
-            };
-            
-            const createdPrescription = await createPrescription(prescriptionRecord);
-            console.log('Prescription created:', createdPrescription);
-            
-            logAudit({ 
-              action: AUDIT_ACTIONS.PRESCRIPTION_ADDED, 
-              user, 
-              details: `Prescription #${prescription.prescription_number} for ${prescription.patient_name} - Dr. ${prescription.doctor_name}` 
+        let remainingVisits = selectedMembership?.visits_remaining || 0;
+        let usedVisits = 0;
+        const saleItems = cart.map((item) => {
+          let price = item.price;
+          let originalPrice = item.originalPrice;
+          if (selectedMembership && isMembershipConsultation(item)) {
+            const freeQty = Math.max(0, Math.min(item.quantity, remainingVisits));
+            const paidQty = item.quantity - freeQty;
+            remainingVisits -= freeQty;
+            usedVisits += freeQty;
+            if (freeQty === item.quantity) {
+              price = 0;
+            } else if (paidQty === item.quantity) {
+              price = item.price * 0.5;
+            } else {
+              price = (paidQty * item.price * 0.5) / item.quantity;
+            }
+          }
+          return {
+            inventory_id: item.id,
+            name: item.name,
+            quantity: item.quantity,
+            price,
+            original_price: originalPrice,
+            override_by: item.overrideBy || null,
+            rx_number: rxNumbers[item.id] || null,
+          };
+        });
+
+        const saleRecord = {
+          location_id: user.locationId,
+          org_id: user.orgId,
+          shift_id: activeShift?.id || null,
+          salesperson_id: user?.id || null,
+          salesperson_name: user?.name || null,
+          total: finalTotal,
+          payment_method: isSplitPayment ? (payments[0]?.payment_method || 'cash') : paymentMethod,
+          amount_given: cashPayment ? cashPayment.amount : null,
+          change_due: cashPayment ? (cashPayment.amount - (cashPayment.amountApplied || cashPayment.amount)) : null,
+          discount_code: useMembershipDiscount ? 'MEMBRESIA' : (discount?.code || null),
+          discount_value: useMembershipDiscount ? selectedMembership.discount_percent : (discount?.value || null),
+          discount_amount: discountAmount || null,
+          iva_enabled: taxSettings.ivaEnabled,
+          iva_rate: taxSettings.ivaRate,
+          iva_amount: ivaAmount || null,
+          customer_id: selectedCustomer?.id || null,
+          patient_name: patient?.name || selectedCustomer?.full_name || null,
+          patient_curp: patient?.curp || selectedCustomer?.curp || null,
+          timestamp: new Date().toISOString(),
+          voided: false,
+          is_split_payment: isSplitPayment,
+          status: 'completed',
+          membership_id: selectedMembership?.id || null,
+        };
+
+        console.log('Creating sale with record:', saleRecord);
+        console.log('Sale items:', saleItems);
+        console.log('Payments:', payments);
+
+        const sale = await createSaleWithPayments(saleRecord, saleItems, payments);
+
+        if (selectedMembership && usedVisits > 0) {
+          try {
+            await decrementMembershipVisits(selectedMembership.id, usedVisits);
+          } catch (visitErr) {
+            console.warn('Failed to decrement membership visits:', visitErr);
+          }
+        }
+
+        console.log('Sale created successfully:', sale);
+
+        // Create or link prescription record if prescription data exists
+        if (prescription) {
+          try {
+            if (prescription.linked_prescription_id) {
+              // Link existing doctor prescription to this sale
+              await linkPrescriptionToSale(prescription.linked_prescription_id, sale.id);
+              logAudit({
+                action: AUDIT_ACTIONS.PRESCRIPTION_ADDED,
+                user,
+                details: `Linked prescription ${prescription.prescription_number} to sale #${sale.id.slice(-6)}`,
+              });
+            } else {
+              // Create new COFEPRIS prescription record
+              const prescriptionRecord = {
+                sale_id: sale.id,
+                patient_name: prescription.patient_name,
+                patient_curp: prescription.patient_curp,
+                doctor_name: prescription.doctor_name,
+                doctor_license_number: prescription.doctor_license_number,
+                doctor_office_address: prescription.doctor_office_address,
+                doctor_phone: prescription.doctor_phone,
+                prescription_number: prescription.prescription_number,
+                prescription_date: prescription.prescription_date,
+              };
+
+              const createdPrescription = await createPrescription(prescriptionRecord);
+              console.log('Prescription created:', createdPrescription);
+
+              logAudit({
+                action: AUDIT_ACTIONS.PRESCRIPTION_ADDED,
+                user,
+                details: `Prescription #${prescription.prescription_number} for ${prescription.patient_name} - Dr. ${prescription.doctor_name}`,
+              });
+            }
+          } catch (rxErr) {
+            console.error('Failed to create prescription:', rxErr);
+            toast({
+              title: 'Advertencia',
+              description: 'La venta se completó pero hubo un error guardando la receta. Contacte al administrador.',
+              variant: 'destructive',
             });
           }
-        } catch (rxErr) {
-          console.error('Failed to create prescription:', rxErr);
-          toast({ 
-            title: 'Advertencia', 
-            description: 'La venta se completó pero hubo un error guardando la receta. Contacte al administrador.', 
-            variant: 'destructive' 
-          });
         }
+
+        // ── Fire-and-forget Akaunting sync ──
+        setTimeout(async () => {
+          try {
+            const { syncSale } = await import('@/services/akauntingSync');
+            await syncSale({
+              ...sale,
+              sale_items: saleItems,
+              sale_payments: payments,
+              timestamp: saleRecord.timestamp,
+            });
+          } catch (syncErr) {
+            console.warn('Akaunting auto-sync failed:', syncErr.message);
+            toast({
+              title: 'Advertencia de sincronización',
+              description: `La venta se guardó pero no se sincronizó con Akaunting: ${syncErr.message}`,
+              variant: 'destructive',
+            });
+          }
+        }, 0);
+
+        logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(finalTotal)} | ${isSplitPayment ? 'split' : paymentMethod} | ${cart.length} item(s)` });
+        toast({ title: '¡Venta completada!', description: `${formatMXN(finalTotal)} ${isSplitPayment ? '(pago dividido)' : ''}` });
+
+        // Prepare sale data for receipt
+        const saleData = {
+          ...sale,
+          paymentMethod: saleRecord.payment_method,
+          payment_method: saleRecord.payment_method,
+          customer_name: selectedCustomer?.full_name || null,
+          items: saleItems.map(item => ({
+            ...item,
+            rxNumber: item.rx_number,
+            requiresPrescription: cart.find(c => c.id === item.inventory_id)?.requires_prescription,
+          })),
+          payments: payments,
+          discount: discount ? { code: discount.code, amount: discountAmount } : null,
+          iva: { rate: taxSettings.ivaRate, amount: ivaAmount },
+          pharmacyLocation: user?.pharmacyLocation || user?.locationId,
+          amountGiven: cashPayment ? (paymentMethod === 'cash' && !isSplitPayment ? parseFloat(amountGiven) : cashPayment.amount) : null,
+          changeDue: cashPayment ? ((paymentMethod === 'cash' && !isSplitPayment ? parseFloat(amountGiven) : cashPayment.amount) - finalTotal) : null,
+        };
+
+        // Show receipt modal
+        setCompletedSale(saleData);
+        setReceiptOpen(true);
+
+        // Refresh local inventory from DB
+        const updatedInventory = await getInventory(user.locationId);
+        setInventory(updatedInventory);
+        setDisplayItems(
+          updatedInventory.filter(i => i.quantity > 0)
+            .sort((a, b) => (b.sales_count || 0) - (a.sales_count || 0))
+            .slice(0, 10)
+        );
+
+        // Reset cart after a delay
+        setTimeout(() => {
+          setCart([]); setDiscount(null); setDiscountCode(''); setAmountGiven(''); setChange(0);
+          setPaymentMethod('cash'); setView('main'); setRxNumbers({});
+          setSplitPayments([]); setIsSplitPayment(false);
+          setTransferenciaReference(''); setCardReference('');
+          setSelectedCustomer(null); setSelectedMembership(null);
+          searchInputRef.current?.focus();
+        }, 500);
+      } catch (e) {
+        console.error('Sale error:', e);
+        toast({ title: 'Error al procesar venta', description: e.message || 'Error desconocido', variant: 'destructive' });
       }
-
-      // ── Fire-and-forget Akaunting sync ──
-      setTimeout(async () => {
-        try {
-          const { syncSale } = await import('@/services/akauntingSync');
-          await syncSale({
-            ...sale,
-            sale_items: saleItems,
-            sale_payments: payments,
-            timestamp: saleRecord.timestamp,
-          });
-        } catch (syncErr) {
-          console.warn('Akaunting auto-sync failed:', syncErr.message);
-          toast({
-            title: 'Advertencia de sincronización',
-            description: `La venta se guardó pero no se sincronizó con Akaunting: ${syncErr.message}`,
-            variant: 'destructive',
-          });
-        }
-      }, 0);
-
-      logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(finalTotal)} | ${isSplitPayment ? 'split' : paymentMethod} | ${cart.length} item(s)` });
-      toast({ title: '¡Venta completada!', description: `${formatMXN(finalTotal)} ${isSplitPayment ? '(pago dividido)' : ''}` });
-
-      // Prepare sale data for receipt
-      const saleData = {
-        ...sale,
-        paymentMethod: saleRecord.payment_method,
-        payment_method: saleRecord.payment_method,
-        customer_name: selectedCustomer?.full_name || null,
-        items: saleItems.map(item => ({
-          ...item,
-          rxNumber: item.rx_number,
-          requiresPrescription: cart.find(c => c.id === item.inventory_id)?.requires_prescription
-        })),
-        payments: payments,
-        discount: discount ? { code: discount.code, amount: discountAmount } : null,
-        iva: { rate: taxSettings.ivaRate, amount: ivaAmount },
-        pharmacyLocation: user?.pharmacyLocation || user?.locationId,
-        amountGiven: cashPayment ? (paymentMethod === 'cash' && !isSplitPayment ? parseFloat(amountGiven) : cashPayment.amount) : null,
-        changeDue: cashPayment ? ((paymentMethod === 'cash' && !isSplitPayment ? parseFloat(amountGiven) : cashPayment.amount) - finalTotal) : null,
-      };
-
-      // Show receipt modal
-      setCompletedSale(saleData);
-      setReceiptOpen(true);
-
-      // Refresh local inventory from DB
-      const updatedInventory = await getInventory(user.locationId);
-      setInventory(updatedInventory);
-      setDisplayItems(
-        updatedInventory.filter(i => i.quantity > 0)
-          .sort((a, b) => (b.sales_count || 0) - (a.sales_count || 0))
-          .slice(0, 10)
-      );
-
-      // Reset cart after a delay
-      setTimeout(() => {
-        setCart([]); setDiscount(null); setDiscountCode(''); setAmountGiven(''); setChange(0);
-        setPaymentMethod('cash'); setView('main'); setRxNumbers({});
-        setSplitPayments([]); setIsSplitPayment(false);
-        setTransferenciaReference(''); setCardReference('');
-        setSelectedCustomer(null); setSelectedMembership(null);
-        searchInputRef.current?.focus();
-      }, 500);
-    } catch (e) {
-      console.error('Sale error:', e);
-      toast({ title: 'Error al procesar venta', description: e.message || 'Error desconocido', variant: 'destructive' });
+    } finally {
+      setIsCompletingSale(false);
     }
   };
 
@@ -1095,7 +1123,9 @@ const PoSDashboard = () => {
                   </div>
                 )}
 
-                <Button onClick={handleCheckoutClick} className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-lg py-6">Finalizar venta</Button>
+                <Button onClick={handleCheckoutClick} disabled={isCompletingSale} className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-lg py-6">
+                  {isCompletingSale ? 'Procesando...' : 'Finalizar venta'}
+                </Button>
                 <Button onClick={() => setView('main')} variant="outline" className="w-full">Volver al carrito</Button>
               </div>
             </div>
@@ -1250,6 +1280,8 @@ const PoSDashboard = () => {
                   selectedMembership={selectedMembership}
                   onSelect={setSelectedMembership}
                   onClear={() => setSelectedMembership(null)}
+                  onFulfillTrackers={handleFulfillTracker}
+                  fulfillingTrackers={fulfillingTrackers}
                 />
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between"><p>Subtotal:</p><p>{formatMXN(subtotal)}</p></div>

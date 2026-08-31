@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Users, Award, ScanLine } from 'lucide-react';
+import { Search, X, Users, Award, ScanLine, Package } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { searchMemberships } from '@/lib/db';
 
-const MembershipPosLookup = ({ selectedMembership, onSelect, onClear }) => {
+const MembershipPosLookup = ({ selectedMembership, onSelect, onClear, onFulfillTrackers, fulfillingTrackers }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -84,6 +84,10 @@ const MembershipPosLookup = ({ selectedMembership, onSelect, onClear }) => {
   );
 
   if (selectedMembership) {
+    const included = selectedMembership.basic_trackers_included || 0;
+    const fulfilled = selectedMembership.basic_trackers_fulfilled || 0;
+    const trackersAvailable = Math.max(0, included - fulfilled);
+
     return (
       <div className="space-y-2">
         <div className="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-lg">
@@ -94,6 +98,8 @@ const MembershipPosLookup = ({ selectedMembership, onSelect, onClear }) => {
               <p className="text-xs text-amber-700">
                 {selectedMembership.customers?.full_name} · {selectedMembership.discount_percent}% descuento
                 {selectedMembership.plan_type === 'familiar' && ` · ${selectedMembership.membership_members?.length || 0} miembros`}
+                {' · '}
+                {selectedMembership.visits_remaining || 0} consultas restantes
               </p>
             </div>
           </div>
@@ -101,6 +107,23 @@ const MembershipPosLookup = ({ selectedMembership, onSelect, onClear }) => {
             <X className="w-4 h-4" />
           </Button>
         </div>
+
+        {trackersAvailable > 0 && onFulfillTrackers && (
+          <div className="flex items-center justify-between p-2 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-blue-800">
+              <Package className="w-4 h-4" />
+              <span>{trackersAvailable} rastreador(es) básico(s) por entregar</span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onFulfillTrackers}
+              disabled={fulfillingTrackers}
+            >
+              {fulfillingTrackers ? 'Entregando...' : 'Entregar 1'}
+            </Button>
+          </div>
+        )}
       </div>
     );
   }

@@ -1,12 +1,12 @@
 import { formatMXN } from '@/lib/currency';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Clock, DollarSign, CreditCard, Stethoscope, ChevronDown, ChevronUp, AlertTriangle, Download, Printer } from 'lucide-react';
+import { Clock, DollarSign, CreditCard, Stethoscope, ChevronDown, ChevronUp, AlertTriangle, Download, Printer, Calendar } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Search } from 'lucide-react';
-import { exportShiftsCSV, printReport } from '@/lib/exportUtils';
+import { exportShiftsSummaryCSV, printReport } from '@/lib/exportUtils';
 import { useToast } from '@/components/ui/use-toast';
 
 import { getShifts, getSales, getSalesSince, closeShiftDb, updateShift, updateSale, createShift } from '@/lib/db';
@@ -41,6 +41,8 @@ const AdminShifts = () => {
   const [savingEdit, setSavingEdit] = useState(false);
   const [reconciling, setReconciling] = useState(false);
   const [editStartingCash, setEditStartingCash] = useState('');
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -48,9 +50,16 @@ const AdminShifts = () => {
   }, []);
 
   const handleExportCSV = () => {
-    if (shifts.filter(s => s.status === 'closed').length === 0) { toast({ title: 'Sin turnos cerrados para exportar', variant: 'destructive' }); return; }
-    exportShiftsCSV(shifts);
-    toast({ title: 'Turnos exportados' });
+    if (!exportStartDate || !exportEndDate) {
+      toast({ title: 'Selecciona un rango de fechas', description: 'Elige la fecha de inicio y fin para descargar el CSV.', variant: 'destructive' });
+      return;
+    }
+    const exported = exportShiftsSummaryCSV(shifts, exportStartDate, exportEndDate);
+    if (exported === 0) {
+      toast({ title: 'Sin turnos cerrados en este rango', description: 'No hay turnos cerrados entre las fechas seleccionadas.', variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'CSV descargado', description: `${exported} turno(s) exportado(s).` });
   };
 
   const handlePrint = () => {
@@ -313,7 +322,21 @@ const AdminShifts = () => {
           <h2 className="text-2xl font-bold text-slate-900">Historial de turnos</h2>
           <p className="text-slate-600">Registros de conciliación de efectivo para todos los turnos</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-col gap-1 w-44">
+            <Label htmlFor="export-start" className="text-xs text-slate-600">Del</Label>
+            <div className="relative">
+              <Calendar className="absolute left-2 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
+              <Input id="export-start" type="date" value={exportStartDate} onChange={e => setExportStartDate(e.target.value)} className="pl-8 w-full" />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1 w-44">
+            <Label htmlFor="export-end" className="text-xs text-slate-600">Al</Label>
+            <div className="relative">
+              <Calendar className="absolute left-2 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
+              <Input id="export-end" type="date" value={exportEndDate} onChange={e => setExportEndDate(e.target.value)} className="pl-8 w-full" />
+            </div>
+          </div>
           <Button variant="outline" onClick={handlePrint}><Printer className="w-4 h-4 mr-2" />Imprimir PDF</Button>
           <Button onClick={handleExportCSV}><Download className="w-4 h-4 mr-2" />Exportar CSV</Button>
         </div>

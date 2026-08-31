@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,8 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { createMembership } from '@/lib/db';
-import { tokenizeCard, isOpenPayConfigured, maskCardNumber } from '@/lib/openpay';
-import { Users, User, CreditCard, Banknote, ChevronLeft, CheckCircle, Activity } from 'lucide-react';
+import { renderPayPalButtons, PAYPAL_PLAN_IDS, isPayPalConfigured } from '@/lib/paypal';
+import { Users, User, Banknote, ChevronLeft, CheckCircle, Activity, CreditCard } from 'lucide-react';
 
 const PLANS = {
   individual: {
@@ -15,7 +15,7 @@ const PLANS = {
     name: 'Plan Individual',
     monthlyPrice: 150,
     visits: 2,
-    trackers: 1,
+    basicTrackers: 1,
     features: [
       '2 consultas médicas mensuales',
       '10% de descuento en farmacia',
@@ -28,12 +28,12 @@ const PLANS = {
     name: 'Plan Familiar',
     monthlyPrice: 500,
     visits: 8,
-    trackers: 4,
+    basicTrackers: 6,
     features: [
-      'Hasta 4 personas',
-      '8 consultas médicas mensuales',
+      'Hasta 6 personas (titular + 5)',
+      '8 consultas médicas mensuales compartidas',
       '10% de descuento en farmacia',
-      '4 rastreadores fitness básicos',
+      '6 rastreadores fitness básicos',
       'Consultas adicionales al 50%',
     ],
   },
@@ -41,6 +41,7 @@ const PLANS = {
 
 const CASH_SURCHARGE = 50;
 const PREMIUM_TRACKER_PRICE = 250;
+const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paypal-subscription`;
 
 const MembershipRegistration = () => {
   const navigate = useNavigate();
@@ -49,6 +50,7 @@ const MembershipRegistration = () => {
   const [selectedPlanKey, setSelectedPlanKey] = useState(null);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState(null);
+  const paypalRendered = useRef(false);
 
   const [form, setForm] = useState({
     ownerName: '',
@@ -57,12 +59,11 @@ const MembershipRegistration = () => {
     member2: '',
     member3: '',
     member4: '',
-    paymentMethod: 'card',
+    member5: '',
+    member6: '',
+    paymentMethod: 'paypal',
+    basicTrackers: 0,
     premiumTrackers: 0,
-    cardNumber: '',
-    cardHolder: '',
-    expiry: '',
-    cvv: '',
   });
 
   const plan = PLANS[selectedPlanKey];
@@ -79,41 +80,70 @@ const MembershipRegistration = () => {
     setSelectedPlanKey(key);
     setForm((f) => ({
       ...f,
-      premiumTrackers: key === 'individual' ? 0 : 0,
+      basicTrackers: PLANS[key].basicTrackers,
+      premiumTrackers: 0,
     }));
     setStep('form');
   };
 
   const updateField = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
-  const parseExpiry = (expiry) => {
-    const [mm, yy] = expiry.split('/');
-    return {
-      month: mm?.trim(),
-      year: yy?.trim()?.length === 2 ? `20${yy.trim()}` : yy?.trim(),
-    };
-  };
-
   const validate = () => {
     if (!form.ownerName.trim()) return 'El nombre del titular es obligatorio.';
     if (!form.email.trim()) return 'El correo electrónico es obligatorio.';
     if (!form.phone.trim()) return 'El teléfono es obligatorio.';
     if (selectedPlanKey === 'familiar') {
-      if (!form.member2.trim() || !form.member3.trim() || !form.member4.trim()) {
-        return 'Debes registrar los 3 integrantes adicionales del plan familiar.';
+      if (
+        !form.member2.trim() ||
+        !form.member3.trim() ||
+        !form.member4.trim() ||
+        !form.member5.trim() ||
+        !form.member6.trim()
+      ) {
+        return 'Debes registrar los 5 integrantes adicionales del plan familiar.';
       }
     }
-    if (form.paymentMethod === 'card') {
-      if (!isOpenPayConfigured()) return null; // allow saving without card token for now
-      if (form.cardNumber.replace(/\D/g, '').length < 15) return 'Número de tarjeta incompleto.';
-      if (!form.cardHolder.trim()) return 'El nombre del tarjetahabiente es obligatorio.';
-      if (!form.expiry.trim()) return 'La fecha de vencimiento es obligatoria.';
-      if (form.cvv.length < 3) return 'El CVV es obligatorio.';
+    if (form.paymentMethod === 'paypal' && !isPayPalConfigured()) {
+      return 'PayPal no está configurado.';
     }
     return null;
   };
 
-  const handleSubmit = async (e) => {
+  const getFamilyMembers = () => {
+    if (selectedPlanKey !== 'familiar') return [];
+    return [form.member2, form.member3, form.member4, form.member5, form.member6]
+      .map((m) => m.trim())
+      .filter(Boolean);
+  };
+
+  const createCashMembership = async () => {
+    const customer = {
+      full_name: form.ownerName.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+    };
+
+    const result = await createMembership({
+      customer,
+      membership: {
+        plan_type: selectedPlanKey,
+        discount_percent: 10,
+        visits_limit: plan.visits,
+        premium_trackers: Number(form.premiumTrackers) || 0,
+        basic_trackers_included: plan.basicTrackers,
+        basic_trackers_fulfilled: Number(form.basicTrackers) || 0,
+        monthly_amount: monthlyTotal,
+        payment_method: 'cash',
+        payment_processor: 'paypal',
+        processor_subscription_id: null,
+      },
+      familyMembers: getFamilyMembers(),
+    });
+
+    return result;
+  };
+
+  const handleCashSubmit = async (e) => {
     e.preventDefault();
     const error = validate();
     if (error) {
@@ -123,51 +153,7 @@ const MembershipRegistration = () => {
 
     setLoading(true);
     try {
-      let cardToken = null;
-      let cardLast4 = null;
-
-      if (form.paymentMethod === 'card' && isOpenPayConfigured()) {
-        const { month, year } = parseExpiry(form.expiry);
-        const tokenRes = await tokenizeCard({
-          card_number: form.cardNumber.replace(/\D/g, ''),
-          holder_name: form.cardHolder,
-          expiration_year: year,
-          expiration_month: month,
-          cvv2: form.cvv,
-        });
-        cardToken = tokenRes.token;
-        cardLast4 = maskCardNumber(form.cardNumber);
-      }
-
-      const customer = {
-        full_name: form.ownerName.trim(),
-        email: form.email.trim(),
-        phone: form.phone.trim(),
-      };
-
-      const familyMembers =
-        selectedPlanKey === 'familiar'
-          ? [form.member2.trim(), form.member3.trim(), form.member4.trim()]
-          : [];
-
-      const membershipPayload = {
-        plan_type: selectedPlanKey,
-        discount_percent: 10,
-        visits_limit: plan.visits,
-        premium_trackers: Number(form.premiumTrackers) || 0,
-        monthly_amount: monthlyTotal,
-        payment_method: form.paymentMethod,
-        payment_processor: 'openpay',
-        card_token: cardToken,
-        card_last4: cardLast4,
-      };
-
-      const result = await createMembership({
-        customer,
-        membership: membershipPayload,
-        familyMembers,
-      });
-
+      const result = await createCashMembership();
       setCreated(result);
       setStep('success');
       toast({ title: 'Membresía registrada', description: `Plan ID: ${result.plan_id}` });
@@ -178,6 +164,79 @@ const MembershipRegistration = () => {
       setLoading(false);
     }
   };
+
+  const handlePayPalApprove = async (data) => {
+    const error = validate();
+    if (error) {
+      toast({ title: 'Verifica los datos', description: error, variant: 'destructive' });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const orgId = import.meta.env.VITE_PUBLIC_ORG_ID;
+      const res = await fetch(EDGE_FUNCTION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: 'Bearer anon' },
+        body: JSON.stringify({
+          subscription_id: data.subscriptionID,
+          plan_type: selectedPlanKey,
+          customer: {
+            full_name: form.ownerName.trim(),
+            email: form.email.trim(),
+            phone: form.phone.trim(),
+          },
+          member_names: getFamilyMembers(),
+          trackers_to_fulfill: Number(form.basicTrackers) || 0,
+          premium_trackers: Number(form.premiumTrackers) || 0,
+          org_id: orgId,
+          payment_method: 'paypal',
+        }),
+      });
+
+      const result = await res.json();
+      if (!res.ok || result.error) {
+        throw new Error(result.error || 'Error al registrar la membresía');
+      }
+
+      setCreated(result.membership);
+      setStep('success');
+      toast({ title: 'Membresía registrada', description: `Plan ID: ${result.membership.plan_id}` });
+    } catch (err) {
+      console.error(err);
+      toast({ title: 'Error', description: err.message || 'No se pudo registrar la membresía.', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (
+      step === 'form' &&
+      plan &&
+      form.paymentMethod === 'paypal' &&
+      !paypalRendered.current &&
+      isPayPalConfigured()
+    ) {
+      paypalRendered.current = true;
+      renderPayPalButtons({
+        containerId: 'paypal-button-container-admin',
+        planId: PAYPAL_PLAN_IDS[selectedPlanKey],
+        onApprove: handlePayPalApprove,
+        onError: (err) => {
+          console.error('PayPal error:', err);
+          toast({
+            title: 'Error de PayPal',
+            description: 'No se pudo cargar el botón de pago. Intenta de nuevo.',
+            variant: 'destructive',
+          });
+        },
+      }).catch((err) => {
+        console.error('Failed to render PayPal buttons:', err);
+        paypalRendered.current = false;
+      });
+    }
+  }, [step, plan, form.paymentMethod, selectedPlanKey]);
 
   const renderPlans = () => (
     <div className="space-y-6">
@@ -190,7 +249,9 @@ const MembershipRegistration = () => {
         {Object.values(PLANS).map((p) => (
           <Card
             key={p.key}
-            className={`cursor-pointer transition-all hover:shadow-lg ${selectedPlanKey === p.key ? 'ring-2 ring-blue-500' : ''}`}
+            className={`cursor-pointer transition-all hover:shadow-lg ${
+              selectedPlanKey === p.key ? 'ring-2 ring-blue-500' : ''
+            }`}
             onClick={() => handlePlanSelect(p.key)}
           >
             <CardHeader>
@@ -222,7 +283,7 @@ const MembershipRegistration = () => {
 
   const renderForm = () => (
     <div className="max-w-2xl mx-auto space-y-6">
-      <Button variant="ghost" onClick={() => setStep('plans')} className="mb-2">
+      <Button variant="ghost" onClick={() => { setStep('plans'); paypalRendered.current = false; }} className="mb-2">
         <ChevronLeft className="w-4 h-4 mr-1" /> Cambiar plan
       </Button>
 
@@ -234,7 +295,7 @@ const MembershipRegistration = () => {
         <Activity className="w-8 h-8 text-blue-600" />
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleCashSubmit} className="space-y-5">
         <div className="space-y-2">
           <h2 className="text-lg font-semibold">Datos del titular</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -257,24 +318,47 @@ const MembershipRegistration = () => {
           <div className="space-y-2">
             <h2 className="text-lg font-semibold">Integrantes adicionales</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label>Integrante 2 *</Label>
-                <Input value={form.member2} onChange={(e) => updateField('member2', e.target.value)} required />
-              </div>
-              <div>
-                <Label>Integrante 3 *</Label>
-                <Input value={form.member3} onChange={(e) => updateField('member3', e.target.value)} required />
-              </div>
-              <div>
-                <Label>Integrante 4 *</Label>
-                <Input value={form.member4} onChange={(e) => updateField('member4', e.target.value)} required />
-              </div>
+              {[2, 3, 4, 5, 6].map((n) => (
+                <div key={n}>
+                  <Label>Integrante {n} *</Label>
+                  <Input
+                    value={form[`member${n}`]}
+                    onChange={(e) => updateField(`member${n}`, e.target.value)}
+                    required
+                  />
+                </div>
+              ))}
             </div>
           </div>
         )}
 
         <div className="space-y-2">
           <h2 className="text-lg font-semibold">Rastreador fitness</h2>
+          {selectedPlanKey === 'individual' ? (
+            <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
+              <input
+                type="checkbox"
+                checked={form.basicTrackers > 0}
+                onChange={(e) => updateField('basicTrackers', e.target.checked ? 1 : 0)}
+                className="w-4 h-4"
+              />
+              <span>Incluir rastreador básico (1 incluido)</span>
+            </label>
+          ) : (
+            <div className="flex items-center gap-4">
+              <Label>Cantidad de rastreadores básicos a entregar ahora (0–6):</Label>
+              <select
+                value={form.basicTrackers}
+                onChange={(e) => updateField('basicTrackers', Number(e.target.value))}
+                className="px-3 py-2 rounded-md border border-slate-300 text-sm"
+              >
+                {[0, 1, 2, 3, 4, 5, 6].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {selectedPlanKey === 'individual' ? (
             <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
               <input
@@ -293,7 +377,7 @@ const MembershipRegistration = () => {
                 onChange={(e) => updateField('premiumTrackers', Number(e.target.value))}
                 className="px-3 py-2 rounded-md border border-slate-300 text-sm"
               >
-                {[0, 1, 2, 3, 4].map((n) => (
+                {[0, 1, 2, 3, 4, 5, 6].map((n) => (
                   <option key={n} value={n}>
                     {n} {n === 1 ? 'rastreador' : 'rastreadores'} (+${n * PREMIUM_TRACKER_PRICE})
                   </option>
@@ -306,25 +390,35 @@ const MembershipRegistration = () => {
         <div className="space-y-2">
           <h2 className="text-lg font-semibold">Forma de pago</h2>
           <div className="flex gap-4">
-            <label className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer ${form.paymentMethod === 'card' ? 'bg-blue-50 border-blue-300' : 'hover:bg-slate-50'}`}>
+            <label className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer ${
+              form.paymentMethod === 'paypal' ? 'bg-blue-50 border-blue-300' : 'hover:bg-slate-50'
+            }`}>
               <input
                 type="radio"
                 name="paymentMethod"
-                value="card"
-                checked={form.paymentMethod === 'card'}
-                onChange={(e) => updateField('paymentMethod', e.target.value)}
+                value="paypal"
+                checked={form.paymentMethod === 'paypal'}
+                onChange={(e) => {
+                  updateField('paymentMethod', e.target.value);
+                  paypalRendered.current = false;
+                }}
                 className="w-4 h-4"
               />
               <CreditCard className="w-5 h-5" />
-              <span>Tarjeta (autopago mensual)</span>
+              <span>PayPal (suscripción mensual)</span>
             </label>
-            <label className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer ${form.paymentMethod === 'cash' ? 'bg-amber-50 border-amber-300' : 'hover:bg-slate-50'}`}>
+            <label className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer ${
+              form.paymentMethod === 'cash' ? 'bg-amber-50 border-amber-300' : 'hover:bg-slate-50'
+            }`}>
               <input
                 type="radio"
                 name="paymentMethod"
                 value="cash"
                 checked={form.paymentMethod === 'cash'}
-                onChange={(e) => updateField('paymentMethod', e.target.value)}
+                onChange={(e) => {
+                  updateField('paymentMethod', e.target.value);
+                  paypalRendered.current = false;
+                }}
                 className="w-4 h-4"
               />
               <Banknote className="w-5 h-5" />
@@ -333,60 +427,27 @@ const MembershipRegistration = () => {
           </div>
         </div>
 
-        {form.paymentMethod === 'card' && (
-          <div className="space-y-2">
-            <h2 className="text-lg font-semibold">Datos de la tarjeta</h2>
-            {!isOpenPayConfigured() && (
-              <div className="p-3 bg-yellow-50 text-yellow-800 text-sm rounded-lg">
-                El procesador de pagos no está configurado. La membresía se guardará sin token de tarjeta hasta que agregues las credenciales de OpenPay en el archivo .env.
-              </div>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
-                <Label>Número de tarjeta</Label>
-                <Input
-                  value={form.cardNumber}
-                  onChange={(e) => updateField('cardNumber', e.target.value)}
-                  placeholder="0000 0000 0000 0000"
-                  maxLength={19}
-                />
-              </div>
-              <div className="md:col-span-2">
-                <Label>Nombre del tarjetahabiente</Label>
-                <Input value={form.cardHolder} onChange={(e) => updateField('cardHolder', e.target.value)} />
-              </div>
-              <div>
-                <Label>Vencimiento (MM/AA)</Label>
-                <Input
-                  value={form.expiry}
-                  onChange={(e) => updateField('expiry', e.target.value)}
-                  placeholder="MM/AA"
-                  maxLength={5}
-                />
-              </div>
-              <div>
-                <Label>CVV</Label>
-                <Input
-                  type="password"
-                  value={form.cvv}
-                  onChange={(e) => updateField('cvv', e.target.value)}
-                  placeholder="123"
-                  maxLength={4}
-                />
-              </div>
-            </div>
+        {form.paymentMethod === 'paypal' && !isPayPalConfigured() && (
+          <div className="p-3 bg-yellow-50 text-yellow-800 text-sm rounded-lg">
+            PayPal no está configurado. Agrega las variables de entorno de PayPal para continuar.
           </div>
         )}
 
-        <div className="border-t pt-4 flex items-center justify-between">
+        <div className="border-t pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
             <p className="text-sm text-slate-500">Total mensual</p>
             <p className="text-2xl font-bold text-slate-900">${monthlyTotal.toFixed(2)} MXN</p>
           </div>
-          <Button type="submit" disabled={loading} size="lg">
-            {loading ? 'Registrando...' : 'Registrar membresía'}
-          </Button>
+          {form.paymentMethod === 'cash' && (
+            <Button type="submit" disabled={loading} size="lg">
+              {loading ? 'Registrando...' : 'Registrar membresía'}
+            </Button>
+          )}
         </div>
+
+        {form.paymentMethod === 'paypal' && (
+          <div id="paypal-button-container-admin" className="min-h-[120px]" />
+        )}
       </form>
     </div>
   );
@@ -409,7 +470,25 @@ const MembershipRegistration = () => {
         <Button variant="outline" onClick={() => navigate('/admin/memberships')}>
           Ver membresías
         </Button>
-        <Button onClick={() => { setStep('plans'); setSelectedPlanKey(null); setCreated(null); setForm({ ownerName: '', email: '', phone: '', member2: '', member3: '', member4: '', paymentMethod: 'card', premiumTrackers: 0, cardNumber: '', cardHolder: '', expiry: '', cvv: '' }); }}>
+        <Button onClick={() => {
+          setStep('plans');
+          setSelectedPlanKey(null);
+          setCreated(null);
+          paypalRendered.current = false;
+          setForm({
+            ownerName: '',
+            email: '',
+            phone: '',
+            member2: '',
+            member3: '',
+            member4: '',
+            member5: '',
+            member6: '',
+            paymentMethod: 'paypal',
+            basicTrackers: 0,
+            premiumTrackers: 0,
+          });
+        }}>
           Registrar otra
         </Button>
       </div>

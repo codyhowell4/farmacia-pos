@@ -147,17 +147,15 @@ const AdminMemberships = () => {
                         {m.plan_type === 'familiar' ? 'Familiar' : 'Individual'}
                       </td>
                       <td className="px-4 py-3">
-                        {m.plan_type === 'familiar' ? (
-                          <button
-                            onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
-                            className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
-                          >
-                            {m.membership_members?.length || 0} miembros
-                            {expandedId === m.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                          </button>
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
+                        <button
+                          onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
+                          className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                        >
+                          {m.plan_type === 'familiar'
+                            ? `${m.membership_members?.length || 0} miembros`
+                            : 'Detalles'}
+                          {expandedId === m.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </button>
                       </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={m.status} />
@@ -168,20 +166,43 @@ const AdminMemberships = () => {
                         </Button>
                       </td>
                     </tr>
-                    {expandedId === m.id && m.plan_type === 'familiar' && (
+                    {expandedId === m.id && (
                       <tr>
                         <td colSpan={8} className="px-4 py-3 bg-slate-50">
-                          <div className="space-y-2">
-                            <p className="text-xs font-semibold text-slate-500 uppercase">Miembros del plan</p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
-                              {(m.membership_members || []).map((mm) => (
-                                <div key={mm.id} className="bg-white border rounded p-2 text-sm">
-                                  <p className="font-medium text-slate-900">{mm.name}</p>
-                                  <p className="text-xs text-slate-500 font-mono">{mm.sub_id}</p>
-                                  {mm.is_owner && <span className="text-xs text-blue-600">Titular</span>}
-                                </div>
-                              ))}
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <p className="text-xs font-semibold text-slate-500 uppercase">Procesador</p>
+                                <p className="capitalize">{m.payment_processor || '—'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold text-slate-500 uppercase">ID de suscripción PayPal</p>
+                                <p className="font-mono text-xs break-all">{m.processor_subscription_id || '—'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold text-slate-500 uppercase">Rastreadores básicos</p>
+                                <p>{m.basic_trackers_fulfilled || 0} / {m.basic_trackers_included || 0} entregados</p>
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold text-slate-500 uppercase">Renovación</p>
+                                <p>{m.next_renewal_date || '—'}</p>
+                              </div>
                             </div>
+
+                            {m.plan_type === 'familiar' && (
+                              <>
+                                <p className="text-xs font-semibold text-slate-500 uppercase">Miembros del plan</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+                                  {(m.membership_members || []).map((mm) => (
+                                    <div key={mm.id} className="bg-white border rounded p-2 text-sm">
+                                      <p className="font-medium text-slate-900">{mm.name}</p>
+                                      <p className="text-xs text-slate-500 font-mono">{mm.sub_id}</p>
+                                      {mm.is_owner && <span className="text-xs text-blue-600">Titular</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>

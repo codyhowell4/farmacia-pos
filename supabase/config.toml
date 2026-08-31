@@ -1,0 +1,7 @@
+project_id = "ieinjhonepkudxxpmuly"
+
+[functions.paypal-subscription]
+verify_jwt = false
+
+[functions.paypal-webhook]
+verify_jwt = false

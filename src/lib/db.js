@@ -2108,7 +2108,13 @@ export const processMembershipRenewals = async () => {
   if (error) throw error;
   if (!due?.length) return 0;
 
+  let processed = 0;
   for (const m of due) {
+    // PayPal subscriptions are renewed by PayPal webhooks; skip them here.
+    if (m.payment_processor === 'paypal') {
+      continue;
+    }
+
     const newDate = addMonthsWithLastDayRule(m.next_renewal_date, 1);
     const nextRenewal = newDate.toISOString().split('T')[0];
     const renewalDay = newDate.getDate();
@@ -2129,8 +2135,9 @@ export const processMembershipRenewals = async () => {
         updated_at: new Date().toISOString(),
       }).eq('id', m.id);
     }
+    processed += 1;
   }
-  return due.length;
+  return processed;
 };
 
 export const createMembership = async ({ customer, membership, familyMembers = [] }) => {
@@ -2147,6 +2154,8 @@ export const createMembership = async ({ customer, membership, familyMembers = [
       org_id: orgId,
       customer_id: createdCustomer.id,
       visits_remaining: membership.visits_limit,
+      basic_trackers_included: membership.basic_trackers_included ?? 0,
+      basic_trackers_fulfilled: membership.basic_trackers_fulfilled ?? 0,
       next_renewal_date: nextRenewal.toISOString().split('T')[0],
       renewal_day: nextRenewal.getDate(),
     })
@@ -2311,4 +2320,102 @@ export const ensureMembershipConsultationProduct = async () => {
     .single();
   if (createErr) throw createErr;
   return created;
+};
+export const getBasicTrackerProduct = async () => {
+  const orgId = await getOrgId();
+
+  const { data: existing, error: fetchErr } = await supabase
+    .from('inventory')
+    .select('*')
+    .eq('org_id', orgId)
+    .ilike('name', 'rastreador fitness basico')
+    .eq('item_type', 'product')
+    .is('location_id', null)
+    .maybeSingle();
+  if (fetchErr) throw fetchErr;
+  if (existing) return existing;
+
+  const { data: created, error: createErr } = await supabase
+    .from('inventory')
+    .insert({
+      org_id: orgId,
+      location_id: null,
+      name: 'RASTREADOR FITNESS BASICO',
+      item_type: 'product',
+      department: 'accesorios',
+      price: 0,
+      cost: 0,
+      quantity: 0,
+      low_stock_threshold: 0,
+    })
+    .select()
+    .single();
+  if (createErr) throw createErr;
+  return created;
+};
+
+export const decrementInventoryAllowNegative = async (inventoryId, qty, referenceType = 'membership_tracker', referenceId = null) => {
+  if (!inventoryId || qty <= 0) return;
+  const { data: product, error: fetchErr } = await supabase
+    .from('inventory')
+    .select('quantity, sales_count, name, org_id')
+    .eq('id', inventoryId)
+    .single();
+  if (fetchErr) throw fetchErr;
+
+  const prevQty = product?.quantity || 0;
+  const newQty = prevQty - qty;
+
+  const { error: updateErr } = await supabase
+    .from('inventory')
+    .update({
+      quantity: newQty,
+      sales_count: (product?.sales_count || 0) + qty,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', inventoryId);
+  if (updateErr) throw updateErr;
+
+  await logInventoryMovement({
+    inventory_id: inventoryId,
+    type: 'sale',
+    quantity_change: -qty,
+    previous_quantity: prevQty,
+    new_quantity: newQty,
+    reference_id: referenceId,
+    reference_type: referenceType,
+    reason: `${product?.name || 'Rastreador'} (entrega membresía)`,
+  });
+};
+
+export const fulfillMembershipTrackers = async (membershipId, qty) => {
+  if (!membershipId || qty <= 0) return { fulfilled: 0 };
+
+  const { data: membership, error: fetchErr } = await supabase
+    .from('memberships')
+    .select('basic_trackers_included, basic_trackers_fulfilled')
+    .eq('id', membershipId)
+    .single();
+  if (fetchErr) throw fetchErr;
+
+  const alreadyFulfilled = membership?.basic_trackers_fulfilled || 0;
+  const included = membership?.basic_trackers_included || 0;
+  const remaining = Math.max(0, included - alreadyFulfilled);
+  const toFulfill = Math.min(qty, remaining);
+
+  if (toFulfill <= 0) return { fulfilled: 0 };
+
+  const product = await getBasicTrackerProduct();
+  await decrementInventoryAllowNegative(product.id, toFulfill, 'membership_tracker', membershipId);
+
+  const { error: updateErr } = await supabase
+    .from('memberships')
+    .update({
+      basic_trackers_fulfilled: alreadyFulfilled + toFulfill,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', membershipId);
+  if (updateErr) throw updateErr;
+
+  return { fulfilled: toFulfill, product };
 };

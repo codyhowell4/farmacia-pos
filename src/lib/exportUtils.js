@@ -62,6 +62,41 @@ export const exportShiftsCSV = (shifts) => {
   downloadCSV([headers.join(','), ...rows].join('\n'), 'shifts_report.csv');
 };
 
+export const exportShiftsSummaryCSV = (shifts, startDate, endDate) => {
+  const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
+  const end = endDate ? new Date(`${endDate}T23:59:59.999`) : null;
+
+  const filtered = shifts
+    .filter(s => s.status === 'closed')
+    .filter(s => {
+      const date = new Date(s.closed_at || s.opened_at);
+      if (Number.isNaN(date.getTime())) return false;
+      if (start && date < start) return false;
+      if (end && date > end) return false;
+      return true;
+    })
+    .sort((a, b) => new Date(a.closed_at || a.opened_at) - new Date(b.closed_at || b.opened_at));
+
+  if (filtered.length === 0) return 0;
+
+  const headers = ['Date', 'Cajero', 'Ingresos', 'Categoria', 'Subcategoria', '# de ventas'];
+  const rows = filtered.map(s => {
+    const date = new Date(s.closed_at || s.opened_at);
+    const dateStr = `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
+    return [
+      `"${dateStr}"`,
+      `"${(s.opened_by_name || '').replace(/"/g, '""')}"`,
+      (s.total_revenue || 0).toFixed(2),
+      'Revenue',
+      'Medicamento',
+      s.total_sales || 0,
+    ].join(',');
+  });
+
+  downloadCSV([headers.join(','), ...rows].join('\n'), 'turnos_resumen.csv');
+  return filtered.length;
+};
+
 export const exportAuditCSV = (entries) => {
   const headers = ['Fecha y hora','Acción','Usuario','Rol','Ubicación','Detalle'];
   const rows = entries.map(e => [
