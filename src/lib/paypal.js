@@ -44,7 +44,7 @@ export const loadPayPalScript = () => {
 
     const script = document.createElement('script');
     script.id = 'paypal-sdk-script';
-    script.src = `${PAYPAL_SCRIPT_BASE}?client-id=${PAYPAL_CLIENT_ID}&vault=true&intent=subscription&currency=MXN`;
+    script.src = `${PAYPAL_SCRIPT_BASE}?client-id=${PAYPAL_CLIENT_ID}&vault=true&intent=subscription`;
     script.setAttribute('data-sdk-integration-source', 'button-factory');
     script.async = true;
 
