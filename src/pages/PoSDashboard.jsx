@@ -1234,13 +1234,20 @@ const PoSDashboard = () => {
             <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="lg:col-span-4 xl:col-span-3 bg-white rounded-xl shadow-2xl p-4 sm:p-6 h-fit lg:sticky lg:top-24">
               <h2 className="text-xl sm:text-2xl font-bold mb-4 flex items-center"><ShoppingCart className="w-6 h-6 mr-2" />Carrito</h2>
               <div className="space-y-3 max-h-[40vh] lg:max-h-[calc(100vh-380px)] overflow-y-auto mb-4 pr-2">
-                {cart.map((item) => (
+                {cart.map((item) => {
+                  const stock = inventory.find(i => i.id === item.id)?.quantity;
+                  return (
                   <div key={item.id} className="border border-slate-200 rounded-lg p-3">
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <span className="font-medium text-sm">{item.name}</span>
                         {item.requires_prescription && (
                           <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700">Rx</span>
+                        )}
+                        {stock != null && (
+                          <p className={`text-xs ${item.quantity >= stock ? 'text-amber-600 font-medium' : 'text-slate-500'}`}>
+                            Stock: {stock}{item.quantity >= stock ? ' (máx. alcanzado)' : ''}
+                          </p>
                         )}
                         {item.overrideBy && <p className="text-xs text-blue-600">Overridden by {item.overrideBy}</p>}
                       </div>
@@ -1268,7 +1275,8 @@ const PoSDashboard = () => {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
                 {cart.length === 0 && <p className="text-slate-500 text-center py-8">Tu carrito está vacío</p>}
               </div>
               <div className="border-t border-slate-200 pt-4 space-y-4">
