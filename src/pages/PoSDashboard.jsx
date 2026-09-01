@@ -262,7 +262,12 @@ const PoSDashboard = () => {
       const foundDiscount = await findDiscount(discountCode);
       if (foundDiscount) {
         setDiscount(foundDiscount);
-        toast({ title: '¡Descuento aplicado!', description: `${foundDiscount.value}% de descuento aplicado` });
+        toast({
+          title: '¡Descuento aplicado!',
+          description: foundDiscount.type === 'cost_plus'
+            ? `Precio de costo + ${foundDiscount.value}% aplicado`
+            : `${foundDiscount.value}% de descuento aplicado`
+        });
       } else {
         toast({ title: 'Código inválido', variant: 'destructive' });
         setDiscount(null);
@@ -728,17 +733,31 @@ const PoSDashboard = () => {
     : 0;
   const membershipConsultationSavings = originalConsultationSubtotal - consultationEffectiveTotal;
   const membershipTotalSavings = membershipProductDiscount + membershipConsultationSavings;
-  const codeDiscountAmount = discount ? originalSubtotal * (discount.value / 100) : 0;
+  // Cost-plus pricing (employee codes): each item sells at cost * (1 + value/100).
+  // Items without a recorded cost keep their regular price.
+  const isCostPlus = discount?.type === 'cost_plus';
+  const costPlusSubtotal = isCostPlus
+    ? cart.reduce((sum, item) => {
+        const base = item.cost > 0 ? item.cost * (1 + discount.value / 100) : item.price;
+        return sum + base * item.quantity;
+      }, 0)
+    : 0;
 
-  const useMembershipDiscount = selectedMembership && membershipTotalSavings >= codeDiscountAmount;
+  const codeDiscountAmount = discount && !isCostPlus ? originalSubtotal * (discount.value / 100) : 0;
+
+  const useMembershipDiscount = selectedMembership && !isCostPlus && membershipTotalSavings >= codeDiscountAmount;
   const appliedDiscountAmount = useMembershipDiscount ? membershipProductDiscount : codeDiscountAmount;
   const appliedDiscountLabel = useMembershipDiscount
     ? `Membresía ${selectedMembership.discount_percent}%`
-    : discount?.code || null;
+    : isCostPlus
+      ? `${discount.code} (costo +${discount.value}%)`
+      : discount?.code || null;
 
   const subtotal = originalSubtotal;
-  const discountAmount = appliedDiscountAmount;
-  const subtotalAfterDiscount = regularSubtotal - appliedDiscountAmount + consultationEffectiveTotal;
+  const discountAmount = isCostPlus ? originalSubtotal - costPlusSubtotal : appliedDiscountAmount;
+  const subtotalAfterDiscount = isCostPlus
+    ? costPlusSubtotal
+    : regularSubtotal - appliedDiscountAmount + consultationEffectiveTotal;
   const ivaAmount = calcIVA(subtotalAfterDiscount, taxSettings);
   const finalTotal = subtotalAfterDiscount + ivaAmount;
 

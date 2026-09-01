@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 
 import { getDiscounts, createDiscount, deleteDiscount } from '@/lib/db';
@@ -14,7 +15,7 @@ const AdminDiscounts = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingDiscount, setEditingDiscount] = useState(null);
-  const [formData, setFormData] = useState({ code: '', value: '' });
+  const [formData, setFormData] = useState({ code: '', value: '', type: 'percent' });
   const { toast } = useToast();
 
   const loadDiscounts = async () => {
@@ -31,10 +32,10 @@ const AdminDiscounts = () => {
     try {
       if (editingDiscount) {
         // update via upsert — reuse createDiscount with id
-        await createDiscount({ id: editingDiscount.id, code: formData.code, value: parseFloat(formData.value) });
+        await createDiscount({ id: editingDiscount.id, code: formData.code, value: parseFloat(formData.value), type: formData.type });
         toast({ title: 'Discount Updated! ✅' });
       } else {
-        await createDiscount({ code: formData.code, value: parseFloat(formData.value) });
+        await createDiscount({ code: formData.code, value: parseFloat(formData.value), type: formData.type });
         toast({ title: 'Discount Added! 🎉' });
       }
       await loadDiscounts();
@@ -57,12 +58,12 @@ const AdminDiscounts = () => {
 
   const handleEdit = (discount) => {
     setEditingDiscount(discount);
-    setFormData({ code: discount.code, value: discount.value.toString() });
+    setFormData({ code: discount.code, value: discount.value.toString(), type: discount.type || 'percent' });
     setIsDialogOpen(true);
   };
 
   const resetForm = () => {
-    setFormData({ code: '', value: '' });
+    setFormData({ code: '', value: '', type: 'percent' });
     setEditingDiscount(null);
   };
 
@@ -113,7 +114,17 @@ const AdminDiscounts = () => {
                   <Input id="code" value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value })} required />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="value">Valor del descuento (%)</Label>
+                  <Label>Tipo de descuento</Label>
+                  <Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="percent">Porcentaje de descuento</SelectItem>
+                      <SelectItem value="cost_plus">Costo + % (empleados)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="value">{formData.type === 'cost_plus' ? 'Porcentaje sobre el costo (%)' : 'Valor del descuento (%)'}</Label>
                   <Input id="value" type="number" value={formData.value} onChange={(e) => setFormData({ ...formData, value: e.target.value })} required placeholder="e.g., 15 for 15%" />
                 </div>
                 <Button type="submit" className="w-full">
@@ -140,7 +151,9 @@ const AdminDiscounts = () => {
                     <Ticket className="w-4 h-4 mr-2 text-slate-500" />
                     {discount.code}
                   </td>
-                  <td className="px-4 py-3 text-sm font-bold text-green-600">{discount.value}%</td>
+                  <td className="px-4 py-3 text-sm font-bold text-green-600">
+                    {discount.type === 'cost_plus' ? `Costo +${discount.value}%` : `${discount.value}%`}
+                  </td>
                   <td className="px-4 py-3 text-sm">
                     <div className="flex space-x-2">
                       <button onClick={() => handleEdit(discount)} className="text-blue-600 hover:text-blue-800"><Edit className="w-4 h-4" /></button>
