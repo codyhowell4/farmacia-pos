@@ -1600,6 +1600,59 @@ export const updateInventoryBatch = async (id, updates) => {
   return data;
 };
 
+export const getAllInventoryBatches = async () => {
+  const { data, error } = await supabase
+    .from('inventory_batches')
+    .select('*')
+    .order('expiration_date', { ascending: true });
+  if (error) throw error;
+  return data || [];
+};
+
+// Register a purchase/restock: creates a batch record (with its own cost,
+// expiration and lote), adds to the item's total quantity and logs a
+// 'purchase' movement. Batch quantity is a receipt record — it does not
+// decrement on sales.
+export const restockInventoryItem = async ({ inventoryId, quantityAdded, expirationDate = null, batchNumber = null, cost = null }) => {
+  // 1. Create the batch record
+  await createInventoryBatch({
+    inventory_id: inventoryId,
+    batch_number: batchNumber,
+    quantity: quantityAdded,
+    expiration_date: expirationDate,
+    cost,
+  });
+
+  // 2. Add to item quantity; keep item cost at latest purchase cost
+  const { data: current, error: fetchError } = await supabase
+    .from('inventory').select('quantity').eq('id', inventoryId).single();
+  if (fetchError) throw fetchError;
+  const prevQty = current?.quantity || 0;
+  const newQty = prevQty + quantityAdded;
+  const updates = { quantity: newQty, updated_at: new Date().toISOString() };
+  if (cost != null) updates.cost = cost;
+  const { error: updateError } = await supabase.from('inventory').update(updates).eq('id', inventoryId);
+  if (updateError) throw updateError;
+
+  // 3. Log unified movement
+  await logInventoryMovement({
+    inventory_id: inventoryId,
+    type: 'purchase',
+    quantity_change: quantityAdded,
+    previous_quantity: prevQty,
+    new_quantity: newQty,
+    reference_type: 'restock',
+    reason: [
+      'Compra / reposición',
+      batchNumber ? `Lote: ${batchNumber}` : null,
+      expirationDate ? `Caduca: ${expirationDate}` : null,
+      cost != null ? `Costo: ${cost}` : null,
+    ].filter(Boolean).join(' · '),
+  });
+
+  return { previous_quantity: prevQty, new_quantity: newQty };
+};
+
 // ── INVENTORY (doctor-scoped) ───────────────────────────────
 
 export const getInventoryForDoctor = async () => {

@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
-import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory } from '@/lib/db';
+import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory, getAllInventoryBatches, restockInventoryItem } from '@/lib/db';
 
 const LOW_STOCK_THRESHOLD = 0;
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -52,6 +52,13 @@ const InventoryDashboard = () => {
     newQuantity: '', reason: '',
   });
 
+  // Restock (registrar compra) state
+  const [restockItem, setRestockItem] = useState(null);
+  const [isRestockOpen, setIsRestockOpen] = useState(false);
+  const [restockForm, setRestockForm] = useState({ quantity: '', expirationDate: '', batchNumber: '', cost: '' });
+  const [isRestockSaving, setIsRestockSaving] = useState(false);
+  const [batchesByItem, setBatchesByItem] = useState({});
+
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
@@ -86,6 +93,17 @@ const InventoryDashboard = () => {
       setInventory(items);
     } catch (e) {
       console.error(e);
+    }
+    try {
+      const batches = await getAllInventoryBatches();
+      const map = {};
+      for (const b of batches) {
+        if (!map[b.inventory_id]) map[b.inventory_id] = [];
+        map[b.inventory_id].push(b);
+      }
+      setBatchesByItem(map);
+    } catch (e) {
+      console.error('Could not load inventory batches:', e);
     }
   };
 
@@ -204,6 +222,62 @@ const InventoryDashboard = () => {
       await loadInventory();
     } catch (err) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  const handleRestock = (item) => {
+    setRestockItem(item);
+    setRestockForm({
+      quantity: '',
+      expirationDate: '',
+      batchNumber: '',
+      cost: item.cost != null ? String(item.cost) : '',
+    });
+    setIsRestockOpen(true);
+  };
+
+  const closeRestockModal = async () => {
+    setIsRestockOpen(false);
+    await waitForDialogUnmount();
+    setRestockItem(null);
+    setRestockForm({ quantity: '', expirationDate: '', batchNumber: '', cost: '' });
+  };
+
+  const submitRestock = async () => {
+    const qty = parseInt(restockForm.quantity);
+    if (isNaN(qty) || qty <= 0) {
+      toast({ title: 'Cantidad inválida', description: 'Ingresa la cantidad comprada (mayor a 0)', variant: 'destructive' });
+      return;
+    }
+    const cost = restockForm.cost !== '' ? parseFloat(restockForm.cost) : null;
+    if (restockForm.cost !== '' && (isNaN(cost) || cost < 0)) {
+      toast({ title: 'Costo inválido', description: 'El costo debe ser un número positivo', variant: 'destructive' });
+      return;
+    }
+
+    setIsRestockSaving(true);
+    try {
+      const result = await restockInventoryItem({
+        inventoryId: restockItem.id,
+        quantityAdded: qty,
+        expirationDate: restockForm.expirationDate || null,
+        batchNumber: restockForm.batchNumber.trim() || null,
+        cost,
+      });
+
+      logAudit({
+        action: AUDIT_ACTIONS.INVENTORY_EDIT,
+        user,
+        details: `Restock (compra): ${restockItem.name} +${qty} unidades (${result.previous_quantity} → ${result.new_quantity})${restockForm.batchNumber ? `, lote ${restockForm.batchNumber}` : ''}${restockForm.expirationDate ? `, caduca ${restockForm.expirationDate}` : ''}${cost != null ? `, costo ${formatMXN(cost)}` : ''}`,
+      });
+
+      toast({ title: 'Compra registrada', description: `${restockItem.name}: ${result.previous_quantity} → ${result.new_quantity} unidades` });
+      await closeRestockModal();
+      await loadInventory();
+    } catch (err) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    } finally {
+      setIsRestockSaving(false);
     }
   };
 
@@ -524,13 +598,42 @@ const InventoryDashboard = () => {
     }
   };
 
+  // Expiration is tracked per batch: the effective date is the earliest
+  // expiring batch when batches exist, else the item-level field (legacy/CSV).
+  const getItemExpiryDate = (item) => {
+    const batches = batchesByItem[item.id];
+    if (!batches || batches.length === 0) return item.expiration_date;
+    const dated = batches.filter(b => b.expiration_date);
+    return dated.length > 0 ? dated[0].expiration_date : item.expiration_date;
+  };
+
+  const getItemBatchSummary = (item) => {
+    const batches = batchesByItem[item.id];
+    if (!batches || batches.length === 0) return item.batch_number || '-';
+    const first = batches.find(b => b.expiration_date) || batches[0];
+    const label = first?.batch_number || '-';
+    return batches.length > 1 ? `${label} (+${batches.length - 1})` : label;
+  };
+
+  const isItemExpiring = (item) => {
+    const d = getItemExpiryDate(item);
+    if (!d) return false;
+    const s = getExpiryStatus(d);
+    return s && s.days <= 90;
+  };
+
   const lowStockItems = inventory.filter(item => item.quantity > 0 && item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD));
-  const expiringItems = inventory.filter(item => { if (!item.expiration_date) return false; const s = getExpiryStatus(item.expiration_date); return s && s.days <= 90; });
+  const expiringItems = inventory.filter(isItemExpiring);
 
   const filteredInventory = inventory.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const q = searchTerm.toLowerCase().trim();
+    const matchesSearch = !q || [
+      item.name, item.use, item.department, item.barcode, item.batch_number,
+      item.warehouse_location, item.pharmacy_location, item.suppliers?.name,
+      item.item_type, item.notes,
+    ].some(field => field && String(field).toLowerCase().includes(q));
     if (alertFilter === 'low_stock') return matchesSearch && item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD);
-    if (alertFilter === 'expiring') { if (!item.expiration_date) return false; const s = getExpiryStatus(item.expiration_date); return matchesSearch && s && s.days <= 90; }
+    if (alertFilter === 'expiring') return matchesSearch && isItemExpiring(item);
     return matchesSearch;
   });
 
@@ -619,7 +722,7 @@ const InventoryDashboard = () => {
             <div className="flex justify-between items-center mb-6 gap-4">
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                <Input placeholder="Buscar medicamentos..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
+                <Input placeholder="Buscar por nombre, indicación, depto, código de barras..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
               </div>
               <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
                 <Upload className="w-4 h-4 mr-2" />Importar CSV
@@ -749,7 +852,7 @@ const InventoryDashboard = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {filteredInventory.map((item) => {
-                    const expiryStatus = getExpiryStatus(item.expiration_date);
+                    const expiryStatus = getExpiryStatus(getItemExpiryDate(item));
                     const isLow = item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD);
                     const isSelected = selectedIds.has(item.id);
                     return (
@@ -764,6 +867,7 @@ const InventoryDashboard = () => {
                         </td>
                         <td className="px-4 py-3 text-sm">
                           <div className="flex space-x-2">
+                            <button onClick={() => handleRestock(item)} className="text-green-600 hover:text-green-800" title="Registrar compra"><Plus className="w-4 h-4" /></button>
                             <button onClick={() => handleEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit className="w-4 h-4" /></button>
                             <button onClick={() => handleAdjustStock(item)} className="text-orange-600 hover:text-orange-800" title="Ajustar stock"><SlidersHorizontal className="w-4 h-4" /></button>
                             <button onClick={() => viewAdjustmentHistory(item)} className="text-purple-600 hover:text-purple-800" title="Historial"><History className="w-4 h-4" /></button>
@@ -789,7 +893,7 @@ const InventoryDashboard = () => {
                         <td className="px-4 py-3 text-sm">
                           {expiryStatus ? <span className={`px-2 py-1 rounded-full text-xs font-semibold ${expiryStatus.color}`}>{expiryStatus.label}</span> : <span className="text-slate-400 text-xs">No establecida</span>}
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-600">{item.batch_number || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-slate-600">{getItemBatchSummary(item)}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.warehouse_location}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.suppliers?.name || '-'}</td>
                       </tr>
@@ -894,6 +998,83 @@ const InventoryDashboard = () => {
               <div className="flex gap-2">
                 <Button onClick={submitAdjustment} className="flex-1">Guardar ajuste</Button>
                 <Button variant="outline" onClick={closeAdjustmentModal}>Cancelar</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Restock (Registrar Compra) Modal */}
+        <Dialog open={isRestockOpen} onOpenChange={(open) => { if (!open) closeRestockModal(); }}>
+          <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Registrar compra - {restockItem?.name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="bg-slate-50 p-3 rounded text-sm text-slate-600 space-y-1">
+                <p>Stock actual: <strong>{restockItem?.quantity}</strong></p>
+                <p>Departamento: <strong>{restockItem?.department || '-'}</strong></p>
+                <p>Tipo: <strong>{restockItem?.item_type === 'service' ? 'Servicio' : 'Producto'}</strong></p>
+                <p>Ubicación: <strong>{restockItem?.warehouse_location || restockItem?.pharmacy_location || '-'}</strong></p>
+                <p>Proveedor: <strong>{restockItem?.suppliers?.name || '-'}</strong></p>
+              </div>
+              <div className="space-y-2">
+                <Label>Cantidad comprada *</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={restockForm.quantity}
+                  onChange={(e) => setRestockForm({ ...restockForm, quantity: e.target.value })}
+                  placeholder="Piezas que entran (se suman al stock)"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Fecha de caducidad (nuevo lote)</Label>
+                <Input
+                  type="date"
+                  value={restockForm.expirationDate}
+                  onChange={(e) => setRestockForm({ ...restockForm, expirationDate: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Número de lote (nuevo lote)</Label>
+                <Input
+                  value={restockForm.batchNumber}
+                  onChange={(e) => setRestockForm({ ...restockForm, batchNumber: e.target.value })}
+                  placeholder="Ej. LOT-2024-001"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Costo unitario</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={restockForm.cost}
+                  onChange={(e) => setRestockForm({ ...restockForm, cost: e.target.value })}
+                  placeholder="Costo por pieza de esta compra"
+                />
+                <p className="text-xs text-slate-500">Se guarda en el lote y actualiza el costo actual del artículo.</p>
+              </div>
+              {(batchesByItem[restockItem?.id] || []).length > 0 && (
+                <div className="space-y-2">
+                  <Label>Lotes registrados</Label>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {batchesByItem[restockItem?.id].map((b) => (
+                      <div key={b.id} className="flex justify-between gap-2 text-xs bg-slate-50 rounded px-2 py-1 text-slate-600">
+                        <span className="font-medium">{b.batch_number || 'Sin lote'}</span>
+                        <span>{b.quantity} pzs</span>
+                        <span>{b.cost != null ? formatMXN(b.cost) : '-'}</span>
+                        <span>{b.expiration_date ? new Date(`${b.expiration_date}T00:00:00`).toLocaleDateString('es-MX') : 'Sin caducidad'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button onClick={submitRestock} disabled={isRestockSaving} className="flex-1">
+                  {isRestockSaving ? 'Guardando...' : 'Guardar compra'}
+                </Button>
+                <Button variant="outline" onClick={closeRestockModal}>Cancelar</Button>
               </div>
             </div>
           </DialogContent>
