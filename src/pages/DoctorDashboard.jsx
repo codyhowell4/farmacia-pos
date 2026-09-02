@@ -138,7 +138,7 @@ const DoctorDashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="lg:grid lg:grid-cols-12 lg:gap-8">
             <aside className="hidden lg:block lg:col-span-3 xl:col-span-2">
-              <div className="bg-white rounded-xl shadow-lg p-4 h-fit sticky top-24">
+              <div className="bg-white rounded-xl shadow-lg p-4 sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto">
                 <SideNav />
               </div>
             </aside>
