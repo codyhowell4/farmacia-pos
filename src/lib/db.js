@@ -416,6 +416,98 @@ export const getShifts = async () => {
   return data;
 };
 
+// ── EXPENSES ────────────────────────────────────────────────
+
+export const getExpenses = async (startDate = null, endDate = null) => {
+  const orgId = await getOrgId();
+  let query = supabase
+    .from('expenses')
+    .select('*')
+    .eq('org_id', orgId)
+    .order('date', { ascending: false });
+
+  if (startDate) query = query.gte('date', startDate);
+  if (endDate) query = query.lte('date', endDate);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+};
+
+export const createExpense = async (expense) => {
+  const orgId = await getOrgId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from('expenses')
+    .insert({ ...expense, org_id: orgId, created_by: user?.id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const updateExpense = async (id, updates) => {
+  const { data, error } = await supabase
+    .from('expenses')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteExpense = async (id) => {
+  const { error } = await supabase.from('expenses').delete().eq('id', id);
+  if (error) throw error;
+};
+
+// ── MANUAL REVENUE ───────────────────────────────────────────
+
+export const getManualRevenue = async (startDate = null, endDate = null) => {
+  const orgId = await getOrgId();
+  let query = supabase
+    .from('manual_revenue')
+    .select('*')
+    .eq('org_id', orgId)
+    .order('date', { ascending: false });
+
+  if (startDate) query = query.gte('date', startDate);
+  if (endDate) query = query.lte('date', endDate);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+};
+
+export const createManualRevenue = async (entry) => {
+  const orgId = await getOrgId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from('manual_revenue')
+    .insert({ ...entry, org_id: orgId, created_by: user?.id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const updateManualRevenue = async (id, updates) => {
+  const { data, error } = await supabase
+    .from('manual_revenue')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteManualRevenue = async (id) => {
+  const { error } = await supabase.from('manual_revenue').delete().eq('id', id);
+  if (error) throw error;
+};
+
 // ── SALES ───────────────────────────────────────────────────
 
 export const createSale = async (sale, items) => {
