@@ -1359,6 +1359,26 @@ export const deleteAppointment = async (id) => {
   if (error) throw error;
 };
 
+// Confirms a video appointment via the video-room edge function.
+// The function validates payment/membership, creates the Daily.co room,
+// sets meeting_url + status='confirmed' and returns { meeting_url, status, visits_remaining }.
+// Throws Error with the function's message (e.g. 'Pago requerido…', 'Sin visitas disponibles…').
+export const confirmVideoAppointment = async (appointmentId) => {
+  const { data, error } = await supabase.functions.invoke('video-room', {
+    body: { appointment_id: appointmentId },
+  });
+  if (error) {
+    let message = 'No se pudo crear la sala de video';
+    try {
+      const body = await error?.context?.json();
+      message = body?.error || body?.message || message;
+    } catch { /* keep default message */ }
+    throw new Error(message);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
+};
+
 // ── PREORDERS ───────────────────────────────────────────────
 
 export const getPreorders = async () => {

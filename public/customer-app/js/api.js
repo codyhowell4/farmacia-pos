@@ -8,7 +8,9 @@
 // Available on window.FarmaciaAPI:
 //   getCurrentUser, signIn, signOut,
 //   getCustomerProfile, getProducts,
-//   getCustomerOrders, getAppointments, getPrescriptions
+//   getCustomerOrders, getAppointments, getPrescriptions,
+//   getDoctors, getMembershipDetails, getConsultPrice,
+//   createAppointment, updateAppointment
 // ============================================================
 
 window.FarmaciaAPI = (function () {
@@ -422,12 +424,15 @@ window.FarmaciaAPI = (function () {
             id:         appt.id,
             date:       appt.appointment_date ? appt.appointment_date.split('T')[0] : '',
             time:       appt.appointment_date ? appt.appointment_date.split('T')[1]?.slice(0, 5) : '',
+            dateTime:   appt.appointment_date || null,
             status:     appt.status,
             type:       appt.type || 'in_person',
             meetingUrl: appt.meeting_url || null,
             meetingId:  appt.meeting_id || null,
             notes:      appt.notes || '',
             doctorId:   appt.doctor_id,
+            paymentStatus: appt.payment_status || null,
+            paymentRef: appt.payment_ref || null,
             source:     'supabase'
           }));
         }
@@ -640,13 +645,14 @@ window.FarmaciaAPI = (function () {
         const appointment = {
           org_id: orgId,
           customer_id: customer.id,
-          doctor_id: appointmentData.doctorId || null,
+          doctor_id: isValidUuid(appointmentData.doctorId) ? appointmentData.doctorId : null,
           appointment_date: appointmentData.appointmentDate || new Date().toISOString(),
           status: 'pending',
           type: appointmentData.type || 'in_person',
           meeting_url: appointmentData.meetingUrl || null,
           meeting_id: appointmentData.meetingId || null,
-          notes: appointmentData.notes || appointmentData.reason || null
+          notes: appointmentData.notes || appointmentData.reason || null,
+          payment_status: appointmentData.paymentStatus || 'unpaid'
         };
 
         const { data, error } = await sb
@@ -660,6 +666,98 @@ window.FarmaciaAPI = (function () {
         return { data, error: null };
       } catch (err) {
         console.error('[FarmaciaAPI] createAppointment failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
+     * Get the public list of doctors for the org (for video consulta booking).
+     * Uses the get_public_doctors RPC. Returns [] on any error.
+     */
+    async getDoctors() {
+      if (!sb) {
+        console.log('[FarmaciaAPI] getDoctors fallback - Supabase not available');
+        return [];
+      }
+      try {
+        const orgId = (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
+        const { data, error } = await sb.rpc('get_public_doctors', { p_org_id: orgId });
+        if (error) throw error;
+        console.log('[FarmaciaAPI] Doctors loaded:', (data || []).length);
+        return data || [];
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getDoctors error:', err.message);
+        return [];
+      }
+    },
+
+    /**
+     * Get the active membership row for the current customer.
+     * Returns the active row (status, visits_remaining, discount_percent, plan_id)
+     * or a 'free' fallback shape when there is no active membership.
+     */
+    async getMembershipDetails() {
+      const freeFallback = { status: null, visits_remaining: 0 };
+      if (!sb) return freeFallback;
+      try {
+        const customerId = await getCustomerId();
+        if (!customerId) return freeFallback;
+
+        const { data, error } = await sb
+          .from('memberships')
+          .select('status, visits_remaining, discount_percent, plan_id')
+          .eq('customer_id', customerId);
+        if (error) throw error;
+
+        const active = (data || []).find(row => row.status === 'active');
+        return active || freeFallback;
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getMembershipDetails error:', err.message);
+        return freeFallback;
+      }
+    },
+
+    /**
+     * Get the consult price from the org's CONSULTA MEDICA MEMBRESIA
+     * inventory item. Falls back to 100 if the query fails.
+     */
+    async getConsultPrice() {
+      if (!sb) return 100;
+      try {
+        const { data, error } = await sb
+          .from('inventory')
+          .select('price')
+          .eq('name', 'CONSULTA MEDICA MEMBRESIA')
+          .maybeSingle();
+        if (error) throw error;
+        const price = parseFloat(data?.price);
+        return Number.isFinite(price) && price > 0 ? price : 100;
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getConsultPrice error:', err.message);
+        return 100;
+      }
+    },
+
+    /**
+     * Update one of the current customer's appointments by id (RLS-scoped).
+     * Used for cancellations and status updates.
+     */
+    async updateAppointment(id, updates) {
+      if (!sb) {
+        return { data: null, error: new Error('Supabase not available') };
+      }
+      try {
+        const { data, error } = await sb
+          .from('appointments')
+          .update(updates)
+          .eq('id', id)
+          .select()
+          .single();
+        if (error) throw error;
+        console.log('[FarmaciaAPI] Appointment updated:', id);
+        return { data, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] updateAppointment failed:', err.message);
         return { data: null, error: err };
       }
     },

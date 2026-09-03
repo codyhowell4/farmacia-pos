@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  Calendar, Plus, Search, Clock, Phone, Check, Trash2, Edit2
+  Calendar, Plus, Search, Clock, Phone, Check, Trash2, Edit2, Video
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/select';
 import {
   getAppointmentsByDoctor, createAppointment, updateAppointment, deleteAppointment,
-  getCustomersForDoctor
+  getCustomersForDoctor, confirmVideoAppointment
 } from '@/lib/db';
 import { toast } from 'sonner';
 
@@ -33,6 +33,22 @@ const statusLabels = {
   confirmed: 'Confirmada',
   completed: 'Completada',
   cancelled: 'Cancelada',
+};
+
+const paymentLabels = {
+  unpaid: 'Pago pendiente',
+  paid: 'Pagado',
+  membership_visit: 'Membresía (visita)',
+  membership_half: '50% membresía',
+  waived: 'Cortesía',
+};
+
+const paymentColors = {
+  unpaid: 'bg-amber-100 text-amber-800 border-amber-200',
+  paid: 'bg-green-100 text-green-800 border-green-200',
+  membership_visit: 'bg-purple-100 text-purple-800 border-purple-200',
+  membership_half: 'bg-purple-100 text-purple-800 border-purple-200',
+  waived: 'bg-slate-100 text-slate-700 border-slate-200',
 };
 
 const formatDateTimeLocal = (iso) => {
@@ -171,6 +187,20 @@ const DoctorAppointments = () => {
   const quickStatusChange = async (appt, newStatus) => {
     if (!appt?.id) return;
     try {
+      // Video appointments confirm through the video-room edge function:
+      // it validates payment/membership, creates the Daily.co room and sets
+      // status='confirmed' itself. In-person appointments keep the direct update.
+      if (newStatus === 'confirmed' && appt?.type === 'video') {
+        try {
+          await confirmVideoAppointment(appt.id);
+        } catch (videoErr) {
+          toast.error(videoErr.message || 'No se pudo crear la sala de video');
+          return; // keep the appointment pending
+        }
+        toast.success('Consulta confirmada — enlace de video creado');
+        loadData();
+        return;
+      }
       await updateAppointment(appt.id, { status: newStatus });
       toast.success(`Cita marcada como ${statusLabels[newStatus]}`);
       loadData();
@@ -243,6 +273,16 @@ const DoctorAppointments = () => {
                       <Badge className={statusColors[appt?.status] || 'bg-gray-100 text-gray-800'}>
                         {statusLabels[appt?.status] || appt?.status}
                       </Badge>
+                      <Badge className={appt?.type === 'video'
+                        ? 'bg-apolo-navy text-white border-apolo-navy'
+                        : 'bg-slate-200 text-slate-700 border-slate-200'}>
+                        {appt?.type === 'video' ? '📹 Video' : '🏥 Presencial'}
+                      </Badge>
+                      {appt?.type === 'video' && (
+                        <Badge className={paymentColors[appt?.payment_status || 'unpaid']}>
+                          {paymentLabels[appt?.payment_status || 'unpaid']}
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-4 mt-1 text-sm text-slate-500 flex-wrap">
                       <span className="flex items-center gap-1">
@@ -266,6 +306,17 @@ const DoctorAppointments = () => {
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    {appt?.type === 'video' && appt?.meeting_url && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-apolo-navy text-apolo-navy hover:bg-apolo-navy/5 h-8"
+                        onClick={() => window.open(appt.meeting_url, '_blank', 'noopener,noreferrer')}
+                      >
+                        <Video className="w-3.5 h-3.5 mr-1" />
+                        Unirse
+                      </Button>
+                    )}
                     {appt?.status === 'pending' && (
                       <Button
                         size="icon"

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Search, UserCircle, Clock, Calendar, Stethoscope, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Search, UserCircle, Clock, Calendar, Stethoscope, CheckCircle, XCircle, Loader2, Video } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { getAppointments, updateAppointment, createNotification } from '@/lib/db';
+import { getAppointments, updateAppointment, createNotification, confirmVideoAppointment } from '@/lib/db';
 
 const statusConfig = {
   pending:   { label: 'Pendiente',  className: 'bg-yellow-100 text-yellow-800' },
@@ -19,6 +19,22 @@ const StatusBadge = ({ status }) => {
       {s.label}
     </span>
   );
+};
+
+const paymentLabels = {
+  unpaid: 'Pago pendiente',
+  paid: 'Pagado',
+  membership_visit: 'Membresía (visita)',
+  membership_half: '50% membresía',
+  waived: 'Cortesía',
+};
+
+const paymentColors = {
+  unpaid: 'bg-amber-100 text-amber-800',
+  paid: 'bg-green-100 text-green-800',
+  membership_visit: 'bg-purple-100 text-purple-800',
+  membership_half: 'bg-purple-100 text-purple-800',
+  waived: 'bg-slate-100 text-slate-700',
 };
 
 const AdminAppointments = () => {
@@ -46,10 +62,25 @@ const AdminAppointments = () => {
   useEffect(() => { loadAppointments(); }, []);
 
   const handleStatusChange = async (id, newStatus) => {
+    const appt = appointments.find((a) => a.id === id);
     setUpdatingId(id);
     try {
+      // Video appointments confirm through the video-room edge function:
+      // it validates payment/membership, creates the Daily.co room, sets
+      // status='confirmed' itself and notifies the customer. On payment
+      // errors (402) keep the appointment pending.
+      if (newStatus === 'confirmed' && appt?.type === 'video') {
+        try {
+          await confirmVideoAppointment(id);
+        } catch (videoErr) {
+          toast({ title: 'No se pudo confirmar', description: videoErr.message, variant: 'destructive' });
+          return;
+        }
+        toast({ title: 'Consulta confirmada', description: 'Enlace de video creado' });
+        await loadAppointments();
+        return;
+      }
       await updateAppointment(id, { status: newStatus });
-      const appt = appointments.find((a) => a.id === id);
       if (appt?.customers?.id) {
         try {
           await createNotification({
@@ -196,10 +227,31 @@ const AdminAppointments = () => {
                       {a.notes || '—'}
                     </td>
                     <td className="px-4 py-3 text-sm">
-                      <StatusBadge status={a.status || 'pending'} />
+                      <div className="flex flex-col items-start gap-1">
+                        <StatusBadge status={a.status || 'pending'} />
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${a.type === 'video' ? 'bg-apolo-navy text-white' : 'bg-slate-200 text-slate-700'}`}>
+                          {a.type === 'video' ? '📹 Video' : '🏥 Presencial'}
+                        </span>
+                        {a.type === 'video' && (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${paymentColors[a.payment_status || 'unpaid']}`}>
+                            {paymentLabels[a.payment_status || 'unpaid']}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-sm">
                       <div className="flex items-center gap-2 flex-wrap">
+                        {a.type === 'video' && a.meeting_url && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => window.open(a.meeting_url, '_blank', 'noopener,noreferrer')}
+                            className="text-xs h-7 px-2 border-apolo-navy/30 text-apolo-navy hover:bg-apolo-navy/5"
+                          >
+                            <Video className="w-3 h-3 mr-0.5" />
+                            Unirse
+                          </Button>
+                        )}
                         {nextActions(a.status || 'pending').map((action) => {
                           const Icon = action.icon;
                           return (

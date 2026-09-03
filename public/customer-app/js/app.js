@@ -64,9 +64,11 @@ let membershipTier = 'free';
 // True while handling a Supabase password-recovery link (type=recovery in URL hash)
 let isPasswordRecovery = false;
 
-// Pages that require an active membership
+// Pages that require an active membership.
+// NOTE: 'consulta' is intentionally NOT gated — telehealth is pay-per-consult
+// for free users and included/discounted for members.
 const PAID_PAGES = new Set([
-  'home', 'body', 'health', 'consulta', 'appointments',
+  'home', 'body', 'health', 'appointments',
   'emergency-id', 'guides', 'caregiver',
   'fasting', 'sleep', 'checkin', 'integrations'
 ]);
@@ -76,7 +78,6 @@ const PAID_PAGE_NAMES = {
   'home':         'Resumen de Hoy',
   'body':         'Métricas de Cuerpo',
   'health':       'Salud',
-  'consulta':     'Nueva Consulta',
   'appointments': 'Mis Citas',
   'emergency-id': 'ID Médico de Emergencia',
   'guides':       'Guías de Salud',
@@ -6491,7 +6492,7 @@ function renderConsulta() {
           <div style="flex: 1;">
             <div style="font-weight: 700; font-size: 1.2rem; color: #5b21b6; margin-bottom: 0.25rem;">Video Consulta</div>
             <div style="font-size: 0.85rem; color: #8b5cf6; line-height: 1.4;">Consulta con un médico por videollamada desde tu casa</div>
-            <div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">Disponible 24/7 • Médicos certificados</div>
+            <div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">Pago por consulta • Incluida con tu membresía</div>
           </div>
           <div style="font-size: 1.5rem; color: #8b5cf6;">→</div>
         </div>
@@ -6858,116 +6859,203 @@ window.showEmergencyInfo = function() {
 // ============================================
 // VIDEO CONSULTA - Telehealth Scheduling
 // ============================================
+// Real doctors come from the get_public_doctors RPC.
+// Pricing: members with visits_remaining > 0 → free (membership_visit,
+// staff confirms later); members with 0 visits → 50% (membership_half);
+// non-members → full price (unpaid, PayPal capture required to confirm).
 
-const VIDEO_DOCTORS = [
-  { id: 'dr1', name: 'Dra. María González', specialty: 'Medicina General', rating: 4.9, reviews: 127, available: true, image: '👩‍⚕️' },
-  { id: 'dr2', name: 'Dr. Carlos Hernández', specialty: 'Medicina General', rating: 4.8, reviews: 89, available: true, image: '👨‍⚕️' },
-  { id: 'dr3', name: 'Dra. Ana Martínez', specialty: 'Pediatría', rating: 4.9, reviews: 156, available: false, image: '👩‍⚕️' },
-  { id: 'dr4', name: 'Dr. Roberto Sánchez', specialty: 'Dermatología', rating: 4.7, reviews: 78, available: true, image: '👨‍⚕️' },
-  { id: 'dr5', name: 'Dra. Laura Torres', specialty: 'Nutrición', rating: 4.8, reviews: 112, available: true, image: '👩‍⚕️' }
-];
+// Cache of doctors loaded this session (used by booking + appointments)
+window.__videoDoctors = window.__videoDoctors || [];
+
+// Pricing resolved on the booking screen: { paymentStatus, amount, price }
+window.__videoBookingPricing = null;
+
+// Context for the in-progress paid booking (used by PayPal retry)
+window.__videoPayment = null;
+
+function formatConsultPrice(amount) {
+  const n = Number(amount) || 0;
+  return '$' + n.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function formatVideoDate(dateStr) {
+  // Parse 'YYYY-MM-DD' as local midday to avoid timezone date shifts
+  if (!dateStr) return '';
+  const parts = dateStr.split('-').map(Number);
+  const d = parts.length === 3 ? new Date(parts[0], parts[1] - 1, parts[2], 12) : new Date(dateStr);
+  return d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+// Dynamically load the PayPal JS SDK (intent=capture) only when a paid
+// booking renders. Client id comes from window.farmaciaSupabaseConfig.
+let paypalSdkPromise = null;
+function loadPayPalSdk() {
+  if (window.paypal) return Promise.resolve(window.paypal);
+  if (paypalSdkPromise) return paypalSdkPromise;
+
+  const clientId = (window.farmaciaSupabaseConfig || {}).PAYPAL_CLIENT_ID;
+  if (!clientId) return Promise.reject(new Error('PayPal no está configurado'));
+
+  paypalSdkPromise = new Promise((resolve, reject) => {
+    const existing = document.getElementById('paypal-sdk-script');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(window.paypal));
+      existing.addEventListener('error', () => reject(new Error('No se pudo cargar el SDK de PayPal')));
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'paypal-sdk-script';
+    script.src = 'https://www.paypal.com/sdk/js?client-id=' + clientId + '&currency=MXN&intent=capture';
+    script.async = true;
+    script.onload = () => resolve(window.paypal);
+    script.onerror = () => {
+      paypalSdkPromise = null;
+      reject(new Error('No se pudo cargar el SDK de PayPal'));
+    };
+    document.body.appendChild(script);
+  });
+  return paypalSdkPromise;
+}
+
+// Capture a PayPal order for a consult via the edge function.
+// Returns { meeting_url, status: 'confirmed' } or throws with the function's error.
+async function captureConsultPayment(orderId, appointmentId) {
+  const cfg = window.farmaciaSupabaseConfig || {};
+  const res = await fetch(cfg.URL + '/functions/v1/paypal-capture-consult', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(cfg.ANON_KEY ? { apikey: cfg.ANON_KEY } : {})
+    },
+    body: JSON.stringify({ order_id: orderId, appointment_id: appointmentId })
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json.error) {
+    throw new Error(json.error || 'No se pudo confirmar el pago');
+  }
+  return json;
+}
 
 window.showVideoConsulta = function() {
+  // Avoid stacking overlays (booking back button re-enters here)
+  document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
   modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100%; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
   modal.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
+    <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
       <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
       <div>
         <div style="font-weight: 600;">Video Consulta</div>
-        <div style="font-size: 0.75rem; opacity: 0.9;">Médicos disponibles 24/7</div>
+        <div style="font-size: 0.75rem; opacity: 0.9;">Agenda con nuestros médicos</div>
       </div>
     </div>
-    
+
     <div style="flex: 1; overflow-y: auto; padding: 1rem; min-height: 0;">
       <!-- Info Card -->
-      <div style="background: linear-gradient(135deg, #ede9fe, #f5f3ff); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem;">
+      <div style="background: linear-gradient(135deg, #eef2ff, #e0e7ff); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem;">
         <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
           <div style="font-size: 2.5rem;">📹</div>
           <div>
-            <div style="font-weight: 600; color: #5b21b6;">Consulta desde casa</div>
-            <div style="font-size: 0.85rem; color: #7c3aed;">Sin filas, sin esperas</div>
+            <div style="font-weight: 600; color: #1E2A8A;">Consulta desde casa</div>
+            <div style="font-size: 0.85rem; color: #4f46e5;">Sin filas, sin esperas</div>
           </div>
         </div>
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; text-align: center; font-size: 0.75rem; color: var(--text-secondary);">
           <div>✓ Prescripción digital</div>
           <div>✓ 15-30 min</div>
-          <div>✓ Chat seguro</div>
+          <div>✓ Pago seguro</div>
         </div>
       </div>
-      
+
       <!-- Doctors List -->
-      <div style="font-weight: 600; margin-bottom: 0.75rem; color: var(--text-secondary);">Médicos disponibles ahora:</div>
-      
-      <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-        ${VIDEO_DOCTORS.map(doc => `
-          <div style="background: white; border-radius: 16px; padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: flex; align-items: center; gap: 1rem;">
-            <div style="font-size: 3rem;">${doc.image}</div>
-            <div style="flex: 1;">
-              <div style="font-weight: 600; font-size: 1.05rem;">${doc.name}</div>
-              <div style="font-size: 0.85rem; color: var(--text-muted);">${doc.specialty}</div>
-              <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.25rem;">
-                <span style="color: #E0A63E;">★</span>
-                <span style="font-size: 0.85rem; font-weight: 600;">${doc.rating}</span>
-                <span style="font-size: 0.75rem; color: var(--text-muted);">(${doc.reviews} reseñas)</span>
-              </div>
-            </div>
-            ${doc.available ? `
-              <button onclick="showVideoBooking('${doc.id}')" style="background: #8b5cf6; color: white; border: none; padding: 0.6rem 1.25rem; border-radius: 20px; font-weight: 600; font-size: 0.85rem; cursor: pointer;">Agendar</button>
-            ` : `
-              <span style="background: #f3f4f6; color: var(--text-muted); padding: 0.6rem 1.25rem; border-radius: 20px; font-size: 0.85rem;">Ocupado</span>
-            `}
-          </div>
-        `).join('')}
-      </div>
-      
-      <!-- Quick Schedule -->
-      <div style="margin-top: 1.5rem; padding: 1rem; background: #fef3c7; border-radius: 12px;">
-        <div style="font-weight: 600; color: #92400e; margin-bottom: 0.5rem;">⏱️ ¿Necesitas atención inmediata?</div>
-        <div style="font-size: 0.85rem; color: #a16207; margin-bottom: 0.75rem;">Te conectaremos con el primer médico disponible</div>
-        <button onclick="showVideoBooking('next')" style="width: 100%; padding: 0.875rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Conectar ahora →</button>
-      </div>
+      <div style="font-weight: 600; margin-bottom: 0.75rem; color: var(--text-secondary);">Elige un médico:</div>
+      <div id="video-doctors-list" style="display: flex; flex-direction: column; gap: 0.75rem;"></div>
     </div>
   `;
   document.body.appendChild(modal);
+  loadVideoDoctors();
+};
+
+window.loadVideoDoctors = async function() {
+  const list = document.getElementById('video-doctors-list');
+  if (!list) return;
+
+  list.innerHTML = `
+    <div style="text-align: center; padding: 2rem 1rem; color: var(--text-muted);">
+      <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
+      <div>Cargando médicos...</div>
+    </div>
+  `;
+
+  let doctors = [];
+  try {
+    doctors = await FarmaciaAPI.getDoctors();
+  } catch (e) {
+    console.warn('[showVideoConsulta] getDoctors failed:', e);
+    doctors = [];
+  }
+  window.__videoDoctors = doctors || [];
+
+  if (!window.__videoDoctors.length) {
+    list.innerHTML = `
+      <div style="text-align: center; padding: 2rem 1rem; color: var(--text-muted);">
+        <div style="font-size: 3rem; margin-bottom: 0.5rem;">🩺</div>
+        <div style="font-weight: 600; margin-bottom: 0.25rem; color: var(--text-secondary);">No hay doctores disponibles</div>
+        <div style="font-size: 0.85rem; margin-bottom: 1rem;">Intenta de nuevo en unos minutos</div>
+        <button onclick="loadVideoDoctors()" style="padding: 0.75rem 1.5rem; background: #1E2A8A; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Reintentar</button>
+      </div>
+    `;
+    return;
+  }
+
+  list.innerHTML = window.__videoDoctors.map(doc => `
+    <div style="background: white; border-radius: 16px; padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: flex; align-items: center; gap: 1rem;">
+      <div style="width: 56px; height: 56px; background: #eef2ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.75rem; flex-shrink: 0;">🩺</div>
+      <div style="flex: 1;">
+        <div style="font-weight: 600; font-size: 1.05rem;">${escapeHtml(doc.full_name)}</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(doc.specialty || 'Medicina General')}</div>
+      </div>
+      <button onclick="showVideoBooking('${doc.id}')" style="background: #46AC78; color: white; border: none; padding: 0.6rem 1.25rem; border-radius: 20px; font-weight: 600; font-size: 0.85rem; cursor: pointer;">Agendar</button>
+    </div>
+  `).join('');
 };
 
 window.showVideoBooking = function(doctorId) {
-  const doctor = doctorId === 'next' ? VIDEO_DOCTORS.find(d => d.available) : VIDEO_DOCTORS.find(d => d.id === doctorId);
-  
+  const doctor = (window.__videoDoctors || []).find(d => d.id === doctorId);
+  if (!doctor) {
+    showVideoConsulta();
+    return;
+  }
+  window.__videoBookingPricing = null;
+
   const modal = document.querySelector('.modal-overlay');
+  if (!modal) return;
   modal.innerHTML = `
     <div style="background: white; height: 100%; display: flex; flex-direction: column;">
       <!-- Header -->
-      <div style="padding: 1rem; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
-        <button onclick="const m=document.querySelector('.modal-overlay');if(m)m.remove();showVideoConsulta();" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
+      <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
+        <button onclick="showVideoConsulta()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
         <div>
           <div style="font-weight: 600;">Agendar Video Consulta</div>
         </div>
       </div>
-      
+
       <div style="flex: 1; overflow-y: auto; padding: 1.5rem; min-height: 0;">
-        ${doctor ? `
-          <div style="text-align: center; margin-bottom: 1.5rem;">
-            <div style="font-size: 4rem; margin-bottom: 0.5rem;">${doctor.image}</div>
-            <div style="font-weight: 600; font-size: 1.2rem;">${doctor.name}</div>
-            <div style="color: var(--text-muted);">${doctor.specialty}</div>
-            <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 0.25rem;">
-              <span style="color: #E0A63E;">★</span>
-              <span style="font-weight: 600;">${doctor.rating}</span>
-              <span style="font-size: 0.85rem; color: var(--text-muted);">(${doctor.reviews} reseñas)</span>
-            </div>
-          </div>
-        ` : ''}
-        
+        <div style="text-align: center; margin-bottom: 1.5rem;">
+          <div style="width: 72px; height: 72px; margin: 0 auto 0.5rem; background: #eef2ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.25rem;">🩺</div>
+          <div style="font-weight: 600; font-size: 1.2rem;">${escapeHtml(doctor.full_name)}</div>
+          <div style="color: var(--text-muted);">${escapeHtml(doctor.specialty || 'Medicina General')}</div>
+        </div>
+
         <!-- Date Selection -->
         <div style="margin-bottom: 1.25rem;">
           <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Fecha</label>
           <input type="date" id="video-date" value="${new Date().toISOString().split('T')[0]}" min="${new Date().toISOString().split('T')[0]}" style="width: 100%; padding: 0.875rem; border: 2px solid var(--border-color); border-radius: 12px; font-size: 1rem;">
         </div>
-        
+
         <!-- Time Selection -->
         <div style="margin-bottom: 1.25rem;">
           <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Hora</label>
@@ -6977,32 +7065,88 @@ window.showVideoBooking = function(doctorId) {
             `).join('')}
           </div>
         </div>
-        
+
         <!-- Reason -->
         <div style="margin-bottom: 1.25rem;">
-          <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Motivo de consulta (opcional)</label>
+          <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Motivo de consulta</label>
           <textarea id="video-reason" placeholder="Describe brevemente tus síntomas..." style="width: 100%; padding: 0.875rem; border: 2px solid var(--border-color); border-radius: 12px; font-size: 1rem; min-height: 80px; resize: vertical;"></textarea>
         </div>
-        
-        <!-- Price -->
-        <div style="background: #f8fafc; border-radius: 12px; padding: 1rem; margin-bottom: 1.25rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <span style="color: var(--text-muted);">Consulta video</span>
-            <span style="font-weight: 600;">$350</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="color: var(--text-muted);">Prescripción digital incluida</span>
-            <span style="color: #46AC78; font-size: 0.85rem;">✓</span>
-          </div>
+
+        <!-- Price (resolved live) -->
+        <div id="video-price-panel" style="background: #f8fafc; border-radius: 12px; padding: 1rem; margin-bottom: 1.25rem;">
+          <div style="color: var(--text-muted); font-size: 0.9rem;">⏳ Calculando precio...</div>
         </div>
-        
+
         <input type="hidden" id="selected-video-time">
-        
-        <button onclick="confirmVideoBooking('${doctorId}')" style="width: 100%; padding: 1rem; background: #8b5cf6; color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;">Confirmar cita</button>
+
+        <button id="video-confirm-btn" onclick="confirmVideoBooking('${doctor.id}')" style="width: 100%; padding: 1rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;">Confirmar cita</button>
       </div>
     </div>
   `;
+  resolveVideoBookingPrice();
 };
+
+// Resolve membership + consult price and paint the price panel
+async function resolveVideoBookingPrice() {
+  const panel = document.getElementById('video-price-panel');
+  let membership = { status: null, visits_remaining: 0 };
+  let price = 100;
+  try {
+    const results = await Promise.all([
+      FarmaciaAPI.getMembershipDetails(),
+      FarmaciaAPI.getConsultPrice()
+    ]);
+    membership = results[0] || membership;
+    price = parseFloat(results[1]) || 100;
+  } catch (e) {
+    console.warn('[showVideoBooking] Price resolution failed:', e);
+  }
+
+  const visits = membership.visits_remaining || 0;
+  const isMember = membership.status === 'active';
+  let paymentStatus, amount, html, green = false;
+
+  if (isMember && visits > 0) {
+    paymentStatus = 'membership_visit';
+    amount = 0;
+    green = true;
+    html = `
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <div style="font-size: 1.5rem;">🎟️</div>
+        <div>
+          <div style="font-weight: 600; color: #15803d;">Incluido en tu membresía — te quedan ${visits} visita${visits === 1 ? '' : 's'}</div>
+          <div style="font-size: 0.85rem; color: #22c55e;">El doctor confirmará tu cita sin cargo</div>
+        </div>
+      </div>
+    `;
+  } else if (isMember) {
+    paymentStatus = 'membership_half';
+    amount = Math.round((price / 2) * 100) / 100;
+    html = `
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="color: var(--text-secondary);">50% membresía</span>
+        <span style="font-size: 1.25rem; font-weight: 700; color: #1E2A8A;">${formatConsultPrice(amount)}</span>
+      </div>
+      <div style="font-size: 0.8rem; color: #46AC78; margin-top: 0.25rem;">Precio regular ${formatConsultPrice(price)} — tu membresía cubre la mitad</div>
+    `;
+  } else {
+    paymentStatus = 'unpaid';
+    amount = price;
+    html = `
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="color: var(--text-secondary);">Precio: ${formatConsultPrice(amount)}</span>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">Pago seguro con PayPal</span>
+      </div>
+    `;
+  }
+
+  window.__videoBookingPricing = { paymentStatus, amount, price };
+  if (panel) {
+    panel.style.background = green ? '#f0fdf4' : '#f8fafc';
+    if (green) panel.style.border = '1px solid #bbf7d0';
+    panel.innerHTML = html;
+  }
+}
 
 window.selectVideoTime = function(btn, time) {
   document.getElementById('selected-video-time').value = time;
@@ -7011,73 +7155,254 @@ window.selectVideoTime = function(btn, time) {
     b.style.borderColor = 'var(--border-color)';
     b.style.color = 'inherit';
   });
-  btn.style.background = '#8b5cf6';
-  btn.style.borderColor = '#8b5cf6';
+  btn.style.background = '#1E2A8A';
+  btn.style.borderColor = '#1E2A8A';
   btn.style.color = 'white';
 };
 
 window.confirmVideoBooking = async function(doctorId) {
   const date = document.getElementById('video-date')?.value;
   const time = document.getElementById('selected-video-time')?.value;
-  const reason = document.getElementById('video-reason')?.value;
-  
+  const reason = document.getElementById('video-reason')?.value?.trim();
+
   if (!date || !time) {
     showToast('Por favor selecciona fecha y hora', 'warning');
     return;
   }
-  
-  const doctor = doctorId === 'next' ? VIDEO_DOCTORS.find(d => d.available) : VIDEO_DOCTORS.find(d => d.id === doctorId);
-  let useSupabase = false;
-  
-  // Try Supabase if authenticated
-  if (FarmaciaAPI.isSupabaseAvailable() && currentAuthUser) {
-    try {
-      const { data, error } = await FarmaciaAPI.createAppointment({
-        type: 'video',
-        appointmentDate: date + 'T' + time + ':00',
-        doctorId: doctor?.id || null,
-        notes: reason,
-        meetingUrl: null,
-        meetingId: null
-      });
-      if (!error && data) {
-        useSupabase = true;
-        console.log('[createAppointment] Supabase appointment created');
-      } else {
-        throw error || new Error('Unknown error');
-      }
-    } catch (e) {
-      console.warn('[createAppointment] Supabase failed, falling back:', e.message);
+  if (!reason) {
+    showToast('Por favor describe el motivo de tu consulta', 'warning');
+    return;
+  }
+  if (!FarmaciaAPI.isSupabaseAvailable() || !currentAuthUser) {
+    showToast('Inicia sesión para agendar una video consulta', 'warning');
+    return;
+  }
+
+  const doctor = (window.__videoDoctors || []).find(d => d.id === doctorId) || null;
+
+  // Make sure pricing is resolved before creating the appointment
+  if (!window.__videoBookingPricing) {
+    await resolveVideoBookingPrice();
+  }
+  const pricing = window.__videoBookingPricing || { paymentStatus: 'unpaid', amount: 100 };
+
+  const confirmBtn = document.getElementById('video-confirm-btn');
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Agendando...';
+  }
+
+  const appointmentDate = new Date(date + 'T' + time + ':00').toISOString();
+  const { data, error } = await FarmaciaAPI.createAppointment({
+    type: 'video',
+    appointmentDate,
+    doctorId,
+    notes: reason,
+    paymentStatus: pricing.paymentStatus
+  });
+
+  if (error || !data) {
+    console.error('[confirmVideoBooking] createAppointment failed:', error);
+    showToast('No se pudo agendar la cita: ' + (error?.message || 'error desconocido'), 'error');
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirmar cita';
     }
+    return;
   }
-  
-  // Fallback to localStorage
-  if (!useSupabase) {
-    Store.addVideoConsultation({
-      doctorId: doctor?.id || 'next',
-      doctorName: doctor?.name || 'Primer disponible',
-      specialty: doctor?.specialty || 'Medicina General',
-      date,
-      time,
-      reason,
-      price: 350
-    });
-    console.log('[createAppointment] Fallback localStorage appointment created');
+
+  console.log('[confirmVideoBooking] Appointment created:', data.id, '| payment_status:', pricing.paymentStatus);
+
+  if (pricing.paymentStatus === 'membership_visit') {
+    renderVideoRequestSent(doctor, date, time);
+    return;
   }
-  
-  document.querySelector('.modal-overlay').innerHTML = `
+
+  // Paid booking ('unpaid' or 'membership_half') → PayPal capture screen.
+  // If the user abandons here the appointment stays pending/unpaid;
+  // staff can cancel it. Payment is required to confirm.
+  window.__videoPayment = {
+    appointmentId: data.id,
+    doctor,
+    date,
+    time,
+    amount: pricing.amount,
+    paymentStatus: pricing.paymentStatus
+  };
+  renderVideoPaymentScreen();
+};
+
+// Confirmation for free member bookings (staff confirms later)
+function renderVideoRequestSent(doctor, date, time) {
+  const modal = document.querySelector('.modal-overlay');
+  if (!modal) return;
+  modal.innerHTML = `
     <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; text-align: center;">
       <div style="font-size: 5rem; margin-bottom: 1rem;">✅</div>
-      <h2 style="color: #8b5cf6; margin: 0 0 0.5rem;">¡Cita Confirmada!</h2>
-      <p style="color: var(--text-muted); margin-bottom: 1.5rem;">${doctor?.name || 'Médico disponible'}<br>${date} a las ${time}</p>
-      ${useSupabase ? `<p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Guardada en el sistema</p>` : ''}
-      <div style="background: #f5f3ff; border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem; font-size: 0.85rem;">
-        <div>📧 Recibirás un email con el link</div>
-        <div>⏰ 15 minutos antes de tu cita</div>
+      <h2 style="color: #1E2A8A; margin: 0 0 0.5rem;">¡Solicitud enviada!</h2>
+      <p style="color: var(--text-muted); margin-bottom: 0.5rem;">${escapeHtml(doctor?.full_name || 'Médico')}<br>${formatVideoDate(date)} a las ${time}</p>
+      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 1rem; margin: 1rem 0 1.5rem; font-size: 0.9rem; color: #15803d;">
+        Tu solicitud fue enviada; te notificaremos cuando el doctor confirme con el enlace.
       </div>
-      <button onclick="this.closest('.modal-overlay').remove()" style="padding: 1rem 2rem; background: #8b5cf6; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Entendido</button>
+      <div style="display: flex; gap: 0.75rem;">
+        <button onclick="goToAppointments()" style="padding: 1rem 1.5rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Ver mis citas</button>
+        <button onclick="this.closest('.modal-overlay').remove()" style="padding: 1rem 1.5rem; background: white; color: #1E2A8A; border: 2px solid #1E2A8A; border-radius: 12px; font-weight: 600; cursor: pointer;">Cerrar</button>
+      </div>
     </div>
   `;
+}
+
+// Payment screen for paid bookings
+function renderVideoPaymentScreen() {
+  const ctx = window.__videoPayment;
+  const modal = document.querySelector('.modal-overlay');
+  if (!ctx || !modal) return;
+  modal.innerHTML = `
+    <div style="background: white; height: 100%; display: flex; flex-direction: column;">
+      <!-- Header -->
+      <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
+        <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
+        <div>
+          <div style="font-weight: 600;">Pagar consulta</div>
+          <div style="font-size: 0.75rem; opacity: 0.9;">Pago seguro con PayPal</div>
+        </div>
+      </div>
+
+      <div style="flex: 1; overflow-y: auto; padding: 1.5rem; min-height: 0;">
+        <!-- Summary -->
+        <div style="background: #f8fafc; border-radius: 16px; padding: 1.25rem; margin-bottom: 1.25rem;">
+          <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+            <div style="width: 48px; height: 48px; background: #eef2ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0;">🩺</div>
+            <div>
+              <div style="font-weight: 600;">${escapeHtml(ctx.doctor?.full_name || 'Médico')}</div>
+              <div style="font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(ctx.doctor?.specialty || 'Medicina General')}</div>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.5rem;">
+            <span style="color: var(--text-muted);">Fecha y hora</span>
+            <span style="font-weight: 600;">${formatVideoDate(ctx.date)} • ${ctx.time}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 0.75rem;">
+            <span style="color: var(--text-secondary);">Total a pagar</span>
+            <span style="font-size: 1.5rem; font-weight: 700; color: #1E2A8A;">${formatConsultPrice(ctx.amount)}</span>
+          </div>
+          ${ctx.paymentStatus === 'membership_half' ? `<div style="font-size: 0.8rem; color: #46AC78; margin-top: 0.25rem; text-align: right;">Precio con 50% de membresía</div>` : ''}
+        </div>
+
+        <!-- Error area -->
+        <div id="video-pay-error" style="display: none; background: #fee2e2; color: #dc2626; border-radius: 12px; padding: 0.875rem; margin-bottom: 1rem; font-size: 0.85rem;"></div>
+
+        <!-- PayPal buttons -->
+        <div id="paypal-buttons-container" style="min-height: 120px;">
+          <div style="text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.9rem;">⏳ Cargando PayPal...</div>
+        </div>
+
+        <div style="font-size: 0.8rem; color: var(--text-muted); text-align: center; margin-top: 1rem;">
+          Tu cita quedó agendada como pendiente. El pago es requerido para confirmarla.
+        </div>
+      </div>
+    </div>
+  `;
+  mountVideoPayPalButtons();
+}
+
+async function mountVideoPayPalButtons() {
+  const ctx = window.__videoPayment;
+  const container = document.getElementById('paypal-buttons-container');
+  if (!ctx || !container) return;
+
+  try {
+    const paypal = await loadPayPalSdk();
+    if (!document.getElementById('paypal-buttons-container')) return; // user navigated away
+    container.innerHTML = '';
+    paypal.Buttons({
+      style: { shape: 'rect', color: 'gold', layout: 'vertical', label: 'pay' },
+      createOrder: (data, actions) => actions.order.create({
+        purchase_units: [{
+          amount: { value: ctx.amount.toFixed(2), currency_code: 'MXN' },
+          description: 'Video consulta médica - Farmacia Apollo'
+        }]
+      }),
+      onApprove: async (data) => {
+        const box = document.getElementById('paypal-buttons-container');
+        if (box) box.innerHTML = '<div style="text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.9rem;">⏳ Confirmando pago...</div>';
+        try {
+          const result = await captureConsultPayment(data.orderID, ctx.appointmentId);
+          renderVideoPaymentSuccess(result);
+        } catch (err) {
+          console.error('[confirmVideoBooking] capture failed:', err);
+          showVideoPaymentError(err.message || 'No se pudo confirmar el pago');
+          mountVideoPayPalButtons(); // re-render buttons so the user can retry
+        }
+      },
+      onError: (err) => {
+        console.error('[PayPal Buttons] error:', err);
+        showVideoPaymentError('Ocurrió un error con PayPal. Intenta de nuevo.');
+      }
+    }).render('#paypal-buttons-container');
+  } catch (err) {
+    console.error('[PayPal] SDK load failed:', err);
+    container.innerHTML = `
+      <div style="text-align: center; padding: 1rem;">
+        <div style="color: #dc2626; font-size: 0.9rem; margin-bottom: 0.75rem;">${escapeHtml(err.message || 'No se pudo cargar PayPal')}</div>
+        <button onclick="retryVideoPayment()" style="padding: 0.75rem 1.5rem; background: #1E2A8A; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Reintentar</button>
+      </div>
+    `;
+  }
+}
+
+window.retryVideoPayment = function() {
+  const errorBox = document.getElementById('video-pay-error');
+  if (errorBox) {
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+  }
+  const container = document.getElementById('paypal-buttons-container');
+  if (container) {
+    container.innerHTML = '<div style="text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.9rem;">⏳ Cargando PayPal...</div>';
+  }
+  mountVideoPayPalButtons();
+};
+
+function showVideoPaymentError(message) {
+  const errorBox = document.getElementById('video-pay-error');
+  if (errorBox) {
+    errorBox.textContent = message + ' — puedes intentarlo de nuevo.';
+    errorBox.style.display = 'block';
+  } else {
+    showToast(message, 'warning');
+  }
+}
+
+function renderVideoPaymentSuccess(result) {
+  const ctx = window.__videoPayment;
+  const modal = document.querySelector('.modal-overlay');
+  if (!modal) return;
+  console.log('[confirmVideoBooking] Payment captured, appointment confirmed:', result);
+  modal.innerHTML = `
+    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; text-align: center;">
+      <div style="font-size: 5rem; margin-bottom: 1rem;">✅</div>
+      <h2 style="color: #1E2A8A; margin: 0 0 0.5rem;">¡Pago confirmado!</h2>
+      <p style="color: var(--text-muted); margin-bottom: 0.5rem;">${escapeHtml(ctx?.doctor?.full_name || 'Médico')}<br>${formatVideoDate(ctx?.date)} a las ${ctx?.time || ''}</p>
+      <div style="background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 1rem; margin: 1rem 0 1.5rem; font-size: 0.9rem; color: #1E2A8A;">
+        Ya puedes unirte desde Mis Citas cuando sea la hora.
+      </div>
+      <div style="display: flex; gap: 0.75rem;">
+        <button onclick="goToAppointments()" style="padding: 1rem 1.5rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Ver mis citas</button>
+        <button onclick="this.closest('.modal-overlay').remove()" style="padding: 1rem 1.5rem; background: white; color: #1E2A8A; border: 2px solid #1E2A8A; border-radius: 12px; font-weight: 600; cursor: pointer;">Cerrar</button>
+      </div>
+    </div>
+  `;
+}
+
+// Close any overlay and navigate to Mis Citas
+window.goToAppointments = function() {
+  document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
+  currentPage = 'appointments';
+  navItems.forEach(nav => nav.classList.remove('active'));
+  document.querySelector('[data-page="appointments"]')?.classList.add('active');
+  updateMenuActiveState('appointments');
+  renderPage('appointments');
 };
 
 
@@ -7410,17 +7735,28 @@ async function renderAppointments() {
     const status = appt.status === 'pending' || appt.status === 'confirmed' ? 'scheduled' : appt.status;
     
     if (appt.type === 'video') {
+      // Prefer the raw timestamptz so display and the join window use local time
+      const dt = appt.dateTime ? new Date(appt.dateTime) : null;
+      const localDate = dt
+        ? `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+        : dateStr;
+      const localTime = dt
+        ? `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
+        : timeStr;
+      const cachedDoctor = (window.__videoDoctors || []).find(d => d.id === appt.doctorId);
       return {
         id: appt.id,
-        doctorName: 'Médico',
-        specialty: appt.notes || 'Consulta médica',
-        date: dateStr,
-        time: timeStr,
+        doctorName: cachedDoctor?.full_name || 'Médico',
+        specialty: cachedDoctor?.specialty || appt.notes || 'Consulta médica',
+        date: localDate,
+        time: localTime,
+        dateTime: appt.dateTime || null,
         price: 0,
         reason: appt.notes || '',
         status: status,
         source: 'supabase',
         meetingUrl: appt.meetingUrl || null,
+        paymentStatus: appt.paymentStatus || null,
         type: 'video',
         createdAt: isoDate
       };
@@ -7492,8 +7828,46 @@ async function renderAppointments() {
             <span>Video Consultas</span>
           </div>
           ${upcomingVideos.map(video => {
-            const date = new Date(video.date);
+            // Parse 'YYYY-MM-DD' as local date (avoids UTC-midnight off-by-one)
+            const dateParts = (video.date || '').split('-').map(Number);
+            const date = dateParts.length === 3 ? new Date(dateParts[0], dateParts[1] - 1, dateParts[2]) : new Date(video.date);
             const isToday = date.toDateString() === new Date().toDateString();
+
+            // Payment cell: Supabase rows show payment status, local rows keep the mock price
+            const paymentLabels = { membership_visit: 'Membresía', membership_half: '50% membresía', paid: 'Pagada', unpaid: 'Por pagar', waived: 'Cortesía' };
+            const priceLabel = video.source === 'supabase' ? 'Pago' : 'Precio';
+            const priceValue = video.source === 'supabase' ? (paymentLabels[video.paymentStatus] || '—') : '$' + video.price;
+
+            // Join window: [appointment_date - 15min, appointment_date + 90min]
+            let actionHtml;
+            if (video.source === 'supabase') {
+              if (video.meetingUrl) {
+                const start = video.dateTime
+                  ? new Date(video.dateTime)
+                  : new Date((video.date || '') + 'T' + (video.time || '09:00') + ':00');
+                const unlockAt = new Date(start.getTime() - 15 * 60 * 1000);
+                const closeAt = new Date(start.getTime() + 90 * 60 * 1000);
+                const now = new Date();
+                if (now >= unlockAt && now <= closeAt) {
+                  actionHtml = `<button onclick="joinVideoCall('${video.id}')" style="flex: 1; padding: 0.875rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">📹 Unirse a la consulta</button>`;
+                } else if (now < unlockAt) {
+                  const unlockStr = unlockAt.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) + ' · ' + unlockAt.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+                  actionHtml = `<button disabled style="flex: 1; padding: 0.875rem; background: #e5e7eb; color: var(--text-muted); border: none; border-radius: 12px; font-weight: 600; font-size: 0.8rem;">🔒 Se habilita ${unlockStr}</button>`;
+                } else {
+                  actionHtml = `<button disabled style="flex: 1; padding: 0.875rem; background: #e5e7eb; color: var(--text-muted); border: none; border-radius: 12px; font-weight: 600; font-size: 0.8rem;">La ventana para unirse ya pasó</button>`;
+                }
+              } else {
+                const pendingMsg = video.paymentStatus === 'unpaid' || video.paymentStatus === 'membership_half'
+                  ? 'Pago pendiente — el enlace aparecerá aquí cuando se confirme tu pago'
+                  : 'El enlace aparecerá aquí cuando el doctor confirme tu cita';
+                actionHtml = `<div style="flex: 1; padding: 0.75rem; background: white; border: 2px dashed #ddd6fe; border-radius: 12px; font-size: 0.8rem; color: #7c3aed; text-align: center; align-self: center;">${pendingMsg}</div>`;
+              }
+            } else if (isToday) {
+              actionHtml = `<button onclick="joinVideoCall('${video.id}')" style="flex: 1; padding: 0.875rem; background: #8b5cf6; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">📹 Entrar a la llamada</button>`;
+            } else {
+              actionHtml = `<button onclick="rescheduleVideo('${video.id}')" style="flex: 1; padding: 0.875rem; background: white; color: #8b5cf6; border: 2px solid #8b5cf6; border-radius: 12px; font-weight: 600; cursor: pointer;">Reagendar</button>`;
+            }
+
             return `
               <div style="background: linear-gradient(135deg, #f5f3ff, #ede9fe); border-radius: 16px; padding: 1.25rem; margin-bottom: 0.75rem; border: 2px solid #ddd6fe;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
@@ -7506,7 +7880,7 @@ async function renderAppointments() {
                   </div>
                   ${isToday ? `<span style="background: #8b5cf6; color: white; padding: 0.25rem 0.5rem; border-radius: 20px; font-size: 0.7rem; font-weight: 600;">HOY</span>` : ''}
                 </div>
-                
+
                 <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
                   <div style="flex: 1; background: white; padding: 0.75rem; border-radius: 10px; text-align: center;">
                     <div style="font-size: 0.75rem; color: var(--text-muted);">Fecha</div>
@@ -7517,19 +7891,15 @@ async function renderAppointments() {
                     <div style="font-weight: 600; color: #5b21b6;">${video.time}</div>
                   </div>
                   <div style="flex: 1; background: white; padding: 0.75rem; border-radius: 10px; text-align: center;">
-                    <div style="font-size: 0.75rem; color: var(--text-muted);">Precio</div>
-                    <div style="font-weight: 600; color: #5b21b6;">$${video.price}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted);">${priceLabel}</div>
+                    <div style="font-weight: 600; color: #5b21b6; font-size: 0.85rem;">${priceValue}</div>
                   </div>
                 </div>
-                
+
                 ${video.reason ? `<div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; background: white; padding: 0.75rem; border-radius: 8px;"><strong>Motivo:</strong> ${video.reason}</div>` : ''}
-                
+
                 <div style="display: flex; gap: 0.5rem;">
-                  ${isToday ? `
-                    <button onclick="joinVideoCall('${video.id}')" style="flex: 1; padding: 0.875rem; background: #8b5cf6; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">📹 Entrar a la llamada</button>
-                  ` : `
-                    <button onclick="rescheduleVideo('${video.id}')" style="flex: 1; padding: 0.875rem; background: white; color: #8b5cf6; border: 2px solid #8b5cf6; border-radius: 12px; font-weight: 600; cursor: pointer;">Reagendar</button>
-                  `}
+                  ${actionHtml}
                   <button onclick="cancelVideo('${video.id}')" style="padding: 0.875rem; background: #fee2e2; color: #dc2626; border: none; border-radius: 12px; cursor: pointer;">Cancelar</button>
                 </div>
               </div>
@@ -7634,44 +8004,68 @@ async function renderAppointments() {
 window.joinVideoCall = function(videoId) {
   const consultation = (window.__appointmentsCache || []).find(a => a.id === videoId && a.type === 'video') || Store.getVideoConsultations().find(v => v.id === videoId);
   if (!consultation) return;
-  
+
   if (consultation.source === 'supabase') {
-    if (consultation.meetingUrl) {
-      window.open(consultation.meetingUrl, '_blank');
-    } else {
-      showToast('La videollamada aún no tiene enlace. Contacta a la farmacia.', 'info');
+    if (!consultation.meetingUrl) {
+      showToast('El enlace estará disponible cuando el doctor confirme tu cita', 'info');
+      return;
     }
+    openVideoCallOverlay(consultation.meetingUrl);
     return;
   }
-  
+
   showToast(`Conectando con ${consultation.doctorName}...`, 'info');
 };
+
+// Full-screen in-app video call view (iframe, no window.open)
+function openVideoCallOverlay(meetingUrl) {
+  document.querySelectorAll('.video-call-overlay').forEach(el => el.remove());
+  const overlay = document.createElement('div');
+  overlay.className = 'video-call-overlay';
+  overlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #000; z-index: 2000; display: flex; flex-direction: column;';
+  overlay.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 1rem; background: #1E2A8A; color: white; flex-shrink: 0;">
+      <div style="font-weight: 600;">📹 Video Consulta</div>
+      <button class="video-call-close" style="background: #dc2626; color: white; border: none; padding: 0.5rem 1.25rem; border-radius: 8px; font-weight: 600; cursor: pointer;">Salir</button>
+    </div>
+    <iframe src="${escapeHtml(meetingUrl)}" allow="camera; microphone; autoplay; display-capture" allowfullscreen style="flex: 1; width: 100%; border: none; background: #000;"></iframe>
+  `;
+  overlay.querySelector('.video-call-close').addEventListener('click', () => overlay.remove());
+  document.body.appendChild(overlay);
+}
 
 window.rescheduleVideo = function(videoId) {
   const allVideos = (window.__appointmentsCache || []).filter(a => a.type === 'video');
   const video = allVideos.find(v => v.id === videoId) || Store.getVideoConsultations().find(v => v.id === videoId);
-  
+
   if (video && video.source === 'supabase') {
     showToast('Las citas del sistema no se pueden reagendar desde la app aún. Contacta a la farmacia.', 'info');
     return;
   }
-  
+
   const consultations = Store.getVideoConsultations().filter(v => v.id !== videoId);
   localStorage.setItem('videoConsultations', JSON.stringify(consultations));
-  showVideoBooking('next');
+  showVideoConsulta();
 };
 
-window.cancelVideo = function(videoId) {
+window.cancelVideo = async function(videoId) {
   const allVideos = (window.__appointmentsCache || []).filter(a => a.type === 'video');
   const video = allVideos.find(v => v.id === videoId) || Store.getVideoConsultations().find(v => v.id === videoId);
-  
+
   if (video && video.source === 'supabase') {
-    showToast('Las citas del sistema no se pueden cancelar desde la app aún. Contacta a la farmacia.', 'info');
+    if (!confirm('¿Estás seguro de cancelar esta video consulta?')) return;
+    const { error } = await FarmaciaAPI.updateAppointment(videoId, { status: 'cancelled' });
+    if (error) {
+      showToast('No se pudo cancelar: ' + error.message, 'error');
+      return;
+    }
+    showToast('Video consulta cancelada', 'info');
+    renderAppointments();
     return;
   }
-  
+
   if (confirm('¿Estás seguro de cancelar esta video consulta?')) {
-    const consultations = Store.getVideoConsultations().map(v => 
+    const consultations = Store.getVideoConsultations().map(v =>
       v.id === videoId ? { ...v, status: 'cancelled' } : v
     );
     localStorage.setItem('videoConsultations', JSON.stringify(consultations));
@@ -7684,20 +8078,27 @@ window.getDirections = function(locationId) {
   const locations = Store.getLocations();
   const location = locations.find(l => l.id === locationId);
   if (!location) return;
-  
+
   const address = encodeURIComponent(location.address);
   window.open(`https://www.google.com/maps/search/?api=1&query=${address}`, '_blank');
 };
 
-window.cancelAppointment = function(appointmentId) {
+window.cancelAppointment = async function(appointmentId) {
   const allAppts = (window.__appointmentsCache || []).filter(a => a.type === 'in_person');
   const appt = allAppts.find(a => a.id === appointmentId);
-  
+
   if (appt && appt.source === 'supabase') {
-    showToast('Las citas del sistema no se pueden cancelar desde la app aún. Contacta a la farmacia.', 'info');
+    if (!confirm('¿Estás seguro de cancelar esta cita?')) return;
+    const { error } = await FarmaciaAPI.updateAppointment(appointmentId, { status: 'cancelled' });
+    if (error) {
+      showToast('No se pudo cancelar: ' + error.message, 'error');
+      return;
+    }
+    showToast('Cita cancelada', 'info');
+    renderAppointments();
     return;
   }
-  
+
   if (confirm('¿Estás seguro de cancelar esta cita?\n\nTu posición en la fila será liberada.')) {
     Store.cancelAppointment(appointmentId);
     renderAppointments();

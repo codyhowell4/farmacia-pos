@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.paypal-subscription-status]
 verify_jwt = false
+
+[functions.paypal-capture-consult]
+verify_jwt = false
