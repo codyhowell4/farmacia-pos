@@ -244,7 +244,7 @@ const AdminReorderReport = () => {
                     {insufficient ? '—' : Math.round(item.safety_stock || 0)}
                   </td>
                   <td className="px-3 py-2">
-                    <span className="inline-flex items-center gap-1 text-blue-700 font-semibold text-sm">
+                    <span className="inline-flex items-center gap-1 text-apolo-navy font-semibold text-sm">
                       <ArrowDown className="w-3.5 h-3.5" />
                       {item.recommended_qty}
                     </span>
@@ -331,7 +331,7 @@ const AdminReorderReport = () => {
                       <tr key={item.id} className="hover:bg-slate-50">
                         <td className="px-4 py-2 font-medium text-slate-900">{item.name}</td>
                         <td className="px-4 py-2 text-slate-600">{item.quantity}</td>
-                        <td className="px-4 py-2 text-blue-700 font-semibold">{item.recommended_qty}</td>
+                        <td className="px-4 py-2 text-apolo-navy font-semibold">{item.recommended_qty}</td>
                         <td className="px-4 py-2 text-slate-600">{formatMXN(item.cost || 0)}</td>
                         <td className="px-4 py-2 text-slate-600">{formatMXN(item.recommended_qty * (item.cost || 0))}</td>
                         <td className="px-4 py-2">
@@ -450,7 +450,7 @@ const AdminReorderReport = () => {
               <select
                 value={selectedLocation}
                 onChange={(e) => setSelectedLocation(e.target.value)}
-                className="px-2 py-1.5 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="px-2 py-1.5 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apolo-navy"
               >
                 <option value="">Todas las ubicaciones</option>
                 {locations.map(loc => (
@@ -520,7 +520,7 @@ const AdminReorderReport = () => {
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   isActive
-                    ? 'border-blue-500 text-blue-600'
+                    ? 'border-apolo-navy text-apolo-navy'
                     : 'border-transparent text-slate-500 hover:text-slate-700'
                 }`}
               >

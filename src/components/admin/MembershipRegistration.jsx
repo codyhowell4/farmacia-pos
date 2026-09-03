@@ -307,7 +307,7 @@ const MembershipRegistration = () => {
           <Card
             key={p.key}
             className={`cursor-pointer transition-all hover:shadow-lg ${
-              selectedPlanKey === p.key ? 'ring-2 ring-blue-500' : ''
+              selectedPlanKey === p.key ? 'ring-2 ring-apolo-navy' : ''
             }`}
             onClick={() => handlePlanSelect(p.key)}
           >
@@ -455,7 +455,7 @@ const MembershipRegistration = () => {
           <h2 className="text-lg font-semibold">Forma de pago</h2>
           <div className="flex gap-4">
             <label className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer ${
-              form.paymentMethod === 'paypal' ? 'bg-blue-50 border-blue-300' : 'hover:bg-slate-50'
+              form.paymentMethod === 'paypal' ? 'bg-apolo-navy/5 border-apolo-navy/30' : 'hover:bg-slate-50'
             }`}>
               <input
                 type="radio"

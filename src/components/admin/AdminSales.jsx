@@ -12,7 +12,7 @@ const PaymentBadge = ({ method }) => {
   if (!method || method === 'cash') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700"><DollarSign className="w-3 h-3" />Efectivo</span>;
   if (method === 'card') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700"><CreditCard className="w-3 h-3" />Tarjeta</span>;
   if (method === 'transferencia') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-100 text-orange-700"><DollarSign className="w-3 h-3" />Transferencia</span>;
-  if (method === 'insurance') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-700"><Stethoscope className="w-3 h-3" />Seguro</span>;
+  if (method === 'insurance') return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-apolo-navy/10 text-apolo-navy"><Stethoscope className="w-3 h-3" />Seguro</span>;
   return <span className="text-xs text-slate-500">{method}</span>;
 };
 
@@ -156,10 +156,10 @@ const AdminSales = () => {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-lg p-6 text-white">
           <DollarSign className="w-8 h-8 mb-2" /><p className="text-sm opacity-90">Total Revenue</p><p className="text-3xl font-bold">{formatMXN(totalRevenue)}</p>
         </motion.div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg p-6 text-white">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-gradient-to-br from-apolo-navy to-apolo-navy-dark rounded-xl shadow-lg p-6 text-white">
           <Calendar className="w-8 h-8 mb-2" /><p className="text-sm opacity-90">Total Transactions</p><p className="text-3xl font-bold">{filteredSales.length}</p>
         </motion.div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl shadow-lg p-6 text-white">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-gradient-to-br from-apolo-navy to-apolo-navy-dark rounded-xl shadow-lg p-6 text-white">
           <DollarSign className="w-8 h-8 mb-2" /><p className="text-sm opacity-90">Average Sale</p><p className="text-3xl font-bold">${filteredSales.length > 0 ? (totalRevenue / filteredSales.length).toFixed(2) : '0.00'}</p>
         </motion.div>
       </div>

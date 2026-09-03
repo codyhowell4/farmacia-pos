@@ -149,7 +149,7 @@ const AdminMemberships = () => {
                       <td className="px-4 py-3">
                         <button
                           onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
-                          className="flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                          className="flex items-center gap-1 text-apolo-navy hover:text-apolo-navy-dark"
                         >
                           {m.plan_type === 'familiar'
                             ? `${m.membership_members?.length || 0} miembros`
@@ -197,7 +197,7 @@ const AdminMemberships = () => {
                                     <div key={mm.id} className="bg-white border rounded p-2 text-sm">
                                       <p className="font-medium text-slate-900">{mm.name}</p>
                                       <p className="text-xs text-slate-500 font-mono">{mm.sub_id}</p>
-                                      {mm.is_owner && <span className="text-xs text-blue-600">Titular</span>}
+                                      {mm.is_owner && <span className="text-xs text-apolo-navy">Titular</span>}
                                     </div>
                                   ))}
                                 </div>

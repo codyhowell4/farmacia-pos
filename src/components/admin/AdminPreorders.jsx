@@ -141,7 +141,7 @@ const AdminPreorders = () => {
               type="date"
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
-              className="px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apolo-navy"
             />
             {dateFilter && (
               <Button size="sm" variant="ghost" onClick={() => setDateFilter('')}>
@@ -152,7 +152,7 @@ const AdminPreorders = () => {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apolo-navy"
           >
             <option value="all">Todos los estados</option>
             <option value="pending">Pendiente</option>
@@ -230,7 +230,7 @@ const AdminPreorders = () => {
                             className={`text-xs h-7 px-2 ${
                               nextStatus === 'cancelled'
                                 ? 'border-red-200 text-red-700 hover:bg-red-50'
-                                : 'border-blue-200 text-blue-700 hover:bg-blue-50'
+                                : 'border-apolo-navy/30 text-apolo-navy hover:bg-apolo-navy/5'
                             }`}
                           >
                             {updatingId === p.id ? (

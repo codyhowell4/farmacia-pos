@@ -159,7 +159,7 @@ const AkauntingConnectionCard = () => {
     >
       {/* Header */}
       <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-        <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-2 rounded-lg">
+        <div className="bg-gradient-to-br from-apolo-navy to-apolo-navy-dark p-2 rounded-lg">
           <Link2 className="w-5 h-5 text-white" />
         </div>
         <div className="flex-1">
@@ -280,7 +280,7 @@ const AkauntingConnectionCard = () => {
         <Button
           onClick={handleSave}
           disabled={!dirty || loading}
-          className="bg-gradient-to-r from-blue-500 to-indigo-600"
+          className="bg-gradient-to-r from-apolo-navy to-apolo-navy-dark"
         >
           {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
           Guardar configuración

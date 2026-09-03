@@ -12,6 +12,7 @@ import PatientModal from '@/components/PatientModal';
 import ReturnModal from '@/components/ReturnModal';
 import PrescriptionModal from '@/components/PrescriptionModal';
 import MembershipPosLookup from '@/components/MembershipPosLookup';
+import ApoloBrand from '@/components/ApoloBrand';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN, getTaxSettings, calcIVA } from '@/lib/currency';
 import {
@@ -816,7 +817,7 @@ const PoSDashboard = () => {
     };
     
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 p-4 sm:p-8">
+      <div className="min-h-screen bg-apolo-bg p-4 sm:p-8">
         <Helmet><title>Checkout - Pharmacy PoS</title></Helmet>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto bg-white rounded-xl shadow-2xl p-4 sm:p-8">
           <h1 className="text-3xl sm:text-4xl font-bold text-center mb-6 sm:mb-8 bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">Cobrar</h1>
@@ -994,7 +995,7 @@ const PoSDashboard = () => {
                         setSplitPayments([]);
                       }
                     }}
-                    className={`relative flex items-center w-14 h-7 rounded-full transition-colors ${isSplitPayment ? 'bg-blue-600' : 'bg-slate-300'}`}
+                    className={`relative flex items-center w-14 h-7 rounded-full transition-colors ${isSplitPayment ? 'bg-apolo-navy' : 'bg-slate-300'}`}
                   >
                     <span className={`inline-block w-5 h-5 bg-white rounded-full shadow-md transform transition-transform ${isSplitPayment ? 'translate-x-8' : 'translate-x-1'}`} />
                   </button>
@@ -1142,7 +1143,7 @@ const PoSDashboard = () => {
                   </div>
                 )}
 
-                <Button onClick={handleCheckoutClick} disabled={isCompletingSale} className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-lg py-6">
+                <Button onClick={handleCheckoutClick} disabled={isCompletingSale} className="w-full bg-gradient-to-r from-apolo-green to-apolo-green-dark text-lg py-6">
                   {isCompletingSale ? 'Procesando...' : 'Finalizar venta'}
                 </Button>
                 <Button onClick={() => setView('main')} variant="outline" className="w-full">Volver al carrito</Button>
@@ -1157,13 +1158,13 @@ const PoSDashboard = () => {
   return (
     <>
       <Helmet><title>Punto de Venta - Farmacia</title></Helmet>
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50">
+      <div className="min-h-screen bg-apolo-bg">
         <nav className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
           <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
               <div className="flex items-center space-x-3">
-                <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-2 rounded-lg"><ShoppingCart className="w-6 h-6 text-white" /></div>
-                <div><h1 className="text-lg sm:text-xl font-bold text-slate-900">Punto de Venta</h1><p className="text-xs text-slate-500">Vendedor: {user?.name}</p></div>
+                <ApoloBrand size="md" />
+                <div><p className="text-xs text-slate-500">Vendedor: {user?.name}</p></div>
               </div>
               <form onSubmit={(e) => handleSearch(e, true)} className="flex-1 max-w-sm sm:max-w-xl mx-4 relative">
                 <div className="relative">
@@ -1199,7 +1200,7 @@ const PoSDashboard = () => {
                   <Clock className="w-4 h-4 mr-2" />Cerrar turno
                 </Button>
                 {user?.role === 'admin' && (
-                  <Button onClick={() => navigate('/admin')} variant="outline" size="sm" className="hidden sm:inline-flex text-blue-600 border-blue-200 hover:bg-blue-50">
+                  <Button onClick={() => navigate('/admin')} variant="outline" size="sm" className="hidden sm:inline-flex text-apolo-navy border-apolo-navy/30 hover:bg-apolo-navy/5">
                     ← Admin
                   </Button>
                 )}
@@ -1209,6 +1210,7 @@ const PoSDashboard = () => {
             </div>
           </div>
         </nav>
+        <div className="apolo-greek-key" />
 
         <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="lg:grid lg:grid-cols-12 lg:gap-6 lg:items-start">
@@ -1268,7 +1270,7 @@ const PoSDashboard = () => {
                             Stock: {stock}{item.quantity >= stock ? ' (máx. alcanzado)' : ''}
                           </p>
                         )}
-                        {item.overrideBy && <p className="text-xs text-blue-600">Overridden by {item.overrideBy}</p>}
+                        {item.overrideBy && <p className="text-xs text-apolo-navy">Overridden by {item.overrideBy}</p>}
                       </div>
                       <button onClick={() => removeFromCart(item.id)} className="text-red-500 hover:text-red-700 p-1"><Trash2 className="w-4 h-4" /></button>
                     </div>
@@ -1316,7 +1318,7 @@ const PoSDashboard = () => {
                   {taxSettings.ivaEnabled && <div className="flex justify-between text-slate-500 text-sm"><p>IVA ({taxSettings.ivaRate}%):</p><p>{formatMXN(ivaAmount)}</p></div>}
                 </div>
                 <div className="flex justify-between items-center text-xl sm:text-2xl font-bold"><p>Total:</p><p className="text-green-600">{formatMXN(finalTotal)}</p></div>
-                <Button onClick={proceedToCheckout} disabled={cart.length === 0} className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-lg py-6"><DollarSign className="w-5 h-5 mr-2" />Ir a cobrar</Button>
+                <Button onClick={proceedToCheckout} disabled={cart.length === 0 || isCompletingSale} className="w-full bg-gradient-to-r from-apolo-green to-apolo-green-dark text-lg py-6"><DollarSign className="w-5 h-5 mr-2" />Ir a cobrar</Button>
               </div>
             </motion.div>
           </div>

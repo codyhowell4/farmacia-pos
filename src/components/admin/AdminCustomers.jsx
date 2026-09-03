@@ -110,7 +110,7 @@ const AdminCustomers = () => {
             if (!open) resetForm();
           }}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700">
+              <Button className="bg-gradient-to-r from-apolo-navy to-apolo-navy-dark hover:from-apolo-navy-dark hover:to-apolo-navy-dark">
                 <Plus className="w-4 h-4 mr-2" />
                 Agregar cliente
               </Button>
@@ -187,7 +187,7 @@ const AdminCustomers = () => {
                   <td className="px-4 py-3 text-sm">
                     <div className="flex space-x-2">
                       <button onClick={() => navigate(`/admin/customers/${c.id}`)} className="text-emerald-600 hover:text-emerald-800" title="Ver perfil"><Eye className="w-4 h-4" /></button>
-                      <button onClick={() => handleEdit(c)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit className="w-4 h-4" /></button>
+                      <button onClick={() => handleEdit(c)} className="text-apolo-navy hover:text-apolo-navy-dark" title="Editar"><Edit className="w-4 h-4" /></button>
                       <button onClick={() => handleDelete(c.id)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>

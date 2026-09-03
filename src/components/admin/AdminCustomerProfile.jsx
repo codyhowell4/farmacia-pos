@@ -147,7 +147,7 @@ const AdminCustomerProfile = () => {
       {/* Customer Info Card */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <div className="flex items-start gap-4">
-          <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-xl font-bold">
+          <div className="w-14 h-14 bg-gradient-to-br from-apolo-navy to-apolo-navy-dark rounded-full flex items-center justify-center text-white text-xl font-bold">
             {(customer.full_name || '?').charAt(0).toUpperCase()}
           </div>
           <div className="flex-1">
@@ -196,7 +196,7 @@ const AdminCustomerProfile = () => {
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                   activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
+                    ? 'border-apolo-navy text-apolo-navy'
                     : 'border-transparent text-slate-500 hover:text-slate-700'
                 }`}
               >

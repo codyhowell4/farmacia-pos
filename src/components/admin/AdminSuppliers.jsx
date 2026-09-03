@@ -248,7 +248,7 @@ const AdminSuppliers = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[
-          { label: 'Proveedores', value: suppliers.length, color: 'from-blue-500 to-indigo-600', icon: Truck },
+          { label: 'Proveedores', value: suppliers.length, color: 'from-apolo-navy to-apolo-navy-dark', icon: Truck },
           { label: 'Órdenes pendientes', value: totalPending, color: 'from-orange-500 to-red-500', icon: Package },
           { label: 'Valor total compras', value: formatMXN(totalValue), color: 'from-green-500 to-emerald-600', icon: Package },
         ].map((s, i) => (
@@ -265,7 +265,7 @@ const AdminSuppliers = () => {
       <div className="flex gap-2 border-b border-slate-200">
         {[['suppliers', 'Proveedores'], ['orders', 'Órdenes de compra']].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${tab === id ? 'border-apolo-navy text-apolo-navy' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             {label}
           </button>
         ))}
@@ -281,7 +281,7 @@ const AdminSuppliers = () => {
           {tab === 'suppliers' && (
             <Dialog open={supplierDialogOpen} onOpenChange={v => { if (v) setSupplierDialogOpen(true); else closeSupplierDialog(); }}>
               <DialogTrigger asChild>
-                <Button className="bg-gradient-to-r from-blue-500 to-indigo-600"><Plus className="w-4 h-4 mr-2" />Nuevo proveedor</Button>
+                <Button className="bg-gradient-to-r from-apolo-navy to-apolo-navy-dark"><Plus className="w-4 h-4 mr-2" />Nuevo proveedor</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader><DialogTitle>{editingSupplier ? 'Editar proveedor' : 'Nuevo proveedor'}</DialogTitle></DialogHeader>
@@ -369,7 +369,7 @@ const AdminSuppliers = () => {
                     <td className="px-4 py-3 text-slate-600">{s.email}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button onClick={() => editSupplier(s)} className="text-blue-600 hover:text-blue-800"><Edit className="w-4 h-4" /></button>
+                        <button onClick={() => editSupplier(s)} className="text-apolo-navy hover:text-apolo-navy-dark"><Edit className="w-4 h-4" /></button>
                         <button onClick={() => deleteSupplierItem(s.id)} className="text-red-600 hover:text-red-800"><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
@@ -409,7 +409,7 @@ const AdminSuppliers = () => {
                           <div className="flex gap-2">
                             {order.status === 'pending' && (
                               <>
-                                <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-800 h-7 px-2" onClick={() => editOrder(order)}>
+                                <Button size="sm" variant="ghost" className="text-apolo-navy hover:text-apolo-navy-dark h-7 px-2" onClick={() => editOrder(order)}>
                                   <Edit className="w-3 h-3 mr-1" />Editar
                                 </Button>
                                 <Button size="sm" variant="outline" className="text-green-700 border-green-300 hover:bg-green-50 h-7 px-2" onClick={() => receivePO(order.id)}>

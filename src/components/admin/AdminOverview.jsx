@@ -68,7 +68,7 @@ const AdminOverview = () => {
   };
 
   const statCards = [
-    { label: 'Ingresos totales', value: formatMXN(stats.totalRevenue), icon: DollarSign, color: 'from-green-500 to-emerald-600', path: '/admin/sales' },
+    { label: 'Ingresos totales', value: formatMXN(stats.totalRevenue), icon: DollarSign, color: 'from-green-500 to-emerald-600', path: '/admin/sales', money: true },
     { label: 'Total de ventas', value: stats.totalSales, icon: ShoppingCart, color: 'from-blue-500 to-indigo-600', path: '/admin/sales' },
     { label: 'Artículos en inventario', value: stats.totalInventory, icon: Package, color: 'from-purple-500 to-pink-600', path: '/admin/inventory' },
 
@@ -83,7 +83,7 @@ const AdminOverview = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900 mb-2">Resumen del sistema</h2>
+        <h2 className="text-2xl font-bold text-apolo-navy mb-2">Resumen del sistema</h2>
         <p className="text-slate-600">Bienvenido al sistema de gestión de farmacia</p>
       </div>
 
@@ -118,7 +118,7 @@ const AdminOverview = () => {
         {(dateRange.startDate || dateRange.endDate) && (
           <button
             onClick={() => setDateRange({ startDate: '', endDate: '' })}
-            className="mt-3 text-sm text-blue-600 hover:text-blue-800 underline"
+            className="mt-3 text-sm text-apolo-navy hover:text-apolo-navy-dark underline"
           >
             Limpiar filtros
           </button>
@@ -134,12 +134,12 @@ const AdminOverview = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.08 }}
-              className="bg-white rounded-xl shadow-lg p-6 border border-slate-200 hover:shadow-xl hover:ring-2 hover:ring-blue-500 transition-all cursor-pointer relative overflow-hidden"
+              className="bg-white rounded-xl shadow-lg p-6 border border-slate-200 hover:shadow-xl hover:ring-2 hover:ring-apolo-navy transition-all cursor-pointer relative overflow-hidden"
               onClick={() => navigate(stat.path)}
             >
               <div className="relative z-10">
                 <p className="text-sm text-slate-600 mb-1 truncate pr-10">{stat.label}</p>
-                <p className="text-3xl font-bold text-slate-900">{stat.value}</p>
+                <p className={`text-3xl font-bold ${stat.money ? 'text-[#2E9E5B]' : 'text-apolo-navy'}`}>{stat.value}</p>
               </div>
               <div className={`absolute top-4 right-4 bg-gradient-to-br ${stat.color} p-2 rounded-lg opacity-20 hover:opacity-40 transition-opacity`}>
                 <Icon className="w-6 h-6 text-white" />
@@ -153,10 +153,10 @@ const AdminOverview = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
-        className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg p-8 text-white"
+        className="bg-gradient-to-br from-apolo-navy to-apolo-navy-dark rounded-xl shadow-lg p-8 text-white"
       >
         <h3 className="text-2xl font-bold mb-4">Acciones rápidas</h3>
-        <p className="text-blue-100 mb-4">Usa el menú lateral para navegar entre las secciones del panel</p>
+        <p className="text-white/70 mb-4">Usa el menú lateral para navegar entre las secciones del panel</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <motion.div 
             whileHover={{ scale: 1.02 }}
@@ -166,7 +166,7 @@ const AdminOverview = () => {
           >
             <UserCog className="w-6 h-6 mb-2" />
             <p className="font-semibold">Gestionar usuarios</p>
-            <p className="text-sm text-blue-100">Agrega, edita o elimina usuarios</p>
+            <p className="text-sm text-white/70">Agrega, edita o elimina usuarios</p>
           </motion.div>
           <motion.div 
             whileHover={{ scale: 1.02 }}
@@ -176,7 +176,7 @@ const AdminOverview = () => {
           >
             <ShoppingCart className="w-6 h-6 mb-2" />
             <p className="font-semibold">Ver ventas</p>
-            <p className="text-sm text-blue-100">Consulta todas las transacciones</p>
+            <p className="text-sm text-white/70">Consulta todas las transacciones</p>
           </motion.div>
           <motion.div 
             whileHover={{ scale: 1.02 }}
@@ -186,7 +186,7 @@ const AdminOverview = () => {
           >
             <Package className="w-6 h-6 mb-2" />
             <p className="font-semibold">Monitorear inventario</p>
-            <p className="text-sm text-blue-100">Revisa los niveles de stock</p>
+            <p className="text-sm text-white/70">Revisa los niveles de stock</p>
           </motion.div>
         </div>
       </motion.div>

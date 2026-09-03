@@ -353,7 +353,7 @@ const AdminShifts = () => {
           <p className="text-sm opacity-90">Ingresos totales (cerrados)</p>
           <p className="text-3xl font-bold">{formatMXN(totalRevenue)}</p>
         </motion.div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg p-6 text-white">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-gradient-to-br from-apolo-navy to-apolo-navy-dark rounded-xl shadow-lg p-6 text-white">
           <AlertTriangle className="w-8 h-8 mb-2" />
           <p className="text-sm opacity-90">Variación promedio de efectivo</p>
           <p className="text-3xl font-bold">{formatMXN(avgVariance)}</p>
@@ -370,7 +370,7 @@ const AdminShifts = () => {
             variant="outline"
             onClick={handleReconciliation}
             disabled={reconciling}
-            className="border-blue-200 text-blue-600 hover:bg-blue-50"
+            className="border-apolo-navy/30 text-apolo-navy hover:bg-apolo-navy/5"
           >
             {reconciling ? 'Reconciliando...' : 'Reconciliación'}
           </Button>
@@ -501,7 +501,7 @@ const AdminShifts = () => {
                               <Button
                                 onClick={() => handleEditSave(shift)}
                                 disabled={savingEdit}
-                                className="bg-blue-500 hover:bg-blue-600"
+                                className="bg-apolo-navy hover:bg-apolo-navy-dark"
                               >
                                 {savingEdit ? 'Guardando...' : 'Guardar'}
                               </Button>

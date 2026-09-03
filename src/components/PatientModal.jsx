@@ -69,7 +69,7 @@ const PatientModal = ({ open, onOpenChange, onConfirm }) => {
             <Button variant="outline" className="flex-1" onClick={handleSkip}>
               Omitir
             </Button>
-            <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={handleConfirm}>
+            <Button className="flex-1 bg-apolo-navy hover:bg-apolo-navy-dark" onClick={handleConfirm}>
               Confirmar
             </Button>
           </div>

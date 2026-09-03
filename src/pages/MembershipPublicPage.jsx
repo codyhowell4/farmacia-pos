@@ -238,7 +238,7 @@ const MembershipPublicPage = () => {
           <Card
             key={p.key}
             className={`cursor-pointer transition-all hover:shadow-xl ${
-              selectedPlanKey === p.key ? 'ring-2 ring-blue-500' : ''
+              selectedPlanKey === p.key ? 'ring-2 ring-apolo-navy' : ''
             }`}
             onClick={() => handlePlanSelect(p.key)}
           >
@@ -450,14 +450,14 @@ const MembershipPublicPage = () => {
       <p className="text-slate-600">Guarda tu Plan ID. Lo necesitarás en tu próxima visita.</p>
       <p className="text-slate-600">
         Ya puedes iniciar sesión en el portal de clientes en{' '}
-        <a href="/customer-app/" className="text-blue-600 underline">/customer-app/</a>{' '}
+        <a href="/customer-app/" className="text-apolo-navy underline">/customer-app/</a>{' '}
         con tu correo electrónico, teléfono o número de membresía y la contraseña que elegiste.
       </p>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-slate-100 py-12 px-4">
+    <div className="min-h-screen bg-apolo-bg py-12 px-4">
       <div className="max-w-6xl mx-auto">
         {step === 'plans' && renderPlans()}
         {step === 'form' && renderForm()}

@@ -200,7 +200,7 @@ const PatientMedicalHistory = ({ customer, onSaved }) => {
                       <div className="flex items-center gap-1 flex-shrink-0">
                         <button
                           onClick={() => openEdit(section.key, index)}
-                          className="text-blue-600 hover:text-blue-800 p-1"
+                          className="text-apolo-navy hover:text-apolo-navy-dark p-1"
                           title="Editar"
                         >
                           <Edit2 className="w-3.5 h-3.5" />

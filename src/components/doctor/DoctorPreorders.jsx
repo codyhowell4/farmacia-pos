@@ -249,7 +249,7 @@ const DoctorPreorders = () => {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                        className="text-apolo-navy border-apolo-navy/30 hover:bg-apolo-navy/5"
                         onClick={() => handleStatusChange(p?.id, 'ready')}
                       >
                         <Check className="w-3 h-3 mr-1" />

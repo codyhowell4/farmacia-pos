@@ -274,7 +274,7 @@ const AdminInventory = () => {
                   </td>
                   <td className="px-3 py-2">
                     {item.recommended_qty > 0 ? (
-                      <span className="inline-flex items-center gap-1 text-blue-700 font-semibold text-xs">
+                      <span className="inline-flex items-center gap-1 text-apolo-navy font-semibold text-xs">
                         <TrendingUp className="w-3 h-3" />
                         {item.recommended_qty}
                       </span>
@@ -334,7 +334,7 @@ const AdminInventory = () => {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl shadow-lg p-5 text-white">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-br from-apolo-navy to-apolo-navy-dark rounded-xl shadow-lg p-5 text-white">
           <Package className="w-7 h-7 mb-2" />
           <p className="text-xs opacity-90">Total artículos</p>
           <p className="text-2xl font-bold">{stats.totalItems}</p>
@@ -354,7 +354,7 @@ const AdminInventory = () => {
           <p className="text-xs opacity-90">Agotados</p>
           <p className="text-2xl font-bold">{stats.outOfStock}</p>
         </motion.div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg p-5 text-white">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-gradient-to-br from-apolo-navy to-apolo-navy-dark rounded-xl shadow-lg p-5 text-white">
           <BarChart3 className="w-7 h-7 mb-2" />
           <p className="text-xs opacity-90">Reorden sugerida</p>
           <p className="text-2xl font-bold">{stats.reorderNeeded}</p>
@@ -383,7 +383,7 @@ const AdminInventory = () => {
           <select
             value={selectedLocation}
             onChange={(e) => setSelectedLocation(e.target.value)}
-            className="px-3 py-1.5 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="px-3 py-1.5 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apolo-navy"
           >
             <option value="">Todas las ubicaciones</option>
             {locations.map(loc => (
@@ -406,7 +406,7 @@ const AdminInventory = () => {
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
                     isActive
-                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                      ? 'bg-apolo-navy/5 text-apolo-navy border border-apolo-navy/20'
                       : 'text-slate-600 hover:bg-slate-50 border border-transparent'
                   }`}
                 >

@@ -133,7 +133,7 @@ const AdminUsers = () => {
             if (!open) resetForm();
           }}>
             <DialogTrigger asChild>
-              <Button className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700">
+              <Button className="bg-gradient-to-r from-apolo-navy to-apolo-navy-dark hover:from-apolo-navy-dark hover:to-apolo-navy-dark">
                 <Plus className="w-4 h-4 mr-2" />
                 Agregar usuario
               </Button>
@@ -222,7 +222,7 @@ const AdminUsers = () => {
                     <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                       user.role === 'admin' ? 'bg-blue-100 text-blue-700' :
                       user.role === 'pos' ? 'bg-green-100 text-green-700' :
-                      user.role === 'inventory' ? 'bg-purple-100 text-purple-700' :
+                      user.role === 'inventory' ? 'bg-apolo-navy/10 text-apolo-navy' :
                       user.role === 'doctor' ? 'bg-teal-100 text-teal-700' :
                       'bg-amber-100 text-amber-700'
                     }`}>{
@@ -236,7 +236,7 @@ const AdminUsers = () => {
                   <td className="px-4 py-3 text-sm text-slate-600">{user.locations?.name || 'N/A'}</td>
                   <td className="px-4 py-3 text-sm">
                     <div className="flex space-x-2">
-                      <button onClick={() => handleEdit(user)} className="text-blue-600 hover:text-blue-800"><Edit className="w-4 h-4" /></button>
+                      <button onClick={() => handleEdit(user)} className="text-apolo-navy hover:text-apolo-navy-dark"><Edit className="w-4 h-4" /></button>
                       <button onClick={() => handleDelete(user.id)} className="text-red-600 hover:text-red-800"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>

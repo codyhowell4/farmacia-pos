@@ -225,10 +225,10 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
                 <p className="text-xs text-slate-500">Transferencia</p>
                 <p className="font-bold text-orange-700">{formatMXN(shiftSales.transferencia)}</p>
               </div>
-              <div className="bg-purple-50 rounded-lg p-3 text-center border border-purple-200">
-                <Stethoscope className="w-4 h-4 text-purple-600 mx-auto mb-1" />
+              <div className="bg-apolo-navy/5 rounded-lg p-3 text-center border border-apolo-navy/20">
+                <Stethoscope className="w-4 h-4 text-apolo-navy mx-auto mb-1" />
                 <p className="text-xs text-slate-500">Seguro</p>
-                <p className="font-bold text-purple-700">{formatMXN(shiftSales.insurance)}</p>
+                <p className="font-bold text-apolo-navy">{formatMXN(shiftSales.insurance)}</p>
               </div>
             </div>
 

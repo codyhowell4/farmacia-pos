@@ -270,7 +270,7 @@ const DoctorAppointments = () => {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        className="text-apolo-navy hover:text-apolo-navy-dark hover:bg-apolo-navy/5"
                         title="Confirmar"
                         onClick={() => quickStatusChange(appt, 'confirmed')}
                       >

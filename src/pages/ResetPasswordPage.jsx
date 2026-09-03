@@ -99,7 +99,7 @@ const ResetPasswordPage = () => {
         <title>Restablecer contraseña - Sistema de Farmacia</title>
       </Helmet>
 
-      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-apolo-bg">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -108,12 +108,12 @@ const ResetPasswordPage = () => {
         >
           <div className="bg-white rounded-2xl shadow-2xl p-8 border border-slate-200">
             <div className="flex justify-center mb-6">
-              <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-4 rounded-full">
+              <div className="bg-gradient-to-br from-apolo-navy to-apolo-navy-dark p-4 rounded-full">
                 <Pill className="w-10 h-10 text-white" />
               </div>
             </div>
 
-            <h1 className="text-3xl font-bold text-center mb-2 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+            <h1 className="text-3xl font-bold text-center mb-2 bg-gradient-to-r from-apolo-navy to-apolo-navy-dark bg-clip-text text-transparent">
               Nueva contraseña
             </h1>
 
@@ -175,7 +175,7 @@ const ResetPasswordPage = () => {
                   <Button
                     type="submit"
                     disabled={submitting || !hasToken}
-                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition-all py-5"
+                    className="w-full bg-gradient-to-r from-apolo-navy to-apolo-navy-dark hover:from-apolo-navy-dark hover:to-apolo-navy-dark transition-all py-5"
                   >
                     {submitting ? 'Guardando...' : 'Guardar contraseña'}
                   </Button>
@@ -194,7 +194,7 @@ const ResetPasswordPage = () => {
                 </p>
                 <Button
                   onClick={() => navigate('/login')}
-                  className="mt-4 bg-gradient-to-r from-blue-600 to-indigo-600"
+                  className="mt-4 bg-gradient-to-r from-apolo-navy to-apolo-navy-dark"
                 >
                   Ir al inicio de sesión
                 </Button>

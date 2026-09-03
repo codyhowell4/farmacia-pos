@@ -57,7 +57,7 @@ const AdminSettings = () => {
           className="bg-white rounded-xl shadow-lg p-6 max-w-xl space-y-6">
 
           <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-            <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-2 rounded-lg">
+            <div className="bg-gradient-to-br from-apolo-navy to-apolo-navy-dark p-2 rounded-lg">
               <Settings className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -74,7 +74,7 @@ const AdminSettings = () => {
             </div>
             <button
               onClick={() => update('ivaEnabled', !settings.ivaEnabled)}
-              className={`relative flex items-center w-14 h-7 rounded-full transition-colors ${settings.ivaEnabled ? 'bg-blue-600' : 'bg-slate-300'}`}
+              className={`relative flex items-center w-14 h-7 rounded-full transition-colors ${settings.ivaEnabled ? 'bg-apolo-navy' : 'bg-slate-300'}`}
             >
               <span className={`inline-block w-5 h-5 bg-white rounded-full shadow-md transform transition-transform ${settings.ivaEnabled ? 'translate-x-8' : 'translate-x-1'}`} />
             </button>
@@ -117,7 +117,7 @@ const AdminSettings = () => {
             </div>
           </div>
 
-          <Button onClick={handleSave} disabled={!dirty} className="w-full bg-gradient-to-r from-blue-500 to-indigo-600">
+          <Button onClick={handleSave} disabled={!dirty} className="w-full bg-gradient-to-r from-apolo-navy to-apolo-navy-dark">
             <Save className="w-4 h-4 mr-2" />Guardar configuración
           </Button>
         </motion.div>

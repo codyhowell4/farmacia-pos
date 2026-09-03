@@ -349,7 +349,7 @@ const AdminAccounting = () => {
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
-            <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-2 rounded-lg">
+            <div className="bg-gradient-to-br from-apolo-navy to-apolo-navy-dark p-2 rounded-lg">
               <BookOpen className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -388,10 +388,10 @@ const AdminAccounting = () => {
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
             <div className="flex items-center gap-2 text-sm text-slate-500 mb-1">
-              <DollarSign className="w-4 h-4 text-blue-600" />
+              <DollarSign className="w-4 h-4 text-apolo-navy" />
               Utilidad neta
             </div>
-            <p className={`text-2xl font-bold ${totals.net >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{formatMXN(totals.net)}</p>
+            <p className={`text-2xl font-bold ${totals.net >= 0 ? 'text-[#2E9E5B]' : 'text-red-600'}`}>{formatMXN(totals.net)}</p>
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
             <div className="flex items-center gap-2 text-sm text-slate-500 mb-1">

@@ -101,7 +101,7 @@ const ShiftGate = ({ children }) => {
 
         <div className="flex flex-col gap-2 mt-3">
           {user?.role === 'admin' && (
-            <Button onClick={() => navigate('/admin')} variant="outline" className="w-full text-blue-600 border-blue-200 hover:bg-blue-50">
+            <Button onClick={() => navigate('/admin')} variant="outline" className="w-full text-apolo-navy border-apolo-navy/30 hover:bg-apolo-navy/5">
               ← Regresar a Admin
             </Button>
           )}

@@ -16,8 +16,8 @@ const ACTION_COLORS = {
   SALE_COMPLETE: 'bg-emerald-100 text-emerald-700',
   SALE_VOID: 'bg-red-100 text-red-700',
   PRICE_OVERRIDE: 'bg-yellow-100 text-yellow-700',
-  INVENTORY_ADD: 'bg-purple-100 text-purple-700',
-  INVENTORY_EDIT: 'bg-purple-100 text-purple-700',
+  INVENTORY_ADD: 'bg-apolo-navy/10 text-apolo-navy',
+  INVENTORY_EDIT: 'bg-apolo-navy/10 text-apolo-navy',
   INVENTORY_DELETE: 'bg-red-100 text-red-700',
   DISCOUNT_ADD: 'bg-cyan-100 text-cyan-700',
   DISCOUNT_DELETE: 'bg-red-100 text-red-700',
@@ -70,7 +70,7 @@ const AdminAuditLog = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[
-          { label: 'Total de eventos', value: entries.length, color: 'from-blue-500 to-indigo-600' },
+          { label: 'Total de eventos', value: entries.length, color: 'from-apolo-navy to-apolo-navy-dark' },
           { label: 'Eventos de venta', value: entries.filter(e => e.action === 'SALE_COMPLETE').length, color: 'from-green-500 to-emerald-600' },
           { label: 'Eventos de anulación', value: entries.filter(e => e.action === 'SALE_VOID').length, color: 'from-red-500 to-rose-600' },
         ].map((s, i) => (

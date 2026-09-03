@@ -208,7 +208,7 @@ const MembershipPosLookup = ({ selectedMembership, onSelect, onClear, onFulfillT
                           {m.plan_type === 'familiar' ? (
                             <button
                               onClick={(e) => { e.stopPropagation(); setExpandedId(expandedId === m.id ? null : m.id); }}
-                              className="text-blue-600 hover:underline"
+                              className="text-apolo-navy hover:underline"
                             >
                               {m.membership_members?.length || 0} miembros
                             </button>

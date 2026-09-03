@@ -4,8 +4,9 @@ import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BarChart3, Calendar, Users, UserCircle,
-  LogOut, Stethoscope, Menu, X, Clock,
+  LogOut, Menu, X, Clock,
 } from 'lucide-react';
+import ApoloBrand from '@/components/ApoloBrand';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import DoctorOverview from '@/components/doctor/DoctorOverview';
@@ -60,8 +61,8 @@ const DoctorDashboard = () => {
             }}
             className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
               activeTab === item.id
-                ? 'bg-gradient-to-r from-teal-500 to-emerald-600 text-white shadow-md'
-                : 'text-slate-600 hover:bg-slate-100'
+                ? 'bg-white/15 text-white shadow-md'
+                : 'text-white/70 hover:bg-white/10 hover:text-white'
             }`}
           >
             <Icon className="w-5 h-5" />
@@ -79,7 +80,7 @@ const DoctorDashboard = () => {
         <meta name="description" content="Portal médico del sistema de farmacia" />
       </Helmet>
 
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-teal-50">
+      <div className="min-h-screen bg-apolo-bg">
         <nav className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
@@ -87,11 +88,8 @@ const DoctorDashboard = () => {
                 <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setIsMenuOpen(!isMenuOpen)}>
                   <Menu className="w-6 h-6" />
                 </Button>
-                <div className="bg-gradient-to-br from-teal-500 to-emerald-600 p-2 rounded-lg">
-                  <Stethoscope className="w-6 h-6 text-white" />
-                </div>
+                <ApoloBrand size="md" />
                 <div>
-                  <h1 className="text-xl font-bold text-slate-900">Portal Médico</h1>
                   <p className="text-xs text-slate-500">Bienvenido, Dr. {user?.name}</p>
                 </div>
               </div>
@@ -104,6 +102,7 @@ const DoctorDashboard = () => {
             </div>
           </div>
         </nav>
+        <div className="apolo-greek-key" />
 
         {/* Mobile Menu */}
         <AnimatePresence>
@@ -120,7 +119,7 @@ const DoctorDashboard = () => {
                 animate={{ x: 0 }}
                 exit={{ x: '-100%' }}
                 transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                className="fixed top-0 left-0 h-full w-72 bg-white shadow-xl p-4"
+                className="fixed top-0 left-0 h-full w-72 bg-apolo-navy text-white shadow-xl p-4"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex justify-between items-center mb-6">
@@ -138,7 +137,7 @@ const DoctorDashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="lg:grid lg:grid-cols-12 lg:gap-8">
             <aside className="hidden lg:block lg:col-span-3 xl:col-span-2">
-              <div className="bg-white rounded-xl shadow-lg p-4 sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto">
+              <div className="bg-apolo-navy text-white rounded-xl shadow-lg p-4 sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto">
                 <SideNav />
               </div>
             </aside>

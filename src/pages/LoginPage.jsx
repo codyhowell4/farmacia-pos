@@ -88,7 +88,7 @@ const LoginPage = () => {
         <title>Iniciar sesión - Sistema de Farmacia</title>
       </Helmet>
 
-      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-apolo-bg">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -97,12 +97,12 @@ const LoginPage = () => {
         >
           <div className="bg-white rounded-2xl shadow-2xl p-8 border border-slate-200">
             <div className="flex justify-center mb-6">
-              <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-4 rounded-full">
+              <div className="bg-gradient-to-br from-apolo-navy to-apolo-navy-dark p-4 rounded-full">
                 <Pill className="w-10 h-10 text-white" />
               </div>
             </div>
 
-            <h1 className="text-3xl font-bold text-center mb-2 bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+            <h1 className="text-3xl font-bold text-center mb-2 bg-gradient-to-r from-apolo-navy to-apolo-navy-dark bg-clip-text text-transparent">
               Sistema de Farmacia
             </h1>
             <p className="text-center text-slate-600 mb-8">Inicia sesión para continuar</p>
@@ -145,7 +145,7 @@ const LoginPage = () => {
               <div className="flex justify-end">
                 <Link 
                   to="/forgot-password" 
-                  className="text-sm text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                  className="text-sm text-apolo-navy hover:text-apolo-navy-dark hover:underline transition-colors"
                 >
                   ¿Olvidaste tu contraseña?
                 </Link>
@@ -154,7 +154,7 @@ const LoginPage = () => {
               <Button
                 type="submit"
                 disabled={submitting}
-                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 transition-all py-5"
+                className="w-full bg-gradient-to-r from-apolo-navy to-apolo-navy-dark hover:from-apolo-navy-dark hover:to-apolo-navy-dark transition-all py-5"
               >
                 {submitting ? 'Iniciando sesión...' : 'Iniciar sesión'}
               </Button>

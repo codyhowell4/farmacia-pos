@@ -17,6 +17,15 @@ module.exports = {
 		},
 		extend: {
 			colors: {
+				apolo: {
+					navy: '#1E2A8A',
+					'navy-dark': '#141B5E',
+					green: '#46AC78',
+					'green-dark': '#359268',
+					gold: '#E0A63E',
+					bg: '#F5F7FB',
+					border: '#E3E8F2',
+				},
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
 				ring: 'hsl(var(--ring))',

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
-import { Package, Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal, Upload, FileSpreadsheet, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal, Upload, FileSpreadsheet, ChevronDown, ChevronUp } from 'lucide-react';
+import ApoloBrand from '@/components/ApoloBrand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -640,17 +641,17 @@ const InventoryDashboard = () => {
   return (
     <>
       <Helmet><title>Gestión de inventario - Farmacia</title></Helmet>
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50">
+      <div className="min-h-screen bg-apolo-bg">
         <nav className="bg-white border-b border-slate-200 shadow-sm">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
               <div className="flex items-center space-x-3">
-                <div className="bg-gradient-to-br from-purple-500 to-pink-600 p-2 rounded-lg"><Package className="w-6 h-6 text-white" /></div>
-                <div><h1 className="text-xl font-bold text-slate-900">Gestión de inventario</h1><p className="text-xs text-slate-500">Gestor: {user?.name}</p></div>
+                <ApoloBrand size="md" />
+                <div><p className="text-xs text-slate-500">Gestor: {user?.name}</p></div>
               </div>
               <div className="flex items-center gap-2">
                 {user?.role === 'admin' && (
-                  <Button onClick={() => navigate('/admin')} variant="outline" className="text-blue-600 border-blue-200 hover:bg-blue-50">
+                  <Button onClick={() => navigate('/admin')} variant="outline" className="text-apolo-navy border-apolo-navy/30 hover:bg-apolo-navy/5">
                     ← Admin
                   </Button>
                 )}
@@ -659,6 +660,7 @@ const InventoryDashboard = () => {
             </div>
           </div>
         </nav>
+        <div className="apolo-greek-key" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
           <>
@@ -729,7 +731,7 @@ const InventoryDashboard = () => {
               </Button>
               <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
                 <DialogTrigger asChild>
-                  <Button className="bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700"><Plus className="w-4 h-4 mr-2" />Agregar medicamento</Button>
+                  <Button className="bg-gradient-to-r from-apolo-navy to-apolo-navy-dark hover:from-apolo-navy-dark hover:to-apolo-navy-dark"><Plus className="w-4 h-4 mr-2" />Agregar medicamento</Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-2xl">
                   <DialogHeader><DialogTitle>{editingItem ? 'Editar medicamento' : 'Nuevo medicamento'}</DialogTitle></DialogHeader>
@@ -743,7 +745,7 @@ const InventoryDashboard = () => {
                         <select
                           value={formData.itemType}
                           onChange={(e) => setFormData({ ...formData, itemType: e.target.value })}
-                          className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apolo-navy"
                         >
                           <option value="product">Producto</option>
                           <option value="service">Servicio</option>
@@ -775,7 +777,7 @@ const InventoryDashboard = () => {
                         <select
                           value={formData.supplierId}
                           onChange={(e) => setFormData({ ...formData, supplierId: e.target.value })}
-                          className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apolo-navy"
                         >
                           <option value="">Sin proveedor</option>
                           {suppliers.map(s => (
@@ -789,7 +791,7 @@ const InventoryDashboard = () => {
                           id="requiresPrescription"
                           checked={formData.requiresPrescription}
                           onChange={(e) => setFormData({ ...formData, requiresPrescription: e.target.checked })}
-                          className="w-4 h-4 rounded border-slate-300 text-blue-600 cursor-pointer"
+                          className="w-4 h-4 rounded border-slate-300 text-apolo-navy cursor-pointer"
                         />
                         <Label htmlFor="requiresPrescription" className="cursor-pointer">
                           Requiere receta médica (Rx) — el cajero debe ingresar el número de receta al cobrar
@@ -814,21 +816,21 @@ const InventoryDashboard = () => {
             {alertFilter && (
               <div className="mb-4 flex items-center gap-2">
                 <span className="text-sm text-slate-600">Filtrado: <strong>{alertFilter === 'low_stock' ? 'Stock bajo' : 'Próximos a vencer'}</strong></span>
-                <button onClick={() => setAlertFilter(null)} className="text-xs text-blue-600 underline">Quitar filtro</button>
+                <button onClick={() => setAlertFilter(null)} className="text-xs text-apolo-navy underline">Quitar filtro</button>
               </div>
             )}
 
             {/* Bulk actions toolbar — visible when items are selected */}
             {selectedIds.size > 0 && (
-              <div className="mb-4 flex items-center gap-3 bg-purple-50 border border-purple-200 rounded-lg px-4 py-2.5">
-                <span className="text-sm font-semibold text-purple-900">{selectedIds.size} seleccionado(s)</span>
+              <div className="mb-4 flex items-center gap-3 bg-apolo-navy/5 border border-apolo-navy/20 rounded-lg px-4 py-2.5">
+                <span className="text-sm font-semibold text-apolo-navy">{selectedIds.size} seleccionado(s)</span>
                 <Button size="sm" variant="outline" onClick={openBulkEdit} disabled={isBulkProcessing}>
                   <Edit className="w-4 h-4 mr-1" />Editar seleccionados
                 </Button>
                 <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" onClick={handleBulkDelete} disabled={isBulkProcessing}>
                   <Trash2 className="w-4 h-4 mr-1" />Eliminar seleccionados
                 </Button>
-                <button onClick={clearSelection} className="ml-auto text-xs text-purple-700 underline">Limpiar selección</button>
+                <button onClick={clearSelection} className="ml-auto text-xs text-apolo-navy underline">Limpiar selección</button>
               </div>
             )}
 
@@ -841,7 +843,7 @@ const InventoryDashboard = () => {
                         type="checkbox"
                         checked={filteredInventory.length > 0 && selectedIds.size === filteredInventory.length}
                         onChange={toggleSelectAll}
-                        className="w-4 h-4 rounded border-slate-300 text-purple-600 cursor-pointer"
+                        className="w-4 h-4 rounded border-slate-300 text-apolo-navy cursor-pointer"
                         title="Seleccionar todos"
                       />
                     </th>
@@ -856,21 +858,21 @@ const InventoryDashboard = () => {
                     const isLow = item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD);
                     const isSelected = selectedIds.has(item.id);
                     return (
-                      <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-purple-50' : ''}`}>
+                      <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-apolo-navy/5' : ''}`}>
                         <td className="px-4 py-3">
                           <input
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggleSelect(item.id)}
-                            className="w-4 h-4 rounded border-slate-300 text-purple-600 cursor-pointer"
+                            className="w-4 h-4 rounded border-slate-300 text-apolo-navy cursor-pointer"
                           />
                         </td>
                         <td className="px-4 py-3 text-sm">
                           <div className="flex space-x-2">
                             <button onClick={() => handleRestock(item)} className="text-green-600 hover:text-green-800" title="Registrar compra"><Plus className="w-4 h-4" /></button>
-                            <button onClick={() => handleEdit(item)} className="text-blue-600 hover:text-blue-800" title="Editar"><Edit className="w-4 h-4" /></button>
+                            <button onClick={() => handleEdit(item)} className="text-apolo-navy hover:text-apolo-navy-dark" title="Editar"><Edit className="w-4 h-4" /></button>
                             <button onClick={() => handleAdjustStock(item)} className="text-orange-600 hover:text-orange-800" title="Ajustar stock"><SlidersHorizontal className="w-4 h-4" /></button>
-                            <button onClick={() => viewAdjustmentHistory(item)} className="text-purple-600 hover:text-purple-800" title="Historial"><History className="w-4 h-4" /></button>
+                            <button onClick={() => viewAdjustmentHistory(item)} className="text-apolo-navy/70 hover:text-apolo-navy" title="Historial"><History className="w-4 h-4" /></button>
                             <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 className="w-4 h-4" /></button>
                           </div>
                         </td>
@@ -927,7 +929,7 @@ const InventoryDashboard = () => {
                 <select
                   value={bulkEditForm.supplierId}
                   onChange={(e) => setBulkEditForm({ ...bulkEditForm, supplierId: e.target.value })}
-                  className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apolo-navy"
                 >
                   <option value="">No cambiar</option>
                   {suppliers.map(s => (
@@ -940,7 +942,7 @@ const InventoryDashboard = () => {
                 <select
                   value={bulkEditForm.itemType}
                   onChange={(e) => setBulkEditForm({ ...bulkEditForm, itemType: e.target.value })}
-                  className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apolo-navy"
                 >
                   <option value="">No cambiar</option>
                   <option value="product">Producto</option>
@@ -952,14 +954,14 @@ const InventoryDashboard = () => {
                 <select
                   value={bulkEditForm.requiresPrescription}
                   onChange={(e) => setBulkEditForm({ ...bulkEditForm, requiresPrescription: e.target.value })}
-                  className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apolo-navy"
                 >
                   <option value="keep">No cambiar</option>
                   <option value="yes">Sí requiere receta</option>
                   <option value="no">No requiere receta</option>
                 </select>
               </div>
-              <Button onClick={handleBulkEdit} disabled={isBulkProcessing} className="w-full bg-gradient-to-r from-purple-500 to-pink-600">
+              <Button onClick={handleBulkEdit} disabled={isBulkProcessing} className="w-full bg-gradient-to-r from-apolo-navy to-apolo-navy-dark">
                 {isBulkProcessing ? 'Aplicando...' : `Aplicar a ${selectedIds.size} medicamento(s)`}
               </Button>
             </div>
@@ -1085,7 +1087,7 @@ const InventoryDashboard = () => {
           <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5 text-purple-600" />
+                <FileSpreadsheet className="w-5 h-5 text-apolo-navy" />
                 Importar inventario desde CSV
               </DialogTitle>
             </DialogHeader>
@@ -1104,9 +1106,9 @@ const InventoryDashboard = () => {
                     type="button"
                     onClick={() => setImportMode('add')}
                     disabled={isImporting}
-                    className={`p-3 rounded-lg border-2 text-left transition-all ${importMode === 'add' ? 'border-purple-500 bg-purple-50' : 'border-slate-200 hover:border-slate-300'}`}
+                    className={`p-3 rounded-lg border-2 text-left transition-all ${importMode === 'add' ? 'border-apolo-navy bg-apolo-navy/5' : 'border-slate-200 hover:border-slate-300'}`}
                   >
-                    <p className={`text-sm font-semibold ${importMode === 'add' ? 'text-purple-700' : 'text-slate-700'}`}>Agregar</p>
+                    <p className={`text-sm font-semibold ${importMode === 'add' ? 'text-apolo-navy' : 'text-slate-700'}`}>Agregar</p>
                     <p className="text-xs text-slate-500">Conserva los productos actuales y agrega los del CSV</p>
                   </button>
                   <button
@@ -1203,7 +1205,7 @@ const InventoryDashboard = () => {
                 <Button
                   onClick={handleImport}
                   disabled={importRows.length === 0 || isImporting}
-                  className="flex-1 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700"
+                  className="flex-1 bg-gradient-to-r from-apolo-navy to-apolo-navy-dark hover:from-apolo-navy-dark hover:to-apolo-navy-dark"
                 >
                   {isImporting ? 'Importando...' : importMode === 'replace' ? `Reemplazar con ${importRows.length} productos` : `Importar ${importRows.length} productos`}
                 </Button>
@@ -1237,7 +1239,7 @@ const InventoryDashboard = () => {
                       sale: 'bg-red-100 text-red-700',
                       return: 'bg-green-100 text-green-700',
                       adjustment: 'bg-blue-100 text-blue-700',
-                      purchase: 'bg-purple-100 text-purple-700',
+                      purchase: 'bg-apolo-navy/10 text-apolo-navy',
                       void: 'bg-amber-100 text-amber-700',
                       edit: 'bg-slate-100 text-slate-700',
                     };

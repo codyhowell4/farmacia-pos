@@ -338,7 +338,7 @@ const PrescriptionModal = ({
             Cancelar venta
           </Button>
           <Button 
-            className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600" 
+            className="flex-1 bg-gradient-to-r from-apolo-green to-apolo-green-dark" 
             onClick={handleSubmit}
           >
             Continuar al pago

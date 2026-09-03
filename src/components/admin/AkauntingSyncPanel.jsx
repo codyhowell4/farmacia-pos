@@ -36,7 +36,7 @@ const SECTIONS = [
     title: 'Sincronización de ventas',
     description: 'Envía las ventas completadas de Farmacia a Akaunting como facturas',
     icon: ShoppingCart,
-    gradient: 'from-purple-500 to-violet-600',
+    gradient: 'from-apolo-navy to-apolo-navy-dark',
     buttonLabel: 'Sincronizar ventas',
     syncingLabel: 'Sincronizando ventas...',
     syncFn: 'syncAllSales',

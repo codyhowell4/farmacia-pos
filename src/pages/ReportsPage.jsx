@@ -167,7 +167,7 @@ export default function ReportsPage() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center gap-2 mb-6">
-        <FileDown className="h-6 w-6 text-blue-600" />
+        <FileDown className="h-6 w-6 text-apolo-navy" />
         <h1 className="text-2xl font-bold text-gray-900">Reportes COFEPRIS</h1>
       </div>
 
@@ -241,7 +241,7 @@ export default function ReportsPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
-                <Pill className="h-5 w-5 text-purple-600" />
+                <Pill className="h-5 w-5 text-apolo-navy" />
                 Reporte de Sustancias Controladas
               </CardTitle>
               <Button 
@@ -318,7 +318,7 @@ export default function ReportsPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg flex items-center gap-2">
-                <Activity className="h-5 w-5 text-blue-600" />
+                <Activity className="h-5 w-5 text-apolo-navy" />
                 Movimientos de Inventario
               </CardTitle>
               <Button 

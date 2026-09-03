@@ -157,7 +157,7 @@ export default function AdminReports() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-2">
-        <TrendingUp className="h-6 w-6 text-blue-600" />
+        <TrendingUp className="h-6 w-6 text-apolo-navy" />
         <h1 className="text-2xl font-bold text-gray-900">Reportes Administrativos</h1>
       </div>
 
@@ -346,7 +346,7 @@ export default function AdminReports() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-blue-600" />
+                  <Clock className="h-5 w-5 text-apolo-navy" />
                   Turnos Abiertos
                 </CardTitle>
               </CardHeader>
@@ -844,7 +844,7 @@ export default function AdminReports() {
                       { label: 'Crítico (81-100)', min: 81, max: 100, color: 'bg-red-500' },
                       { label: 'Alto (51-80)', min: 51, max: 80, color: 'bg-orange-500' },
                       { label: 'Medio (21-50)', min: 21, max: 50, color: 'bg-yellow-500' },
-                      { label: 'Bajo (1-20)', min: 1, max: 20, color: 'bg-blue-500' },
+                      { label: 'Bajo (1-20)', min: 1, max: 20, color: 'bg-apolo-navy' },
                       { label: 'Seguro (0)', min: 0, max: 0, color: 'bg-green-500' },
                     ];
                     const maxCount = Math.max(...bands.map(b => data.intelligence.filter(i => {
