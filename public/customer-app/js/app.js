@@ -68,7 +68,7 @@ let isPasswordRecovery = false;
 // NOTE: 'consulta' is intentionally NOT gated — telehealth is pay-per-consult
 // for free users and included/discounted for members.
 const PAID_PAGES = new Set([
-  'home', 'body', 'health', 'appointments',
+  'home', 'body', 'health',
   'emergency-id', 'guides', 'caregiver',
   'fasting', 'sleep', 'checkin', 'integrations'
 ]);
@@ -78,7 +78,6 @@ const PAID_PAGE_NAMES = {
   'home':         'Resumen de Hoy',
   'body':         'Métricas de Cuerpo',
   'health':       'Salud',
-  'appointments': 'Mis Citas',
   'emergency-id': 'ID Médico de Emergencia',
   'guides':       'Guías de Salud',
   'caregiver':    'Cuidado Familiar',
