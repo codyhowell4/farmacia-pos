@@ -2,11 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   UserCircle, Stethoscope, Phone, Mail, Award, Activity,
-  Calendar, MapPin
+  Calendar, MapPin, Clock
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { getDoctorProfile } from '@/lib/db';
+import { Button } from '@/components/ui/button';
+import { getDoctorProfile, upsertDoctorProfile } from '@/lib/db';
+import DoctorAvailabilityEditor from '@/components/DoctorAvailabilityEditor';
 import { toast } from 'sonner';
 
 const InfoRow = ({ icon: Icon, label, value, fallback }) => (
@@ -27,6 +29,8 @@ const DoctorProfile = () => {
   const { user } = useAuth();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [availability, setAvailability] = useState({});
+  const [savingAvailability, setSavingAvailability] = useState(false);
 
   const loadProfile = useCallback(async () => {
     if (!user?.id) return;
@@ -36,6 +40,11 @@ const DoctorProfile = () => {
       const data = await getDoctorProfile(user.id);
       console.log('[DoctorProfile] loaded data:', JSON.stringify(data, null, 2));
       setProfile(data);
+      setAvailability(
+        data?.availability && typeof data.availability === 'object' && !Array.isArray(data.availability)
+          ? data.availability
+          : {}
+      );
     } catch (err) {
       toast.error('Error cargando perfil médico');
       console.error('[DoctorProfile] load error:', err);
@@ -47,6 +56,21 @@ const DoctorProfile = () => {
   useEffect(() => {
     loadProfile();
   }, [loadProfile]);
+
+  const handleSaveAvailability = async () => {
+    if (!user?.id) return;
+    setSavingAvailability(true);
+    try {
+      console.log('[DoctorProfile] saving availability:', availability);
+      await upsertDoctorProfile(user.id, { availability: availability || {} });
+      toast.success('Disponibilidad guardada');
+    } catch (err) {
+      toast.error(err.message || 'Error guardando disponibilidad');
+      console.error('[DoctorProfile] save availability error:', err);
+    } finally {
+      setSavingAvailability(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -138,6 +162,31 @@ const DoctorProfile = () => {
                 />
               </div>
             )}
+          </div>
+
+          {/* Availability (video consultas) */}
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h4 className="text-sm font-semibold text-slate-900 mb-1 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-teal-600" />
+              Mi disponibilidad (video consultas)
+            </h4>
+            <p className="text-xs text-slate-500 mb-4">
+              Los pacientes podrán agendar video consultas en estos horarios.
+            </p>
+            <DoctorAvailabilityEditor
+              value={availability}
+              onChange={setAvailability}
+              disabled={savingAvailability}
+            />
+            <div className="flex justify-end mt-4">
+              <Button
+                onClick={handleSaveAvailability}
+                disabled={savingAvailability}
+                className="bg-[#46AC78] hover:bg-[#3b9566] text-white"
+              >
+                {savingAvailability ? 'Guardando...' : 'Guardar disponibilidad'}
+              </Button>
+            </div>
           </div>
 
           {/* Organization Info */}

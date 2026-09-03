@@ -9,7 +9,7 @@
 //   getCurrentUser, signIn, signOut,
 //   getCustomerProfile, getProducts,
 //   getCustomerOrders, getAppointments, getPrescriptions,
-//   getDoctors, getMembershipDetails, getConsultPrice,
+//   getDoctors, getDoctorBookedSlots, getMembershipDetails, getConsultPrice,
 //   createAppointment, updateAppointment
 // ============================================================
 
@@ -684,9 +684,30 @@ window.FarmaciaAPI = (function () {
         const { data, error } = await sb.rpc('get_public_doctors', { p_org_id: orgId });
         if (error) throw error;
         console.log('[FarmaciaAPI] Doctors loaded:', (data || []).length);
-        return data || [];
+        // Pass through weekly availability windows ({ mon: [["09:00","14:00"]], ... })
+        return (data || []).map(doc => ({ ...doc, availability: doc.availability || {} }));
       } catch (err) {
         console.warn('[FarmaciaAPI] getDoctors error:', err.message);
+        return [];
+      }
+    },
+
+    /**
+     * Get the already-booked time slots ("HH:MM", clinic local time) for a
+     * doctor on a date ('YYYY-MM-DD') via the get_doctor_booked_slots RPC.
+     * Fails open: returns [] on any error so booking keeps working.
+     */
+    async getDoctorBookedSlots(doctorId, dateStr) {
+      if (!sb) return [];
+      try {
+        const { data, error } = await sb.rpc('get_doctor_booked_slots', {
+          p_doctor_id: doctorId,
+          p_date: dateStr
+        });
+        if (error) throw error;
+        return data || [];
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getDoctorBookedSlots error:', err.message);
         return [];
       }
     },

@@ -6886,6 +6886,73 @@ function formatVideoDate(dateStr) {
   return d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
+// --- Video consulta availability helpers ---
+// Weekday keys match the doctor availability object (mon..sun);
+// Date.getDay() is 0=Sunday, so index this array with it.
+const VIDEO_WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const VIDEO_SLOT_MINUTES = 30; // slot interval
+
+function parseVideoTime(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(typeof hhmm === 'string' ? hhmm : '');
+  if (!m) return null;
+  const mins = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  return mins < 24 * 60 ? mins : null;
+}
+
+function formatVideoSlotTime(mins) {
+  return String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
+}
+
+// All 30-min slot start times inside the doctor's windows for the picked
+// date's weekday. A slot's start must be before the window end.
+function buildVideoSlotsForDate(doctor, dateStr) {
+  const availability = (doctor && doctor.availability) || {};
+  const parts = (dateStr || '').split('-').map(Number);
+  if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return [];
+  const dayKey = VIDEO_WEEKDAY_KEYS[new Date(parts[0], parts[1] - 1, parts[2]).getDay()];
+  const windows = availability[dayKey];
+  if (!Array.isArray(windows)) return [];
+  const slots = [];
+  windows.forEach(win => {
+    const start = parseVideoTime(Array.isArray(win) ? win[0] : null);
+    const end = parseVideoTime(Array.isArray(win) ? win[1] : null);
+    if (start === null || end === null) return;
+    for (let mins = start; mins < end; mins += VIDEO_SLOT_MINUTES) {
+      slots.push(formatVideoSlotTime(mins));
+    }
+  });
+  return [...new Set(slots)].sort();
+}
+
+// True when the doctor has at least one availability window on any day
+function doctorHasVideoAvailability(doctor) {
+  const availability = (doctor && doctor.availability) || {};
+  return Object.keys(availability).some(k => Array.isArray(availability[k]) && availability[k].length > 0);
+}
+
+// Wall-clock "now" in the clinic timezone (America/Mexico_City)
+function videoClinicNow() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Mexico_City',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    }).formatToParts(new Date());
+    const get = t => (parts.find(p => p.type === t) || {}).value || '';
+    return {
+      dateStr: get('year') + '-' + get('month') + '-' + get('day'),
+      minutes: parseInt(get('hour'), 10) * 60 + parseInt(get('minute'), 10)
+    };
+  } catch (e) {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return {
+      dateStr: now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()),
+      minutes: now.getHours() * 60 + now.getMinutes()
+    };
+  }
+}
+
 // Dynamically load the PayPal JS SDK (intent=capture) only when a paid
 // booking renders. Client id comes from window.farmaciaSupabaseConfig.
 let paypalSdkPromise = null;
@@ -7030,6 +7097,7 @@ window.showVideoBooking = function(doctorId) {
     return;
   }
   window.__videoBookingPricing = null;
+  const hasAvailability = doctorHasVideoAvailability(doctor);
 
   const modal = document.querySelector('.modal-overlay');
   if (!modal) return;
@@ -7053,17 +7121,19 @@ window.showVideoBooking = function(doctorId) {
         <!-- Date Selection -->
         <div style="margin-bottom: 1.25rem;">
           <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Fecha</label>
-          <input type="date" id="video-date" value="${new Date().toISOString().split('T')[0]}" min="${new Date().toISOString().split('T')[0]}" style="width: 100%; padding: 0.875rem; border: 2px solid var(--border-color); border-radius: 12px; font-size: 1rem;">
+          <input type="date" id="video-date" value="${new Date().toISOString().split('T')[0]}" min="${new Date().toISOString().split('T')[0]}" onchange="loadVideoSlots('${doctor.id}', this.value)" style="width: 100%; padding: 0.875rem; border: 2px solid var(--border-color); border-radius: 12px; font-size: 1rem;">
         </div>
 
-        <!-- Time Selection -->
+        <!-- Time Selection (driven by doctor availability) -->
         <div style="margin-bottom: 1.25rem;">
           <label style="display: block; font-weight: 600; margin-bottom: 0.5rem;">Hora</label>
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
-            ${['09:00', '09:30', '10:00', '10:30', '11:00', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00'].map(time => `
-              <button onclick="selectVideoTime(this, '${time}')" class="video-time-btn" style="padding: 0.75rem; border: 1px solid var(--border-color); background: white; border-radius: 10px; cursor: pointer; font-size: 0.9rem;">${time}</button>
-            `).join('')}
-          </div>
+          ${hasAvailability ? `
+            <div id="video-slots-container">
+              <div style="text-align: center; padding: 1rem; color: var(--text-muted); font-size: 0.9rem; background: #f8fafc; border-radius: 12px;">⏳ Cargando horarios...</div>
+            </div>
+          ` : `
+            <div style="text-align: center; padding: 1rem; color: #b45309; font-size: 0.9rem; background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px;">Este doctor aún no tiene horarios configurados para video consultas</div>
+          `}
         </div>
 
         <!-- Reason -->
@@ -7079,11 +7149,15 @@ window.showVideoBooking = function(doctorId) {
 
         <input type="hidden" id="selected-video-time">
 
-        <button id="video-confirm-btn" onclick="confirmVideoBooking('${doctor.id}')" style="width: 100%; padding: 1rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;">Confirmar cita</button>
+        <button id="video-confirm-btn" onclick="confirmVideoBooking('${doctor.id}')" ${hasAvailability ? '' : 'disabled'} style="width: 100%; padding: 1rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;${hasAvailability ? '' : ' opacity: 0.5; cursor: not-allowed;'}">Confirmar cita</button>
       </div>
     </div>
   `;
   resolveVideoBookingPrice();
+  if (hasAvailability) {
+    const dateInput = document.getElementById('video-date');
+    if (dateInput && dateInput.value) loadVideoSlots(doctorId, dateInput.value);
+  }
 };
 
 // Resolve membership + consult price and paint the price panel
@@ -7148,6 +7222,74 @@ async function resolveVideoBookingPrice() {
   }
 }
 
+// Fetch booked slots for the picked date and render the selectable grid.
+// Clears any previous selection; ignores stale async responses.
+window.loadVideoSlots = async function(doctorId, dateStr) {
+  const container = document.getElementById('video-slots-container');
+  if (!container || !dateStr) return;
+
+  const hidden = document.getElementById('selected-video-time');
+  if (hidden) hidden.value = '';
+
+  const doctor = (window.__videoDoctors || []).find(d => d.id === doctorId);
+  const allSlots = doctor ? buildVideoSlotsForDate(doctor, dateStr) : [];
+
+  if (!allSlots.length) {
+    renderVideoSlots([]);
+    return;
+  }
+
+  container.innerHTML = `
+    <div style="text-align: center; padding: 1rem; color: var(--text-muted); font-size: 0.9rem; background: #f8fafc; border-radius: 12px;">⏳ Cargando horarios...</div>
+  `;
+
+  const booked = await FarmaciaAPI.getDoctorBookedSlots(doctorId, dateStr);
+
+  // Bail out if the user navigated away or changed the date while fetching
+  const dateInput = document.getElementById('video-date');
+  if (!document.getElementById('video-slots-container') || !dateInput || dateInput.value !== dateStr) return;
+
+  const taken = new Set(booked || []);
+  let slots = allSlots.filter(s => !taken.has(s));
+
+  // Drop past slots when the picked date is today (clinic local time)
+  const clinicNow = videoClinicNow();
+  if (dateStr === clinicNow.dateStr) {
+    slots = slots.filter(s => parseVideoTime(s) > clinicNow.minutes);
+  }
+
+  renderVideoSlots(slots);
+};
+
+function renderVideoSlots(slots) {
+  const container = document.getElementById('video-slots-container');
+  if (!container) return;
+  if (!slots.length) {
+    container.innerHTML = `
+      <div style="text-align: center; padding: 1rem; color: var(--text-muted); font-size: 0.9rem; background: #f8fafc; border-radius: 12px;">Sin horarios disponibles este día — elige otra fecha.</div>
+    `;
+    return;
+  }
+  container.innerHTML = `
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
+      ${slots.map(time => `
+        <button onclick="selectVideoTime(this, '${time}')" class="video-time-btn" style="padding: 0.75rem; border: 1px solid var(--border-color); background: white; border-radius: 10px; cursor: pointer; font-size: 0.9rem;">${time}</button>
+      `).join('')}
+    </div>
+  `;
+}
+
+// Live re-check used right before booking: the slot must still be inside
+// the doctor's windows, not booked, and not already past (clinic time).
+async function isVideoSlotStillAvailable(doctor, dateStr, time) {
+  if (!buildVideoSlotsForDate(doctor, dateStr).includes(time)) return false;
+  const booked = await FarmaciaAPI.getDoctorBookedSlots(doctor.id, dateStr);
+  if ((booked || []).includes(time)) return false;
+  const clinicNow = videoClinicNow();
+  if (dateStr === clinicNow.dateStr && parseVideoTime(time) <= clinicNow.minutes) return false;
+  return true;
+}
+
 window.selectVideoTime = function(btn, time) {
   document.getElementById('selected-video-time').value = time;
   document.querySelectorAll('.video-time-btn').forEach(b => {
@@ -7180,15 +7322,39 @@ window.confirmVideoBooking = async function(doctorId) {
 
   const doctor = (window.__videoDoctors || []).find(d => d.id === doctorId) || null;
 
+  // The selected time must be a real slot from the doctor's availability
+  if (!doctor || !buildVideoSlotsForDate(doctor, date).includes(time)) {
+    showToast('Por favor selecciona un horario disponible', 'warning');
+    loadVideoSlots(doctorId, date);
+    return;
+  }
+
+  const confirmBtn = document.getElementById('video-confirm-btn');
+  if (confirmBtn) {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Verificando...';
+  }
+
+  // Staleness guard: re-check live that the slot is still free; if it was
+  // just taken, refresh the grid and bail out instead of booking.
+  const stillAvailable = await isVideoSlotStillAvailable(doctor, date, time);
+  if (!stillAvailable) {
+    showToast('Ese horario acaba de ocuparse, elige otro', 'warning');
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirmar cita';
+    }
+    loadVideoSlots(doctorId, date);
+    return;
+  }
+
   // Make sure pricing is resolved before creating the appointment
   if (!window.__videoBookingPricing) {
     await resolveVideoBookingPrice();
   }
   const pricing = window.__videoBookingPricing || { paymentStatus: 'unpaid', amount: 100 };
 
-  const confirmBtn = document.getElementById('video-confirm-btn');
   if (confirmBtn) {
-    confirmBtn.disabled = true;
     confirmBtn.textContent = 'Agendando...';
   }
 

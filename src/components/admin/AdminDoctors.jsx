@@ -12,6 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog';
 import { getDoctorUsersWithProfiles, upsertDoctorProfile } from '@/lib/db';
+import DoctorAvailabilityEditor from '@/components/DoctorAvailabilityEditor';
 import { toast } from 'sonner';
 
 // Normalize Supabase nested relation shape: doctor_profiles may be
@@ -36,6 +37,7 @@ const AdminDoctors = () => {
     specialty: '',
     phone: '',
     is_active: true,
+    availability: {},
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -83,6 +85,9 @@ const AdminDoctors = () => {
       specialty: dp?.specialty || '',
       phone: dp?.phone || '',
       is_active: dp?.is_active ?? true,
+      availability: dp?.availability && typeof dp.availability === 'object' && !Array.isArray(dp.availability)
+        ? dp.availability
+        : {},
     });
     setDialogOpen(true);
   };
@@ -97,6 +102,7 @@ const AdminDoctors = () => {
       specialty: form.specialty.trim() || null,
       phone: form.phone.trim() || null,
       is_active: form.is_active,
+      availability: form.availability || {},
     };
 
     console.log('[AdminDoctors] Saving profile for doctor:', {
@@ -288,6 +294,18 @@ const AdminDoctors = () => {
                 id="is_active"
                 checked={form.is_active}
                 onCheckedChange={v => setForm({ ...form, is_active: v })}
+              />
+            </div>
+
+            <div>
+              <Label>Disponibilidad (video consultas)</Label>
+              <p className="text-xs text-slate-500 mb-2">
+                Horario semanal en el que el médico puede recibir video consultas
+              </p>
+              <DoctorAvailabilityEditor
+                value={form.availability}
+                onChange={v => setForm({ ...form, availability: v })}
+                disabled={submitting}
               />
             </div>
 
