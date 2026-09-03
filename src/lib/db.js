@@ -135,7 +135,7 @@ export const verifyAdminPin = async (pin) => {
 
 export const getInventory = async (locationId = null) => {
   let query = supabase.from('inventory').select('*').order('name');
-  if (locationId) query = query.eq('location_id', locationId);
+  if (locationId) query = query.or(`location_id.eq.${locationId},location_id.is.null`);
   const { data, error } = await query;
   if (error) throw error;
   return data;

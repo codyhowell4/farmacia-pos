@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.paypal-webhook]
 verify_jwt = false
+
+[functions.paypal-subscription-status]
+verify_jwt = false

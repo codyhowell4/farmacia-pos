@@ -59,6 +59,10 @@ const MembershipPosLookup = ({ selectedMembership, onSelect, onClear, onFulfillT
   };
 
   const handleSelect = (m) => {
+    if (m.status !== 'active') {
+      alert(`Esta membresía está ${m.status === 'cancelled' ? 'cancelada' : m.status === 'paused' ? 'pausada' : m.status === 'expired' ? 'expirada' : 'pendiente de pago'}. No se pueden aplicar beneficios.`);
+      return;
+    }
     onSelect(m);
     setQuery('');
     setResults([]);
@@ -79,6 +83,11 @@ const MembershipPosLookup = ({ selectedMembership, onSelect, onClear, onFulfillT
         {m.plan_type === 'familiar' ? 'Plan Familiar' : 'Plan Individual'}
         {m.customers?.phone ? ` · ${m.customers.phone}` : ''}
         {m.customers?.email ? ` · ${m.customers.email}` : ''}
+        {m.status !== 'active' && (
+          <span className="ml-1 font-semibold text-red-600">
+            · {m.status === 'cancelled' ? 'Cancelada' : m.status === 'paused' ? 'Pausada' : m.status === 'expired' ? 'Expirada' : 'Pago pendiente'}
+          </span>
+        )}
       </div>
     </button>
   );

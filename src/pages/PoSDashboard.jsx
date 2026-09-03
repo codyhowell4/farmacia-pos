@@ -93,6 +93,7 @@ const PoSDashboard = () => {
   const [fulfillingTrackers, setFulfillingTrackers] = useState(false);
   const [membershipConsultationProduct, setMembershipConsultationProduct] = useState(null);
   const searchInputRef = useRef(null);
+  const completingSaleRef = useRef(false);
 
   useEffect(() => {
     if (!user?.locationId) return;
@@ -417,6 +418,8 @@ const PoSDashboard = () => {
   };
 
   const completeSale = async (patient, prescription) => {
+    if (completingSaleRef.current || isCompletingSale) return;
+    completingSaleRef.current = true;
     setIsCompletingSale(true);
     try {
       // Build payments array
@@ -493,12 +496,12 @@ const PoSDashboard = () => {
       try {
         const cashPayment = payments?.find(p => p?.payment_method === 'cash');
 
-        let remainingVisits = selectedMembership?.visits_remaining || 0;
+        let remainingVisits = isMembershipActive ? (selectedMembership?.visits_remaining || 0) : 0;
         let usedVisits = 0;
         const saleItems = cart.map((item) => {
           let price = item.price;
           let originalPrice = item.originalPrice;
-          if (selectedMembership && isMembershipConsultation(item)) {
+          if (isMembershipActive && isMembershipConsultation(item)) {
             const freeQty = Math.max(0, Math.min(item.quantity, remainingVisits));
             const paidQty = item.quantity - freeQty;
             remainingVisits -= freeQty;
@@ -554,7 +557,7 @@ const PoSDashboard = () => {
 
         const sale = await createSaleWithPayments(saleRecord, saleItems, payments);
 
-        if (selectedMembership && usedVisits > 0) {
+        if (isMembershipActive && usedVisits > 0) {
           try {
             await decrementMembershipVisits(selectedMembership.id, usedVisits);
           } catch (visitErr) {
@@ -677,6 +680,7 @@ const PoSDashboard = () => {
         toast({ title: 'Error al procesar venta', description: e.message || 'Error desconocido', variant: 'destructive' });
       }
     } finally {
+      completingSaleRef.current = false;
       setIsCompletingSale(false);
     }
   };
@@ -708,6 +712,7 @@ const PoSDashboard = () => {
   };
 
   // Membership-aware totals
+  const isMembershipActive = selectedMembership?.status === 'active';
   const originalSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const regularItems = cart.filter((item) => !isMembershipConsultation(item));
   const consultationItems = cart.filter((item) => isMembershipConsultation(item));
@@ -716,7 +721,7 @@ const PoSDashboard = () => {
 
   let consultationEffectiveTotal = originalConsultationSubtotal;
   let membershipVisitsUsed = 0;
-  if (selectedMembership && consultationItems.length > 0) {
+  if (isMembershipActive && consultationItems.length > 0) {
     let remaining = selectedMembership.visits_remaining || 0;
     consultationEffectiveTotal = 0;
     consultationItems.forEach((item) => {
@@ -729,7 +734,7 @@ const PoSDashboard = () => {
     });
   }
 
-  const membershipProductDiscount = selectedMembership
+  const membershipProductDiscount = isMembershipActive
     ? regularSubtotal * (selectedMembership.discount_percent / 100)
     : 0;
   const membershipConsultationSavings = originalConsultationSubtotal - consultationEffectiveTotal;
@@ -746,7 +751,7 @@ const PoSDashboard = () => {
 
   const codeDiscountAmount = discount && !isCostPlus ? originalSubtotal * (discount.value / 100) : 0;
 
-  const useMembershipDiscount = selectedMembership && !isCostPlus && membershipTotalSavings >= codeDiscountAmount;
+  const useMembershipDiscount = isMembershipActive && !isCostPlus && membershipTotalSavings >= codeDiscountAmount;
   const appliedDiscountAmount = useMembershipDiscount ? membershipProductDiscount : codeDiscountAmount;
   const appliedDiscountLabel = useMembershipDiscount
     ? `Membresía ${selectedMembership.discount_percent}%`

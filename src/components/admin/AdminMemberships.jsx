@@ -8,6 +8,35 @@ import { Label } from '@/components/ui/label';
 import { getMemberships, searchMemberships, updateMembership, processMembershipRenewals } from '@/lib/db';
 import { formatMXN } from '@/lib/currency';
 
+const PAYPAL_STATUS_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paypal-subscription-status`;
+
+const syncStatusToPayPal = async (subscriptionId, status) => {
+  if (!subscriptionId) return null;
+
+  const actionMap = {
+    active: 'activate',
+    paused: 'suspend',
+    cancelled: 'cancel',
+    expired: 'cancel',
+  };
+
+  const action = actionMap[status];
+  if (!action) return null;
+
+  const res = await fetch(PAYPAL_STATUS_FUNCTION_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscription_id: subscriptionId, action }),
+  });
+
+  const result = await res.json();
+  if (!res.ok || result.error) {
+    throw new Error(result.error || 'Error al sincronizar con PayPal');
+  }
+
+  return result;
+};
+
 const statusConfig = {
   active: { label: 'Activo', className: 'bg-green-100 text-green-800' },
   paused: { label: 'Pausado', className: 'bg-yellow-100 text-yellow-800' },
@@ -73,6 +102,9 @@ const AdminMemberships = () => {
 
   const handleSaveEdit = async (e) => {
     e.preventDefault();
+    const original = memberships.find((m) => m.id === editing.id);
+    const statusChanged = original && original.status !== editing.status;
+
     try {
       await updateMembership(editing.id, {
         customerUpdates: {
@@ -86,6 +118,27 @@ const AdminMemberships = () => {
           status: editing.status,
         },
       });
+
+      if (
+        statusChanged &&
+        editing.payment_processor === 'paypal' &&
+        editing.processor_subscription_id
+      ) {
+        try {
+          await syncStatusToPayPal(editing.processor_subscription_id, editing.status);
+        } catch (paypalErr) {
+          console.error('PayPal sync failed:', paypalErr);
+          toast({
+            title: 'Membresía actualizada localmente',
+            description: `No se pudo sincronizar con PayPal: ${paypalErr.message}`,
+            variant: 'destructive',
+          });
+          setEditing(null);
+          await loadData();
+          return;
+        }
+      }
+
       toast({ title: 'Membresía actualizada' });
       setEditing(null);
       await loadData();
