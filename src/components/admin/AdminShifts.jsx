@@ -41,8 +41,14 @@ const AdminShifts = () => {
   const [savingEdit, setSavingEdit] = useState(false);
   const [reconciling, setReconciling] = useState(false);
   const [editStartingCash, setEditStartingCash] = useState('');
-  const [exportStartDate, setExportStartDate] = useState('');
-  const [exportEndDate, setExportEndDate] = useState('');
+  const [exportStartDate, setExportStartDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
+  const [exportEndDate, setExportEndDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
   const { toast } = useToast();
 
   useEffect(() => {
