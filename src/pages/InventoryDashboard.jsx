@@ -90,7 +90,9 @@ const InventoryDashboard = () => {
 
   const loadInventory = async () => {
     try {
-      const items = await getInventoryWithSupplier(user?.locationId);
+      // Load the full org catalog (no location filter): the management
+      // view must find every product, including items with no/other location.
+      const items = await getInventoryWithSupplier();
       setInventory(items);
     } catch (e) {
       console.error(e);
@@ -724,7 +726,7 @@ const InventoryDashboard = () => {
             <div className="flex justify-between items-center mb-6 gap-4">
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                <Input placeholder="Buscar por nombre, indicación, depto, código de barras..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10" />
+                <Input placeholder="Buscar por nombre, indicación, depto, código de barras..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); if (alertFilter) setAlertFilter(null); }} className="pl-10" />
               </div>
               <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
                 <Upload className="w-4 h-4 mr-2" />Importar CSV

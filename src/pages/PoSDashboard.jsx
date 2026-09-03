@@ -229,12 +229,20 @@ const PoSDashboard = () => {
     // which breaks rapid barcode-scanner input.
     const term = (rawTerm ?? searchTerm).trim();
     const lowerSearchTerm = term.toLowerCase();
-    const results = inventory.filter(item =>
-      (item.barcode === term || item.name.toLowerCase().includes(lowerSearchTerm) || item.use?.toLowerCase().includes(lowerSearchTerm)) && isSellable(item)
-    );
+    const matchesItem = (item) => {
+      const barcode = String(item.barcode || '').trim();
+      return barcode === term ||
+        item.name.toLowerCase().includes(lowerSearchTerm) ||
+        item.use?.toLowerCase().includes(lowerSearchTerm) ||
+        item.department?.toLowerCase().includes(lowerSearchTerm);
+    };
+    // Sellable matches are clickable; out-of-stock/expired matches are still
+    // shown (disabled, with the reason) so a scanned product is always found.
+    const results = inventory.filter(item => matchesItem(item) && isSellable(item));
+    const unavailable = term ? inventory.filter(item => matchesItem(item) && !isSellable(item)) : [];
 
     // Barcode scanner auto-add: if exact barcode match and only 1 result, add to cart immediately
-    if (term && results.length === 1 && results[0].barcode === term) {
+    if (term && results.length === 1 && String(results[0].barcode || '').trim() === term) {
       addToCart(results[0]);
       setSearchTerm('');
       setSearchResults([]);
@@ -248,7 +256,10 @@ const PoSDashboard = () => {
       setDisplayItems(results); setIsSearching(true); setSearchResults([]);
     } else {
       if (!term) { setSearchResults([]); return; }
-      setSearchResults(results);
+      setSearchResults([
+        ...results.map(item => ({ ...item, _unavailable: false })),
+        ...unavailable.map(item => ({ ...item, _unavailable: true })),
+      ]);
     }
   };
 
@@ -1180,8 +1191,16 @@ const PoSDashboard = () => {
                 {searchResults.length > 0 && (
                   <div className="absolute top-full mt-2 w-full bg-white rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
                     {searchResults.map(item => (
-                      <div key={item.id} className="p-3 hover:bg-slate-100 cursor-pointer flex justify-between items-center" onClick={() => addToCart(item)}>
-                        <p>{item.name} <span className="text-slate-500">({item.use})</span></p>
+                      <div key={item.id}
+                        className={`p-3 flex justify-between items-center ${item._unavailable ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-100 cursor-pointer'}`}
+                        onClick={() => { if (!item._unavailable) addToCart(item); }}>
+                        <p>{item.name} <span className="text-slate-500">({item.use})</span>
+                          {item._unavailable && (
+                            <span className="ml-2 text-xs font-semibold text-red-600">
+                              {item.quantity <= 0 ? 'Sin existencias' : 'Caducado'}
+                            </span>
+                          )}
+                        </p>
                         <p className="font-bold text-green-600">{formatMXN(item.price)}</p>
                       </div>
                     ))}
