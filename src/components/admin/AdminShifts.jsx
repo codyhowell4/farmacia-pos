@@ -69,7 +69,7 @@ const AdminShifts = () => {
   };
 
   const handlePrint = () => {
-    const closed = shifts.filter(s => s.status === 'closed');
+    const closed = closedShifts;
     if (closed.length === 0) { toast({ title: 'Sin turnos cerrados para imprimir', variant: 'destructive' }); return; }
     const totalRev = closed.reduce((sum, s) => sum + (s.total_revenue || 0), 0);
     const html = `
@@ -102,7 +102,18 @@ const AdminShifts = () => {
     (s.locations?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const closedShifts = shifts.filter(s => s.status === 'closed');
+  // Summary tiles follow the Del/Al range (same logic as the CSV export)
+  const rangeStart = exportStartDate ? new Date(`${exportStartDate}T00:00:00`) : null;
+  const rangeEnd = exportEndDate ? new Date(`${exportEndDate}T23:59:59.999`) : null;
+  const closedShifts = shifts
+    .filter(s => s.status === 'closed')
+    .filter(s => {
+      const date = new Date(s.closed_at || s.opened_at);
+      if (Number.isNaN(date.getTime())) return false;
+      if (rangeStart && date < rangeStart) return false;
+      if (rangeEnd && date > rangeEnd) return false;
+      return true;
+    });
   const totalRevenue = closedShifts.reduce((sum, s) => sum + (s.total_revenue || 0), 0);
   const avgVariance = closedShifts.length ? closedShifts.reduce((sum, s) => sum + Math.abs(s.variance || 0), 0) / closedShifts.length : 0;
 
