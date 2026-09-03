@@ -25,6 +25,7 @@ interface RequestPayload {
   premium_trackers?: number;
   org_id: string;
   payment_method?: 'paypal' | 'cash';
+  password?: string;
 }
 
 const PLANS: Record<string, { price: number; visits: number; basicTrackers: number }> = {
@@ -151,7 +152,7 @@ const createMembership = async (
       visits_limit: plan.visits,
       premium_trackers: payload.premium_trackers || 0,
       basic_trackers_included: plan.basicTrackers,
-      basic_trackers_fulfilled: payload.trackers_to_fulfill || 0,
+      basic_trackers_fulfilled: 0,
       monthly_amount: plan.price,
       payment_method: payload.payment_method || 'paypal',
       payment_processor: 'paypal',
@@ -214,6 +215,91 @@ const fulfillTrackers = async (
   });
 
   if (error) throw error;
+};
+
+const isAlreadyRegisteredError = (err: { message?: string; code?: string }) => {
+  const code = (err.code || '').toLowerCase();
+  if (code.includes('already') || code.includes('exist')) return true;
+  return /already|exist|registered|duplicate/i.test(err.message || '');
+};
+
+// Provisions a customer portal auth account and links it to the given
+// customers row via customers.profile_id.
+//
+// The handle_new_user DB trigger fires on auth user creation and inserts
+// both a profiles row and a fresh customers row for the new user. That
+// trigger-created customers row duplicates the membership's row, so it is
+// removed before linking (unique index on customers.profile_id).
+//
+// An existing account is reused as-is: its password is never updated.
+const provisionPortalAccount = async (
+  supabase: ReturnType<typeof supabaseAdmin>,
+  customer: { id: string; email: string; profile_id: string | null },
+  orgId: string,
+  password: string
+) => {
+  let userId: string | null = null;
+  let accountExisted = false;
+
+  const { data: created, error: createError } = await supabase.auth.admin.createUser({
+    email: customer.email,
+    password,
+    email_confirm: true,
+    user_metadata: { role: 'customer', org_id: orgId },
+  });
+
+  if (createError) {
+    if (!isAlreadyRegisteredError(createError)) throw createError;
+
+    // Account already registered: reuse it, never touch its password.
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .ilike('email', customer.email)
+      .limit(1)
+      .maybeSingle();
+
+    if (profileError) throw profileError;
+    if (!profile) throw createError;
+
+    userId = profile.id as string;
+    accountExisted = true;
+  } else {
+    userId = created.user?.id ?? null;
+  }
+
+  if (!userId) throw new Error('No se pudo crear ni localizar la cuenta del portal');
+
+  if (customer.profile_id !== userId) {
+    // Remove the trigger-created duplicate customers row (fresh; nothing
+    // references it). Must run before linking so the unique index on
+    // customers.profile_id is not violated.
+    const { data: duplicate, error: duplicateError } = await supabase
+      .from('customers')
+      .select('id')
+      .eq('profile_id', userId)
+      .neq('id', customer.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (duplicateError) throw duplicateError;
+
+    if (duplicate) {
+      const { error: deleteError } = await supabase
+        .from('customers')
+        .delete()
+        .eq('id', duplicate.id);
+      if (deleteError) throw deleteError;
+    }
+
+    const { error: linkError } = await supabase
+      .from('customers')
+      .update({ profile_id: userId })
+      .eq('id', customer.id);
+    if (linkError) throw linkError;
+  }
+
+  return { accountExisted };
 };
 
 Deno.serve(async (req) => {
@@ -285,25 +371,52 @@ Deno.serve(async (req) => {
 
       if (existingMembership) {
         // Reactivate cancelled/expired membership.
-        await fulfillTrackers(supabase, payload.org_id, payload.trackers_to_fulfill || 0);
         membership = await reinstateMembership(
           supabase,
           existingMembership.id,
           payload.subscription_id,
           plan.visits,
-          payload.trackers_to_fulfill || 0,
+          0,
           existingMembership.basic_trackers_fulfilled || 0
         );
       } else {
-        await fulfillTrackers(supabase, payload.org_id, payload.trackers_to_fulfill || 0);
         membership = await createMembership(supabase, payload, plan);
       }
     } else {
-      await fulfillTrackers(supabase, payload.org_id, payload.trackers_to_fulfill || 0);
       membership = await createMembership(supabase, payload, plan);
     }
 
-    return new Response(JSON.stringify({ success: true, membership }), {
+    // Provision the customer portal account when a password was supplied.
+    // Runs for both the new-signup and the reinstatement path, and never
+    // blocks the purchase: errors are logged and only flagged in the response.
+    let portalAccount: 'created' | 'linked' | 'skipped' | 'error' = 'skipped';
+    if (payload.password) {
+      try {
+        const { data: membershipCustomer, error: customerError } = await supabase
+          .from('customers')
+          .select('id, email, profile_id')
+          .eq('id', membership.customer_id as string)
+          .single();
+
+        if (customerError) throw customerError;
+        if (!membershipCustomer?.email) {
+          throw new Error('El cliente de la membresía no tiene correo electrónico');
+        }
+
+        const { accountExisted } = await provisionPortalAccount(
+          supabase,
+          membershipCustomer,
+          payload.org_id,
+          payload.password
+        );
+        portalAccount = accountExisted ? 'linked' : 'created';
+      } catch (provisionError) {
+        console.error('[paypal-subscription] portal account provisioning error:', provisionError);
+        portalAccount = 'error';
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true, membership, portal_account: portalAccount }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

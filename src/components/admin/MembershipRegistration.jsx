@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { createMembership } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { renderPayPalButtons, PAYPAL_PLAN_IDS, isPayPalConfigured } from '@/lib/paypal';
 import { Users, User, Banknote, ChevronLeft, CheckCircle, Activity, CreditCard } from 'lucide-react';
 
@@ -56,6 +57,7 @@ const MembershipRegistration = () => {
     ownerName: '',
     email: '',
     phone: '',
+    password: '',
     member2: '',
     member3: '',
     member4: '',
@@ -65,6 +67,11 @@ const MembershipRegistration = () => {
     basicTrackers: 0,
     premiumTrackers: 0,
   });
+
+  const formRef = useRef(form);
+  const selectedPlanKeyRef = useRef(selectedPlanKey);
+  useEffect(() => { formRef.current = form; }, [form]);
+  useEffect(() => { selectedPlanKeyRef.current = selectedPlanKey; }, [selectedPlanKey]);
 
   const plan = PLANS[selectedPlanKey];
 
@@ -92,6 +99,7 @@ const MembershipRegistration = () => {
     if (!form.ownerName.trim()) return 'El nombre del titular es obligatorio.';
     if (!form.email.trim()) return 'El correo electrónico es obligatorio.';
     if (!form.phone.trim()) return 'El teléfono es obligatorio.';
+    if (form.password.length < 6) return 'La contraseña del portal debe tener al menos 6 caracteres.';
     if (selectedPlanKey === 'familiar') {
       if (
         !form.member2.trim() ||
@@ -131,7 +139,7 @@ const MembershipRegistration = () => {
         visits_limit: plan.visits,
         premium_trackers: Number(form.premiumTrackers) || 0,
         basic_trackers_included: plan.basicTrackers,
-        basic_trackers_fulfilled: Number(form.basicTrackers) || 0,
+        basic_trackers_fulfilled: 0,
         monthly_amount: monthlyTotal,
         payment_method: 'cash',
         payment_processor: 'paypal',
@@ -154,6 +162,25 @@ const MembershipRegistration = () => {
     setLoading(true);
     try {
       const result = await createCashMembership();
+      try {
+        const { data: portalData, error: portalError } = await supabase.functions.invoke('create-portal-account', {
+          body: {
+            customer_id: result.customer_id,
+            email: form.email.trim(),
+            password: form.password,
+            full_name: form.ownerName.trim(),
+          },
+        });
+        if (portalError || portalData?.error) {
+          throw new Error(portalError?.message || portalData.error);
+        }
+      } catch (portalErr) {
+        console.error('create-portal-account error:', portalErr);
+        toast({
+          title: 'Membresía creada, pero la cuenta del portal no pudo vincularse',
+          description: 'Puedes intentarlo de nuevo desde la ficha del cliente.',
+        });
+      }
       setCreated(result);
       setStep('success');
       toast({ title: 'Membresía registrada', description: `Plan ID: ${result.plan_id}` });
@@ -166,11 +193,40 @@ const MembershipRegistration = () => {
   };
 
   const handlePayPalApprove = async (data) => {
-    const error = validate();
+    const currentForm = formRef.current;
+    const currentPlanKey = selectedPlanKeyRef.current;
+    const currentPlan = currentPlanKey ? PLANS[currentPlanKey] : null;
+
+    const error = (() => {
+      if (!currentForm.ownerName.trim()) return 'El nombre del titular es obligatorio.';
+      if (!currentForm.email.trim()) return 'El correo electrónico es obligatorio.';
+      if (!currentForm.phone.trim()) return 'El teléfono es obligatorio.';
+      if (currentForm.password.length < 6) return 'La contraseña del portal debe tener al menos 6 caracteres.';
+      if (currentPlanKey === 'familiar') {
+        if (
+          !currentForm.member2.trim() ||
+          !currentForm.member3.trim() ||
+          !currentForm.member4.trim() ||
+          !currentForm.member5.trim() ||
+          !currentForm.member6.trim()
+        ) {
+          return 'Debes registrar los 5 integrantes adicionales del plan familiar.';
+        }
+      }
+      if (!isPayPalConfigured()) return 'PayPal no está configurado.';
+      return null;
+    })();
+
     if (error) {
       toast({ title: 'Verifica los datos', description: error, variant: 'destructive' });
       return;
     }
+
+    const familyMembers = currentPlanKey === 'familiar'
+      ? [currentForm.member2, currentForm.member3, currentForm.member4, currentForm.member5, currentForm.member6]
+          .map((m) => m.trim())
+          .filter(Boolean)
+      : [];
 
     setLoading(true);
     try {
@@ -180,15 +236,16 @@ const MembershipRegistration = () => {
         headers: { 'Content-Type': 'application/json', authorization: 'Bearer anon' },
         body: JSON.stringify({
           subscription_id: data.subscriptionID,
-          plan_type: selectedPlanKey,
+          plan_type: currentPlanKey,
+          password: currentForm.password,
           customer: {
-            full_name: form.ownerName.trim(),
-            email: form.email.trim(),
-            phone: form.phone.trim(),
+            full_name: currentForm.ownerName.trim(),
+            email: currentForm.email.trim(),
+            phone: currentForm.phone.trim(),
           },
-          member_names: getFamilyMembers(),
-          trackers_to_fulfill: Number(form.basicTrackers) || 0,
-          premium_trackers: Number(form.premiumTrackers) || 0,
+          member_names: familyMembers,
+          trackers_to_fulfill: Number(currentForm.basicTrackers) || 0,
+          premium_trackers: Number(currentForm.premiumTrackers) || 0,
           org_id: orgId,
           payment_method: 'paypal',
         }),
@@ -311,6 +368,10 @@ const MembershipRegistration = () => {
               <Label>Correo electrónico *</Label>
               <Input type="email" value={form.email} onChange={(e) => updateField('email', e.target.value)} required />
             </div>
+            <div className="md:col-span-2">
+              <Label>Contraseña del portal *</Label>
+              <Input type="password" minLength={6} value={form.password} onChange={(e) => updateField('password', e.target.value)} required />
+            </div>
           </div>
         </div>
 
@@ -334,6 +395,9 @@ const MembershipRegistration = () => {
 
         <div className="space-y-2">
           <h2 className="text-lg font-semibold">Rastreador fitness</h2>
+          <p className="text-sm text-slate-600">
+            Los rastreadores se entregan en la farmacia al momento de la primera visita.
+          </p>
           {selectedPlanKey === 'individual' ? (
             <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
               <input
@@ -342,11 +406,11 @@ const MembershipRegistration = () => {
                 onChange={(e) => updateField('basicTrackers', e.target.checked ? 1 : 0)}
                 className="w-4 h-4"
               />
-              <span>Incluir rastreador básico (1 incluido)</span>
+              <span>Incluir rastreador básico (1 incluido en el plan)</span>
             </label>
           ) : (
             <div className="flex items-center gap-4">
-              <Label>Cantidad de rastreadores básicos a entregar ahora (0–6):</Label>
+              <Label>Cantidad de rastreadores básicos incluidos (0–6):</Label>
               <select
                 value={form.basicTrackers}
                 onChange={(e) => updateField('basicTrackers', Number(e.target.value))}
@@ -479,6 +543,7 @@ const MembershipRegistration = () => {
             ownerName: '',
             email: '',
             phone: '',
+            password: '',
             member2: '',
             member3: '',
             member4: '',

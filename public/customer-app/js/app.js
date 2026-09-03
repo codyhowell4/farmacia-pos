@@ -57,16 +57,58 @@ const notifBadge = document.getElementById('notif-badge');
 let currentAuthUser = null;
 let currentCustomerProfile = null;
 
+// Membership tier ('free' | 'paid') - resolved after login / session restore.
+// Defaults to 'free' (fail closed) while loading or for guests.
+let membershipTier = 'free';
+
+// True while handling a Supabase password-recovery link (type=recovery in URL hash)
+let isPasswordRecovery = false;
+
+// Pages that require an active membership
+const PAID_PAGES = new Set([
+  'home', 'body', 'health', 'consulta', 'appointments',
+  'emergency-id', 'guides', 'caregiver',
+  'fasting', 'sleep', 'checkin', 'integrations'
+]);
+
+// Display names for the locked-page message
+const PAID_PAGE_NAMES = {
+  'home':         'Resumen de Hoy',
+  'body':         'Métricas de Cuerpo',
+  'health':       'Salud',
+  'consulta':     'Nueva Consulta',
+  'appointments': 'Mis Citas',
+  'emergency-id': 'ID Médico de Emergencia',
+  'guides':       'Guías de Salud',
+  'caregiver':    'Cuidado Familiar',
+  'fasting':      'Ayuno Intermitente',
+  'sleep':        'Seguimiento del Sueño',
+  'checkin':      'Fotos de Progreso',
+  'integrations': 'Integraciones'
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   // Check if onboarding is needed
   if (!Store.isOnboardingComplete()) {
     showOnboardingModal();
   }
   
-  renderHome(); // Start with Today page
+  // Supabase password-recovery links land here with tokens in the URL hash
+  // (#access_token=...&type=recovery). Show the reset form instead of the
+  // normal start page; the hash stays until the password update succeeds.
+  isPasswordRecovery = /[#&]type=recovery\b/.test(window.location.hash || '');
+  
+  if (isPasswordRecovery) {
+    renderResetPassword();
+  } else {
+    renderPage('home'); // Start with Today page
+  }
   setupNavigation();
   setupMenuNavigation();
   setupSearch();
+  
+  // Show 🔒 badges on paid sections while tier is unknown/free
+  updateTierBadges();
   
   // Set home nav as active by default
   navItems.forEach(nav => nav.classList.remove('active'));
@@ -121,8 +163,15 @@ async function initAuth() {
       // Ensure customer record exists
       await FarmaciaAPI.ensureCustomerProfile(currentCustomerProfile?.name);
       
+      // Resolve membership tier for page gating
+      membershipTier = await FarmaciaAPI.getMembershipTier();
+      updateTierBadges();
+      
       updateMenuUserInfo();
-      renderPage(currentPage);
+      // During password recovery keep the reset form on screen
+      if (!isPasswordRecovery) {
+        renderPage(currentPage);
+      }
     } else {
       console.log('[Auth] No active session');
       updateMenuUserInfo();
@@ -181,8 +230,8 @@ function renderLogin() {
     <div style="padding: 1.5rem 1rem;">
       <div class="glass-card" style="padding: 1.5rem;">
         <div style="margin-bottom: 1rem;">
-          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: white;">Correo electrónico</label>
-          <input type="email" id="login-email" placeholder="tu@email.com" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; font-size: 1rem; color: white; box-sizing: border-box;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: white;">Correo, teléfono o # de membresía</label>
+          <input type="text" id="login-identifier" placeholder="APOLO-00001" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; font-size: 1rem; color: white; box-sizing: border-box;">
         </div>
         
         <div style="margin-bottom: 1.5rem;">
@@ -192,6 +241,10 @@ function renderLogin() {
         
         <button onclick="handleLogin()" style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; margin-bottom: 1rem;">Iniciar sesión</button>
         
+        <div style="text-align: center; margin-bottom: 1rem;">
+          <button onclick="renderForgotPassword()" style="background: none; border: none; color: rgba(255,255,255,0.6); font-size: 0.85rem; cursor: pointer; text-decoration: underline;">¿Olvidaste tu contraseña?</button>
+        </div>
+        
         <div style="text-align: center; color: rgba(255,255,255,0.6); font-size: 0.85rem;">
           ¿No tienes cuenta? <button onclick="renderSignup()" style="background: none; border: none; color: #f59e0b; font-weight: 600; cursor: pointer;">Regístrate</button>
         </div>
@@ -200,29 +253,31 @@ function renderLogin() {
       </div>
       
       <div style="text-align: center; margin-top: 1.5rem; color: rgba(255,255,255,0.5); font-size: 0.8rem;">
-        O continúa como <button onclick="renderHome()" style="background: none; border: none; color: #00d4aa; cursor: pointer;">invitado</button>
+        O continúa como <button onclick="renderPage('home')" style="background: none; border: none; color: #00d4aa; cursor: pointer;">invitado</button>
       </div>
     </div>
   `;
 }
 
 async function handleLogin() {
-  const email = document.getElementById('login-email')?.value.trim();
+  const identifier = document.getElementById('login-identifier')?.value.trim();
   const password = document.getElementById('login-password')?.value;
   const errorEl = document.getElementById('login-error');
   
-  if (!email || !password) {
-    errorEl.textContent = 'Por favor ingresa tu correo y contraseña';
+  if (!identifier || !password) {
+    errorEl.textContent = 'Por favor ingresa tus datos y contraseña';
     errorEl.style.display = 'block';
     return;
   }
   
   errorEl.style.display = 'none';
   
-  const { data, error } = await FarmaciaAPI.signIn(email, password);
+  const { data, error } = await FarmaciaAPI.signIn(identifier, password);
   
   if (error) {
-    errorEl.textContent = 'Correo o contraseña incorrectos';
+    errorEl.textContent = error.message === 'No encontramos una cuenta con esos datos'
+      ? error.message
+      : 'Datos o contraseña incorrectos';
     errorEl.style.display = 'block';
     return;
   }
@@ -230,6 +285,10 @@ async function handleLogin() {
   currentAuthUser = data.user;
   currentCustomerProfile = await FarmaciaAPI.getCustomerProfile();
   await FarmaciaAPI.ensureCustomerProfile(currentCustomerProfile?.name);
+  
+  // Resolve membership tier for page gating
+  membershipTier = await FarmaciaAPI.getMembershipTier();
+  updateTierBadges();
   
   updateMenuUserInfo();
   currentPage = 'home';
@@ -281,7 +340,7 @@ function renderSignup() {
       </div>
       
       <div style="text-align: center; margin-top: 1.5rem; color: rgba(255,255,255,0.5); font-size: 0.8rem;">
-        O continúa como <button onclick="renderHome()" style="background: none; border: none; color: #00d4aa; cursor: pointer;">invitado</button>
+        O continúa como <button onclick="renderPage('home')" style="background: none; border: none; color: #00d4aa; cursor: pointer;">invitado</button>
       </div>
     </div>
   `;
@@ -352,16 +411,171 @@ async function handleSignup() {
   }
 }
 
+function renderForgotPassword() {
+  closeMenu();
+  mainContent.innerHTML = `
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #003366, #1a4d7a); color: white;">
+      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📧 Recuperar Contraseña</h1>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Te enviaremos un enlace para restablecerla</p>
+    </div>
+    
+    <div style="padding: 1.5rem 1rem;">
+      <div class="glass-card" style="padding: 1.5rem;">
+        <div style="margin-bottom: 1.5rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: white;">Correo electrónico</label>
+          <input type="email" id="forgot-email" placeholder="tu@email.com" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; font-size: 1rem; color: white; box-sizing: border-box;">
+        </div>
+        
+        <button onclick="handleForgotPassword()" style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; margin-bottom: 1rem;">Enviar enlace</button>
+        
+        <div style="text-align: center; color: rgba(255,255,255,0.6); font-size: 0.85rem;">
+          ¿Ya la recordaste? <button onclick="renderLogin()" style="background: none; border: none; color: #f59e0b; font-weight: 600; cursor: pointer;">Inicia sesión</button>
+        </div>
+        
+        <div id="forgot-success" style="display: none; margin-top: 1rem; padding: 0.75rem; background: rgba(0,212,170,0.2); border: 1px solid rgba(0,212,170,0.3); border-radius: 10px; color: #00d4aa; font-size: 0.85rem; text-align: center;">Si el correo existe, te enviamos un enlace para restablecer tu contraseña.</div>
+      </div>
+    </div>
+  `;
+}
+
+async function handleForgotPassword() {
+  const email = document.getElementById('forgot-email')?.value.trim();
+  const successEl = document.getElementById('forgot-success');
+  
+  if (!email) return;
+  
+  // Result intentionally ignored: always show the same message,
+  // whether the email exists or the request failed.
+  await FarmaciaAPI.requestPasswordReset(email);
+  
+  if (successEl) successEl.style.display = 'block';
+}
+
+function renderResetPassword() {
+  closeMenu();
+  mainContent.innerHTML = `
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #003366, #1a4d7a); color: white;">
+      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🔒 Restablecer Contraseña</h1>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Elige una nueva contraseña para tu cuenta</p>
+    </div>
+    
+    <div style="padding: 1.5rem 1rem;">
+      <div class="glass-card" style="padding: 1.5rem;" id="reset-card">
+        <div style="margin-bottom: 1rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: white;">Nueva contraseña</label>
+          <input type="password" id="reset-password" placeholder="Mínimo 6 caracteres" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; font-size: 1rem; color: white; box-sizing: border-box;">
+        </div>
+        
+        <div style="margin-bottom: 1.5rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: white;">Confirmar contraseña</label>
+          <input type="password" id="reset-confirm" placeholder="Repite tu contraseña" style="width: 100%; padding: 0.75rem; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; font-size: 1rem; color: white; box-sizing: border-box;">
+        </div>
+        
+        <button onclick="handleResetPassword()" style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; margin-bottom: 1rem;">Guardar contraseña</button>
+        
+        <div id="reset-error" style="display: none; margin-top: 1rem; padding: 0.75rem; background: rgba(255,107,107,0.2); border: 1px solid rgba(255,107,107,0.3); border-radius: 10px; color: #ff6b6b; font-size: 0.85rem; text-align: center;"></div>
+      </div>
+    </div>
+  `;
+}
+
+async function handleResetPassword() {
+  const password = document.getElementById('reset-password')?.value;
+  const confirm = document.getElementById('reset-confirm')?.value;
+  const errorEl = document.getElementById('reset-error');
+  
+  if (!password || password.length < 6) {
+    errorEl.textContent = 'La contraseña debe tener al menos 6 caracteres';
+    errorEl.style.display = 'block';
+    return;
+  }
+  
+  if (password !== confirm) {
+    errorEl.textContent = 'Las contraseñas no coinciden';
+    errorEl.style.display = 'block';
+    return;
+  }
+  
+  errorEl.style.display = 'none';
+  
+  const { error } = await FarmaciaAPI.updatePassword(password);
+  
+  if (error) {
+    errorEl.textContent = 'No se pudo actualizar la contraseña. Vuelve a abrir el enlace desde tu correo e inténtalo otra vez.';
+    errorEl.style.display = 'block';
+    return;
+  }
+  
+  // Success: only now is it safe to drop the recovery tokens from the URL
+  isPasswordRecovery = false;
+  try {
+    history.replaceState(null, '', window.location.pathname);
+  } catch (e) {
+    window.location.hash = '';
+  }
+  
+  const card = document.getElementById('reset-card');
+  if (card) {
+    card.innerHTML = `
+      <div style="text-align: center; padding: 1rem 0;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
+        <p style="color: #00d4aa; font-weight: 600; margin: 0 0 1.5rem;">Tu contraseña fue actualizada correctamente.</p>
+        <button onclick="renderLogin()" style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;">Ir a iniciar sesión</button>
+      </div>
+    `;
+  }
+}
+
+// Membership gate placeholder for paid sections
+function renderLocked(featureName) {
+  closeMenu();
+  mainContent.innerHTML = `
+    <div style="padding: 3rem 1.5rem; text-align: center;">
+      <div style="font-size: 4rem; margin-bottom: 1rem;">🔒</div>
+      <h1 style="margin: 0 0 0.75rem; font-size: 1.4rem; font-weight: 700; color: white;">Disponible con tu Membresía</h1>
+      <p style="margin: 0 auto 1.5rem; max-width: 320px; color: rgba(255,255,255,0.7); font-size: 0.95rem; line-height: 1.5;">
+        ${featureName} es parte de los beneficios de tu Membresía Apollo. Actívala para desbloquear esta y todas las herramientas de salud.
+      </p>
+      <a href="/membresias" style="display: inline-block; padding: 0.9rem 2rem; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border-radius: 12px; font-weight: 600; text-decoration: none;">Ver membresías</a>
+    </div>
+  `;
+}
+
+// Add/remove 🔒 badges on nav tabs and menu items for paid pages (free tier only)
+function updateTierBadges() {
+  const showLock = membershipTier !== 'paid';
+  document.querySelectorAll('.bottom-nav .nav-item[data-page], .menu-panel .menu-item[data-page]').forEach(el => {
+    const isPaidPage = PAID_PAGES.has(el.dataset.page);
+    const existing = el.querySelector('.tier-lock-badge');
+    if (showLock && isPaidPage && !existing) {
+      const badge = document.createElement('span');
+      badge.className = 'tier-lock-badge';
+      badge.textContent = '🔒';
+      if (el.classList.contains('nav-item')) {
+        badge.style.cssText = 'position: absolute; top: 2px; right: 6px; font-size: 0.6rem; line-height: 1; opacity: 0.85;';
+        el.style.position = 'relative';
+      } else {
+        badge.style.cssText = 'font-size: 0.7rem; margin-left: auto; opacity: 0.85;';
+      }
+      el.appendChild(badge);
+    } else if ((!showLock || !isPaidPage) && existing) {
+      existing.remove();
+    }
+  });
+}
+
 async function handleLogout() {
   if (!confirm('¿Cerrar sesión?')) return;
   
   await FarmaciaAPI.signOut();
   currentAuthUser = null;
   currentCustomerProfile = null;
+  membershipTier = 'free';
+  updateTierBadges();
   
   updateMenuUserInfo();
   closeMenu();
-  renderHome();
+  renderPage('home');
   showToast('Sesión cerrada', 'info');
 }
 
@@ -637,6 +851,12 @@ function renderPage(page) {
   // Scroll to top
   window.scrollTo(0, 0);
   
+  // Membership gate: paid pages require an active membership
+  if (membershipTier !== 'paid' && PAID_PAGES.has(page)) {
+    renderLocked(PAID_PAGE_NAMES[page] || 'Esta sección');
+    return;
+  }
+  
   switch(page) {
     case 'home': renderHome(); break;
     case 'body': renderBody(); break;
@@ -657,6 +877,7 @@ function renderPage(page) {
     case 'guides': renderHealthGuides(); break;
     case 'login': renderLogin(); break;
     case 'signup': renderSignup(); break;
+    case 'forgot-password': renderForgotPassword(); break;
     default: renderHome();
   }
 }
@@ -3456,6 +3677,14 @@ window.renderCheckIn = renderCheckIn;
 window.renderConsulta = renderConsulta;
 window.renderPrescripciones = renderPrescripciones;
 window.renderShop = renderShop;
+window.renderForgotPassword = renderForgotPassword;
+window.renderResetPassword = renderResetPassword;
+window.renderLocked = renderLocked;
+window.renderPage = renderPage;
+window.handleLogin = handleLogin;
+window.handleSignup = handleSignup;
+window.handleForgotPassword = handleForgotPassword;
+window.handleResetPassword = handleResetPassword;
 
 // ============================================
 // SLEEP TRACKER PAGE

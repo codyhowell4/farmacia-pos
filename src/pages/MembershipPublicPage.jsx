@@ -53,6 +53,8 @@ const MembershipPublicPage = () => {
     ownerName: '',
     email: '',
     phone: '',
+    password: '',
+    confirmPassword: '',
     member2: '',
     member3: '',
     member4: '',
@@ -61,6 +63,11 @@ const MembershipPublicPage = () => {
     basicTrackers: 0,
     premiumTrackers: 0,
   });
+
+  const formRef = useRef(form);
+  const selectedPlanKeyRef = useRef(selectedPlanKey);
+  useEffect(() => { formRef.current = form; }, [form]);
+  useEffect(() => { selectedPlanKeyRef.current = selectedPlanKey; }, [selectedPlanKey]);
 
   const plan = PLANS[selectedPlanKey];
 
@@ -87,6 +94,8 @@ const MembershipPublicPage = () => {
     if (!form.ownerName.trim()) return 'El nombre del titular es obligatorio.';
     if (!form.email.trim()) return 'El correo electrónico es obligatorio.';
     if (!form.phone.trim()) return 'El teléfono es obligatorio.';
+    if (form.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
+    if (form.password !== form.confirmPassword) return 'Las contraseñas no coinciden.';
     if (selectedPlanKey === 'familiar') {
       if (
         !form.member2.trim() ||
@@ -110,11 +119,41 @@ const MembershipPublicPage = () => {
   };
 
   const handlePayPalApprove = async (data) => {
-    const validationError = validate();
+    const currentForm = formRef.current;
+    const currentPlanKey = selectedPlanKeyRef.current;
+    const currentPlan = currentPlanKey ? PLANS[currentPlanKey] : null;
+
+    const validationError = (() => {
+      if (!currentForm.ownerName.trim()) return 'El nombre del titular es obligatorio.';
+      if (!currentForm.email.trim()) return 'El correo electrónico es obligatorio.';
+      if (!currentForm.phone.trim()) return 'El teléfono es obligatorio.';
+      if (currentForm.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
+      if (currentForm.password !== currentForm.confirmPassword) return 'Las contraseñas no coinciden.';
+      if (currentPlanKey === 'familiar') {
+        if (
+          !currentForm.member2.trim() ||
+          !currentForm.member3.trim() ||
+          !currentForm.member4.trim() ||
+          !currentForm.member5.trim() ||
+          !currentForm.member6.trim()
+        ) {
+          return 'Debes registrar los 5 integrantes adicionales del plan familiar.';
+        }
+      }
+      if (!isPayPalConfigured()) return 'PayPal no está configurado.';
+      return null;
+    })();
+
     if (validationError) {
       toast({ title: 'Verifica los datos', description: validationError, variant: 'destructive' });
       return;
     }
+
+    const familyMembers = currentPlanKey === 'familiar'
+      ? [currentForm.member2, currentForm.member3, currentForm.member4, currentForm.member5, currentForm.member6]
+          .map((m) => m.trim())
+          .filter(Boolean)
+      : [];
 
     setLoading(true);
     try {
@@ -123,15 +162,16 @@ const MembershipPublicPage = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subscription_id: data.subscriptionID,
-          plan_type: selectedPlanKey,
+          plan_type: currentPlanKey,
+          password: currentForm.password,
           customer: {
-            full_name: form.ownerName.trim(),
-            email: form.email.trim(),
-            phone: form.phone.trim(),
+            full_name: currentForm.ownerName.trim(),
+            email: currentForm.email.trim(),
+            phone: currentForm.phone.trim(),
           },
-          member_names: getFamilyMembers(),
-          trackers_to_fulfill: Number(form.basicTrackers) || 0,
-          premium_trackers: Number(form.premiumTrackers) || 0,
+          member_names: familyMembers,
+          trackers_to_fulfill: Number(currentForm.basicTrackers) || 0,
+          premium_trackers: Number(currentForm.premiumTrackers) || 0,
           org_id: PUBLIC_ORG_ID,
         }),
       });
@@ -273,6 +313,26 @@ const MembershipPublicPage = () => {
                 required
               />
             </div>
+            <div>
+              <Label>Contraseña *</Label>
+              <Input
+                type="password"
+                minLength={6}
+                value={form.password}
+                onChange={(e) => updateField('password', e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label>Confirmar contraseña *</Label>
+              <Input
+                type="password"
+                minLength={6}
+                value={form.confirmPassword}
+                onChange={(e) => updateField('confirmPassword', e.target.value)}
+                required
+              />
+            </div>
           </div>
         </div>
 
@@ -296,6 +356,9 @@ const MembershipPublicPage = () => {
 
         <div className="space-y-2">
           <h2 className="text-lg font-semibold">Rastreador fitness</h2>
+          <p className="text-sm text-slate-600">
+            Los rastreadores se entregan en la farmacia al momento de tu primera visita.
+          </p>
           {selectedPlanKey === 'individual' ? (
             <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
               <input
@@ -304,11 +367,11 @@ const MembershipPublicPage = () => {
                 onChange={(e) => updateField('basicTrackers', e.target.checked ? 1 : 0)}
                 className="w-4 h-4"
               />
-              <span>Incluir rastreador básico (1 incluido)</span>
+              <span>Incluir rastreador básico (1 incluido en el plan)</span>
             </label>
           ) : (
             <div className="flex items-center gap-4">
-              <Label>Cantidad de rastreadores básicos a entregar ahora (0–6):</Label>
+              <Label>Cantidad de rastreadores básicos incluidos (0–6):</Label>
               <select
                 value={form.basicTrackers}
                 onChange={(e) => updateField('basicTrackers', Number(e.target.value))}
@@ -385,6 +448,11 @@ const MembershipPublicPage = () => {
         <p className="font-medium">${Number(created?.monthly_amount).toFixed(2)} MXN</p>
       </div>
       <p className="text-slate-600">Guarda tu Plan ID. Lo necesitarás en tu próxima visita.</p>
+      <p className="text-slate-600">
+        Ya puedes iniciar sesión en el portal de clientes en{' '}
+        <a href="/customer-app/" className="text-blue-600 underline">/customer-app/</a>{' '}
+        con tu correo electrónico, teléfono o número de membresía y la contraseña que elegiste.
+      </p>
     </div>
   );
 

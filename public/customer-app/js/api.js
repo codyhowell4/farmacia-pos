@@ -114,14 +114,31 @@ window.FarmaciaAPI = (function () {
     },
 
     /**
-     * Sign in with email and password.
+     * Sign in with email, phone, or membership # and password.
+     * Non-email identifiers are resolved to the account email
+     * via the lookup_login_email RPC before signing in.
      */
-    async signIn(email, password) {
+    async signIn(identifier, password) {
       if (!sb) {
         console.warn('[FarmaciaAPI] signIn fallback - Supabase not available');
         return { data: null, error: new Error('Supabase not available') };
       }
       try {
+        let email = (identifier || '').trim();
+
+        // Phone or membership # (e.g. APOLO-00001) → resolve to account email
+        if (email && !email.includes('@')) {
+          const defaultOrgId = (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
+          const { data: resolvedEmail, error: lookupError } = await sb.rpc('lookup_login_email', {
+            p_identifier: email,
+            p_org_id: defaultOrgId
+          });
+          if (lookupError || !resolvedEmail) {
+            throw new Error('No encontramos una cuenta con esos datos');
+          }
+          email = resolvedEmail;
+        }
+
         const { data, error } = await sb.auth.signInWithPassword({ email, password });
         if (error) throw error;
         console.log('[FarmaciaAPI] User signed in:', data.user?.email);
@@ -148,6 +165,71 @@ window.FarmaciaAPI = (function () {
       } catch (err) {
         console.error('[FarmaciaAPI] signOut failed:', err.message);
         return { error: err };
+      }
+    },
+
+    /**
+     * Send a password-reset email with a link back to the customer app.
+     */
+    async requestPasswordReset(email) {
+      if (!sb) {
+        console.warn('[FarmaciaAPI] requestPasswordReset fallback - Supabase not available');
+        return { data: null, error: new Error('Supabase not available') };
+      }
+      try {
+        const { data, error } = await sb.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin + '/customer-app/'
+        });
+        if (error) throw error;
+        console.log('[FarmaciaAPI] Password reset email requested');
+        return { data, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] requestPasswordReset failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
+     * Update the signed-in user's password (used from the recovery link).
+     */
+    async updatePassword(newPassword) {
+      if (!sb) {
+        console.warn('[FarmaciaAPI] updatePassword fallback - Supabase not available');
+        return { data: null, error: new Error('Supabase not available') };
+      }
+      try {
+        const { data, error } = await sb.auth.updateUser({ password: newPassword });
+        if (error) throw error;
+        console.log('[FarmaciaAPI] Password updated');
+        return { data, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] updatePassword failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
+     * Resolve the membership tier for the current customer.
+     * Returns 'paid' when any memberships row is active, else 'free'.
+     * Fails closed: any error returns 'free'.
+     */
+    async getMembershipTier() {
+      if (!sb) return 'free';
+      try {
+        const customerId = await getCustomerId();
+        if (!customerId) return 'free';
+
+        const { data, error } = await sb
+          .from('memberships')
+          .select('status')
+          .eq('customer_id', customerId);
+        if (error) throw error;
+
+        const hasActive = (data || []).some(row => row.status === 'active');
+        return hasActive ? 'paid' : 'free';
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getMembershipTier error:', err.message);
+        return 'free';
       }
     },
 
@@ -319,16 +401,17 @@ window.FarmaciaAPI = (function () {
       }
 
       try {
-        const user = await getAuthUser();
-        if (!user) {
-          console.log('[FarmaciaAPI] No auth user, appointments fallback');
+        // appointments.customer_id references the customers row, not the auth user
+        const customerId = await getCustomerId();
+        if (!customerId) {
+          console.log('[FarmaciaAPI] No customer link, appointments fallback');
           return fallback();
         }
 
         const { data, error } = await sb
           .from('appointments')
           .select('*')
-          .eq('customer_id', user.id)
+          .eq('customer_id', customerId)
           .order('appointment_date', { ascending: false });
 
         if (error) throw error;
