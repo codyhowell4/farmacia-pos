@@ -7911,8 +7911,8 @@ async function renderAppointments() {
       const cachedDoctor = (window.__videoDoctors || []).find(d => d.id === appt.doctorId);
       return {
         id: appt.id,
-        doctorName: cachedDoctor?.full_name || 'Médico',
-        specialty: cachedDoctor?.specialty || appt.notes || 'Consulta médica',
+        doctorName: cachedDoctor?.full_name || appt.doctorName || 'Médico',
+        specialty: cachedDoctor?.specialty || appt.doctorSpecialty || appt.notes || 'Consulta médica',
         date: localDate,
         time: localTime,
         dateTime: appt.dateTime || null,
@@ -8023,7 +8023,7 @@ async function renderAppointments() {
                 }
               } else {
                 const pendingMsg = video.paymentStatus === 'unpaid' || video.paymentStatus === 'membership_half'
-                  ? 'Pago pendiente — el enlace aparecerá aquí cuando se confirme tu pago'
+                  ? 'Pago pendiente — tienes 10 minutos desde la creación de la cita para pagar; después se cancela automáticamente y el horario se libera'
                   : 'El enlace aparecerá aquí cuando el doctor confirme tu cita';
                 actionHtml = `<div style="flex: 1; padding: 0.75rem; background: white; border: 2px dashed #ddd6fe; border-radius: 12px; font-size: 0.8rem; color: #7c3aed; text-align: center; align-self: center;">${pendingMsg}</div>`;
               }

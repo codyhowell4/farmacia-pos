@@ -7,7 +7,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { getDoctorProfile, upsertDoctorProfile } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import DoctorAvailabilityEditor from '@/components/DoctorAvailabilityEditor';
 import { toast } from 'sonner';
 
@@ -31,6 +34,30 @@ const DoctorProfile = () => {
   const [loading, setLoading] = useState(true);
   const [availability, setAvailability] = useState({});
   const [savingAvailability, setSavingAvailability] = useState(false);
+  const [doctorName, setDoctorName] = useState('');
+  const [savingName, setSavingName] = useState(false);
+
+  useEffect(() => {
+    if (user?.name) setDoctorName(user.name);
+  }, [user?.name]);
+
+  // Patients see profiles.full_name everywhere (booking, Mis Citas);
+  // the profiles_update RLS policy allows editing your own row.
+  const handleSaveName = async () => {
+    const name = doctorName.trim();
+    if (!name || !user?.id) return;
+    setSavingName(true);
+    try {
+      const { error } = await supabase.from('profiles').update({ full_name: name }).eq('id', user.id);
+      if (error) throw error;
+      toast.success('Nombre actualizado — los pacientes ya lo ven');
+    } catch (err) {
+      toast.error(err.message || 'Error guardando el nombre');
+      console.error('[DoctorProfile] save name error:', err);
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   const loadProfile = useCallback(async () => {
     if (!user?.id) return;
@@ -123,6 +150,27 @@ const DoctorProfile = () => {
                   )}
                 </div>
               </div>
+            </div>
+            <div className="mt-5 pt-5 border-t border-slate-100">
+              <Label htmlFor="doctor-display-name" className="text-xs font-medium text-slate-500 uppercase tracking-wide">
+                Nombre visible para pacientes
+              </Label>
+              <div className="flex gap-2 mt-1.5">
+                <Input
+                  id="doctor-display-name"
+                  value={doctorName}
+                  onChange={(e) => setDoctorName(e.target.value)}
+                  placeholder="Dr. Nombre Apellido"
+                />
+                <Button
+                  onClick={handleSaveName}
+                  disabled={savingName || !doctorName.trim()}
+                  className="bg-[#46AC78] hover:bg-[#3b9566] shrink-0"
+                >
+                  {savingName ? 'Guardando…' : 'Guardar'}
+                </Button>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">Así te verán los pacientes al agendar y en sus citas.</p>
             </div>
           </div>
 

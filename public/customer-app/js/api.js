@@ -418,6 +418,17 @@ window.FarmaciaAPI = (function () {
 
         if (error) throw error;
 
+        // Resolve doctor display names via the public doctors RPC
+        // (RLS-safe for any signed-in user; appointment rows only carry doctor_id)
+        let doctorsById = {};
+        try {
+          const defaultOrgId = (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
+          const { data: docs } = await sb.rpc('get_public_doctors', { p_org_id: defaultOrgId });
+          (docs || []).forEach(d => { doctorsById[d.id] = d; });
+        } catch (docErr) {
+          console.warn('[FarmaciaAPI] doctors lookup failed:', docErr.message);
+        }
+
         if (data && data.length > 0) {
           console.log('[FarmaciaAPI] Appointments loaded from Supabase:', data.length);
           return data.map(appt => ({
@@ -431,6 +442,8 @@ window.FarmaciaAPI = (function () {
             meetingId:  appt.meeting_id || null,
             notes:      appt.notes || '',
             doctorId:   appt.doctor_id,
+            doctorName: doctorsById[appt.doctor_id]?.full_name || null,
+            doctorSpecialty: doctorsById[appt.doctor_id]?.specialty || null,
             paymentStatus: appt.payment_status || null,
             paymentRef: appt.payment_ref || null,
             source:     'supabase'
