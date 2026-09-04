@@ -460,7 +460,8 @@ window.FarmaciaAPI = (function () {
 
     /**
      * Get prescriptions for the current user.
-     * Combines customer_documents (type='receta') + medical_notes.
+     * Combines customer_documents (type='receta') + medical_notes
+     * + doctor-issued prescriptions (recetas with medications).
      * Falls back to localStorage allPrescriptions.
      */
     async getPrescriptions() {
@@ -488,12 +489,15 @@ window.FarmaciaAPI = (function () {
           return fallback();
         }
 
-        const [docsRes, notesRes] = await Promise.all([
+        const [docsRes, notesRes, rxRes] = await Promise.all([
           sb.from('customer_documents')
             .select('*')
             .eq('customer_id', customer.id)
             .eq('document_type', 'receta'),
           sb.from('medical_notes')
+            .select('*')
+            .eq('customer_id', customer.id),
+          sb.from('prescriptions')
             .select('*')
             .eq('customer_id', customer.id)
         ]);
@@ -522,6 +526,26 @@ window.FarmaciaAPI = (function () {
               content:   note.note,
               createdAt: note.created_at,
               source:    'supabase'
+            });
+          });
+        }
+
+        // Doctor-issued recetas (medications + vitals from the consulta)
+        if (!rxRes.error && rxRes.data) {
+          rxRes.data.forEach(rx => {
+            const meds = Array.isArray(rx.medications) && rx.medications.length > 0
+              ? rx.medications
+              : rx.medication
+                ? [{ medication: rx.medication, dosage: rx.dosage, frequency: rx.frequency, duration: rx.duration, notes: rx.notes }]
+                : [];
+            prescriptions.push({
+              id:                 rx.id,
+              type:               'receta',
+              doctorName:         rx.doctor_name,
+              prescriptionNumber: rx.prescription_number,
+              medications:        meds,
+              createdAt:          rx.created_at,
+              source:             'supabase'
             });
           });
         }

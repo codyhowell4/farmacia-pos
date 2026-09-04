@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  Calendar, Plus, Search, Clock, Phone, Check, Trash2, Edit2, Video
+  Calendar, Plus, Search, Clock, Phone, Check, Trash2, Edit2, Video, FileText
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,7 @@ import {
   getAppointmentsByDoctor, createAppointment, updateAppointment, deleteAppointment,
   getCustomersForDoctor, confirmVideoAppointment
 } from '@/lib/db';
+import PostVisitDialog from './PostVisitDialog';
 import { toast } from 'sonner';
 
 const statusColors = {
@@ -79,6 +80,8 @@ const DoctorAppointments = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [postVisitAppt, setPostVisitAppt] = useState(null);
+  const [postVisitOpen, setPostVisitOpen] = useState(false);
   const [form, setForm] = useState({
     customer_id: '',
     walkin_name: '',
@@ -114,6 +117,13 @@ const DoctorAppointments = () => {
   }, [loadData]);
 
   const filtered = safeAppointments.filter(a => {
+    // Unpaid pending video consultas stay hidden — the patient hasn't paid
+    // yet (stale ones auto-cancel after 10 min). They appear once paid
+    // and confirmed. Pending in-person citas are unaffected.
+    if (a?.type === 'video' && a?.status === 'pending' &&
+        ['unpaid', 'membership_half'].includes(a?.payment_status || 'unpaid')) {
+      return false;
+    }
     const matchesSearch = !search ||
       (a?.customers?.full_name || a?.walkin_name || '').toLowerCase().includes(search.toLowerCase()) ||
       (a?.customers?.phone || a?.walkin_phone || '').includes(search);
@@ -199,6 +209,14 @@ const DoctorAppointments = () => {
         }
         toast.success('Consulta confirmada — enlace de video creado');
         loadData();
+        return;
+      }
+      // Completing a consulta goes through the post-visit form:
+      // the doctor must leave a note (receta/vitals optional) before
+      // the cita is marked Completada.
+      if (newStatus === 'completed') {
+        setPostVisitAppt(appt);
+        setPostVisitOpen(true);
         return;
       }
       await updateAppointment(appt.id, { status: newStatus });
@@ -339,6 +357,17 @@ const DoctorAppointments = () => {
                         <Check className="w-4 h-4" />
                       </Button>
                     )}
+                    {appt?.status === 'completed' && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="text-teal-600 hover:text-teal-700 hover:bg-teal-50"
+                        title="Nota post-consulta"
+                        onClick={() => { setPostVisitAppt(appt); setPostVisitOpen(true); }}
+                      >
+                        <FileText className="w-4 h-4" />
+                      </Button>
+                    )}
                     <Button
                       size="icon"
                       variant="ghost"
@@ -364,6 +393,14 @@ const DoctorAppointments = () => {
           </div>
         </div>
       )}
+
+      {/* Post-visit form (nota obligatoria, receta opcional) */}
+      <PostVisitDialog
+        open={postVisitOpen}
+        onOpenChange={setPostVisitOpen}
+        appointment={postVisitAppt}
+        onSaved={loadData}
+      />
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

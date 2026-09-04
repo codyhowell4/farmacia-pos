@@ -8476,19 +8476,30 @@ async function renderPrescripciones() {
         </div>
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
           ${systemPrescriptions.map(p => `
-            <div class="glass-card" style="padding: 1rem; border-left: 4px solid ${p.type === 'document' ? '#46AC78' : '#60a5fa'};">
+            <div class="glass-card" style="padding: 1rem; border-left: 4px solid ${p.type === 'document' ? '#46AC78' : p.type === 'receta' ? '#a78bfa' : '#60a5fa'};">
               <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                <span style="font-size: 1.5rem;">${p.type === 'document' ? '📷' : '👨‍⚕️'}</span>
+                <span style="font-size: 1.5rem;">${p.type === 'document' ? '📷' : p.type === 'receta' ? '💊' : '👨‍⚕️'}</span>
                 <div>
-                  <div style="font-weight: 600; color: white;">${p.type === 'document' ? 'Receta digital' : 'Nota médica'}</div>
-                  <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${new Date(p.createdAt).toLocaleDateString('es-MX')}</div>
+                  <div style="font-weight: 600; color: white;">${p.type === 'document' ? 'Receta digital' : p.type === 'receta' ? 'Receta médica' : 'Nota médica'}</div>
+                  <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${new Date(p.createdAt).toLocaleDateString('es-MX')}${p.doctorName ? ` · ${p.doctorName}` : ''}</div>
                 </div>
               </div>
               ${p.type === 'document' && p.fileUrl ? `
                 <a href="${p.fileUrl}" target="_blank" style="display: block; margin-bottom: 0.5rem; padding: 0.5rem; background: rgba(70,172,120,0.1); border-radius: 8px; color: #46AC78; font-size: 0.85rem; text-decoration: none;">🔗 Ver archivo</a>
               ` : ''}
+              ${p.type === 'receta' && (p.medications || []).length > 0 ? `
+                <div style="background: rgba(255,255,255,0.08); padding: 0.5rem 0.75rem; border-radius: 8px; display: flex; flex-direction: column; gap: 0.4rem;">
+                  ${p.medications.map(m => `
+                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.85);">
+                      <span style="font-weight: 600; color: white;">${m.medication}</span>
+                      <span style="color: rgba(255,255,255,0.6);">${[m.dosage, m.frequency, m.duration].filter(Boolean).map(x => ` · ${x}`).join('')}</span>
+                      ${m.notes ? `<div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); font-style: italic;">${m.notes}</div>` : ''}
+                    </div>
+                  `).join('')}
+                </div>
+              ` : ''}
               ${p.content || p.notes ? `
-                <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.08); padding: 0.5rem; border-radius: 8px;">${p.content || p.notes}</div>
+                <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.08); padding: 0.5rem; border-radius: 8px; margin-top: 0.25rem;">${p.content || p.notes}</div>
               ` : ''}
             </div>
           `).join('')}

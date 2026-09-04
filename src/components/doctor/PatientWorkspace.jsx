@@ -23,6 +23,7 @@ import {
 } from '@/lib/db';
 import PrintablePrescription from './PrintablePrescription';
 import PatientMedicalHistory from './PatientMedicalHistory';
+import PostVisitDialog from './PostVisitDialog';
 import { downloadPrescriptionPDF } from '@/lib/pdf';
 import { formatMXN } from '@/lib/currency';
 import { toast } from 'sonner';
@@ -66,6 +67,8 @@ const PatientWorkspace = () => {
   const [savingPatient, setSavingPatient] = useState(false);
   const [printRx, setPrintRx] = useState(null);
   const [medSearchOpen, setMedSearchOpen] = useState({}); // { [idx]: boolean }
+  const [postVisitAppt, setPostVisitAppt] = useState(null);
+  const [postVisitOpen, setPostVisitOpen] = useState(false);
 
   // Form states
   const [rxForm, setRxForm] = useState({
@@ -252,6 +255,16 @@ const PatientWorkspace = () => {
   };
 
   const handleApptStatus = async (id, status) => {
+    // Completing a consulta requires the post-visit note — open the form
+    // instead of updating the status directly.
+    if (status === 'completed') {
+      const appt = appointments.find(a => a.id === id);
+      if (appt) {
+        setPostVisitAppt(appt);
+        setPostVisitOpen(true);
+      }
+      return;
+    }
     try {
       await updateAppointment(id, { status });
       toast.success('Cita actualizada');
@@ -366,8 +379,14 @@ const PatientWorkspace = () => {
     );
   }
 
+  // Unpaid pending video consultas are hidden until the patient pays
+  const isUnpaidPendingVideo = (a) =>
+    a?.type === 'video' && a?.status === 'pending' &&
+    ['unpaid', 'membership_half'].includes(a?.payment_status || 'unpaid');
+
   const upcomingAppts = appointments.filter(a =>
     ['pending', 'confirmed'].includes(a.status) &&
+    !isUnpaidPendingVideo(a) &&
     new Date(a.appointment_date) >= new Date()
   );
   const pastAppts = appointments.filter(a =>
@@ -961,6 +980,14 @@ const PatientWorkspace = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Post-visit form when completing a consulta */}
+      <PostVisitDialog
+        open={postVisitOpen}
+        onOpenChange={setPostVisitOpen}
+        appointment={postVisitAppt}
+        onSaved={loadAll}
+      />
 
       {/* Print Prescription Dialog */}
       <Dialog open={!!printRx} onOpenChange={() => setPrintRx(null)}>

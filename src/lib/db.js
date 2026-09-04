@@ -1452,6 +1452,18 @@ export const getMedicalNotesByDoctor = async (doctorId) => {
   return data || [];
 };
 
+export const getMedicalNoteByAppointment = async (appointmentId) => {
+  const { data, error } = await supabase
+    .from('medical_notes')
+    .select('*')
+    .eq('appointment_id', appointmentId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+};
+
 export const createMedicalNote = async (note) => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
