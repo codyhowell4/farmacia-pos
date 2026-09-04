@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   BarChart3, Calendar, Users, UserCircle,
-  LogOut, Menu, X, Clock,
+  LogOut, Menu, X, Package,
 } from 'lucide-react';
 import ApoloBrand from '@/components/ApoloBrand';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import DoctorOverview from '@/components/doctor/DoctorOverview';
 import DoctorAppointments from '@/components/doctor/DoctorAppointments';
 import DoctorCustomers from '@/components/doctor/DoctorCustomers';
 import DoctorProfile from '@/components/doctor/DoctorProfile';
-import DoctorExpiringProducts from '@/components/doctor/DoctorExpiringProducts';
+import DoctorInventory from '@/components/doctor/DoctorInventory';
 import PatientWorkspace from '@/components/doctor/PatientWorkspace';
 
 const DoctorDashboard = () => {
@@ -25,7 +25,8 @@ const DoctorDashboard = () => {
   const getCurrentTab = () => {
     const path = location.pathname;
     if (path.includes('/appointments')) return 'appointments';
-    if (path.includes('/expiring')) return 'expiring';
+    if (path.includes('/inventory')) return 'inventory';
+    if (path.includes('/expiring')) return 'inventory'; // legacy route, redirects
     if (path.includes('/customers/')) return 'customers';
     if (path.includes('/customers')) return 'customers';
     if (path.includes('/profile')) return 'profile';
@@ -43,7 +44,7 @@ const DoctorDashboard = () => {
     { id: 'overview', label: 'Resumen', icon: BarChart3, path: '/doctor' },
     { id: 'appointments', label: 'Citas', icon: Calendar, path: '/doctor/appointments' },
     { id: 'customers', label: 'Pacientes', icon: Users, path: '/doctor/customers' },
-    { id: 'expiring', label: 'Productos Por Vencer', icon: Clock, path: '/doctor/expiring' },
+    { id: 'inventory', label: 'Inventario', icon: Package, path: '/doctor/inventory' },
     { id: 'profile', label: 'Mi perfil', icon: UserCircle, path: '/doctor/profile' },
   ];
 
@@ -147,7 +148,8 @@ const DoctorDashboard = () => {
                 <Route path="/appointments" element={<DoctorAppointments />} />
                 <Route path="/customers" element={<DoctorCustomers />} />
                 <Route path="/customers/:customerId" element={<PatientWorkspace />} />
-                <Route path="/expiring" element={<DoctorExpiringProducts />} />
+                <Route path="/inventory" element={<DoctorInventory />} />
+                <Route path="/expiring" element={<Navigate to="/doctor/inventory" replace />} />
                 <Route path="/profile" element={<DoctorProfile />} />
               </Routes>
             </main>
