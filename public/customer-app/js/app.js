@@ -38,7 +38,7 @@ function showToast(message, type = 'info') {
 }
 
 // State
-let currentPage = 'home';
+let currentPage = 'consulta';
 
 // DOM Elements
 const mainContent = document.getElementById('main-content');
@@ -101,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (isPasswordRecovery) {
     renderResetPassword();
   } else {
-    renderPage('home'); // Start with Today page
+    renderPage('consulta'); // Start page: Consulta (free for all users)
   }
   setupNavigation();
   setupMenuNavigation();
@@ -110,9 +110,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Show 🔒 badges on paid sections while tier is unknown/free
   updateTierBadges();
   
-  // Set home nav as active by default (only if present in the bottom nav)
+  // Set Consulta nav as active by default
   navItems.forEach(nav => nav.classList.remove('active'));
-  document.querySelector('.bottom-nav .nav-item[data-page="home"]')?.classList.add('active');
+  document.querySelector('.bottom-nav .nav-item[data-page="consulta"]')?.classList.add('active');
   
   // Initial cart badge update
   updateCartBadge();
@@ -253,7 +253,7 @@ function renderLogin() {
       </div>
       
       <div style="text-align: center; margin-top: 1.5rem; color: rgba(255,255,255,0.5); font-size: 0.8rem;">
-        O continúa como <button onclick="renderPage('home')" style="background: none; border: none; color: #46AC78; cursor: pointer;">invitado</button>
+        O continúa como <button onclick="renderPage('consulta')" style="background: none; border: none; color: #46AC78; cursor: pointer;">invitado</button>
       </div>
     </div>
   `;
@@ -291,10 +291,10 @@ async function handleLogin() {
   updateTierBadges();
   
   updateMenuUserInfo();
-  currentPage = 'home';
+  currentPage = 'consulta';
   navItems.forEach(nav => nav.classList.remove('active'));
-  document.querySelector('[data-page="home"]')?.classList.add('active');
-  renderPage('home');
+  document.querySelector('[data-page="consulta"]')?.classList.add('active');
+  renderPage('consulta');
   showToast('Bienvenido de vuelta, ' + (currentCustomerProfile?.name || currentAuthUser.email), 'success');
 }
 
@@ -340,7 +340,7 @@ function renderSignup() {
       </div>
       
       <div style="text-align: center; margin-top: 1.5rem; color: rgba(255,255,255,0.5); font-size: 0.8rem;">
-        O continúa como <button onclick="renderPage('home')" style="background: none; border: none; color: #46AC78; cursor: pointer;">invitado</button>
+        O continúa como <button onclick="renderPage('consulta')" style="background: none; border: none; color: #46AC78; cursor: pointer;">invitado</button>
       </div>
     </div>
   `;
@@ -403,10 +403,10 @@ async function handleSignup() {
   if (data.session) {
     currentCustomerProfile = await FarmaciaAPI.getCustomerProfile();
     setTimeout(() => {
-      currentPage = 'home';
+      currentPage = 'consulta';
       navItems.forEach(nav => nav.classList.remove('active'));
-      document.querySelector('[data-page="home"]')?.classList.add('active');
-      renderPage('home');
+      document.querySelector('[data-page="consulta"]')?.classList.add('active');
+      renderPage('consulta');
     }, 1500);
   }
 }
@@ -700,7 +700,7 @@ async function handleLogout() {
   
   updateMenuUserInfo();
   closeMenu();
-  renderPage('home');
+  renderPage('consulta');
   showToast('Sesión cerrada', 'info');
 }
 
