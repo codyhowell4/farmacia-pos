@@ -12,6 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog';
 import { getDoctorUsersWithProfiles, upsertDoctorProfile } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import DoctorAvailabilityEditor from '@/components/DoctorAvailabilityEditor';
 import { toast } from 'sonner';
 
@@ -33,6 +34,7 @@ const AdminDoctors = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingDoctor, setEditingDoctor] = useState(null);
   const [form, setForm] = useState({
+    full_name: '',
     license_number: '',
     specialty: '',
     phone: '',
@@ -81,6 +83,7 @@ const AdminDoctors = () => {
     const dp = getDoctorProfileFromRow(doctor);
     console.log('[AdminDoctors] openEdit profile:', dp);
     setForm({
+      full_name: doctor.full_name || '',
       license_number: dp?.license_number || '',
       specialty: dp?.specialty || '',
       phone: dp?.phone || '',
@@ -114,6 +117,16 @@ const AdminDoctors = () => {
 
     try {
       await upsertDoctorProfile(editingDoctor.id, payload);
+      // The patient-facing display name lives on profiles.full_name;
+      // admins may update org profiles (admin_profiles_all policy).
+      const newName = form.full_name.trim();
+      if (newName && newName !== (editingDoctor.full_name || '')) {
+        const { error: nameError } = await supabase
+          .from('profiles')
+          .update({ full_name: newName })
+          .eq('id', editingDoctor.id);
+        if (nameError) throw nameError;
+      }
       toast.success('Perfil médico guardado exitosamente');
       setDialogOpen(false);
       await loadDoctors();
@@ -245,13 +258,23 @@ const AdminDoctors = () => {
           </DialogHeader>
 
           <div className="bg-slate-50 p-3 rounded-lg mb-2">
-            <p className="text-sm font-medium text-slate-900">{editingDoctor?.full_name || 'Sin nombre'}</p>
             <p className="text-xs text-slate-500">
               {editingDoctor?.email || 'Sin email registrado'}
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="full_name">Nombre (visible para pacientes) *</Label>
+              <Input
+                id="full_name"
+                value={form.full_name}
+                onChange={e => setForm({ ...form, full_name: e.target.value })}
+                placeholder="Dr. Nombre Apellido"
+                required
+              />
+            </div>
+
             <div>
               <Label htmlFor="license_number">Cédula profesional *</Label>
               <Input
