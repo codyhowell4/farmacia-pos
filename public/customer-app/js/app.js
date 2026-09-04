@@ -1853,8 +1853,8 @@ function renderStore() {
   const medicines = Store.getMedicines() || [];
   const categories = [
     { id: 'all', name: 'Todos', icon: '📦' },
-    { id: 'prescription', name: 'Con Prescripción', icon: '📋' },
-    { id: 'otc', name: 'Sin Prescripción', icon: '💊' },
+    { id: 'prescription', name: 'Con Receta', icon: '📋' },
+    { id: 'otc', name: 'Sin Receta', icon: '💊' },
     { id: 'vitamins', name: 'Vitaminas', icon: '💪' }
   ];
   
@@ -1863,8 +1863,8 @@ function renderStore() {
     <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🛒 Catálogo Completo</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Medicamentos, suplementos y más</p>
-      <button onclick="alert('Subir prescripción')" style="margin-top: 1rem; padding: 0.625rem 1.25rem; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem;">
-        <span>📤</span> Subir Prescripción
+      <button onclick="alert('Subir receta')" style="margin-top: 1rem; padding: 0.625rem 1.25rem; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem;">
+        <span>📤</span> Subir Receta
       </button>
     </div>
 
@@ -1898,7 +1898,7 @@ function renderStore() {
                 <div style="font-size: 2.5rem;">${med.category === 'prescription' ? '💊' : med.category === 'vitamins' ? '💪' : '💊'}</div>
               </div>
               <div style="flex: 1;">
-                <div style="font-size: 0.65rem; color: ${med.category === 'prescription' ? '#a78bfa' : med.category === 'vitamins' ? '#46AC78' : 'rgba(255,255,255,0.6)'}; margin-bottom: 0.25rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">${med.category === 'prescription' ? 'Con prescripción' : med.category === 'vitamins' ? 'Vitamina' : 'Sin prescripción'}</div>
+                <div style="font-size: 0.65rem; color: ${med.category === 'prescription' ? '#a78bfa' : med.category === 'vitamins' ? '#46AC78' : 'rgba(255,255,255,0.6)'}; margin-bottom: 0.25rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">${med.category === 'prescription' ? 'Con receta' : med.category === 'vitamins' ? 'Vitamina' : 'Sin receta'}</div>
                 <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; line-height: 1.3; color: white;">${med.name}</div>
                 <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">${med.brand}</div>
                 <div style="font-size: 1.1rem; font-weight: 700; color: #c0c0c0;">$${med.price.toFixed(2)}</div>
@@ -2293,7 +2293,7 @@ function renderHelp() {
       <div class="medicine-card" style="cursor: pointer;" onclick="alert('Ver respuesta')">
         <div class="med-icon vitamins">❓</div>
         <div class="med-info">
-          <div class="med-brand">¿Necesito prescripción?</div>
+          <div class="med-brand">¿Necesito receta?</div>
           <div class="med-name">Toca para ver respuesta</div>
         </div>
       </div>
@@ -5040,27 +5040,27 @@ function renderSalud() {
     <!-- Header -->
     <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; text-align: center;">
       <div style="font-size: 1.3rem; font-weight: 700;">🏥 Tu Salud</div>
-      <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 0.25rem;">Historial, prescripciones y vacunas</div>
+      <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 0.25rem;">Historial, recetas y vacunas</div>
     </div>
 
     <!-- Prescription Scanner Section -->
     <div style="padding: 1rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-        <span style="font-weight: 600;">📷 Prescripciones Médicas</span>
+        <span style="font-weight: 600;">📷 Recetas Médicas</span>
         <button onclick="showManualPrescriptionModal()" style="background: none; border: none; color: var(--primary); font-size: 0.8rem; cursor: pointer;">+ Manual</button>
       </div>
       
       <!-- Scanner Card -->
       <div class="glass-card" style="flex-direction: column; padding: 1.5rem; cursor: pointer; border: 2px dashed rgba(255,255,255,0.3);" onclick="showPrescriptionScanner()">
         <div style="font-size: 3rem; margin-bottom: 0.5rem;">📸</div>
-        <div style="font-weight: 600; color: var(--teal-primary); margin-bottom: 0.25rem;">Escanear Prescripción</div>
+        <div style="font-weight: 600; color: var(--teal-primary); margin-bottom: 0.25rem;">Escanear Receta</div>
         <div style="font-size: 0.8rem; color: var(--text-muted); text-align: center;">Toma una foto y detectaremos el medicamento automáticamente</div>
       </div>
       
       <!-- Active Prescriptions -->
       ${prescriptions.length > 0 ? `
         <div style="margin-top: 1rem;">
-          <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Prescripciones activas:</div>
+          <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Recetas activas:</div>
           ${prescriptions.map(p => {
             const refills = Store.getRefillRequestsByPrescription(p.id);
             const activeRefill = refills.find(r => r.status === 'pending' || r.status === 'confirmed');
@@ -5267,7 +5267,7 @@ function renderSalud() {
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; text-align: center;">
           <div style="background: rgba(255,255,255,0.08); padding: 0.75rem; border-radius: 12px;">
             <div style="font-size: 1.25rem; font-weight: 700; color: #c0c0c0;">${prescriptions.length}</div>
-            <div style="font-size: 0.7rem; color: rgba(255,255,255,0.6);">Prescripciones</div>
+            <div style="font-size: 0.7rem; color: rgba(255,255,255,0.6);">Recetas</div>
           </div>
           <div style="background: rgba(255,255,255,0.08); padding: 0.75rem; border-radius: 12px;">
             <div style="font-size: 1.25rem; font-weight: 700; color: #c0c0c0;">${vaccines.filter(v => v.lastDose).length}</div>
@@ -5399,8 +5399,8 @@ window.showPrescriptionScanner = function() {
   modal.innerHTML = `
     <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; color: white;">
       <div style="font-size: 4rem; margin-bottom: 1rem;">📸</div>
-      <h2 style="margin: 0 0 0.5rem; font-size: 1.5rem;">Escanear Prescripción</h2>
-      <p style="margin: 0 0 2rem; opacity: 0.8; text-align: center;">Enfoca la prescripción dentro del cuadro</p>
+      <h2 style="margin: 0 0 0.5rem; font-size: 1.5rem;">Escanear Receta</h2>
+      <p style="margin: 0 0 2rem; opacity: 0.8; text-align: center;">Enfoca la receta dentro del cuadro</p>
       
       <!-- Camera Frame -->
       <div style="width: 280px; height: 380px; border: 3px solid #46AC78; border-radius: 20px; position: relative; margin-bottom: 2rem;">
@@ -5428,7 +5428,7 @@ window.simulatePrescriptionScan = function() {
   modal.innerHTML = `
     <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; color: white;">
       <div style="font-size: 3rem; margin-bottom: 1rem; animation: pulse 1s infinite;">🔍</div>
-      <h2 style="margin: 0;">Analizando prescripción...</h2>
+      <h2 style="margin: 0;">Analizando receta...</h2>
       <p style="opacity: 0.8;">Detectando medicamentos</p>
     </div>
   `;
@@ -5612,7 +5612,7 @@ window.saveManualPrescription = async function() {
 };
 
 window.deletePrescription = function(id) {
-  if (confirm('¿Eliminar esta prescripción?')) {
+  if (confirm('¿Eliminar esta receta?')) {
     Store.deletePrescription(id);
     renderSalud();
   }
@@ -7155,7 +7155,7 @@ window.showVideoConsulta = function() {
           </div>
         </div>
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; text-align: center; font-size: 0.75rem; color: var(--text-secondary);">
-          <div>✓ Prescripción digital</div>
+          <div>✓ Receta digital</div>
           <div>✓ 15-30 min</div>
           <div>✓ Pago seguro</div>
         </div>
@@ -8407,9 +8407,9 @@ async function renderPrescripciones() {
     <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">📄 Mis Prescripciones</h2>
+          <h2 style="margin: 0; font-size: 1.3rem;">📄 Mis Recetas</h2>
           <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">
-            ${activeProfile?.isMain ? 'Todas tus prescripciones médicas' : `Prescripciones de ${activeProfile?.name}`}
+            ${activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas de ${activeProfile?.name}`}
           </p>
         </div>
         <button onclick="showUploadPrescriptionModal()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Subir</button>
@@ -8417,7 +8417,7 @@ async function renderPrescripciones() {
     </div>
     <div style="padding: 2rem 1rem; text-align: center;">
       <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
-      <div style="color: white; font-size: 1rem;">Cargando prescripciones...</div>
+      <div style="color: white; font-size: 1rem;">Cargando recetas...</div>
     </div>
   `;
   
@@ -8457,9 +8457,9 @@ async function renderPrescripciones() {
     <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">📄 Mis Prescripciones</h2>
+          <h2 style="margin: 0; font-size: 1.3rem;">📄 Mis Recetas</h2>
           <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">
-            ${activeProfile?.isMain ? 'Todas tus prescripciones médicas' : `Prescripciones de ${activeProfile?.name}`}
+            ${activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas de ${activeProfile?.name}`}
             ${activeCount > 0 ? `• ${activeCount} activas` : ''}
           </p>
         </div>
@@ -8471,8 +8471,8 @@ async function renderPrescripciones() {
     ${systemPrescriptions.length > 0 ? `
       <div style="padding: 1rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-          <span style="font-weight: 600; color: white;">🏥 Prescripciones del Sistema</span>
-          <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.1); padding: 0.25rem 0.5rem; border-radius: 12px;">${systemPrescriptions.length} prescripciones</span>
+          <span style="font-weight: 600; color: white;">🏥 Recetas del Sistema</span>
+          <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.1); padding: 0.25rem 0.5rem; border-radius: 12px;">${systemPrescriptions.length} recetas</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
           ${systemPrescriptions.map(p => `
@@ -8480,7 +8480,7 @@ async function renderPrescripciones() {
               <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
                 <span style="font-size: 1.5rem;">${p.type === 'document' ? '📷' : '👨‍⚕️'}</span>
                 <div>
-                  <div style="font-weight: 600; color: white;">${p.type === 'document' ? 'Prescripción digital' : 'Nota médica'}</div>
+                  <div style="font-weight: 600; color: white;">${p.type === 'document' ? 'Receta digital' : 'Nota médica'}</div>
                   <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${new Date(p.createdAt).toLocaleDateString('es-MX')}</div>
                 </div>
               </div>
@@ -8499,7 +8499,7 @@ async function renderPrescripciones() {
     <!-- Profile Switcher (if multiple profiles) -->
     ${allProfiles.length > 1 ? `
       <div style="padding: 1rem; background: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.1);">
-        <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">Ver prescripciones de:</div>
+        <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">Ver recetas de:</div>
         <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem;">
           ${allProfiles.map(profile => `
             <button onclick="switchProfileForPrescripciones('${profile.id}')" style="flex-shrink: 0; padding: 0.5rem 1rem; background: ${profile.id === activeProfileId ? 'rgba(0,168,232,0.3)' : 'rgba(255,255,255,0.08)'}; color: white; border: 1px solid ${profile.id === activeProfileId ? 'rgba(0,168,232,0.5)' : 'rgba(255,255,255,0.15)'}; border-radius: 20px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
@@ -8515,23 +8515,23 @@ async function renderPrescripciones() {
     <div style="padding: 1rem;">
       <div onclick="showUploadPrescriptionModal()" class="glass-card" style="border: 2px dashed rgba(14,165,233,0.5); border-radius: 16px; padding: 1.5rem; text-align: center; cursor: pointer; background: linear-gradient(135deg, rgba(14,165,233,0.1), rgba(14,165,233,0.05));">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📷</div>
-        <div style="font-weight: 600; color: #7dd3fc; margin-bottom: 0.25rem;">Subir Nueva Prescripción</div>
-        <div style="font-size: 0.8rem; color: rgba(125,211,252,0.8);">Escanea o fotografía tu prescripción médica</div>
+        <div style="font-weight: 600; color: #7dd3fc; margin-bottom: 0.25rem;">Subir Nueva Receta</div>
+        <div style="font-size: 0.8rem; color: rgba(125,211,252,0.8);">Escanea o fotografía tu receta médica</div>
       </div>
     </div>
 
     <!-- Active Prescriptions - Glass Cards -->
     <div style="padding: 0 1rem 1rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-        <span style="font-weight: 600; color: white;">💊 Prescripciones Activas</span>
-        <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.1); padding: 0.25rem 0.5rem; border-radius: 12px;">${activePrescriptions.filter(p => !p.status || p.status === 'active').length} prescripciones</span>
+        <span style="font-weight: 600; color: white;">💊 Recetas Activas</span>
+        <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.1); padding: 0.25rem 0.5rem; border-radius: 12px;">${activePrescriptions.filter(p => !p.status || p.status === 'active').length} recetas</span>
       </div>
       
       ${activePrescriptions.filter(p => !p.status || p.status === 'active').length === 0 ? `
         <div class="glass-card" style="text-align: center; padding: 2rem;">
           <div style="font-size: 3rem; margin-bottom: 0.5rem;">📋</div>
-          <div style="color: white; font-size: 0.95rem; margin-bottom: 0.25rem;">No hay prescripciones activas</div>
-          <div style="color: rgba(255,255,255,0.6); font-size: 0.8rem;">Las prescripciones aparecerán aquí</div>
+          <div style="color: white; font-size: 0.95rem; margin-bottom: 0.25rem;">No hay recetas activas</div>
+          <div style="color: rgba(255,255,255,0.6); font-size: 0.8rem;">Las recetas aparecerán aquí</div>
         </div>
       ` : `
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
@@ -8577,7 +8577,7 @@ async function renderPrescripciones() {
     <!-- Past Prescriptions - Glass -->
     ${activePrescriptions.filter(p => p.status === 'used').length > 0 ? `
       <div style="padding: 0 1rem 2rem;">
-        <div style="font-weight: 600; margin-bottom: 0.75rem; color: rgba(255,255,255,0.7);">📁 Historial de Prescripciones</div>
+        <div style="font-weight: 600; margin-bottom: 0.75rem; color: rgba(255,255,255,0.7);">📁 Historial de Recetas</div>
         <div class="glass-card" style="overflow: hidden; padding: 0;">
           ${activePrescriptions.filter(p => p.status === 'used').slice(0, 5).map(p => `
             <div style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
@@ -8632,7 +8632,7 @@ async function renderPrescripciones() {
     <div style="padding: 0 1rem 2rem;">
       <div style="background: #fef3c7; border-radius: 12px; padding: 1rem; font-size: 0.85rem; color: #92400e;">
         <div style="font-weight: 600; margin-bottom: 0.5rem;">💡 Consejo</div>
-        <div>Las prescripciones de consultas médicas (video o presencial) se agregan automáticamente aquí. También puedes escanear prescripciones físicas.</div>
+        <div>Las recetas de consultas médicas (video o presencial) se agregan automáticamente aquí. También puedes escanear recetas físicas.</div>
       </div>
     </div>
   `;
@@ -8654,7 +8654,7 @@ window.showUploadPrescriptionModal = function() {
     <div style="padding: 1rem; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
       <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
       <div>
-        <div style="font-weight: 600;">Subir Prescripción</div>
+        <div style="font-weight: 600;">Subir Receta</div>
       </div>
     </div>
     
@@ -8663,7 +8663,7 @@ window.showUploadPrescriptionModal = function() {
       <div style="background: #f0f9ff; border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem;">
         <span style="font-size: 1.5rem;">${activeProfile?.avatar || '👤'}</span>
         <div>
-          <div style="font-size: 0.8rem; color: #64748b;">Prescripción para:</div>
+          <div style="font-size: 0.8rem; color: #64748b;">Receta para:</div>
           <div style="font-weight: 600; color: #0369a1;">${activeProfile?.name || 'Yo'}</div>
         </div>
       </div>
@@ -8714,7 +8714,7 @@ window.showUploadPrescriptionModal = function() {
           <input type="text" id="manual-med-doctor" placeholder="Nombre del doctor" style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 10px;">
         </div>
         
-        <button onclick="saveManualPrescriptionForPrescripciones()" style="width: 100%; padding: 0.875rem; background: #0ea5e9; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar Prescripción</button>
+        <button onclick="saveManualPrescriptionForPrescripciones()" style="width: 100%; padding: 0.875rem; background: #0ea5e9; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar Receta</button>
       </div>
     </div>
   `;
@@ -8727,7 +8727,7 @@ window.showPrescriptionCamera = function() {
   modal.innerHTML = `
     <div style="background: black; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; overflow-y: auto; padding: 1rem;">
       <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">📷</div>
-      <div style="margin-bottom: 1.25rem;">Enfoca la prescripción en el cuadro</div>
+      <div style="margin-bottom: 1.25rem;">Enfoca la receta en el cuadro</div>
       <div style="width: min(280px, 80vw); height: min(380px, 45dvh); border: 3px solid #0ea5e9; border-radius: 20px; position: relative; margin-bottom: 1.25rem; flex-shrink: 0;">
         <div style="position: absolute; top: 20px; left: 20px; width: 30px; height: 30px; border-top: 4px solid #0ea5e9; border-left: 4px solid #0ea5e9;"></div>
         <div style="position: absolute; top: 20px; right: 20px; width: 30px; height: 30px; border-top: 4px solid #0ea5e9; border-right: 4px solid #0ea5e9;"></div>
@@ -8747,7 +8747,7 @@ window.simulatePrescriptionCapture = async function() {
   modal.innerHTML = `
     <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; text-align: center;">
       <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🔍</div>
-      <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; color: #1e293b;">Analizando prescripción...</div>
+      <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; color: #1e293b;">Analizando receta...</div>
       <div style="color: var(--text-muted);">Detectando medicamentos</div>
     </div>
   `;
@@ -8788,10 +8788,10 @@ window.simulatePrescriptionCapture = async function() {
   modal.innerHTML = `
     <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; text-align: center;">
       <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">✅</div>
-      <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">¡Prescripción guardada!</div>
+      <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">¡Receta guardada!</div>
       <div style="color: var(--text-muted); margin-bottom: 1.5rem;">Amoxicilina 500mg detectada</div>
       ${useSupabase ? `<div style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Guardada en el sistema</div>` : ''}
-      <button onclick="this.closest('.modal-overlay').remove(); renderPrescripciones();" style="padding: 1rem 2rem; background: #0ea5e9; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Ver mis prescripciones</button>
+      <button onclick="this.closest('.modal-overlay').remove(); renderPrescripciones();" style="padding: 1rem 2rem; background: #0ea5e9; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Ver mis recetas</button>
     </div>
   `;
 };
@@ -8829,7 +8829,7 @@ window.handlePrescriptionUpload = async function(input) {
     
     document.querySelector('.modal-overlay').remove();
     renderPrescripciones();
-    showToast(useSupabase ? 'Prescripción subida al sistema' : 'Prescripción guardada localmente', 'success');
+    showToast(useSupabase ? 'Receta subida al sistema' : 'Receta guardada localmente', 'success');
   }
 };
 
@@ -8878,7 +8878,7 @@ window.saveManualPrescriptionForPrescripciones = async function() {
   
   document.querySelector('.modal-overlay').remove();
   renderPrescripciones();
-  showToast(useSupabase ? 'Prescripción guardada en el sistema' : 'Prescripción guardada', 'success');
+  showToast(useSupabase ? 'Receta guardada en el sistema' : 'Receta guardada', 'success');
 };
 
 window.orderPrescription = function(prescriptionId) {
@@ -8886,7 +8886,7 @@ window.orderPrescription = function(prescriptionId) {
   if (!prescription) return;
   
   if (prescription.source === 'supabase') {
-    showToast('Las prescripciones del sistema no se pueden ordenar directamente aún. Contacta a la farmacia.', 'info');
+    showToast('Las recetas del sistema no se pueden ordenar directamente aún. Contacta a la farmacia.', 'info');
     return;
   }
   
@@ -8908,7 +8908,7 @@ window.setReminderForPrescription = function(prescriptionId) {
   if (!prescription) return;
   
   if (prescription.source === 'supabase') {
-    showToast('Los recordatorios solo están disponibles para prescripciones locales aún.', 'info');
+    showToast('Los recordatorios solo están disponibles para recetas locales aún.', 'info');
     return;
   }
   
@@ -8927,11 +8927,11 @@ window.markPrescriptionUsed = function(prescriptionId) {
   const prescription = (window.__prescriptionsCache || []).find(p => p.id === prescriptionId) || Store.getAllPrescriptions().find(p => p.id === prescriptionId);
   
   if (prescription && prescription.source === 'supabase') {
-    showToast('Las prescripciones del sistema no se pueden modificar desde la app aún.', 'info');
+    showToast('Las recetas del sistema no se pueden modificar desde la app aún.', 'info');
     return;
   }
   
-  if (confirm('¿Marcar esta prescripción como utilizada?')) {
+  if (confirm('¿Marcar esta receta como utilizada?')) {
     Store.markPrescriptionUsed(prescriptionId);
     renderPrescripciones();
   }
@@ -9019,7 +9019,7 @@ function renderCaregiver() {
         <div style="font-weight: 600; margin-bottom: 0.75rem; color: var(--text-secondary);">💡 ¿Cómo funciona?</div>
         <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.8;">
           <li>Cada miembro tiene su propio perfil de salud</li>
-          <li>Las prescripciones y citas se guardan por persona</li>
+          <li>Las recetas y citas se guardan por persona</li>
           <li>Puedes cambiar de perfil en cualquier momento</li>
           <li>Ideal para cuidar a niños o adultos mayores</li>
         </ul>
@@ -9050,7 +9050,7 @@ window.deleteFamilyMember = function(profileId) {
   const profile = Store.getProfileById(profileId);
   if (!profile) return;
   
-  if (confirm(`¿Eliminar el perfil de ${profile.name}?\n\nSe perderán todas sus prescripciones y datos de salud.`)) {
+  if (confirm(`¿Eliminar el perfil de ${profile.name}?\n\nSe perderán todas sus recetas y datos de salud.`)) {
     Store.deleteSubProfile(profileId);
     renderCaregiver();
     showToast(`Perfil de ${profile.name} eliminado`, 'info');
@@ -9169,8 +9169,8 @@ async function renderShop() {
   // Categories
   const categories = [
     { id: 'all', name: 'Todos', icon: '📦' },
-    { id: 'otc', name: 'Sin prescripción', icon: '💊' },
-    { id: 'prescription', name: 'Con prescripción', icon: '📋' },
+    { id: 'otc', name: 'Sin receta', icon: '💊' },
+    { id: 'prescription', name: 'Con receta', icon: '📋' },
     { id: 'vitamins', name: 'Vitaminas', icon: '💪' }
   ];
   
@@ -9278,7 +9278,7 @@ async function renderShop() {
           <div style="font-size: 2.5rem;">${med.category === 'prescription' ? '💊' : med.category === 'vitamins' ? '💪' : '💊'}</div>
         </div>
         <div style="flex: 1;">
-          <div style="font-size: 0.65rem; color: ${med.category === 'prescription' ? '#a78bfa' : med.category === 'vitamins' ? '#46AC78' : 'rgba(255,255,255,0.6)'}; margin-bottom: 0.25rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">${med.category === 'prescription' ? 'Con prescripción' : med.category === 'vitamins' ? 'Vitamina' : 'Sin prescripción'}</div>
+          <div style="font-size: 0.65rem; color: ${med.category === 'prescription' ? '#a78bfa' : med.category === 'vitamins' ? '#46AC78' : 'rgba(255,255,255,0.6)'}; margin-bottom: 0.25rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">${med.category === 'prescription' ? 'Con receta' : med.category === 'vitamins' ? 'Vitamina' : 'Sin receta'}</div>
           <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; line-height: 1.3; color: white;">${med.name}</div>
           <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">${med.brand}</div>
           <div style="font-size: 1.1rem; font-weight: 700; color: #c0c0c0;">$${med.price.toFixed(2)}</div>
@@ -9353,7 +9353,7 @@ window.showProductDetail = function(medicineId) {
         </div>
         
         <div style="margin-bottom: 0.5rem;">
-          <span style="background: ${med.category === 'prescription' ? '#dbeafe' : med.category === 'vitamins' ? '#d1fae5' : '#f3f4f6'}; color: ${med.category === 'prescription' ? '#1e40af' : med.category === 'vitamins' ? '#15803d' : 'var(--text-muted)'}; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600;">${med.category === 'prescription' ? 'Requiere prescripción' : med.category === 'vitamins' ? 'Suplemento' : 'Sin prescripción'}</span>
+          <span style="background: ${med.category === 'prescription' ? '#dbeafe' : med.category === 'vitamins' ? '#d1fae5' : '#f3f4f6'}; color: ${med.category === 'prescription' ? '#1e40af' : med.category === 'vitamins' ? '#15803d' : 'var(--text-muted)'}; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600;">${med.category === 'prescription' ? 'Requiere receta' : med.category === 'vitamins' ? 'Suplemento' : 'Sin receta'}</span>
         </div>
         
         <h2 style="margin: 0 0 0.5rem; font-size: 1.25rem;">${med.name}</h2>
@@ -9363,7 +9363,7 @@ window.showProductDetail = function(medicineId) {
         
         ${med.category === 'prescription' ? `
           <div style="background: #fef3c7; border-radius: 12px; padding: 0.875rem; margin-bottom: 1rem;">
-            <div style="font-size: 0.85rem; color: #92400e;">⚠️ Este medicamento requiere prescripción médica. Asegúrate de tener una prescripción válida antes de ordenar.</div>
+            <div style="font-size: 0.85rem; color: #92400e;">⚠️ Este medicamento requiere receta médica. Asegúrate de tener una receta válida antes de ordenar.</div>
           </div>
         ` : ''}
         
@@ -9796,7 +9796,7 @@ async function renderOrders() {
         </button>
         <button onclick="renderPrescripciones()" class="glass-card" style="padding: 1rem; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 0.5rem;">
           <div style="font-size: 1.75rem;">📄</div>
-          <div style="font-size: 0.85rem; font-weight: 600; color: white;">Mis Prescripciones</div>
+          <div style="font-size: 0.85rem; font-weight: 600; color: white;">Mis Recetas</div>
         </button>
       </div>
     </div>
