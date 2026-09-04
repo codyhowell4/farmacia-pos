@@ -63,6 +63,7 @@
 
 html, body {
   min-height: 100vh;
+  min-height: 100dvh;
   background: linear-gradient(180deg, #141B5E 0%, #1E2A8A 55%, #2B37A5 100%);
   background-attachment: fixed;
 }
@@ -76,6 +77,7 @@ body {
   width: 100%;
   max-width: 430px;
   min-height: 100vh;
+  min-height: 100dvh;
   background: transparent;
   position: relative;
   overflow-x: hidden;
@@ -237,7 +239,7 @@ body {
 }
 
 .date-header .title {
-  font-size: 1.75rem;
+  font-size: 1.5rem;
   font-weight: 700;
   margin: 4px 0;
 }
@@ -648,7 +650,7 @@ body {
   border-top: 1px solid var(--card-border);
   display: flex;
   justify-content: space-around;
-  padding: 12px 0 24px;
+  padding: 8px 0 max(20px, env(safe-area-inset-bottom));
   z-index: 100;
 }
 
@@ -657,12 +659,17 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 4px;
-  padding: 8px 16px;
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: 6px 8px;
   color: #94a3b8;
   text-decoration: none;
   font-size: 0.65rem;
   font-weight: 500;
+  white-space: nowrap;
   transition: all 0.2s ease;
 }
 
@@ -1016,6 +1023,7 @@ body {
   width: 100%;
   max-width: 430px;
   max-height: 80vh;
+  max-height: 80dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;

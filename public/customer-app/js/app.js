@@ -110,9 +110,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Show 🔒 badges on paid sections while tier is unknown/free
   updateTierBadges();
   
-  // Set home nav as active by default
+  // Set home nav as active by default (only if present in the bottom nav)
   navItems.forEach(nav => nav.classList.remove('active'));
-  document.querySelector('[data-page="home"]')?.classList.add('active');
+  document.querySelector('.bottom-nav .nav-item[data-page="home"]')?.classList.add('active');
   
   // Initial cart badge update
   updateCartBadge();
@@ -530,17 +530,140 @@ async function handleResetPassword() {
 function renderLocked(featureName) {
   closeMenu();
   mainContent.innerHTML = `
-    <div style="padding: 3rem 1.5rem; text-align: center;">
-      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 2.5rem 1.5rem;">
-        <div style="font-size: 4rem; margin-bottom: 1rem;">🔒</div>
-        <h1 style="margin: 0 0 0.75rem; font-size: 1.4rem; font-weight: 700; color: #1E2A8A;">Disponible con tu Membresía</h1>
-        <p style="margin: 0 auto 1.5rem; max-width: 320px; color: #64748b; font-size: 0.95rem; line-height: 1.5;">
+    <div style="padding: 2rem 1rem; text-align: center;">
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1.5rem 1.25rem;">
+        <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🔒</div>
+        <h1 style="margin: 0 0 0.75rem; font-size: 1.25rem; font-weight: 700; color: #1E2A8A;">Disponible con tu Membresía</h1>
+        <p style="margin: 0 auto 1.25rem; max-width: 320px; color: #64748b; font-size: 0.9rem; line-height: 1.5;">
           ${featureName} es parte de los beneficios de tu Membresía Apollo. Actívala para desbloquear esta y todas las herramientas de salud.
         </p>
-        <a href="/membresias" style="display: inline-block; padding: 0.9rem 2rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border-radius: 12px; font-weight: 600; text-decoration: none;">Ver membresías</a>
+        <a href="/membresias" style="display: inline-block; padding: 0.85rem 1.75rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border-radius: 12px; font-weight: 600; text-decoration: none;">Ver membresías</a>
       </div>
     </div>
   `;
+}
+
+// Membresías page - upsell for guests/free users; status card for active members.
+// Intentionally NOT in PAID_PAGES: it is the upsell page and must stay
+// reachable by free users and guests.
+async function renderMembresias() {
+  const includesHtml = `
+    <div style="display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.9rem; color: #475569;">
+      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Consultas médicas gratis cada mes (2 Individual / 8 Familiar)</span></div>
+      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>50% de descuento en consultas adicionales</span></div>
+      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>10% de descuento en medicamentos</span></div>
+      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Acceso completo a la app: Hoy, Cuerpo, Salud, guías, ID médico y rastreadores</span></div>
+    </div>
+  `;
+
+  mainContent.innerHTML = `
+    <!-- Hero -->
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; text-align: center;">
+      <div style="font-size: 2rem; margin-bottom: 0.5rem;">⭐</div>
+      <h2 style="margin: 0; font-size: 1.4rem; font-weight: 800;">Membresía Apolo</h2>
+      <p style="margin: 0.5rem auto 0; font-size: 0.9rem; opacity: 0.9; max-width: 300px; line-height: 1.5;">Consultas incluidas cada mes, descuentos en medicamentos y acceso completo a todas las herramientas de la app.</p>
+    </div>
+
+    <!-- Qué incluye -->
+    <div style="padding: 1rem;">
+      <div style="background: rgba(255,255,255,0.95); border-radius: 20px; padding: 1.25rem;">
+        <div style="font-weight: 700; font-size: 1rem; color: #1E2A8A; margin-bottom: 0.875rem;">Qué incluye</div>
+        ${includesHtml}
+      </div>
+    </div>
+
+    <!-- Member status / plan cards (resolved async) -->
+    <div id="membresias-status" style="padding: 0 1rem;">
+      <div style="background: rgba(255,255,255,0.95); border-radius: 20px; padding: 2rem 1rem; text-align: center;">
+        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⏳</div>
+        <div style="color: var(--text-muted); font-size: 0.9rem;">Cargando tu membresía...</div>
+      </div>
+    </div>
+  `;
+
+  let membership = { status: null, visits_remaining: 0 };
+  try {
+    membership = await FarmaciaAPI.getMembershipDetails();
+  } catch (e) {
+    console.warn('[renderMembresias] membership lookup failed:', e);
+  }
+  // Bail out if the user navigated away while loading
+  if (currentPage !== 'membresias') return;
+  const statusEl = document.getElementById('membresias-status');
+  if (!statusEl) return;
+
+  if (membership && membership.status === 'active') {
+    // ---- Active member: status card ----
+    const planLabel = membership.plan_type === 'familiar' ? 'Familiar' : 'Individual';
+    const visits = membership.visits_remaining != null ? membership.visits_remaining : 0;
+    const visitsLimit = membership.visits_limit || 0;
+    const renewal = membership.next_renewal_date
+      ? new Date(membership.next_renewal_date + 'T00:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })
+      : null;
+    const rowStyle = 'display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.5rem 0; font-size: 0.9rem;';
+    const labelStyle = 'color: #64748b;';
+    const valueStyle = 'font-weight: 600; color: #1a1a2e; text-align: right;';
+    statusEl.innerHTML = `
+      <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border: 2px solid #bbf7d0; border-radius: 20px; padding: 1.25rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
+          <div style="font-size: 1.75rem;">⭐</div>
+          <div style="flex: 1;">
+            <div style="font-weight: 700; font-size: 1.05rem; color: #15803d;">Tu membresía</div>
+            <div style="font-size: 0.8rem; color: #22c55e; font-weight: 600;">✓ Activa</div>
+          </div>
+          <span style="font-size: 0.75rem; background: #1E2A8A; color: white; padding: 0.25rem 0.625rem; border-radius: 20px; font-weight: 600;">${planLabel}</span>
+        </div>
+        <div style="border-top: 1px solid #bbf7d0; padding-top: 0.25rem;">
+          ${membership.plan_id ? `<div style="${rowStyle}"><span style="${labelStyle}">Número de plan</span><span style="${valueStyle}">${escapeHtml(membership.plan_id)}</span></div>` : ''}
+          <div style="${rowStyle}"><span style="${labelStyle}">Consultas restantes</span><span style="${valueStyle}">${visits}${visitsLimit ? ` de ${visitsLimit}` : ''} este mes</span></div>
+          <div style="${rowStyle}"><span style="${labelStyle}">Descuento en medicamentos</span><span style="${valueStyle}">${membership.discount_percent != null ? membership.discount_percent : 10}%</span></div>
+          ${membership.monthly_amount ? `<div style="${rowStyle}"><span style="${labelStyle}">Mensualidad</span><span style="${valueStyle}">${formatPrice(Number(membership.monthly_amount))}</span></div>` : ''}
+          ${renewal ? `<div style="${rowStyle}"><span style="${labelStyle}">Próxima renovación</span><span style="${valueStyle}">${renewal}</span></div>` : ''}
+        </div>
+      </div>
+    `;
+  } else {
+    // ---- Guest / free user: plan cards + CTAs ----
+    const planCard = (name, subtitle, price, features, highlight) => `
+      <div style="background: rgba(255,255,255,0.97); border-radius: 20px; padding: 1.25rem; border: ${highlight ? '2px solid #E0A63E' : '1px solid #E3E8F2'}; position: relative; margin-bottom: 1rem;">
+        ${highlight ? `<div style="position: absolute; top: -10px; right: 16px; background: #E0A63E; color: #141B5E; font-size: 0.7rem; font-weight: 700; padding: 0.25rem 0.625rem; border-radius: 20px;">MEJOR VALOR</div>` : ''}
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; margin-bottom: 0.875rem;">
+          <div>
+            <div style="font-weight: 700; font-size: 1.05rem; color: #1E2A8A;">${name}</div>
+            <div style="font-size: 0.8rem; color: #64748b;">${subtitle}</div>
+          </div>
+          <div style="text-align: right; flex-shrink: 0;">
+            <span style="font-size: 1.5rem; font-weight: 800; color: #1a1a2e;">${price}</span>
+            <span style="font-size: 0.75rem; color: #64748b;">/mes</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem; color: #475569; margin-bottom: 1rem;">
+          ${features.map(f => `<div style="display: flex; gap: 0.5rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>${f}</span></div>`).join('')}
+        </div>
+        <a href="/membresias" style="display: block; text-align: center; padding: 0.85rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border-radius: 12px; font-weight: 600; text-decoration: none;">Obtener membresía</a>
+      </div>
+    `;
+    statusEl.innerHTML = `
+      ${planCard('Individual', 'Para ti', '$150', [
+        '2 consultas médicas gratis al mes',
+        '50% de descuento en consultas adicionales',
+        '10% de descuento en medicamentos',
+        'Acceso completo a la app'
+      ], false)}
+      ${planCard('Familiar', 'Para toda la familia', '$500', [
+        '8 consultas médicas gratis al mes',
+        'Cobertura para toda la familia',
+        '50% de descuento en consultas adicionales',
+        '10% de descuento en medicamentos',
+        'Acceso completo a la app'
+      ], true)}
+      ${!currentAuthUser ? `
+        <div style="text-align: center; padding: 0 0 0.5rem; font-size: 0.85rem; color: rgba(255,255,255,0.8);">
+          ¿Ya eres miembro? <a href="#" onclick="renderLogin(); return false;" style="color: #46AC78; font-weight: 600; text-decoration: none;">Inicia sesión</a>
+        </div>
+      ` : ''}
+    `;
+  }
 }
 
 // Add/remove 🔒 badges on nav tabs and menu items for paid pages (free tier only)
@@ -865,6 +988,7 @@ function renderPage(page) {
     case 'health': renderSalud(); break;
     case 'consulta': renderConsulta(); break;
     case 'appointments': renderAppointments(); break;
+    case 'membresias': renderMembresias(); break;
     case 'prescripciones': renderPrescripciones(); break;
     case 'caregiver': renderCaregiver(); break;
     case 'store': renderStore(); break;
@@ -1761,8 +1885,8 @@ function renderStore() {
       <div style="font-weight: 600; color: white; margin-bottom: 0.75rem; font-size: 1rem;">📋 Catálogo de Medicamentos (${medicines.length})</div>
       
       ${medicines.length === 0 ? `
-        <div class="glass-card" style="text-align: center; padding: 3rem 1rem;">
-          <div style="font-size: 3rem; margin-bottom: 0.5rem;">📦</div>
+        <div class="glass-card" style="text-align: center; padding: 2rem 1rem;">
+          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📦</div>
           <div style="color: white; font-size: 1rem;">No hay medicamentos disponibles</div>
           <div style="color: rgba(255,255,255,0.6); font-size: 0.85rem; margin-top: 0.5rem;">Intenta más tarde</div>
         </div>
@@ -3682,6 +3806,7 @@ window.renderShop = renderShop;
 window.renderForgotPassword = renderForgotPassword;
 window.renderResetPassword = renderResetPassword;
 window.renderLocked = renderLocked;
+window.renderMembresias = renderMembresias;
 window.renderPage = renderPage;
 window.handleLogin = handleLogin;
 window.handleSignup = handleSignup;
@@ -6656,7 +6781,7 @@ window.showChatConsulta = function() {
   
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
-  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100%; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
+  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100dvh; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
   modal.innerHTML = `
     <!-- Chat Header -->
     <div style="padding: 1rem; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
@@ -7008,7 +7133,7 @@ window.showVideoConsulta = function() {
 
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
-  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100%; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
+  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100dvh; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
   modal.innerHTML = `
     <!-- Header -->
     <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
@@ -7272,7 +7397,7 @@ function renderVideoSlots(slots) {
   container.innerHTML = `
     <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;">
       ${slots.map(time => `
-        <button onclick="selectVideoTime(this, '${time}')" class="video-time-btn" style="padding: 0.75rem; border: 1px solid var(--border-color); background: white; border-radius: 10px; cursor: pointer; font-size: 0.9rem;">${time}</button>
+        <button onclick="selectVideoTime(this, '${time}')" class="video-time-btn" style="padding: 0.625rem 0.5rem; min-height: 44px; border: 1px solid var(--border-color); background: white; border-radius: 10px; cursor: pointer; font-size: 0.9rem;">${time}</button>
       `).join('')}
     </div>
   `;
@@ -7402,8 +7527,8 @@ function renderVideoRequestSent(doctor, date, time) {
   const modal = document.querySelector('.modal-overlay');
   if (!modal) return;
   modal.innerHTML = `
-    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; text-align: center;">
-      <div style="font-size: 5rem; margin-bottom: 1rem;">✅</div>
+    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; text-align: center;">
+      <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
       <h2 style="color: #1E2A8A; margin: 0 0 0.5rem;">¡Solicitud enviada!</h2>
       <p style="color: var(--text-muted); margin-bottom: 0.5rem;">${escapeHtml(doctor?.full_name || 'Médico')}<br>${formatVideoDate(date)} a las ${time}</p>
       <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 1rem; margin: 1rem 0 1.5rem; font-size: 0.9rem; color: #15803d;">
@@ -7545,8 +7670,8 @@ function renderVideoPaymentSuccess(result) {
   if (!modal) return;
   console.log('[confirmVideoBooking] Payment captured, appointment confirmed:', result);
   modal.innerHTML = `
-    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; text-align: center;">
-      <div style="font-size: 5rem; margin-bottom: 1rem;">✅</div>
+    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; text-align: center;">
+      <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
       <h2 style="color: #1E2A8A; margin: 0 0 0.5rem;">¡Pago confirmado!</h2>
       <p style="color: var(--text-muted); margin-bottom: 0.5rem;">${escapeHtml(ctx?.doctor?.full_name || 'Médico')}<br>${formatVideoDate(ctx?.date)} a las ${ctx?.time || ''}</p>
       <div style="background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 1rem; margin: 1rem 0 1.5rem; font-size: 0.9rem; color: #1E2A8A;">
@@ -7580,7 +7705,7 @@ window.showInPersonConsulta = function() {
   
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
-  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100%; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
+  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100dvh; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
   modal.innerHTML = `
     <!-- Header -->
     <div style="padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
@@ -7823,13 +7948,13 @@ window.confirmInPersonBooking = async function(locationId) {
   Store.updateLocationWaitTime(locationId, location.currentWait + 15);
   
   document.querySelector('.modal-overlay').innerHTML = `
-    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; text-align: center;">
-      <div style="font-size: 5rem; margin-bottom: 1rem;">✅</div>
+    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; text-align: center; overflow-y: auto;">
+      <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
       <h2 style="color: #46AC78; margin: 0 0 0.5rem;">¡Estás en la lista!</h2>
       
-      <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-radius: 16px; padding: 1.5rem; margin: 1.5rem 0; width: 100%; max-width: 300px;">
+      <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-radius: 16px; padding: 1.25rem; margin: 1rem 0; width: 100%; max-width: 300px;">
         <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Tu posición en la fila:</div>
-        <div style="font-size: 4rem; font-weight: 700; color: #46AC78;">#${queuePosition}</div>
+        <div style="font-size: 3rem; font-weight: 700; color: #46AC78;">#${queuePosition}</div>
         <div style="font-size: 0.9rem; color: #22c55e; margin-top: 0.5rem;">
           Tiempo estimado: ${location.currentWait} min
         </div>
@@ -7868,7 +7993,7 @@ async function renderAppointments() {
         <button onclick="renderConsulta()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Nueva</button>
       </div>
     </div>
-    <div style="padding: 3rem 1rem; text-align: center;">
+    <div style="padding: 2rem 1rem; text-align: center;">
       <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
       <div style="color: white; font-size: 1rem;">Cargando citas...</div>
     </div>
@@ -7977,8 +8102,8 @@ async function renderAppointments() {
       <div style="font-weight: 600; margin-bottom: 0.75rem; color: var(--text-secondary);">Próximas citas:</div>
       
       ${!hasUpcoming ? `
-        <div style="text-align: center; padding: 3rem 1rem; color: var(--text-muted);">
-          <div style="font-size: 4rem; margin-bottom: 0.5rem;">📅</div>
+        <div style="text-align: center; padding: 2rem 1rem; color: var(--text-muted);">
+          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📅</div>
           <div style="font-size: 1rem; margin-bottom: 0.5rem;">No tienes citas programadas</div>
           <div style="font-size: 0.85rem; margin-bottom: 1rem;">Agenda una consulta cuando la necesites</div>
           <button onclick="renderConsulta()" style="padding: 0.75rem 1.5rem; background: #1E2A8A; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Agendar ahora</button>
@@ -8290,7 +8415,7 @@ async function renderPrescripciones() {
         <button onclick="showUploadPrescriptionModal()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Subir</button>
       </div>
     </div>
-    <div style="padding: 3rem 1rem; text-align: center;">
+    <div style="padding: 2rem 1rem; text-align: center;">
       <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
       <div style="color: white; font-size: 1rem;">Cargando prescripciones...</div>
     </div>
@@ -8523,7 +8648,7 @@ window.showUploadPrescriptionModal = function() {
   
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
-  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100%; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
+  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100dvh; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
   modal.innerHTML = `
     <!-- Header -->
     <div style="padding: 1rem; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
@@ -8545,8 +8670,8 @@ window.showUploadPrescriptionModal = function() {
       
       <!-- Upload Options -->
       <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem;">
-        <div onclick="showPrescriptionCamera()" style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 2px dashed #0ea5e9; border-radius: 16px; padding: 2rem; text-align: center; cursor: pointer;">
-          <div style="font-size: 3rem; margin-bottom: 0.5rem;">📷</div>
+        <div onclick="showPrescriptionCamera()" style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 2px dashed #0ea5e9; border-radius: 16px; padding: 1.5rem; text-align: center; cursor: pointer;">
+          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📷</div>
           <div style="font-weight: 600; color: #0369a1; margin-bottom: 0.25rem;">Tomar Foto</div>
           <div style="font-size: 0.8rem; color: #0ea5e9;">Usa la cámara de tu teléfono</div>
         </div>
@@ -8600,10 +8725,10 @@ window.showPrescriptionCamera = function() {
   // Simulate camera - in real app would use device camera
   const modal = document.querySelector('.modal-overlay');
   modal.innerHTML = `
-    <div style="background: black; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white;">
-      <div style="font-size: 4rem; margin-bottom: 1rem;">📷</div>
-      <div style="margin-bottom: 2rem;">Enfoca la prescripción en el cuadro</div>
-      <div style="width: 280px; height: 380px; border: 3px solid #0ea5e9; border-radius: 20px; position: relative; margin-bottom: 2rem;">
+    <div style="background: black; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; overflow-y: auto; padding: 1rem;">
+      <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">📷</div>
+      <div style="margin-bottom: 1.25rem;">Enfoca la prescripción en el cuadro</div>
+      <div style="width: min(280px, 80vw); height: min(380px, 45dvh); border: 3px solid #0ea5e9; border-radius: 20px; position: relative; margin-bottom: 1.25rem; flex-shrink: 0;">
         <div style="position: absolute; top: 20px; left: 20px; width: 30px; height: 30px; border-top: 4px solid #0ea5e9; border-left: 4px solid #0ea5e9;"></div>
         <div style="position: absolute; top: 20px; right: 20px; width: 30px; height: 30px; border-top: 4px solid #0ea5e9; border-right: 4px solid #0ea5e9;"></div>
         <div style="position: absolute; bottom: 20px; left: 20px; width: 30px; height: 30px; border-bottom: 4px solid #0ea5e9; border-left: 4px solid #0ea5e9;"></div>
@@ -8620,9 +8745,9 @@ window.showPrescriptionCamera = function() {
 window.simulatePrescriptionCapture = async function() {
   const modal = document.querySelector('.modal-overlay');
   modal.innerHTML = `
-    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; text-align: center;">
-      <div style="font-size: 4rem; margin-bottom: 1rem;">🔍</div>
-      <div style="font-size: 1.2rem; font-weight: 600; margin-bottom: 0.5rem; color: #1e293b;">Analizando prescripción...</div>
+    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; text-align: center;">
+      <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🔍</div>
+      <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; color: #1e293b;">Analizando prescripción...</div>
       <div style="color: var(--text-muted);">Detectando medicamentos</div>
     </div>
   `;
@@ -8661,10 +8786,10 @@ window.simulatePrescriptionCapture = async function() {
   }
   
   modal.innerHTML = `
-    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; text-align: center;">
-      <div style="font-size: 4rem; margin-bottom: 1rem;">✅</div>
-      <div style="font-size: 1.2rem; font-weight: 600; margin-bottom: 0.5rem;">¡Prescripción guardada!</div>
-      <div style="color: var(--text-muted); margin-bottom: 2rem;">Amoxicilina 500mg detectada</div>
+    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; text-align: center;">
+      <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">✅</div>
+      <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">¡Prescripción guardada!</div>
+      <div style="color: var(--text-muted); margin-bottom: 1.5rem;">Amoxicilina 500mg detectada</div>
       ${useSupabase ? `<div style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Guardada en el sistema</div>` : ''}
       <button onclick="this.closest('.modal-overlay').remove(); renderPrescripciones();" style="padding: 1rem 2rem; background: #0ea5e9; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Ver mis prescripciones</button>
     </div>
@@ -9088,7 +9213,7 @@ async function renderShop() {
     <!-- Products Grid - Loading -->
     <div style="padding: 1rem;">
       <div id="products-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem;">
-        <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 3rem 1rem;">
+        <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 2rem 1rem;">
           <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
           <div style="color: white; font-size: 1rem;">Cargando productos...</div>
         </div>
@@ -9096,9 +9221,9 @@ async function renderShop() {
     </div>
     
     <!-- Empty State (hidden by default) -->
-    <div id="no-products" style="display: none; text-align: center; padding: 3rem 1rem;">
-      <div class="glass-card" style="padding: 2rem;">
-        <div style="font-size: 4rem; margin-bottom: 0.5rem;">🔍</div>
+    <div id="no-products" style="display: none; text-align: center; padding: 2rem 1rem;">
+      <div class="glass-card" style="padding: 1.5rem;">
+        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🔍</div>
         <div style="color: white;">No se encontraron productos</div>
       </div>
     </div>
@@ -9140,8 +9265,8 @@ async function renderShop() {
   
   if (medicines.length === 0) {
     grid.innerHTML = `
-      <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 3rem 1rem;">
-        <div style="font-size: 3rem; margin-bottom: 0.5rem;">📦</div>
+      <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 2rem 1rem;">
+        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📦</div>
         <div style="color: white; font-size: 1rem; margin-bottom: 0.25rem;">No hay productos disponibles</div>
         <div style="color: rgba(255,255,255,0.6); font-size: 0.85rem;">Intenta más tarde o contacta a la farmacia</div>
       </div>
@@ -9217,37 +9342,37 @@ window.showProductDetail = function(medicineId) {
   
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
-  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100%; background: rgba(0,0,0,0.5); display: flex; flex-direction: column; justify-content: flex-end; z-index: 1000;';
+  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100dvh; background: rgba(0,0,0,0.5); display: flex; flex-direction: column; justify-content: flex-end; z-index: 1000;';
   modal.innerHTML = `
-    <div style="background: white; border-radius: 20px 20px 0 0; width: 100%; max-height: 85vh; overflow-y: auto;">
-      <div style="padding: 1.5rem;">
+    <div style="background: white; border-radius: 20px 20px 0 0; width: 100%; max-height: 85dvh; overflow-y: auto;">
+      <div style="padding: 1.25rem;">
         <button onclick="this.closest('.modal-overlay').remove()" style="position: absolute; top: 1rem; right: 1rem; background: #f3f4f6; border: none; width: 36px; height: 36px; border-radius: 50%; font-size: 1.25rem; cursor: pointer;">×</button>
         
-        <div style="background: ${med.category === 'prescription' ? '#dbeafe' : med.category === 'vitamins' ? '#f0fdf4' : '#f8fafc'}; border-radius: 16px; padding: 2rem; text-align: center; margin-bottom: 1.5rem;">
-          <div style="font-size: 4rem;">${med.category === 'prescription' ? '💊' : med.category === 'vitamins' ? '💪' : '💊'}</div>
+        <div style="background: ${med.category === 'prescription' ? '#dbeafe' : med.category === 'vitamins' ? '#f0fdf4' : '#f8fafc'}; border-radius: 16px; padding: 1.25rem; text-align: center; margin-bottom: 1rem;">
+          <div style="font-size: 2.5rem;">${med.category === 'prescription' ? '💊' : med.category === 'vitamins' ? '💪' : '💊'}</div>
         </div>
         
         <div style="margin-bottom: 0.5rem;">
           <span style="background: ${med.category === 'prescription' ? '#dbeafe' : med.category === 'vitamins' ? '#d1fae5' : '#f3f4f6'}; color: ${med.category === 'prescription' ? '#1e40af' : med.category === 'vitamins' ? '#15803d' : 'var(--text-muted)'}; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600;">${med.category === 'prescription' ? 'Requiere prescripción' : med.category === 'vitamins' ? 'Suplemento' : 'Sin prescripción'}</span>
         </div>
         
-        <h2 style="margin: 0 0 0.5rem; font-size: 1.4rem;">${med.name}</h2>
-        <div style="color: var(--text-muted); margin-bottom: 1rem;">${med.brand}</div>
+        <h2 style="margin: 0 0 0.5rem; font-size: 1.25rem;">${med.name}</h2>
+        <div style="color: var(--text-muted); margin-bottom: 0.75rem; font-size: 0.9rem;">${med.brand}</div>
         
-        <div style="font-size: 1.75rem; font-weight: 700; color: #1E2A8A; margin-bottom: 1.5rem;">$${med.price.toFixed(2)}</div>
+        <div style="font-size: 1.5rem; font-weight: 700; color: #1E2A8A; margin-bottom: 1rem;">$${med.price.toFixed(2)}</div>
         
         ${med.category === 'prescription' ? `
-          <div style="background: #fef3c7; border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;">
+          <div style="background: #fef3c7; border-radius: 12px; padding: 0.875rem; margin-bottom: 1rem;">
             <div style="font-size: 0.85rem; color: #92400e;">⚠️ Este medicamento requiere prescripción médica. Asegúrate de tener una prescripción válida antes de ordenar.</div>
           </div>
         ` : ''}
         
-        <div style="margin-bottom: 1.5rem;">
+        <div style="margin-bottom: 1rem;">
           <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem;">Cantidad</label>
           <div style="display: flex; align-items: center; gap: 1rem;">
-            <button onclick="updateDetailQty(-1)" style="width: 40px; height: 40px; background: #f3f4f6; border: none; border-radius: 10px; font-size: 1.25rem; cursor: pointer;">−</button>
+            <button onclick="updateDetailQty(-1)" style="width: 44px; height: 44px; background: #f3f4f6; border: none; border-radius: 10px; font-size: 1.25rem; cursor: pointer;">−</button>
             <span id="detail-qty" style="font-size: 1.25rem; font-weight: 600; min-width: 40px; text-align: center;">1</span>
-            <button onclick="updateDetailQty(1)" style="width: 40px; height: 40px; background: #f3f4f6; border: none; border-radius: 10px; font-size: 1.25rem; cursor: pointer;">+</button>
+            <button onclick="updateDetailQty(1)" style="width: 44px; height: 44px; background: #f3f4f6; border: none; border-radius: 10px; font-size: 1.25rem; cursor: pointer;">+</button>
           </div>
         </div>
         
@@ -9300,7 +9425,7 @@ window.showCart = function() {
   
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
-  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100%; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
+  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100dvh; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
   modal.innerHTML = `
     <!-- Header -->
     <div style="padding: 1rem; background: #1E2A8A; color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
@@ -9319,9 +9444,9 @@ window.showCart = function() {
               <div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 0.25rem;">${item.name}</div>
               <div style="font-size: 0.8rem; color: var(--text-muted);">$${item.price.toFixed(2)} c/u</div>
               <div style="display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem;">
-                <button onclick="updateCartItemQty('${item.medicineId}', -1)" style="width: 28px; height: 28px; background: #f3f4f6; border: none; border-radius: 6px; cursor: pointer;">−</button>
+                <button onclick="updateCartItemQty('${item.medicineId}', -1)" style="width: 44px; height: 44px; background: #f3f4f6; border: none; border-radius: 10px; font-size: 1.1rem; cursor: pointer;">−</button>
                 <span style="font-weight: 600; min-width: 24px; text-align: center;">${item.quantity}</span>
-                <button onclick="updateCartItemQty('${item.medicineId}', 1)" style="width: 28px; height: 28px; background: #f3f4f6; border: none; border-radius: 6px; cursor: pointer;">+</button>
+                <button onclick="updateCartItemQty('${item.medicineId}', 1)" style="width: 44px; height: 44px; background: #f3f4f6; border: none; border-radius: 10px; font-size: 1.1rem; cursor: pointer;">+</button>
               </div>
             </div>
             <div style="text-align: right;">
@@ -9510,8 +9635,8 @@ window.processOrder = async function() {
   
   const modal = document.querySelector('.modal-overlay');
   modal.innerHTML = `
-    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; text-align: center;">
-      <div style="font-size: 5rem; margin-bottom: 1rem;">✅</div>
+    <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; text-align: center;">
+      <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
       <h2 style="color: #46AC78; margin: 0 0 0.5rem;">¡Orden confirmada!</h2>
       <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Pedido #${order.id}</p>
       ${useSupabase ? `<p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Guardado en tu historial</p>` : ''}
@@ -9540,8 +9665,8 @@ async function renderOrders() {
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Historial de compras</p>
     </div>
     
-    <div style="padding: 3rem 1rem; text-align: center;">
-      <div class="glass-card" style="padding: 2rem;">
+    <div style="padding: 2rem 1rem; text-align: center;">
+      <div class="glass-card" style="padding: 1.5rem;">
         <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
         <div style="color: white; font-size: 1rem;">Cargando pedidos...</div>
       </div>
@@ -9610,8 +9735,8 @@ async function renderOrders() {
       <div style="font-weight: 600; color: white; margin-bottom: 0.75rem; font-size: 1rem;">📋 Historial de Compras</div>
       
       ${orders.length === 0 ? `
-        <div class="glass-card" style="text-align: center; padding: 3rem 1rem;">
-          <div style="font-size: 3rem; margin-bottom: 0.5rem;">📦</div>
+        <div class="glass-card" style="text-align: center; padding: 2rem 1rem;">
+          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📦</div>
           <div style="color: white; font-size: 1rem; margin-bottom: 0.25rem;">No tienes pedidos aún</div>
           <div style="color: rgba(255,255,255,0.6); font-size: 0.85rem; margin-bottom: 1rem;">Tus compras aparecerán aquí</div>
           <button onclick="renderShop()" style="padding: 0.75rem 1.5rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Ir a la tienda</button>
@@ -9696,7 +9821,7 @@ window.showOrderDetail = function(orderId) {
   modal.className = 'modal-overlay';
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: flex-end; z-index: 1000;';
   modal.innerHTML = `
-    <div style="background: linear-gradient(135deg, #0f172a, #1e293b); width: 100%; max-width: 430px; max-height: 85vh; overflow-y: auto; border-radius: 24px 24px 0 0; animation: slideUp 0.3s ease;">
+    <div style="background: linear-gradient(135deg, #0f172a, #1e293b); width: 100%; max-width: 430px; max-height: 85dvh; overflow-y: auto; border-radius: 24px 24px 0 0; animation: slideUp 0.3s ease;">
       <!-- Header -->
       <div style="padding: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #1E2A8A, #141B5E);">
         <div>

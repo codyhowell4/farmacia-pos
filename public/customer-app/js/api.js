@@ -727,7 +727,8 @@ window.FarmaciaAPI = (function () {
 
     /**
      * Get the active membership row for the current customer.
-     * Returns the active row (status, visits_remaining, discount_percent, plan_id)
+     * Returns the active row (status, visits_remaining, discount_percent, plan_id,
+     * plan_type, visits_limit, monthly_amount, next_renewal_date)
      * or a 'free' fallback shape when there is no active membership.
      */
     async getMembershipDetails() {
@@ -737,11 +738,20 @@ window.FarmaciaAPI = (function () {
         const customerId = await getCustomerId();
         if (!customerId) return freeFallback;
 
-        const { data, error } = await sb
+        // Extended select; if the live DB is missing any of the newer
+        // columns, retry with the original minimal set.
+        let { data, error } = await sb
           .from('memberships')
-          .select('status, visits_remaining, discount_percent, plan_id')
+          .select('status, visits_remaining, discount_percent, plan_id, plan_type, visits_limit, monthly_amount, next_renewal_date')
           .eq('customer_id', customerId);
-        if (error) throw error;
+        if (error) {
+          const retry = await sb
+            .from('memberships')
+            .select('status, visits_remaining, discount_percent, plan_id')
+            .eq('customer_id', customerId);
+          if (retry.error) throw retry.error;
+          data = retry.data;
+        }
 
         const active = (data || []).find(row => row.status === 'active');
         return active || freeFallback;
