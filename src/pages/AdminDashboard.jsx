@@ -6,7 +6,7 @@ import {
   Users, Package, ShoppingCart, LogOut, BarChart3, Ticket, Menu, X, Clock, Shield,
   Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle, Stethoscope, Smartphone,
   ClipboardList, Pill, CalendarDays, AlertTriangle, ChevronDown, ChevronRight, UserPlus,
-  Award,
+  Award, FileSignature,
 } from 'lucide-react';
 import ApoloBrand from '@/components/ApoloBrand';
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,7 @@ import AdminCustomerProfile from '@/components/admin/AdminCustomerProfile';
 import AdminReorderReport from '@/components/admin/AdminReorderReport';
 import MembershipRegistration from '@/components/admin/MembershipRegistration';
 import AdminMemberships from '@/components/admin/AdminMemberships';
+import AdminConsents from '@/components/admin/AdminConsents';
 
 const AdminDashboard = () => {
   const { logout, user } = useAuth();
@@ -59,6 +60,7 @@ const AdminDashboard = () => {
     if (path.includes('/accounting')) return 'accounting';
     if (path.includes('/doctors')) return 'doctors';
     if (path.includes('/prescriptions')) return 'prescriptions';
+    if (path.includes('/consents')) return 'consents';
     if (path.includes('/preorders')) return 'preorders';
     if (path.includes('/appointments')) return 'appointments';
     if (path.includes('/orders')) return 'orders';
@@ -192,6 +194,10 @@ const AdminDashboard = () => {
       <button onClick={() => navigateTo('/admin/prescriptions', 'prescriptions')} className={navButtonClass(isActive('prescriptions'))}>
         <ClipboardList className="w-5 h-5" />
         <span className="font-medium">Recetas médicas</span>
+      </button>
+      <button onClick={() => navigateTo('/admin/consents', 'consents')} className={navButtonClass(isActive('consents'))}>
+        <FileSignature className="w-5 h-5" />
+        <span className="font-medium">Consentimientos</span>
       </button>
       <button onClick={() => navigateTo('/admin/memberships', 'memberships')} className={navButtonClass(isActive('memberships'))}>
         <Award className="w-5 h-5" />
@@ -356,6 +362,7 @@ const AdminDashboard = () => {
                 <Route path="/accounting" element={<AdminAccounting />} />
                 <Route path="/doctors" element={<AdminDoctors />} />
                 <Route path="/prescriptions" element={<AdminPrescriptions />} />
+                <Route path="/consents" element={<AdminConsents />} />
                 <Route path="/preorders" element={<AdminPreorders />} />
                 <Route path="/appointments" element={<AdminAppointments />} />
                 <Route path="/orders" element={<AdminOrders />} />

@@ -1753,6 +1753,18 @@ export const getConsentDocuments = async (customerId) => {
   return data || [];
 };
 
+// Org-wide list for the admin "Consentimientos" page (staff RLS policy).
+export const getAllConsentDocuments = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('consent_documents')
+    .select('*, customers(full_name, email)')
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
 export const updateConsentStatus = async (id, { status, signer_name = null }) => {
   const { data, error } = await supabase
     .from('consent_documents')
