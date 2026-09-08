@@ -9,7 +9,7 @@ The frontend is 100% static (Vite build + the vanilla customer app) — any stat
 | **Cloudflare Pages** (`apolofarmacia`) | Production | `app.apolofarmacia.com.mx` (+ `apolofarmacia.pages.dev`) |
 | **Vercel** | Testing / staging front-end | `farmacia-pos.vercel.app` |
 
-The apex domain (`apolofarmacia.com.mx` / `www`) is **reserved for the future marketing website** — no DNS records point it anywhere yet. The app lives on the `app.` subdomain.
+The apex domain (`apolofarmacia.com.mx` / `www`) is **reserved for the future marketing website**. The app lives on the `app.` subdomain. For now the apex only has one rule: `apolofarmacia.com.mx/membresias` (and `www`) → **301 redirect** to `https://app.apolofarmacia.com.mx/membresias` (Cloudflare Redirect Rule + AAAA `100::` discard records so the edge can answer). When the website lands, point the apex at it and remove the discard records.
 
 Both auto-deploy the same `main` branch on every push. **Both point at the same Supabase project** — same database, same auth, same edge functions. Testing on the Vercel URL touches production data; treat it as "preview the build", not an isolated sandbox.
 

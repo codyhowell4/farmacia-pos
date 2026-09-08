@@ -15,7 +15,7 @@ no-op, not a failure.**
 | Secreto | Para qué / Purpose |
 | --- | --- |
 | `RESEND_API_KEY` | API key de [Resend](https://resend.com) para el canal `email`. Si falta, los emails se marcan `skipped`. |
-| `EMAIL_FROM` | Remitente. Default: `Farmacia Apolo <citas@farmaciaapolo.com>`. El dominio debe estar verificado en Resend. |
+| `EMAIL_FROM` | Remitente. Configurado: `Farmacia Apolo <citas@apolofarmacia.com.mx>`. El dominio (`apolofarmacia.com.mx`) está verificado en Resend. |
 | `WHATSAPP_TOKEN` | Token permanente de la WhatsApp Cloud API (Meta). Cubre los canales `whatsapp` y `sms`. Si falta, esas filas se marcan `skipped`. |
 | `WHATSAPP_PHONE_ID` | *Phone number ID* de Meta (no el número visible; el ID del panel de Meta). |
 | `CRON_SECRET` | Opcional pero recomendado. Si existe, la función exige el header `x-cron-secret` con este valor. Genera uno aleatorio (`openssl rand -hex 32`). |
