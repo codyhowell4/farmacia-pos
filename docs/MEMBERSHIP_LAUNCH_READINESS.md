@@ -10,14 +10,13 @@ Audit date: 2026-05-21. Scope: full membership flow (public signup, staff regist
 
 **All 6 blockers are fixed in code.** What changed: B1 + B4 → `supabase/functions/paypal-webhook/index.ts` rewritten (reads `billing_agreement_id`, resets `visits_remaining` on renewal, verifies PayPal signatures via `PAYPAL_WEBHOOK_ID`, duplicates return 200, SUSPENDED now maps to `paused`). B2 → constraint fix in `MIGRATION_membership_launch_fixes.sql`. B3 → cash branch removed from `paypal-subscription/index.ts`. B5 → `paypal-subscription-status` now requires a staff JWT (gateway `verify_jwt = true` + in-function admin/pos check; the admin UI sends the session token). B6 → staff cash registrations now store `payment_processor: null` and the migration cleans existing rows.
 
-Remaining manual steps before launch:
+**Deployment status (all done, same day):**
+- ✅ Migrations applied via `db push` (launch fixes + partners)
+- ✅ Edge functions deployed (`paypal-webhook`, `paypal-subscription`, `paypal-subscription-status`)
+- ✅ PayPal live verified end-to-end: live credential pair + both plans ACTIVE at correct prices ($150/$500 MXN); webhook `6H6817665D674413C` subscribed to all events; all secrets set (`PAYPAL_CLIENT_ID/SECRET`, `PAYPAL_ENV=live`, plan IDs, `PAYPAL_WEBHOOK_ID`); signature verification proven live — genuine events → 200, forged event → 400.
+- ✅ Hosting: Cloudflare Pages production at `https://app.apolofarmacia.com.mx` (see `docs/HOSTING.md`); Supabase Auth URLs updated.
 
-1. **Apply migrations** (Supabase SQL editor):
-   - `supabase/migrations/MIGRATION_membership_launch_fixes.sql` (B2 constraint + B6 data fix)
-   - `supabase/migrations/MIGRATION_partners.sql` (new partners feature)
-2. **Deploy edge functions**: `supabase functions deploy paypal-webhook paypal-subscription paypal-subscription-status`
-3. **Set secret** `PAYPAL_WEBHOOK_ID` (from the PayPal dashboard webhook registration) — the webhook now **fails closed** without it, so nothing processes until this is set.
-4. PayPal live setup + E2E test per §4 below.
+Remaining before announcing: one real-money signup test (then cancel/refund from PayPal), and clean up the Aug 31–Sep 3 test memberships/subscriptions (visible in Admin → Membresías and the PayPal dashboard).
 
 Also shipped in the same pass:
 - Premium tracker upgrade hidden in both signup flows (no premium stock yet); basic tracker UI unchanged.
