@@ -203,6 +203,11 @@ export const deleteInventoryItem = async (id) => {
   if (error) throw error;
 };
 
+// Services (tipo = 'Servicio') don't track stock. Values seen in the wild:
+// 'service' (UI/CSV import) and legacy 'servicio' (CONSULTA MEDICA MEMBRESIA).
+export const isServiceItem = (item) =>
+  ['service', 'servicio'].includes((item?.item_type || 'product').toString().trim().toLowerCase());
+
 export const logInventoryMovement = async (movement) => {
   try {
     const orgId = await getOrgId();
@@ -240,13 +245,17 @@ export const decrementInventory = async (items, referenceId = null, referenceTyp
       console.error('[decrementInventory] No inventory_id found for item:', item);
       continue;
     }
-    
+
     // Get current quantity before decrementing
-    const { data: current, error: fetchError } = await supabase.from('inventory').select('quantity, sales_count').eq('id', inventoryId).single();
+    const { data: current, error: fetchError } = await supabase.from('inventory').select('quantity, sales_count, item_type').eq('id', inventoryId).single();
     if (fetchError) {
       console.error('[decrementInventory] Failed to fetch current inventory:', fetchError);
       continue;
     }
+
+    // Services don't track stock — nothing to decrement
+    if (isServiceItem(current)) continue;
+
     const prevQty = current?.quantity || 0;
     
     const { error } = await supabase.rpc('decrement_inventory', {
@@ -300,12 +309,15 @@ export const incrementInventory = async (items, referenceId = null, referenceTyp
       continue;
     }
     
-    const { data: current, error: fetchError } = await supabase.from('inventory').select('quantity, sales_count').eq('id', inventoryId).single();
+    const { data: current, error: fetchError } = await supabase.from('inventory').select('quantity, sales_count, item_type').eq('id', inventoryId).single();
     if (fetchError) {
       console.error('[incrementInventory] Failed to fetch current inventory:', fetchError);
       continue;
     }
-    
+
+    // Services don't track stock — nothing to increment
+    if (isServiceItem(current)) continue;
+
     const prevQty = current?.quantity || 0;
     const newQty = prevQty + qty;
     
@@ -2249,6 +2261,19 @@ export const getInventoryIntelligence = async (locationId = null) => {
   return data || [];
 };
 
+// The intelligence RPC doesn't return item_type — fetch service ids separately
+// so analytics views can exclude services from stock/alert logic.
+export const getServiceItemIds = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('inventory')
+    .select('id')
+    .eq('org_id', orgId)
+    .eq('item_type', 'service');
+  if (error) throw error;
+  return (data || []).map(r => r.id);
+};
+
 export const getReorderRecommendations = async (locationId = null) => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
@@ -2485,7 +2510,7 @@ export const ensureMembershipConsultationProduct = async () => {
       org_id: orgId,
       location_id: null,
       name: 'CONSULTA MEDICA MEMBRESIA',
-      item_type: 'servicio',
+      item_type: 'service',
       department: 'consultorio',
       price: 100,
       cost: 0,

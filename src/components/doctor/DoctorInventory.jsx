@@ -4,7 +4,7 @@ import {
   Package, AlertTriangle, Calendar, Search, Clock, XCircle, TrendingDown, LayoutGrid
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getInventory } from '@/lib/db';
+import { getInventory, isServiceItem } from '@/lib/db';
 import { useToast } from '@/components/ui/use-toast';
 import { formatMXN } from '@/lib/currency';
 
@@ -28,6 +28,7 @@ const FILTERS = [
 ];
 
 const matchesFilter = (item, filterId) => {
+  if (filterId !== 'all' && isServiceItem(item)) return false; // services have no stock/expiry to track
   const days = getDaysUntilExpiry(item.expiration_date);
   switch (filterId) {
     case 'out':     return item.quantity <= 0;
@@ -59,6 +60,7 @@ const DoctorInventory = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState('name');
 
   useEffect(() => {
     const load = async () => {
@@ -94,9 +96,17 @@ const DoctorInventory = () => {
     });
     if (filter === 'exp30' || filter === 'expired') {
       result.sort((a, b) => getDaysUntilExpiry(a.expiration_date) - getDaysUntilExpiry(b.expiration_date));
+    } else if (sortBy === 'sold') {
+      result.sort((a, b) => (b.sales_count || 0) - (a.sales_count || 0) || a.name.localeCompare(b.name));
+    } else if (sortBy === 'most_stock') {
+      result.sort((a, b) => (b.quantity || 0) - (a.quantity || 0) || a.name.localeCompare(b.name));
+    } else if (sortBy === 'least_stock') {
+      result.sort((a, b) => (a.quantity || 0) - (b.quantity || 0) || a.name.localeCompare(b.name));
+    } else {
+      result.sort((a, b) => a.name.localeCompare(b.name));
     }
     return result;
-  }, [inventory, filter, search]);
+  }, [inventory, filter, search, sortBy]);
 
   return (
     <>
@@ -118,16 +128,29 @@ const DoctorInventory = () => {
           </div>
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre, indicación, código de barras o departamento..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-          />
+        {/* Search + sort */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Buscar por nombre, indicación, código de barras o departamento..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+            />
+          </div>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+            title="Ordenar lista"
+          >
+            <option value="name">A–Z</option>
+            <option value="sold">Más vendido</option>
+            <option value="most_stock">Más stock</option>
+            <option value="least_stock">Menos stock</option>
+          </select>
         </div>
 
         {/* Premade filters */}
@@ -212,16 +235,22 @@ const DoctorInventory = () => {
                           {item.price != null ? formatMXN(item.price) : '-'}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                            out ? 'bg-red-100 text-red-700'
-                              : low ? 'bg-amber-100 text-amber-700'
-                              : 'bg-green-100 text-green-700'
-                          }`}>
-                            {out ? 'Agotado' : item.quantity}
-                          </span>
+                          {isServiceItem(item) ? (
+                            <span className="px-3 py-1 rounded-full text-sm font-semibold bg-teal-50 text-teal-700">Servicio</span>
+                          ) : (
+                            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                              out ? 'bg-red-100 text-red-700'
+                                : low ? 'bg-amber-100 text-amber-700'
+                                : 'bg-green-100 text-green-700'
+                            }`}>
+                              {out ? 'Agotado' : item.quantity}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-600">
-                          {item.expiration_date ? (
+                          {isServiceItem(item) ? (
+                            <span className="text-slate-400">—</span>
+                          ) : item.expiration_date ? (
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="flex items-center gap-1">
                                 <Calendar className="w-4 h-4 text-slate-400" />

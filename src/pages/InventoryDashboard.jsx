@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
-import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory, getAllInventoryBatches, restockInventoryItem } from '@/lib/db';
+import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory, getAllInventoryBatches, restockInventoryItem, isServiceItem } from '@/lib/db';
 
 const LOW_STOCK_THRESHOLD = 0;
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -34,6 +34,7 @@ const InventoryDashboard = () => {
   const { toast } = useToast();
   const [inventory, setInventory] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('name');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [alertFilter, setAlertFilter] = useState(null);
@@ -619,26 +620,39 @@ const InventoryDashboard = () => {
   };
 
   const isItemExpiring = (item) => {
+    if (isServiceItem(item)) return false; // services have no expiry to track
     const d = getItemExpiryDate(item);
     if (!d) return false;
     const s = getExpiryStatus(d);
     return s && s.days <= 90;
   };
 
-  const lowStockItems = inventory.filter(item => item.quantity > 0 && item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD));
+  // Services don't track stock — excluded from low-stock/alert logic
+  const lowStockItems = inventory.filter(item => !isServiceItem(item) && item.quantity > 0 && item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD));
   const expiringItems = inventory.filter(isItemExpiring);
 
-  const filteredInventory = inventory.filter(item => {
+  const sortItems = (list) => {
+    const sorted = [...list];
+    switch (sortBy) {
+      case 'sold':       return sorted.sort((a, b) => (b.sales_count || 0) - (a.sales_count || 0) || a.name.localeCompare(b.name));
+      case 'most_stock': return sorted.sort((a, b) => (b.quantity || 0) - (a.quantity || 0) || a.name.localeCompare(b.name));
+      case 'least_stock':return sorted.sort((a, b) => (a.quantity || 0) - (b.quantity || 0) || a.name.localeCompare(b.name));
+      default:           return sorted.sort((a, b) => a.name.localeCompare(b.name));
+    }
+  };
+
+  const filteredInventory = sortItems(inventory.filter(item => {
     const q = searchTerm.toLowerCase().trim();
     const matchesSearch = !q || [
       item.name, item.use, item.department, item.barcode, item.batch_number,
       item.warehouse_location, item.pharmacy_location, item.suppliers?.name,
       item.item_type, item.notes,
     ].some(field => field && String(field).toLowerCase().includes(q));
+    if (isServiceItem(item)) return matchesSearch && !alertFilter; // services never match stock/expiry alerts
     if (alertFilter === 'low_stock') return matchesSearch && item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD);
     if (alertFilter === 'expiring') return matchesSearch && isItemExpiring(item);
     return matchesSearch;
-  });
+  }));
 
   return (
     <>
@@ -728,6 +742,17 @@ const InventoryDashboard = () => {
                 <Search className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
                 <Input placeholder="Buscar por nombre, indicación, depto, código de barras..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); if (alertFilter) setAlertFilter(null); }} className="pl-10" />
               </div>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apolo-navy"
+                title="Ordenar lista"
+              >
+                <option value="name">A–Z</option>
+                <option value="sold">Más vendido</option>
+                <option value="most_stock">Más stock</option>
+                <option value="least_stock">Menos stock</option>
+              </select>
               <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
                 <Upload className="w-4 h-4 mr-2" />Importar CSV
               </Button>
@@ -752,6 +777,9 @@ const InventoryDashboard = () => {
                           <option value="product">Producto</option>
                           <option value="service">Servicio</option>
                         </select>
+                        {formData.itemType === 'service' && (
+                          <p className="text-xs text-teal-700 bg-teal-50 rounded px-2 py-1">Los servicios no llevan control de inventario (stock, caducidad, alertas).</p>
+                        )}
                       </div>
                       <div className="space-y-2"><Label>Costo (MXN)</Label><Input type="number" step="0.01" value={formData.cost} onChange={(e) => setFormData({ ...formData, cost: e.target.value })} required /></div>
                       <div className="space-y-2"><Label>Precio de venta (MXN)</Label><Input type="number" step="0.01" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} required /></div>
@@ -871,9 +899,16 @@ const InventoryDashboard = () => {
                         </td>
                         <td className="px-4 py-3 text-sm">
                           <div className="flex space-x-2">
-                            <button onClick={() => handleRestock(item)} className="text-green-600 hover:text-green-800" title="Registrar compra"><Plus className="w-4 h-4" /></button>
-                            <button onClick={() => handleEdit(item)} className="text-apolo-navy hover:text-apolo-navy-dark" title="Editar"><Edit className="w-4 h-4" /></button>
-                            <button onClick={() => handleAdjustStock(item)} className="text-orange-600 hover:text-orange-800" title="Ajustar stock"><SlidersHorizontal className="w-4 h-4" /></button>
+                            {!isServiceItem(item) && (
+                              <>
+                                <button onClick={() => handleRestock(item)} className="text-green-600 hover:text-green-800" title="Registrar compra"><Plus className="w-4 h-4" /></button>
+                                <button onClick={() => handleEdit(item)} className="text-apolo-navy hover:text-apolo-navy-dark" title="Editar"><Edit className="w-4 h-4" /></button>
+                                <button onClick={() => handleAdjustStock(item)} className="text-orange-600 hover:text-orange-800" title="Ajustar stock"><SlidersHorizontal className="w-4 h-4" /></button>
+                              </>
+                            )}
+                            {isServiceItem(item) && (
+                              <button onClick={() => handleEdit(item)} className="text-apolo-navy hover:text-apolo-navy-dark" title="Editar"><Edit className="w-4 h-4" /></button>
+                            )}
                             <button onClick={() => viewAdjustmentHistory(item)} className="text-apolo-navy/70 hover:text-apolo-navy" title="Historial"><History className="w-4 h-4" /></button>
                             <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 className="w-4 h-4" /></button>
                           </div>
@@ -884,9 +919,13 @@ const InventoryDashboard = () => {
                         <td className="px-4 py-3 text-sm text-slate-600">{formatMXN(item.cost)}</td>
                         <td className="px-4 py-3 text-sm font-semibold text-green-600">{formatMXN(item.price)}</td>
                         <td className="px-4 py-3 text-sm">
-                          <span className={`px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1 w-fit ${isLow ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                            {item.quantity} {isLow && <AlertTriangle className="w-3 h-3" />}
-                          </span>
+                          {isServiceItem(item) ? (
+                            <span className="px-2 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 w-fit">Servicio</span>
+                          ) : (
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1 w-fit ${isLow ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                              {item.quantity} {isLow && <AlertTriangle className="w-3 h-3" />}
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-sm">
                           {item.requires_prescription

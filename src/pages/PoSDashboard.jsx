@@ -19,7 +19,7 @@ import {
   getInventory, createSale, createSaleWithPayments, getRecentSales, voidSale, findDiscount,
   getTaxSettingsDb, getBankAccounts, createPrescription, linkPrescriptionToSale, searchCustomers, createCustomer,
   processMembershipRenewals, ensureMembershipConsultationProduct, decrementMembershipVisits,
-  fulfillMembershipTrackers, getMembershipById,
+  fulfillMembershipTrackers, getMembershipById, isServiceItem,
 } from '@/lib/db';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -163,6 +163,8 @@ const PoSDashboard = () => {
   };
 
   const isSellable = (item) => {
+    // Services (consultas, certificados...) have no stock or expiry to track
+    if (isServiceItem(item)) return true;
     return item && item.quantity > 0 && !isExpired(item);
   };
 
@@ -173,11 +175,12 @@ const PoSDashboard = () => {
 
   const addToCart = (medicine, quantity = 1) => {
     const invItem = inventory.find(i => i.id === medicine.id);
-    if (!invItem || invItem.quantity <= 0) {
+    const service = isServiceItem(invItem);
+    if (!service && (!invItem || invItem.quantity <= 0)) {
       toast({ title: 'Sin existencias', description: `${medicine.name} no está disponible.`, variant: 'destructive' });
       return;
     }
-    if (isExpired(invItem)) {
+    if (!service && isExpired(invItem)) {
       toast({ title: 'Producto caducado', description: `${medicine.name} ha caducado (${invItem.expiration_date}) y no puede venderse.`, variant: 'destructive' });
       return;
     }
@@ -185,14 +188,14 @@ const PoSDashboard = () => {
     let itemAdded = false;
     if (existingItem) {
       const newQuantity = existingItem.quantity + quantity;
-      if (newQuantity <= invItem.quantity) {
+      if (service || newQuantity <= invItem.quantity) {
         setCart(cart.map(item => item.id === medicine.id ? { ...item, quantity: newQuantity } : item));
         itemAdded = true;
       } else {
         toast({ title: 'Stock insuficiente', variant: 'destructive' });
       }
     } else {
-      if (quantity <= invItem.quantity) {
+      if (service || quantity <= invItem.quantity) {
         setCart([...cart, { ...medicine, quantity, originalPrice: medicine.price, price: medicine.price, overrideBy: null }]);
         itemAdded = true;
       } else {
@@ -211,7 +214,7 @@ const PoSDashboard = () => {
       if (item.id === id) {
         const newQuantity = item.quantity + delta;
         const inventoryItem = inventory.find(inv => inv.id === id);
-        if (newQuantity > 0 && newQuantity <= inventoryItem.quantity) return { ...item, quantity: newQuantity };
+        if (newQuantity > 0 && (isServiceItem(inventoryItem) || newQuantity <= inventoryItem.quantity)) return { ...item, quantity: newQuantity };
       }
       return item;
     }).filter(item => item.quantity > 0));
@@ -490,13 +493,15 @@ const PoSDashboard = () => {
       }
 
       // Revalidate cart items for expiry and stock before finalizing
-      const expiredCartItems = cart.map(item => inventory.find(i => i.id === item.id)).filter((invItem, idx) => invItem && isExpired(invItem));
+      // (services have no stock/expiry to validate)
+      const expiredCartItems = cart.map(item => inventory.find(i => i.id === item.id)).filter((invItem, idx) => invItem && !isServiceItem(invItem) && isExpired(invItem));
       if (expiredCartItems.length > 0) {
         toast({ title: 'Productos caducados en carrito', description: `Retira del carrito: ${expiredCartItems.map(i => i.name).join(', ')}`, variant: 'destructive' });
         return;
       }
       const outOfStockItems = cart.filter(item => {
         const invItem = inventory.find(i => i.id === item.id);
+        if (isServiceItem(invItem)) return false;
         return !invItem || item.quantity > invItem.quantity;
       });
       if (outOfStockItems.length > 0) {
@@ -1177,16 +1182,24 @@ const PoSDashboard = () => {
       <div className="min-h-screen bg-apolo-bg">
         <nav className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
           <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center space-x-3">
+            <div className="flex justify-between items-center h-16 gap-3">
+              <div className="flex flex-col justify-center shrink-0">
                 <ApoloBrand size="md" />
-                <div><p className="text-xs text-slate-500">Vendedor: {user?.name}</p></div>
+                <div className="hidden md:flex items-center gap-2 text-[11px] leading-tight text-slate-500">
+                  <span>Vendedor: {user?.name}</span>
+                  {activeShift && (
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                      Turno desde {shiftOpenedTime || '—'}
+                    </span>
+                  )}
+                </div>
               </div>
-              <form onSubmit={(e) => handleSearch(e, true)} className="flex-1 max-w-sm sm:max-w-xl mx-4 relative">
+              <form onSubmit={(e) => handleSearch(e, true)} className="flex-1 max-w-3xl mx-2 sm:mx-4 relative">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
                   <Barcode className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                  <Input ref={searchInputRef} placeholder="Buscar o escanear código de barras..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); handleSearch(null, false, e.target.value); }} className="pl-10 pr-10" />
+                  <Input ref={searchInputRef} placeholder="Buscar o escanear código de barras..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); handleSearch(null, false, e.target.value); }} className="pl-10 pr-10 h-12 text-lg" />
                 </div>
                 {searchResults.length > 0 && (
                   <div className="absolute top-full mt-2 w-full bg-white rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
@@ -1208,12 +1221,6 @@ const PoSDashboard = () => {
                 )}
               </form>
               <div className="flex items-center gap-2">
-                {activeShift && (
-                  <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                    Turno abierto desde {shiftOpenedTime || 'hora no disponible'}
-                  </span>
-                )}
                 <Button onClick={() => setReturnOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-orange-600 border-orange-200 hover:bg-orange-50">
                   <RotateCcw className="w-4 h-4 mr-2" />Devolución
                 </Button>
@@ -1242,8 +1249,9 @@ const PoSDashboard = () => {
               <h2 className="text-lg sm:text-xl font-bold mb-4">{isSearching ? 'Resultados de búsqueda' : 'Artículos más vendidos'}</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
                 {displayItems.map((medicine) => {
-                  const expired = isExpired(medicine);
-                  const outOfStock = medicine.quantity <= 0;
+                  const service = isServiceItem(medicine);
+                  const expired = !service && isExpired(medicine);
+                  const outOfStock = !service && medicine.quantity <= 0;
                   const disabled = expired || outOfStock;
                   return (
                     <motion.div key={medicine.id} whileHover={disabled ? {} : { scale: 1.03 }} className={`bg-white border border-slate-200 rounded-lg p-3 sm:p-4 transition-all flex flex-col justify-between ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:shadow-xl cursor-pointer'}`} onClick={() => !disabled && addToCart(medicine)}>
@@ -1256,7 +1264,11 @@ const PoSDashboard = () => {
                       </div>
                       <div className="flex justify-between items-center mt-3">
                         <span className={`text-base sm:text-lg font-bold ${disabled ? 'text-slate-400' : 'text-green-600'}`}>{formatMXN(medicine.price)}</span>
-                        <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">Stock: {medicine.quantity}</span>
+                        {service ? (
+                          <span className="text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded-full">Servicio</span>
+                        ) : (
+                          <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">Stock: {medicine.quantity}</span>
+                        )}
                       </div>
                       {medicine.expiration_date && (
                         <span className={`text-[10px] mt-1 px-1.5 py-0.5 rounded-full self-start ${expired ? 'bg-red-100 text-red-700' : 'bg-amber-50 text-amber-700'}`}>

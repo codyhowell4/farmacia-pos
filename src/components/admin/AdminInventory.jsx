@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
-import { getInventoryIntelligence, getLocations } from '@/lib/db';
+import { getInventoryIntelligence, getLocations, getServiceItemIds } from '@/lib/db';
 
 const getExpiryStatus = (expirationDate) => {
   if (!expirationDate) return null;
@@ -49,6 +49,8 @@ const AdminInventory = () => {
   const [selectedLocation, setSelectedLocation] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState('name');
+  const [serviceIds, setServiceIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
@@ -73,8 +75,12 @@ const AdminInventory = () => {
     try {
       setLoading(true);
       const locationId = selectedLocation || null;
-      const data = await getInventoryIntelligence(locationId);
+      const [data, svcIds] = await Promise.all([
+        getInventoryIntelligence(locationId),
+        getServiceItemIds().catch(() => []),
+      ]);
       setItems(data || []);
+      setServiceIds(new Set(svcIds));
     } catch (e) {
       console.error(e);
       toast({ title: 'Error', description: 'No se pudo cargar el inventario', variant: 'destructive' });
@@ -85,14 +91,16 @@ const AdminInventory = () => {
 
   const filteredItems = useMemo(() => {
     let result = items;
+    const isSvc = (i) => serviceIds.has(i.id);
 
-    // Tab filter
+    // Tab filter (services don't track stock — excluded from stock/expiry tabs;
+    // kept in fast/slow since those are sales rankings, not stock tracking)
     switch (activeTab) {
       case 'low':
-        result = result.filter(i => i.quantity > 0 && i.quantity <= i.low_stock_threshold);
+        result = result.filter(i => !isSvc(i) && i.quantity > 0 && i.quantity <= i.low_stock_threshold);
         break;
       case 'out':
-        result = result.filter(i => i.quantity === 0);
+        result = result.filter(i => !isSvc(i) && i.quantity === 0);
         break;
       case 'fast':
         result = result.filter(i => i.has_sufficient_data && i.avg_daily_sales_30 > 0)
@@ -106,15 +114,16 @@ const AdminInventory = () => {
         break;
       case 'expiring':
         result = result.filter(i => {
+          if (isSvc(i)) return false;
           const s = getExpiryStatus(i.expiration_date);
           return s !== null && !i.is_expired;
         });
         break;
       case 'expired':
-        result = result.filter(i => i.is_expired);
+        result = result.filter(i => !isSvc(i) && i.is_expired);
         break;
       case 'reorder':
-        result = result.filter(i => i.recommended_qty > 0 || i.quantity === 0 || (i.days_of_inventory !== null && i.days_of_inventory <= 14));
+        result = result.filter(i => !isSvc(i) && (i.recommended_qty > 0 || i.quantity === 0 || (i.days_of_inventory !== null && i.days_of_inventory <= 14)));
         break;
       default:
         break;
@@ -131,25 +140,37 @@ const AdminInventory = () => {
       );
     }
 
+    // Sort (fast/slow keep their inherent sales ranking)
+    if (activeTab !== 'fast' && activeTab !== 'slow') {
+      const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+      result = [...result];
+      if (sortBy === 'sold') result.sort((a, b) => (b.sold_30d || 0) - (a.sold_30d || 0) || byName(a, b));
+      else if (sortBy === 'most_stock') result.sort((a, b) => (b.quantity || 0) - (a.quantity || 0) || byName(a, b));
+      else if (sortBy === 'least_stock') result.sort((a, b) => (a.quantity || 0) - (b.quantity || 0) || byName(a, b));
+      else result.sort(byName);
+    }
+
     return result;
-  }, [items, activeTab, searchTerm]);
+  }, [items, activeTab, searchTerm, sortBy, serviceIds]);
 
   const stats = useMemo(() => {
+    const isSvc = (i) => serviceIds.has(i.id);
     const totalItems = items.length;
     const totalValue = items.reduce((sum, i) => sum + (i.inventory_value || 0), 0);
-    const lowStock = items.filter(i => i.quantity > 0 && i.quantity <= i.low_stock_threshold).length;
-    const outOfStock = items.filter(i => i.quantity === 0).length;
-    const reorderNeeded = items.filter(i => i.recommended_qty > 0 || i.quantity === 0).length;
+    const lowStock = items.filter(i => !isSvc(i) && i.quantity > 0 && i.quantity <= i.low_stock_threshold).length;
+    const outOfStock = items.filter(i => !isSvc(i) && i.quantity === 0).length;
+    const reorderNeeded = items.filter(i => !isSvc(i) && (i.recommended_qty > 0 || i.quantity === 0)).length;
     const expiringSoon = items.filter(i => {
+      if (isSvc(i)) return false;
       const s = getExpiryStatus(i.expiration_date);
       return s !== null;
     }).length;
     const avgRisk = items.length > 0
       ? Math.round(items.reduce((sum, i) => sum + (i.stockout_risk_score || 0), 0) / items.length)
       : 0;
-    const expiredCount = items.filter(i => i.is_expired).length;
+    const expiredCount = items.filter(i => !isSvc(i) && i.is_expired).length;
     return { totalItems, totalValue, lowStock, outOfStock, reorderNeeded, expiringSoon, expiredCount, avgRisk };
-  }, [items]);
+  }, [items, serviceIds]);
 
   const exportCSV = () => {
     const headers = [
@@ -234,11 +255,15 @@ const AdminInventory = () => {
                     {item.use && <div className="text-xs text-slate-500">{item.use}</div>}
                   </td>
                   <td className="px-3 py-2">
-                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
-                      isOut ? 'bg-red-100 text-red-700' : isLow ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
-                    }`}>
-                      {item.quantity}
-                    </span>
+                    {serviceIds.has(item.id) ? (
+                      <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-teal-50 text-teal-700">Servicio</span>
+                    ) : (
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
+                        isOut ? 'bg-red-100 text-red-700' : isLow ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'
+                      }`}>
+                        {item.quantity}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-slate-600">
                     {insufficient ? (
@@ -425,6 +450,17 @@ const AdminInventory = () => {
               className="pl-9 h-8 text-sm"
             />
           </div>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-apolo-navy"
+            title="Ordenar lista"
+          >
+            <option value="name">A–Z</option>
+            <option value="sold">Más vendido</option>
+            <option value="most_stock">Más stock</option>
+            <option value="least_stock">Menos stock</option>
+          </select>
         </div>
 
         <div className="p-3">

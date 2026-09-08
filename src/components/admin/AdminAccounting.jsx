@@ -12,16 +12,16 @@ import AkauntingConnectionCard from './AkauntingConnectionCard';
 import AkauntingSyncPanel from './AkauntingSyncPanel';
 
 const EXPENSE_CATEGORIES = [
-  'Office Supplies',
-  'Rent',
-  'Utilities',
-  'Salaries',
-  'Inventory',
-  'Marketing',
-  'Maintenance',
-  'Taxes',
-  'Insurance',
-  'Other',
+  'Artículos de oficina',
+  'Renta',
+  'Servicios públicos',
+  'Nómina',
+  'Inventario',
+  'Publicidad',
+  'Mantenimiento',
+  'Impuestos',
+  'Seguro',
+  'Otros',
 ];
 
 const formatDate = (d) => {
@@ -106,7 +106,7 @@ const AdminAccounting = () => {
         date: s.closed_at || s.opened_at,
         description: `Cierre De Caja ${s.locations?.name || 'Sucursal'}`,
         amount: s.total_revenue || 0,
-        category: 'Revenue',
+        category: 'Ingresos',
         subcategory: 'Medicamento',
         totalSales: s.total_sales || 0,
         avgOrder: s.total_sales > 0 ? (s.total_revenue || 0) / s.total_sales : 0,
@@ -120,7 +120,7 @@ const AdminAccounting = () => {
       date: r.date,
       description: r.description,
       amount: r.amount || 0,
-      category: 'Revenue',
+      category: 'Ingresos',
       subcategory: r.subcategory || 'Medicamento',
       totalSales: r.total_sales,
       avgOrder: r.total_sales > 0 ? (r.amount || 0) / r.total_sales : null,
@@ -169,9 +169,14 @@ const AdminAccounting = () => {
   }, [revenueTransactions, expenseTransactions]);
 
   const categories = useMemo(() => {
-    const cats = new Set(['Revenue', ...EXPENSE_CATEGORIES]);
+    // Spanish list + whatever categories exist in the data (keeps historical
+    // English-category rows filterable after the list was translated)
+    const cats = new Set(['Ingresos', ...EXPENSE_CATEGORIES]);
+    [...revenueTransactions, ...expenseTransactions].forEach((t) => {
+      if (t.category) cats.add(t.category);
+    });
     return Array.from(cats).sort();
-  }, []);
+  }, [revenueTransactions, expenseTransactions]);
 
   const handleOpenExpenseModal = (expense = null) => {
     if (expense) {
@@ -189,7 +194,7 @@ const AdminAccounting = () => {
         date: new Date().toISOString().split('T')[0],
         description: '',
         amount: '',
-        category: 'Office Supplies',
+        category: 'Artículos de oficina',
         subcategory: '',
       });
     }
@@ -585,7 +590,7 @@ const AdminAccounting = () => {
               <Input
                 value={expenseForm.subcategory}
                 onChange={(e) => setExpenseForm({ ...expenseForm, subcategory: e.target.value })}
-                placeholder="Ej: Cleaning, Office, etc."
+                placeholder="Ej: Limpieza, Oficina, etc."
               />
             </div>
             <div className="flex justify-end gap-2 pt-2">
