@@ -1,0 +1,9 @@
+# Cloudflare Pages redirects
+# Real files (customer-app/*, assets/*, llms.txt) are always served first;
+# these rules only catch paths that don't match a file on disk.
+
+# Match the Vercel behavior: bare /customer-app -> /customer-app/
+/customer-app /customer-app/ 302
+
+# SPA fallback for the React staff app
+/* /index.html 200

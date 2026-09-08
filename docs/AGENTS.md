@@ -245,9 +245,19 @@ The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional m
 
 ## Deployment
 
-### Vercel (Configured)
+The frontend is fully static; Supabase does all backend work. See `docs/HOSTING.md` for the full setup.
+
+### Cloudflare Pages (Production)
+- Custom domain (DNS on Cloudflare). Build: `npm run build` → `dist/`.
+- SPA fallback + cache headers live in `public/_redirects` and `public/_headers`.
+
+### Vercel (Testing/staging front-end)
 - `vercel.json` rewrites all routes to `index.html` (SPA fallback).
-- Environment variables must be set in Vercel dashboard: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+- Same repo, same `main` branch, same Supabase backend as production.
+
+### Environment variables (both platforms)
+- `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PUBLIC_ORG_ID`
+- `VITE_PAYPAL_ENV`, `VITE_PAYPAL_CLIENT_ID`, `VITE_PAYPAL_PLAN_INDIVIDUAL`, `VITE_PAYPAL_PLAN_FAMILIAR`
 
 ### Build Output
 - Vite builds to `dist/`.

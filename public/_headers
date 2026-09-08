@@ -1,0 +1,13 @@
+# Cloudflare Pages headers (mirrors vercel.json)
+
+# Vite build output is content-hashed — safe to cache forever
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Everything else revalidates on each load (script versions are
+# cache-busted with ?v= query strings in index.html)
+/customer-app/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+/*
+  Cache-Control: public, max-age=0, must-revalidate
