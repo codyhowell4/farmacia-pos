@@ -40,7 +40,8 @@ const normalizePhoneForWhatsApp = (phone) => {
 
 const buildSendMessage = (customer, missingDocs, link) => {
   const docList = missingDocs.map((d, i) => `${i + 1}) ${d.title}`).join('\n');
-  return `Hola ${customer.full_name || ''}, te enviamos ${missingDocs.length === 1 ? 'el documento de consentimiento pendiente' : 'los documentos de consentimiento'} de Farmacia Apolo que necesitas firmar una sola vez:\n\n${docList}\n\nEntra a ${link} e inicia sesión (o crea tu cuenta gratis) — ${missingDocs.length === 1 ? 'el documento te aparecerá' : 'los documentos te aparecerán'} automáticamente antes de usar la app.\n\nGracias.`;
+  const plural = missingDocs.length !== 1;
+  return `Hola ${customer.full_name || ''}, te enviamos ${plural ? 'los documentos de consentimiento' : 'el documento de consentimiento pendiente'} de Farmacia Apolo que necesitas firmar una sola vez:\n\n${docList}\n\nEntra a ${link} — al leer y firmar ${plural ? 'los documentos' : 'el documento'}, tu cuenta de la app se crea en el mismo paso (solo eliges tu contraseña). Si ya tienes cuenta, solo inicia sesión y firma ahí.\n\nGracias.`;
 };
 
 const AdminConsents = () => {
@@ -88,7 +89,7 @@ const AdminConsents = () => {
     return !q || [c.full_name, c.email, c.phone].some(f => f && String(f).toLowerCase().includes(q));
   }).slice(0, 8);
 
-  const appLink = `${window.location.origin}/customer-app/`;
+  const appLink = `${window.location.origin}/customer-app/?firma=1`;
   const missing = selectedCustomer ? missingDocsFor(selectedCustomer.id) : [];
   const message = selectedCustomer ? buildSendMessage(selectedCustomer, missing, appLink) : '';
 
@@ -242,7 +243,7 @@ const AdminConsents = () => {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>Enviar formularios de consentimiento</DialogTitle></DialogHeader>
           <p className="text-sm text-slate-600">
-            El cliente abre el enlace, inicia sesión (o crea su cuenta) y los documentos le aparecen automáticamente antes de usar la app.
+            El cliente abre el enlace, lee y firma los documentos, y su cuenta de la app se crea en el mismo paso. Si ya tiene cuenta, solo inicia sesión y los firma ahí.
           </p>
 
           {!selectedCustomer ? (

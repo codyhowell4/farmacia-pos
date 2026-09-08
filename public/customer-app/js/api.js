@@ -12,7 +12,7 @@
 //   getDoctors, getDoctorBookedSlots, getMembershipDetails, getConsultPrice,
 //   createAppointment, updateAppointment,
 //   getConsultaNotes, getConsentDocuments, signConsentDocument,
-//   getMySignedConsentTypes, acceptConsentDocuments
+//   getMySignedConsentTypes, acceptConsentDocuments, updateMyCustomerPhone
 // ============================================================
 
 window.FarmaciaAPI = (function () {
@@ -1386,6 +1386,26 @@ window.FarmaciaAPI = (function () {
       } catch (err) {
         console.error('[FarmaciaAPI] acceptConsentDocuments failed:', err.message);
         return { data: null, error: err };
+      }
+    },
+
+    /**
+     * Best-effort: save the phone number on the current user's customers
+     * row (used by the public sign-and-register view, ?firma=1). Fails
+     * quietly — signing must not depend on this succeeding.
+     */
+    async updateMyCustomerPhone(phone) {
+      if (!sb || !phone) return;
+      try {
+        const user = await getAuthUser();
+        if (!user) return;
+        const { error } = await sb
+          .from('customers')
+          .update({ phone })
+          .eq('profile_id', user.id);
+        if (error) throw error;
+      } catch (err) {
+        console.warn('[FarmaciaAPI] updateMyCustomerPhone failed (best-effort):', err.message);
       }
     }
   };

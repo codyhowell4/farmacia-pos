@@ -105,8 +105,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // normal start page; the hash stays until the password update succeeds.
   isPasswordRecovery = /[#&]type=recovery\b/.test(window.location.hash || '');
   
+  // Public "firma primero" link (?firma=1): guests sign the 3 consent
+  // documents and their account is created in the same step. If a session
+  // already exists, initAuth's consent gate takes over instead.
+  const wantsFirma = new URLSearchParams(window.location.search).has('firma');
+
   if (isPasswordRecovery) {
     renderResetPassword();
+  } else if (wantsFirma) {
+    renderFirmaRegistro();
   } else {
     renderPage('consulta'); // Start page: Consulta (free for all users)
   }
@@ -179,7 +186,8 @@ async function initAuth() {
       if (!isPasswordRecovery) {
         // Consent gate: block normal content until the 3 standard docs are signed
         const gated = await checkConsentGate();
-        if (!gated) renderPage(currentPage);
+        // Restore chrome in case the public firma view hid it
+        if (!gated) { setAppChromeVisible(true); renderPage(currentPage); }
       }
     } else {
       console.log('[Auth] No active session');
@@ -230,6 +238,7 @@ function updateMenuUserInfo() {
 
 function renderLogin() {
   closeMenu();
+  setAppChromeVisible(true); // in case the public firma view hid it
   mainContent.innerHTML = `
     <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🔑 Iniciar Sesión</h1>
@@ -720,6 +729,22 @@ function setAppChromeVisible(visible) {
   if (searchBox) searchBox.style.display = display;
 }
 
+// Shared card markup for the standard documents — used by both the
+// consent-onboarding gate and the public sign-and-register view.
+function consentDocCardsHtml(docs, checkboxIdPrefix, onchangeFnName) {
+  return docs.map(doc => `
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
+        <h3 style="margin: 0 0 0.25rem; font-size: 1rem; font-weight: 700; color: #1E2A8A;">${doc.title}</h3>
+        <p style="margin: 0 0 0.75rem; font-size: 0.8rem; color: #64748b; line-height: 1.4;">${doc.summary}</p>
+        <div style="max-height: 180px; overflow-y: auto; -webkit-overflow-scrolling: touch; background: #F8FAFC; border: 1px solid #E3E8F2; border-radius: 10px; padding: 0.75rem; font-size: 0.8rem; color: #334155; line-height: 1.55; white-space: pre-wrap;">${doc.content}</div>
+        <label style="display: flex; align-items: flex-start; gap: 0.5rem; margin-top: 0.75rem; cursor: pointer;">
+          <input type="checkbox" id="${checkboxIdPrefix}${doc.type}" onchange="${onchangeFnName}()" style="margin-top: 0.15rem; width: 1rem; height: 1rem; flex-shrink: 0; accent-color: #46AC78; cursor: pointer;">
+          <span style="font-size: 0.8rem; color: #475569; line-height: 1.4;">He leído y acepto este documento</span>
+        </label>
+      </div>
+  `).join('');
+}
+
 function renderConsentOnboarding() {
   closeMenu();
   setAppChromeVisible(false);
@@ -728,17 +753,7 @@ function renderConsentOnboarding() {
   const signerName = (currentCustomerProfile?.name || currentAuthUser?.user_metadata?.full_name || '')
     .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
-  const cardsHtml = docs.map(doc => `
-      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
-        <h3 style="margin: 0 0 0.25rem; font-size: 1rem; font-weight: 700; color: #1E2A8A;">${doc.title}</h3>
-        <p style="margin: 0 0 0.75rem; font-size: 0.8rem; color: #64748b; line-height: 1.4;">${doc.summary}</p>
-        <div style="max-height: 180px; overflow-y: auto; -webkit-overflow-scrolling: touch; background: #F8FAFC; border: 1px solid #E3E8F2; border-radius: 10px; padding: 0.75rem; font-size: 0.8rem; color: #334155; line-height: 1.55; white-space: pre-wrap;">${doc.content}</div>
-        <label style="display: flex; align-items: flex-start; gap: 0.5rem; margin-top: 0.75rem; cursor: pointer;">
-          <input type="checkbox" id="consent-check-${doc.type}" onchange="updateConsentSubmitButton()" style="margin-top: 0.15rem; width: 1rem; height: 1rem; flex-shrink: 0; accent-color: #46AC78; cursor: pointer;">
-          <span style="font-size: 0.8rem; color: #475569; line-height: 1.4;">He leído y acepto este documento</span>
-        </label>
-      </div>
-  `).join('');
+  const cardsHtml = consentDocCardsHtml(docs, 'consent-check-', 'updateConsentSubmitButton');
 
   mainContent.innerHTML = `
     <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
@@ -798,6 +813,151 @@ async function handleConsentOnboardingSubmit() {
   consentGateActive = false;
   setAppChromeVisible(true);
   showToast('Documentos firmados correctamente. ¡Bienvenido!', 'success');
+  currentPage = 'consulta';
+  navItems.forEach(nav => nav.classList.remove('active'));
+  document.querySelector('.bottom-nav .nav-item[data-page="consulta"]')?.classList.add('active');
+  renderPage('consulta');
+}
+
+// ============================================================
+// PUBLIC SIGN-AND-REGISTER VIEW (?firma=1)
+// Staff send this link from Admin → Consentimientos → "Enviar
+// formularios". A guest reads + signs the 3 standard documents
+// and their app account is created in the same step. Visitors
+// who already have a session are handled by the normal gate.
+// ============================================================
+
+function renderFirmaRegistro() {
+  closeMenu();
+  setAppChromeVisible(false);
+
+  const docs = (window.APOLO_CONSENT_DOCS || []).filter(d => REQUIRED_CONSENT_TYPES.includes(d.type));
+  const cardsHtml = consentDocCardsHtml(docs, 'firma-check-', 'updateFirmaSubmitButton');
+
+  const fieldStyle = 'width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;';
+  const labelStyle = 'display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;';
+
+  mainContent.innerHTML = `
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🖊️ Firma tus documentos</h1>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Lee y acepta los documentos y tu cuenta de Farmacia Apollo se crea en el mismo paso. Solo es necesario una vez.</p>
+    </div>
+
+    <div style="padding: 1rem;">
+      ${cardsHtml}
+
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
+        <p style="margin: 0 0 0.75rem; font-size: 0.85rem; font-weight: 700; color: #141B5E;">Tu cuenta se creará con estos datos</p>
+        <div style="margin-bottom: 0.75rem;">
+          <label style="${labelStyle}">Nombre completo (de quien firma)</label>
+          <input type="text" id="firma-name" placeholder="Tu nombre completo" style="${fieldStyle}">
+        </div>
+        <div style="margin-bottom: 0.75rem;">
+          <label style="${labelStyle}">Correo electrónico</label>
+          <input type="email" id="firma-email" placeholder="tu@email.com" style="${fieldStyle}">
+        </div>
+        <div style="margin-bottom: 0.75rem;">
+          <label style="${labelStyle}">Teléfono (opcional)</label>
+          <input type="tel" id="firma-phone" placeholder="10 dígitos" style="${fieldStyle}">
+        </div>
+        <div style="margin-bottom: 0.75rem;">
+          <label style="${labelStyle}">Contraseña</label>
+          <input type="password" id="firma-password" placeholder="Mínimo 6 caracteres" style="${fieldStyle}">
+        </div>
+        <div>
+          <label style="${labelStyle}">Confirmar contraseña</label>
+          <input type="password" id="firma-password-confirm" placeholder="Repite tu contraseña" style="${fieldStyle}">
+        </div>
+      </div>
+
+      <button id="firma-submit-btn" onclick="handleFirmaRegistroSubmit()" disabled style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; opacity: 0.5; margin-bottom: 1rem;">Firmar y crear mi cuenta</button>
+
+      <div id="firma-error" style="display: none; margin: 0 0 1rem; padding: 0.75rem; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px; color: #DC2626; font-size: 0.85rem; text-align: center;"></div>
+
+      <div style="text-align: center; color: #64748b; font-size: 0.85rem; margin-bottom: 1.5rem;">
+        ¿Ya tienes cuenta? <button onclick="renderLogin()" style="background: none; border: none; color: #1E2A8A; font-weight: 600; cursor: pointer;">Inicia sesión</button> y firma desde ahí.
+      </div>
+    </div>
+  `;
+
+  window.scrollTo(0, 0);
+}
+
+// Submit stays disabled until every document is accepted
+function updateFirmaSubmitButton() {
+  const docs = (window.APOLO_CONSENT_DOCS || []).filter(d => REQUIRED_CONSENT_TYPES.includes(d.type));
+  const allChecked = docs.length > 0 && docs.every(d => document.getElementById('firma-check-' + d.type)?.checked);
+  const btn = document.getElementById('firma-submit-btn');
+  if (btn) {
+    btn.disabled = !allChecked;
+    btn.style.opacity = allChecked ? '1' : '0.5';
+    btn.style.cursor = allChecked ? 'pointer' : 'default';
+  }
+}
+
+async function handleFirmaRegistroSubmit() {
+  const docs = (window.APOLO_CONSENT_DOCS || []).filter(d => REQUIRED_CONSENT_TYPES.includes(d.type));
+  const allChecked = docs.length > 0 && docs.every(d => document.getElementById('firma-check-' + d.type)?.checked);
+  if (!allChecked) return;
+
+  const errorEl = document.getElementById('firma-error');
+  const showError = (msg) => { errorEl.textContent = msg; errorEl.style.display = 'block'; };
+  errorEl.style.display = 'none';
+
+  const name = (document.getElementById('firma-name')?.value || '').trim();
+  const email = (document.getElementById('firma-email')?.value || '').trim();
+  const phone = (document.getElementById('firma-phone')?.value || '').trim();
+  const password = document.getElementById('firma-password')?.value || '';
+  const confirm = document.getElementById('firma-password-confirm')?.value || '';
+
+  if (!name) return showError('Ingresa tu nombre completo');
+  if (!email) return showError('Ingresa tu correo electrónico');
+  if (password.length < 6) return showError('La contraseña debe tener al menos 6 caracteres');
+  if (password !== confirm) return showError('Las contraseñas no coinciden');
+
+  const btn = document.getElementById('firma-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Creando tu cuenta...'; }
+  const restoreBtn = () => { if (btn) { btn.disabled = false; btn.textContent = 'Firmar y crear mi cuenta'; } };
+
+  const { data, error } = await FarmaciaAPI.signUp(email, password, name);
+  if (error) {
+    restoreBtn();
+    const duplicate = /already|registered|exists/i.test(error.message || '');
+    return showError(duplicate
+      ? 'Este correo ya tiene una cuenta. Inicia sesión y firma los documentos desde ahí.'
+      : (error.message || 'No pudimos crear tu cuenta. Intenta de nuevo.'));
+  }
+  if (!data.session) {
+    restoreBtn();
+    return showError('Tu cuenta fue creada pero necesitas confirmar tu correo antes de entrar. Confírmala e inicia sesión para firmar los documentos.');
+  }
+
+  // Account created and logged in — link the customer record, then sign
+  currentAuthUser = data.user;
+  await FarmaciaAPI.ensureCustomerProfile(name);
+  if (phone && FarmaciaAPI.updateMyCustomerPhone) {
+    await FarmaciaAPI.updateMyCustomerPhone(phone);
+  }
+  currentCustomerProfile = await FarmaciaAPI.getCustomerProfile();
+
+  if (btn) btn.textContent = 'Registrando firmas...';
+  const { error: consentError } = await FarmaciaAPI.acceptConsentDocuments(docs, name);
+
+  // Strip ?firma=1 so a refresh doesn't reopen this view
+  history.replaceState({}, '', window.location.pathname);
+  updateMenuUserInfo();
+  updateTierBadges();
+
+  if (consentError) {
+    // The account exists now — the normal gate lets them retry inside the app
+    showToast('Tu cuenta fue creada, pero no pudimos registrar las firmas. Inténtalo de nuevo.', 'error');
+    if (await checkConsentGate()) return;
+  } else {
+    showToast('Cuenta creada y documentos firmados. ¡Bienvenido!', 'success');
+  }
+
+  consentGateActive = false;
+  setAppChromeVisible(true);
   currentPage = 'consulta';
   navItems.forEach(nav => nav.classList.remove('active'));
   document.querySelector('.bottom-nav .nav-item[data-page="consulta"]')?.classList.add('active');
@@ -4104,6 +4264,9 @@ window.handleSignup = handleSignup;
 window.updateConsentSubmitButton = updateConsentSubmitButton;
 window.handleConsentOnboardingSubmit = handleConsentOnboardingSubmit;
 window.renderConsentOnboarding = renderConsentOnboarding;
+window.renderFirmaRegistro = renderFirmaRegistro;
+window.updateFirmaSubmitButton = updateFirmaSubmitButton;
+window.handleFirmaRegistroSubmit = handleFirmaRegistroSubmit;
 window.handleForgotPassword = handleForgotPassword;
 window.handleResetPassword = handleResetPassword;
 
