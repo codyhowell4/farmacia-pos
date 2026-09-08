@@ -24,7 +24,6 @@ interface RequestPayload {
   trackers_to_fulfill?: number;
   premium_trackers?: number;
   org_id: string;
-  payment_method?: 'paypal' | 'cash';
   password?: string;
 }
 
@@ -154,7 +153,7 @@ const createMembership = async (
       basic_trackers_included: plan.basicTrackers,
       basic_trackers_fulfilled: 0,
       monthly_amount: plan.price,
-      payment_method: payload.payment_method || 'paypal',
+      payment_method: 'paypal',
       payment_processor: 'paypal',
       processor_subscription_id: payload.subscription_id,
       status: 'active',
@@ -318,7 +317,7 @@ Deno.serve(async (req) => {
     const env = Deno.env.toObject();
     const payload = (await req.json()) as RequestPayload;
 
-    if (!payload.subscription_id && payload.payment_method !== 'cash') {
+    if (!payload.subscription_id) {
       throw new Error('subscription_id requerido');
     }
     if (!payload.plan_type || !PLANS[payload.plan_type]) {
@@ -331,24 +330,22 @@ Deno.serve(async (req) => {
     const plan = PLANS[payload.plan_type];
     const supabase = supabaseAdmin(env);
 
-    // For PayPal payments, verify the subscription before creating anything.
-    if (payload.payment_method !== 'cash') {
-      const subscription = await getPayPalSubscription(env, payload.subscription_id);
-      const status = (subscription.status as string || '').toUpperCase();
-      const planId = subscription.plan_id as string | undefined;
+    // Always verify the subscription with PayPal before creating anything.
+    const subscription = await getPayPalSubscription(env, payload.subscription_id);
+    const status = (subscription.status as string || '').toUpperCase();
+    const planId = subscription.plan_id as string | undefined;
 
-      if (!['ACTIVE', 'APPROVAL_PENDING', 'APPROVED'].includes(status)) {
-        throw new Error(`La suscripción de PayPal no está activa (estado: ${status})`);
-      }
+    if (!['ACTIVE', 'APPROVAL_PENDING', 'APPROVED'].includes(status)) {
+      throw new Error(`La suscripción de PayPal no está activa (estado: ${status})`);
+    }
 
-      // Optional sanity check: PayPal plan_id matches our expected plan.
-      const expectedPlanId =
-        payload.plan_type === 'individual'
-          ? env.PAYPAL_PLAN_INDIVIDUAL
-          : env.PAYPAL_PLAN_FAMILIAR;
-      if (expectedPlanId && planId && planId !== expectedPlanId) {
-        throw new Error('El plan de PayPal no coincide con el plan seleccionado');
-      }
+    // Optional sanity check: PayPal plan_id matches our expected plan.
+    const expectedPlanId =
+      payload.plan_type === 'individual'
+        ? env.PAYPAL_PLAN_INDIVIDUAL
+        : env.PAYPAL_PLAN_FAMILIAR;
+    if (expectedPlanId && planId && planId !== expectedPlanId) {
+      throw new Error('El plan de PayPal no coincide con el plan seleccionado');
     }
 
     const existingCustomer = await findCustomerByEmailOrPhone(

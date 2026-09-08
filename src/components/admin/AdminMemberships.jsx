@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Users, User, ChevronDown, ChevronUp, Edit2, Loader2, RefreshCw } from 'lucide-react';
+import { Search, Users, User, ChevronDown, ChevronUp, Edit2, Loader2, RefreshCw, Activity } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { getMemberships, searchMemberships, updateMembership, processMembershipRenewals } from '@/lib/db';
+import { getMemberships, searchMemberships, updateMembership, processMembershipRenewals, getTrackerFulfillments, fulfillMembershipTrackers } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { formatMXN } from '@/lib/currency';
 
 const PAYPAL_STATUS_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paypal-subscription-status`;
@@ -23,9 +24,13 @@ const syncStatusToPayPal = async (subscriptionId, status) => {
   const action = actionMap[status];
   if (!action) return null;
 
+  const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch(PAYPAL_STATUS_FUNCTION_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
     body: JSON.stringify({ subscription_id: subscriptionId, action }),
   });
 
@@ -61,6 +66,10 @@ const AdminMemberships = () => {
   const [expandedId, setExpandedId] = useState(null);
   const [editing, setEditing] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [view, setView] = useState('memberships');
+  const [trackers, setTrackers] = useState([]);
+  const [trackersLoading, setTrackersLoading] = useState(false);
+  const [fulfillingId, setFulfillingId] = useState(null);
   const { toast } = useToast();
 
   const loadData = async () => {
@@ -78,14 +87,44 @@ const AdminMemberships = () => {
     }
   };
 
+  const loadTrackers = async () => {
+    setTrackersLoading(true);
+    try {
+      const data = await getTrackerFulfillments();
+      setTrackers(data || []);
+    } catch (e) {
+      console.error(e);
+      toast({ title: 'Error', description: 'No se pudieron cargar las entregas de rastreadores', variant: 'destructive' });
+    } finally {
+      setTrackersLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadData();
   }, []);
 
   useEffect(() => {
+    if (view === 'trackers') loadTrackers();
+  }, [view]);
+
+  useEffect(() => {
     const timer = setTimeout(loadData, 300);
     return () => clearTimeout(timer);
   }, [searchTerm]);
+
+  const handleFulfillTracker = async (membership) => {
+    setFulfillingId(membership.id);
+    try {
+      await fulfillMembershipTrackers(membership.id, 1);
+      toast({ title: 'Rastreador entregado', description: `${membership.customers?.full_name || membership.plan_id}` });
+      await loadTrackers();
+    } catch (e) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setFulfillingId(null);
+    }
+  };
 
   const handleProcessRenewals = async () => {
     setProcessing(true);
@@ -160,6 +199,105 @@ const AdminMemberships = () => {
         </Button>
       </div>
 
+      <div className="flex gap-2">
+        <Button
+          variant={view === 'memberships' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setView('memberships')}
+        >
+          <Users className="w-4 h-4 mr-1" /> Membresías
+        </Button>
+        <Button
+          variant={view === 'trackers' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setView('trackers')}
+        >
+          <Activity className="w-4 h-4 mr-1" /> Rastreadores
+        </Button>
+      </div>
+
+      {view === 'trackers' && (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-semibold text-slate-900">Entrega de rastreadores básicos</h2>
+              <p className="text-xs text-slate-500">
+                {trackers.reduce((sum, t) => sum + t.trackers_pending, 0)} pendiente(s) por entregar
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={loadTrackers} disabled={trackersLoading}>
+              <RefreshCw className={`w-4 h-4 ${trackersLoading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+
+          {trackersLoading ? (
+            <div className="py-12 text-center text-slate-500">Cargando entregas...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-900">Plan ID</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-900">Nombre</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-900">Teléfono</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-900">Plan</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-900">Estado</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-900">Entregados</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-900">Pendientes</th>
+                    <th className="px-4 py-3 text-left font-semibold text-slate-900">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {trackers.map((t) => (
+                    <tr key={t.id} className={t.trackers_pending > 0 ? 'bg-amber-50/40' : ''}>
+                      <td className="px-4 py-3 font-mono font-medium text-slate-900">{t.plan_id}</td>
+                      <td className="px-4 py-3 text-slate-900">{t.customers?.full_name || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{t.customers?.phone || '—'}</td>
+                      <td className="px-4 py-3 capitalize text-slate-700">
+                        {t.plan_type === 'familiar' ? 'Familiar' : 'Individual'}
+                      </td>
+                      <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {t.basic_trackers_fulfilled || 0} / {t.basic_trackers_included || 0}
+                      </td>
+                      <td className="px-4 py-3">
+                        {t.trackers_pending > 0 ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                            {t.trackers_pending} pendiente(s)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            Completo
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={t.trackers_pending <= 0 || fulfillingId === t.id}
+                          onClick={() => handleFulfillTracker(t)}
+                        >
+                          {fulfillingId === t.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Entregar 1'}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                  {trackers.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-8 text-center text-slate-500">
+                        Ninguna membresía incluye rastreadores todavía.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {view === 'memberships' && (
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -274,6 +412,7 @@ const AdminMemberships = () => {
           </div>
         )}
       </div>
+      )}
 
       <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="max-w-md">

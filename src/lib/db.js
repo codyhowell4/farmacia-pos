@@ -2881,3 +2881,67 @@ export const fulfillMembershipTrackers = async (membershipId, qty) => {
 
   return { fulfilled: toFulfill, product };
 };
+
+export const getTrackerFulfillments = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('memberships')
+    .select('id, plan_id, plan_type, status, basic_trackers_included, basic_trackers_fulfilled, created_at, customers(full_name, phone)')
+    .eq('org_id', orgId)
+    .gt('basic_trackers_included', 0)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+
+  return (data || [])
+    .map((m) => ({
+      ...m,
+      trackers_pending: Math.max(0, (m.basic_trackers_included || 0) - (m.basic_trackers_fulfilled || 0)),
+    }))
+    .sort((a, b) => b.trackers_pending - a.trackers_pending);
+};
+
+export const getPartners = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('partners')
+    .select('*')
+    .eq('org_id', orgId)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+  if (error) throw error;
+  return data || [];
+};
+
+export const createPartner = async (partner) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('partners')
+    .insert({ ...partner, org_id: orgId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const updatePartner = async (id, updates) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('partners')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('org_id', orgId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const deletePartner = async (id) => {
+  const orgId = await getOrgId();
+  const { error } = await supabase
+    .from('partners')
+    .delete()
+    .eq('id', id)
+    .eq('org_id', orgId);
+  if (error) throw error;
+};

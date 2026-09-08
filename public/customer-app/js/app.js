@@ -74,24 +74,18 @@ let consentGateActive = false;
 // Pages that require an active membership.
 // NOTE: 'consulta' is intentionally NOT gated — telehealth is pay-per-consult
 // for free users and included/discounted for members.
+// The fitness sections (Hoy, Cuerpo, Salud, Ayuno, Sueño, Fotos) and
+// Integraciones are retired until the fitness trackers arrive; their code
+// stays in this file but the pages are no longer routed or gated.
 const PAID_PAGES = new Set([
-  'home', 'body', 'health',
-  'emergency-id', 'guides', 'caregiver',
-  'fasting', 'sleep', 'checkin', 'integrations'
+  'emergency-id', 'guides', 'caregiver'
 ]);
 
 // Display names for the locked-page message
 const PAID_PAGE_NAMES = {
-  'home':         'Resumen de Hoy',
-  'body':         'Métricas de Cuerpo',
-  'health':       'Salud',
   'emergency-id': 'ID Médico de Emergencia',
   'guides':       'Guías de Salud',
   'caregiver':    'Cuidado Familiar',
-  'fasting':      'Ayuno Intermitente',
-  'sleep':        'Seguimiento del Sueño',
-  'checkin':      'Fotos de Progreso',
-  'integrations': 'Integraciones'
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -145,12 +139,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Listen for dose taken/skipped events from service worker
   window.addEventListener('doseTaken', (e) => {
     Store.markDoseTaken(e.detail.scheduleId, e.detail.doseId);
-    renderSalud();
   });
-  
+
   window.addEventListener('doseSkipped', (e) => {
     Store.markDoseSkipped(e.detail.scheduleId, e.detail.doseId);
-    renderSalud();
   });
 });
 
@@ -981,7 +973,7 @@ function renderLocked(featureName) {
   `;
 }
 
-// Membresías page - upsell for guests/free users; status card for active members.
+// Membresías page - upsell for guests/free users; digital card for active members.
 // Intentionally NOT in PAID_PAGES: it is the upsell page and must stay
 // reachable by free users and guests.
 async function renderMembresias() {
@@ -990,7 +982,8 @@ async function renderMembresias() {
       <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Consultas médicas gratis cada mes (2 Individual / 8 Familiar)</span></div>
       <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>50% de descuento en consultas adicionales</span></div>
       <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>10% de descuento en medicamentos</span></div>
-      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Acceso completo a la app: Hoy, Cuerpo, Salud, guías, ID médico y rastreadores</span></div>
+      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Descuentos en negocios aliados</span></div>
+      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Guías de salud e ID médico de emergencia</span></div>
     </div>
   `;
 
@@ -999,7 +992,7 @@ async function renderMembresias() {
     <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; text-align: center;">
       <div style="font-size: 2rem; margin-bottom: 0.5rem;">⭐</div>
       <h2 style="margin: 0; font-size: 1.4rem; font-weight: 800;">Membresía Apolo</h2>
-      <p style="margin: 0.5rem auto 0; font-size: 0.9rem; opacity: 0.9; max-width: 300px; line-height: 1.5;">Consultas incluidas cada mes, descuentos en medicamentos y acceso completo a todas las herramientas de la app.</p>
+      <p style="margin: 0.5rem auto 0; font-size: 0.9rem; opacity: 0.9; max-width: 300px; line-height: 1.5;">Consultas incluidas cada mes, 10% en medicamentos y descuentos en negocios aliados.</p>
     </div>
 
     <!-- Qué incluye -->
@@ -1010,54 +1003,91 @@ async function renderMembresias() {
       </div>
     </div>
 
-    <!-- Member status / plan cards (resolved async) -->
+    <!-- Member card / plan cards (resolved async) -->
     <div id="membresias-status" style="padding: 0 1rem;">
       <div style="background: rgba(255,255,255,0.95); border-radius: 20px; padding: 2rem 1rem; text-align: center;">
         <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⏳</div>
         <div style="color: var(--text-muted); font-size: 0.9rem;">Cargando tu membresía...</div>
       </div>
     </div>
+
+    <!-- Negocios aliados (resolved async) -->
+    <div id="membresias-socios"></div>
   `;
 
   let membership = { status: null, visits_remaining: 0 };
+  let partners = [];
   try {
-    membership = await FarmaciaAPI.getMembershipDetails();
+    [membership, partners] = await Promise.all([
+      FarmaciaAPI.getMembershipDetails(),
+      FarmaciaAPI.getPartners(),
+    ]);
   } catch (e) {
-    console.warn('[renderMembresias] membership lookup failed:', e);
+    console.warn('[renderMembresias] lookup failed:', e);
   }
   // Bail out if the user navigated away while loading
   if (currentPage !== 'membresias') return;
   const statusEl = document.getElementById('membresias-status');
   if (!statusEl) return;
+  const sociosEl = document.getElementById('membresias-socios');
 
-  if (membership && membership.status === 'active') {
-    // ---- Active member: status card ----
-    const planLabel = membership.plan_type === 'familiar' ? 'Familiar' : 'Individual';
+  const isMember = membership && membership.status === 'active';
+
+  if (isMember) {
+    // ---- Active member: digital membership card ----
+    const planLabel = membership.plan_type === 'familiar' ? 'FAMILIAR' : 'INDIVIDUAL';
     const visits = membership.visits_remaining != null ? membership.visits_remaining : 0;
     const visitsLimit = membership.visits_limit || 0;
+    const discount = membership.discount_percent != null ? membership.discount_percent : 10;
+    const memberName = currentCustomerProfile?.name || 'Miembro Apolo';
     const renewal = membership.next_renewal_date
       ? new Date(membership.next_renewal_date + 'T00:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })
       : null;
-    const rowStyle = 'display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.5rem 0; font-size: 0.9rem;';
-    const labelStyle = 'color: #64748b;';
-    const valueStyle = 'font-weight: 600; color: #1a1a2e; text-align: right;';
+
     statusEl.innerHTML = `
-      <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border: 2px solid #bbf7d0; border-radius: 20px; padding: 1.25rem;">
-        <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
-          <div style="font-size: 1.75rem;">⭐</div>
-          <div style="flex: 1;">
-            <div style="font-weight: 700; font-size: 1.05rem; color: #15803d;">Tu membresía</div>
-            <div style="font-size: 0.8rem; color: #22c55e; font-weight: 600;">✓ Activa</div>
+      <div style="background: linear-gradient(135deg, #141B5E 0%, #1E2A8A 55%, #2A3BB5 100%); border-radius: 20px; padding: 1.25rem; color: white; box-shadow: 0 12px 30px rgba(20,27,94,0.35); position: relative; overflow: hidden;">
+        <div style="position: absolute; top: -40px; right: -40px; width: 140px; height: 140px; border-radius: 50%; background: rgba(255,255,255,0.06);"></div>
+        <div style="position: absolute; bottom: -60px; left: -30px; width: 160px; height: 160px; border-radius: 50%; background: rgba(224,166,62,0.12);"></div>
+        <div style="position: relative;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+              <div style="font-size: 0.6rem; letter-spacing: 0.2em; opacity: 0.7;">FARMACIA APOLO</div>
+              <div style="font-weight: 800; font-size: 1.1rem; letter-spacing: 0.05em;">MEMBRESÍA ${planLabel}</div>
+            </div>
+            <div style="font-size: 1.4rem;">⭐</div>
           </div>
-          <span style="font-size: 0.75rem; background: #1E2A8A; color: white; padding: 0.25rem 0.625rem; border-radius: 20px; font-weight: 600;">${planLabel}</span>
+
+          <div style="margin: 1.25rem 0; text-align: center;">
+            <div style="font-size: 2.5rem; font-weight: 800; line-height: 1;">${visits}<span style="font-size: 1rem; font-weight: 600; opacity: 0.7;"> / ${visitsLimit}</span></div>
+            <div style="font-size: 0.75rem; opacity: 0.8; margin-top: 0.25rem;">consultas restantes este mes</div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem;">
+            <div style="min-width: 0;">
+              <div style="font-size: 0.6rem; letter-spacing: 0.15em; opacity: 0.7;">TITULAR</div>
+              <div style="font-weight: 700; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(memberName)}</div>
+              ${membership.plan_id ? `<div style="font-family: monospace; font-size: 0.8rem; opacity: 0.85; margin-top: 0.15rem;">${escapeHtml(membership.plan_id)}</div>` : ''}
+            </div>
+            <div style="text-align: right; flex-shrink: 0;">
+              <div style="font-size: 0.6rem; letter-spacing: 0.15em; opacity: 0.7;">DESCUENTO</div>
+              <div style="font-weight: 800; font-size: 1.2rem; color: #E0A63E;">${discount}%</div>
+            </div>
+          </div>
         </div>
-        <div style="border-top: 1px solid #bbf7d0; padding-top: 0.25rem;">
-          ${membership.plan_id ? `<div style="${rowStyle}"><span style="${labelStyle}">Número de plan</span><span style="${valueStyle}">${escapeHtml(membership.plan_id)}</span></div>` : ''}
-          <div style="${rowStyle}"><span style="${labelStyle}">Consultas restantes</span><span style="${valueStyle}">${visits}${visitsLimit ? ` de ${visitsLimit}` : ''} este mes</span></div>
-          <div style="${rowStyle}"><span style="${labelStyle}">Descuento en medicamentos</span><span style="${valueStyle}">${membership.discount_percent != null ? membership.discount_percent : 10}%</span></div>
-          ${membership.monthly_amount ? `<div style="${rowStyle}"><span style="${labelStyle}">Mensualidad</span><span style="${valueStyle}">${formatPrice(Number(membership.monthly_amount))}</span></div>` : ''}
-          ${renewal ? `<div style="${rowStyle}"><span style="${labelStyle}">Próxima renovación</span><span style="${valueStyle}">${renewal}</span></div>` : ''}
+      </div>
+      <p style="text-align: center; font-size: 0.75rem; color: rgba(255,255,255,0.85); margin: 0.625rem 0 0;">Muestra esta tarjeta en farmacia y negocios aliados</p>
+
+      <div style="background: rgba(255,255,255,0.95); border-radius: 16px; padding: 1rem 1.25rem; margin-top: 1rem; font-size: 0.85rem;">
+        <div style="display: flex; justify-content: space-between; padding: 0.375rem 0;">
+          <span style="color: #64748b;">Estado</span>
+          <span style="font-weight: 600; color: #15803d;">✓ Activa</span>
         </div>
+        <div style="display: flex; justify-content: space-between; padding: 0.375rem 0;">
+          <span style="color: #64748b;">Consultas adicionales</span>
+          <span style="font-weight: 600; color: #1a1a2e;">50% de descuento</span>
+        </div>
+        ${membership.monthly_amount ? `<div style="display: flex; justify-content: space-between; padding: 0.375rem 0;"><span style="color: #64748b;">Mensualidad</span><span style="font-weight: 600; color: #1a1a2e;">${formatPrice(Number(membership.monthly_amount))}</span></div>` : ''}
+        ${renewal ? `<div style="display: flex; justify-content: space-between; padding: 0.375rem 0;"><span style="color: #64748b;">Próxima renovación</span><span style="font-weight: 600; color: #1a1a2e;">${renewal}</span></div>` : ''}
       </div>
     `;
   } else {
@@ -1086,20 +1116,51 @@ async function renderMembresias() {
         '2 consultas médicas gratis al mes',
         '50% de descuento en consultas adicionales',
         '10% de descuento en medicamentos',
-        'Acceso completo a la app'
+        'Descuentos en negocios aliados'
       ], false)}
       ${planCard('Familiar', 'Para toda la familia', '$500', [
         '8 consultas médicas gratis al mes',
         'Cobertura para toda la familia',
         '50% de descuento en consultas adicionales',
         '10% de descuento en medicamentos',
-        'Acceso completo a la app'
+        'Descuentos en negocios aliados'
       ], true)}
       ${!currentAuthUser ? `
         <div style="text-align: center; padding: 0 0 0.5rem; font-size: 0.85rem; color: rgba(255,255,255,0.8);">
           ¿Ya eres miembro? <a href="#" onclick="renderLogin(); return false;" style="color: #46AC78; font-weight: 600; text-decoration: none;">Inicia sesión</a>
         </div>
       ` : ''}
+    `;
+  }
+
+  // ---- Negocios aliados (visible to everyone; a teaser for free users) ----
+  if (sociosEl && partners.length) {
+    const partnerCards = partners.map(p => `
+      <div style="background: rgba(255,255,255,0.95); border-radius: 16px; padding: 1rem; border: 1px solid #E3E8F2;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
+          <div style="font-weight: 700; color: #1a1a2e; font-size: 0.95rem;">${escapeHtml(p.name)}</div>
+          ${p.category ? `<span style="font-size: 0.65rem; background: #eef2ff; color: #1E2A8A; padding: 0.2rem 0.5rem; border-radius: 12px; font-weight: 600; white-space: nowrap;">${escapeHtml(p.category)}</span>` : ''}
+        </div>
+        <div style="color: #359268; font-weight: 600; font-size: 0.85rem; margin-top: 0.3rem;">🤝 ${escapeHtml(p.offer)}</div>
+        ${p.description ? `<div style="color: #64748b; font-size: 0.8rem; margin-top: 0.3rem; line-height: 1.4;">${escapeHtml(p.description)}</div>` : ''}
+        ${p.phone ? `<div style="color: #64748b; font-size: 0.75rem; margin-top: 0.3rem;">📞 ${escapeHtml(p.phone)}</div>` : ''}
+        ${p.address ? `<div style="color: #64748b; font-size: 0.75rem; margin-top: 0.15rem;">📍 ${escapeHtml(p.address)}</div>` : ''}
+      </div>
+    `).join('');
+
+    sociosEl.innerHTML = `
+      <div style="padding: 0.5rem 1rem 1.5rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+          <div style="font-weight: 700; font-size: 1rem; color: white;">Negocios aliados</div>
+          ${isMember ? '' : '<span style="font-size: 0.7rem; color: #E0A63E; font-weight: 700;">🔒 Beneficio de miembros</span>'}
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">${partnerCards}</div>
+        <p style="font-size: 0.75rem; color: rgba(255,255,255,0.85); margin-top: 0.75rem; text-align: center;">
+          ${isMember
+            ? 'Muestra tu tarjeta digital para obtener estos descuentos.'
+            : 'Activa tu membresía para usar estos descuentos.'}
+        </p>
+      </div>
     `;
   }
 }
@@ -1432,9 +1493,6 @@ function renderPage(page) {
   }
   
   switch(page) {
-    case 'home': renderHome(); break;
-    case 'body': renderBody(); break;
-    case 'health': renderSalud(); break;
     case 'consulta': renderConsulta(); break;
     case 'appointments': renderAppointments(); break;
     case 'membresias': renderMembresias(); break;
@@ -1445,16 +1503,12 @@ function renderPage(page) {
     case 'orders': renderOrders(); break;
     case 'settings': renderSettings(); break;
     case 'emergency-id': renderEmergencyID(); break;
-    case 'fasting': renderFasting(); break;
-    case 'sleep': renderSleep(); break;
-    case 'checkin': renderCheckIn(); break;
-    case 'integrations': renderIntegrations(); break;
     case 'guides': renderHealthGuides(); break;
     case 'login': renderLogin(); break;
     case 'signup': renderSignup(); break;
     case 'forgot-password': renderForgotPassword(); break;
     case 'privacidad': renderPrivacidad(); break;
-    default: renderHome();
+    default: renderConsulta();
   }
 }
 

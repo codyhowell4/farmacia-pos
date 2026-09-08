@@ -37,7 +37,6 @@ const PLANS = {
   },
 };
 
-const PREMIUM_TRACKER_PRICE = 250;
 const PUBLIC_ORG_ID = import.meta.env.VITE_PUBLIC_ORG_ID;
 const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paypal-subscription`;
 
@@ -61,7 +60,6 @@ const MembershipPublicPage = () => {
     member5: '',
     member6: '',
     basicTrackers: 0,
-    premiumTrackers: 0,
   });
 
   const formRef = useRef(form);
@@ -73,17 +71,14 @@ const MembershipPublicPage = () => {
 
   const monthlyTotal = useMemo(() => {
     if (!plan) return 0;
-    let total = plan.monthlyPrice;
-    total += (Number(form.premiumTrackers) || 0) * PREMIUM_TRACKER_PRICE;
-    return total;
-  }, [plan, form.premiumTrackers]);
+    return plan.monthlyPrice;
+  }, [plan]);
 
   const handlePlanSelect = (key) => {
     setSelectedPlanKey(key);
     setForm((f) => ({
       ...f,
       basicTrackers: PLANS[key].basicTrackers,
-      premiumTrackers: 0,
     }));
     setStep('form');
   };
@@ -171,7 +166,6 @@ const MembershipPublicPage = () => {
           },
           member_names: familyMembers,
           trackers_to_fulfill: Number(currentForm.basicTrackers) || 0,
-          premium_trackers: Number(currentForm.premiumTrackers) || 0,
           org_id: PUBLIC_ORG_ID,
         }),
       });
@@ -380,33 +374,6 @@ const MembershipPublicPage = () => {
                 {[0, 1, 2, 3, 4, 5, 6].map((n) => (
                   <option key={n} value={n}>
                     {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {selectedPlanKey === 'individual' ? (
-            <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
-              <input
-                type="checkbox"
-                checked={form.premiumTrackers > 0}
-                onChange={(e) => updateField('premiumTrackers', e.target.checked ? 1 : 0)}
-                className="w-4 h-4"
-              />
-              <span>Actualizar a rastreador premium (+${PREMIUM_TRACKER_PRICE} MXN)</span>
-            </label>
-          ) : (
-            <div className="flex items-center gap-4">
-              <Label>Cantidad de upgrades a premium:</Label>
-              <select
-                value={form.premiumTrackers}
-                onChange={(e) => updateField('premiumTrackers', Number(e.target.value))}
-                className="px-3 py-2 rounded-md border border-slate-300 text-sm"
-              >
-                {[0, 1, 2, 3, 4, 5, 6].map((n) => (
-                  <option key={n} value={n}>
-                    {n} {n === 1 ? 'rastreador' : 'rastreadores'} (+${n * PREMIUM_TRACKER_PRICE})
                   </option>
                 ))}
               </select>

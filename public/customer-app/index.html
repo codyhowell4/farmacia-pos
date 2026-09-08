@@ -92,8 +92,8 @@
       </a>
     </nav>
 
-    <!-- Floating Voice Button -->
-    <button id="voice-btn" onclick="toggleVoiceInput()" style="position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, rgba(70,172,120,0.9), rgba(53,146,104,0.9)); border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 8px 32px rgba(70,172,120,0.4), 0 0 20px rgba(70,172,120,0.3); cursor: pointer; z-index: 50; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; transition: all 0.3s ease; backdrop-filter: blur(10px);">
+    <!-- Floating Voice Button (hidden until the fitness sections return) -->
+    <button id="voice-btn" onclick="toggleVoiceInput()" style="display: none; position: fixed; bottom: 100px; right: 20px; width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, rgba(70,172,120,0.9), rgba(53,146,104,0.9)); border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 8px 32px rgba(70,172,120,0.4), 0 0 20px rgba(70,172,120,0.3); cursor: pointer; z-index: 50; align-items: center; justify-content: center; font-size: 1.5rem; transition: all 0.3s ease; backdrop-filter: blur(10px);">
       🎤
     </button>
 
@@ -145,20 +145,6 @@
       </div>
       
       <nav class="menu-nav">
-        <div class="menu-section">Fitness</div>
-        <a href="#" class="menu-item" data-page="home">
-          <span class="menu-icon">📅</span>
-          <span>Hoy - Resumen Diario</span>
-        </a>
-        <a href="#" class="menu-item" data-page="body">
-          <span class="menu-icon">⚖️</span>
-          <span>Cuerpo - Métricas</span>
-        </a>
-        <a href="#" class="menu-item" data-page="health">
-          <span class="menu-icon">❤️</span>
-          <span>Salud - Medicamentos</span>
-        </a>
-        
         <div class="menu-section">Consultas Médicas</div>
         <a href="#" class="menu-item" data-page="appointments">
           <span class="menu-icon">📋</span>
@@ -167,20 +153,6 @@
         <a href="#" class="menu-item" data-page="consulta">
           <span class="menu-icon">👨‍⚕️</span>
           <span>Nueva Consulta</span>
-        </a>
-        
-        <div class="menu-section">Herramientas</div>
-        <a href="#" class="menu-item" data-page="fasting">
-          <span class="menu-icon">⏰</span>
-          <span>Ayuno Intermitente</span>
-        </a>
-        <a href="#" class="menu-item" data-page="sleep">
-          <span class="menu-icon">😴</span>
-          <span>Seguimiento del Sueño</span>
-        </a>
-        <a href="#" class="menu-item" data-page="checkin">
-          <span class="menu-icon">📸</span>
-          <span>Fotos de Progreso</span>
         </a>
 
         <div class="menu-section">Farmacia Apollo</div>
@@ -243,9 +215,9 @@
   <!-- Supabase integration (Phase 1) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/supabase.js?v=1"></script>
-  <script src="js/api.js?v=1"></script>
+  <script src="js/api.js?v=2"></script>
   <script src="js/consentDocs.js?v=1"></script>
 
-  <script type="module" src="js/app.js?v=8"></script>
+  <script type="module" src="js/app.js?v=9"></script>
 </body>
 </html>

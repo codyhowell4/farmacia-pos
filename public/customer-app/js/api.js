@@ -809,6 +809,24 @@ window.FarmaciaAPI = (function () {
     },
 
     /**
+     * Get the org's active partner businesses (member discounts/perks).
+     * Public RPC — works for guests too. Falls back to [] on error or
+     * when the partners migration has not been applied yet.
+     */
+    async getPartners() {
+      if (!sb) return [];
+      try {
+        const orgId = (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
+        const { data, error } = await sb.rpc('get_public_partners', { p_org_id: orgId });
+        if (error) throw error;
+        return data || [];
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getPartners error:', err.message);
+        return [];
+      }
+    },
+
+    /**
      * Update one of the current customer's appointments by id (RLS-scoped).
      * Used for cancellations and status updates.
      */

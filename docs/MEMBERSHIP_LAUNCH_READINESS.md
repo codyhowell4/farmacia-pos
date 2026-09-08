@@ -6,6 +6,27 @@ Audit date: 2026-05-21. Scope: full membership flow (public signup, staff regist
 
 ---
 
+## Implementation status (2026-05-21, second pass)
+
+**All 6 blockers are fixed in code.** What changed: B1 + B4 → `supabase/functions/paypal-webhook/index.ts` rewritten (reads `billing_agreement_id`, resets `visits_remaining` on renewal, verifies PayPal signatures via `PAYPAL_WEBHOOK_ID`, duplicates return 200, SUSPENDED now maps to `paused`). B2 → constraint fix in `MIGRATION_membership_launch_fixes.sql`. B3 → cash branch removed from `paypal-subscription/index.ts`. B5 → `paypal-subscription-status` now requires a staff JWT (gateway `verify_jwt = true` + in-function admin/pos check; the admin UI sends the session token). B6 → staff cash registrations now store `payment_processor: null` and the migration cleans existing rows.
+
+Remaining manual steps before launch:
+
+1. **Apply migrations** (Supabase SQL editor):
+   - `supabase/migrations/MIGRATION_membership_launch_fixes.sql` (B2 constraint + B6 data fix)
+   - `supabase/migrations/MIGRATION_partners.sql` (new partners feature)
+2. **Deploy edge functions**: `supabase functions deploy paypal-webhook paypal-subscription paypal-subscription-status`
+3. **Set secret** `PAYPAL_WEBHOOK_ID` (from the PayPal dashboard webhook registration) — the webhook now **fails closed** without it, so nothing processes until this is set.
+4. PayPal live setup + E2E test per §4 below.
+
+Also shipped in the same pass:
+- Premium tracker upgrade hidden in both signup flows (no premium stock yet); basic tracker UI unchanged.
+- New **Rastreadores** tab in Admin → Membresías: who is owed a basic tracker, who got one, one-click "Entregar 1" (stock may go negative until the shipment arrives — that is the owed-tracker ledger).
+- New **Socios** section in Admin (`/admin/partners`): CRUD for partner businesses; active partners show in the customer app's Membresías tab (members see them under their card, free users see them as a teaser).
+- Customer app: fitness sections retired until trackers arrive (Hoy, Cuerpo, Salud, Ayuno, Sueño, Fotos + voice button + Integraciones — code kept, unreachable); Membresías tab now shows a **digital membership card** (titular, plan number, visits left, discount, renewal) for active members.
+
+---
+
 ## 1. What exists today (verified working per code)
 
 - Public self-signup at `/membresias` (`src/pages/MembershipPublicPage.jsx`) — plan pick → form → PayPal subscription → activation via `paypal-subscription` edge function (verifies subscription with PayPal, dedupes by email/phone, reinstates cancelled memberships, provisions the customer-app login).

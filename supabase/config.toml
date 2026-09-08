@@ -7,7 +7,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.paypal-subscription-status]
-verify_jwt = false
+verify_jwt = true
 
 [functions.paypal-capture-consult]
 verify_jwt = false

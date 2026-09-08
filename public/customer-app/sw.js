@@ -1,7 +1,7 @@
 // Service Worker for Farmacia Apollo
 // Handles push notifications for medication reminders
 
-const CACHE_NAME = 'farmacia-apollo-v6';
+const CACHE_NAME = 'farmacia-apollo-v7';
 
 // Install event
 self.addEventListener('install', (event) => {

@@ -41,7 +41,6 @@ const PLANS = {
 };
 
 const CASH_SURCHARGE = 50;
-const PREMIUM_TRACKER_PRICE = 250;
 const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paypal-subscription`;
 
 const MembershipRegistration = () => {
@@ -65,7 +64,6 @@ const MembershipRegistration = () => {
     member6: '',
     paymentMethod: 'paypal',
     basicTrackers: 0,
-    premiumTrackers: 0,
   });
 
   const formRef = useRef(form);
@@ -79,16 +77,14 @@ const MembershipRegistration = () => {
     if (!plan) return 0;
     let total = plan.monthlyPrice;
     if (form.paymentMethod === 'cash') total += CASH_SURCHARGE;
-    total += (Number(form.premiumTrackers) || 0) * PREMIUM_TRACKER_PRICE;
     return total;
-  }, [plan, form.paymentMethod, form.premiumTrackers]);
+  }, [plan, form.paymentMethod]);
 
   const handlePlanSelect = (key) => {
     setSelectedPlanKey(key);
     setForm((f) => ({
       ...f,
       basicTrackers: PLANS[key].basicTrackers,
-      premiumTrackers: 0,
     }));
     setStep('form');
   };
@@ -137,12 +133,11 @@ const MembershipRegistration = () => {
         plan_type: selectedPlanKey,
         discount_percent: 10,
         visits_limit: plan.visits,
-        premium_trackers: Number(form.premiumTrackers) || 0,
         basic_trackers_included: plan.basicTrackers,
         basic_trackers_fulfilled: 0,
         monthly_amount: monthlyTotal,
         payment_method: 'cash',
-        payment_processor: 'paypal',
+        payment_processor: null,
         processor_subscription_id: null,
       },
       familyMembers: getFamilyMembers(),
@@ -245,9 +240,7 @@ const MembershipRegistration = () => {
           },
           member_names: familyMembers,
           trackers_to_fulfill: Number(currentForm.basicTrackers) || 0,
-          premium_trackers: Number(currentForm.premiumTrackers) || 0,
           org_id: orgId,
-          payment_method: 'paypal',
         }),
       });
 
@@ -422,33 +415,6 @@ const MembershipRegistration = () => {
               </select>
             </div>
           )}
-
-          {selectedPlanKey === 'individual' ? (
-            <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
-              <input
-                type="checkbox"
-                checked={form.premiumTrackers > 0}
-                onChange={(e) => updateField('premiumTrackers', e.target.checked ? 1 : 0)}
-                className="w-4 h-4"
-              />
-              <span>Actualizar a rastreador premium (+${PREMIUM_TRACKER_PRICE} MXN)</span>
-            </label>
-          ) : (
-            <div className="flex items-center gap-4">
-              <Label>Cantidad de upgrades a premium:</Label>
-              <select
-                value={form.premiumTrackers}
-                onChange={(e) => updateField('premiumTrackers', Number(e.target.value))}
-                className="px-3 py-2 rounded-md border border-slate-300 text-sm"
-              >
-                {[0, 1, 2, 3, 4, 5, 6].map((n) => (
-                  <option key={n} value={n}>
-                    {n} {n === 1 ? 'rastreador' : 'rastreadores'} (+${n * PREMIUM_TRACKER_PRICE})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
 
         <div className="space-y-2">
@@ -551,7 +517,6 @@ const MembershipRegistration = () => {
             member6: '',
             paymentMethod: 'paypal',
             basicTrackers: 0,
-            premiumTrackers: 0,
           });
         }}>
           Registrar otra

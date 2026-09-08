@@ -1,6 +1,7 @@
 // Supabase Edge Function: paypal-subscription-status
 // Calls PayPal API to suspend, activate, or cancel a subscription.
-// Exposed without JWT verification so the admin panel can call it.
+// Staff-only: JWT verification is ON (supabase/config.toml) and the caller
+// must have an admin or pos profile.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
@@ -8,6 +9,32 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+const supabaseAdmin = (env: Record<string, string>) => {
+  const url = env.SUPABASE_URL!;
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SERVICE_ROLE_KEY!;
+  return createClient(url, serviceKey, { auth: { persistSession: false } });
+};
+
+// Validates the caller's JWT and requires an admin/pos profile.
+const requireStaffUser = async (env: Record<string, string>, req: Request) => {
+  const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+  if (!token) throw new Error('No autorizado');
+
+  const supabase = supabaseAdmin(env);
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) throw new Error('No autorizado');
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (!profile || !['admin', 'pos'].includes(profile.role as string)) {
+    throw new Error('Solo el personal puede gestionar suscripciones');
+  }
 };
 
 const paypalBaseUrl = (env: Record<string, string>) =>
@@ -78,6 +105,8 @@ Deno.serve(async (req) => {
 
   try {
     const env = Deno.env.toObject();
+    await requireStaffUser(env, req);
+
     const payload = (await req.json()) as {
       subscription_id?: string;
       action?: 'suspend' | 'activate' | 'cancel';

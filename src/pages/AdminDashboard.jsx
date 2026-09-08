@@ -6,7 +6,7 @@ import {
   Users, Package, ShoppingCart, LogOut, BarChart3, Ticket, Menu, X, Clock, Shield,
   Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle, Stethoscope, Smartphone,
   ClipboardList, Pill, CalendarDays, AlertTriangle, ChevronDown, ChevronRight, UserPlus,
-  Award, FileSignature,
+  Award, FileSignature, HeartHandshake,
 } from 'lucide-react';
 import ApoloBrand from '@/components/ApoloBrand';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,7 @@ import AdminReorderReport from '@/components/admin/AdminReorderReport';
 import MembershipRegistration from '@/components/admin/MembershipRegistration';
 import AdminMemberships from '@/components/admin/AdminMemberships';
 import AdminConsents from '@/components/admin/AdminConsents';
+import AdminPartners from '@/components/admin/AdminPartners';
 
 const AdminDashboard = () => {
   const { logout, user } = useAuth();
@@ -66,6 +67,7 @@ const AdminDashboard = () => {
     if (path.includes('/orders')) return 'orders';
     if (path.includes('/membership-register')) return 'membership-register';
     if (path.includes('/memberships')) return 'memberships';
+    if (path.includes('/partners')) return 'partners';
     if (path.includes('/reorder-report')) return 'reorder-report';
     return 'overview';
   };
@@ -202,6 +204,10 @@ const AdminDashboard = () => {
       <button onClick={() => navigateTo('/admin/memberships', 'memberships')} className={navButtonClass(isActive('memberships'))}>
         <Award className="w-5 h-5" />
         <span className="font-medium">Membresía</span>
+      </button>
+      <button onClick={() => navigateTo('/admin/partners', 'partners')} className={navButtonClass(isActive('partners'))}>
+        <HeartHandshake className="w-5 h-5" />
+        <span className="font-medium">Socios</span>
       </button>
 
       {/* Análisis — Collapsible submenu */}
@@ -368,6 +374,7 @@ const AdminDashboard = () => {
                 <Route path="/orders" element={<AdminOrders />} />
                 <Route path="/membership-register" element={<MembershipRegistration />} />
                 <Route path="/memberships" element={<AdminMemberships />} />
+                <Route path="/partners" element={<AdminPartners />} />
                 <Route path="/customers/:customerId" element={<AdminCustomerProfile />} />
                 <Route path="/reorder-report" element={<AdminReorderReport />} />
                 <Route path="/settings" element={<AdminSettings />} />
