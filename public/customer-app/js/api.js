@@ -11,7 +11,8 @@
 //   getCustomerOrders, getAppointments, getPrescriptions,
 //   getDoctors, getDoctorBookedSlots, getMembershipDetails, getConsultPrice,
 //   createAppointment, updateAppointment,
-//   getConsultaNotes, getConsentDocuments, signConsentDocument
+//   getConsultaNotes, getConsentDocuments, signConsentDocument,
+//   getMySignedConsentTypes, acceptConsentDocuments
 // ============================================================
 
 window.FarmaciaAPI = (function () {
@@ -1295,6 +1296,95 @@ window.FarmaciaAPI = (function () {
         return { data, error: null };
       } catch (err) {
         console.error('[FarmaciaAPI] signConsentDocument failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
+     * Get the consent document TYPES the current customer has already
+     * signed. Used by the consent-onboarding gate in app.js to decide
+     * which standard documents (window.APOLO_CONSENT_DOCS) are still
+     * missing. Returns [] only when the query succeeded and nothing is
+     * signed; returns null on any failure so callers can fail open
+     * instead of locking the user inside the gate.
+     */
+    async getMySignedConsentTypes() {
+      if (!sb) return null;
+      try {
+        const user = await getAuthUser();
+        if (!user) return null;
+
+        const { data: customer, error: custErr } = await sb
+          .from('customers')
+          .select('id')
+          .eq('profile_id', user.id)
+          .single();
+        if (custErr || !customer) return null;
+
+        const { data, error } = await sb
+          .from('consent_documents')
+          .select('type')
+          .eq('customer_id', customer.id)
+          .eq('status', 'signed');
+        if (error) throw error;
+
+        return [...new Set((data || []).map(d => d.type).filter(Boolean))];
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getMySignedConsentTypes error:', err.message);
+        return null;
+      }
+    },
+
+    /**
+     * Insert signed consent documents for the current customer
+     * (consent-onboarding gate). Each doc: { type, title, content } —
+     * all rows are inserted with status 'signed'.
+     * NOTE: requires the RLS policy 'consent_documents_customer_insert'
+     * (see supabase/migrations/MIGRATION_consent_customer_insert.sql) —
+     * without it the INSERT is rejected because customers only have
+     * SELECT/UPDATE on their own rows.
+     */
+    async acceptConsentDocuments(docs, signerName) {
+      if (!sb) {
+        return { data: null, error: new Error('Supabase not available') };
+      }
+      const user = await getAuthUser();
+      if (!user) {
+        return { data: null, error: new Error('Not authenticated') };
+      }
+      try {
+        const { data: customer, error: custErr } = await sb
+          .from('customers')
+          .select('id, org_id')
+          .eq('profile_id', user.id)
+          .single();
+        if (custErr) throw custErr;
+        if (!customer) throw new Error('Customer record not found');
+
+        const orgId = customer.org_id || (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
+        if (!orgId) throw new Error('org_id not available');
+
+        const rows = (docs || []).map(doc => ({
+          org_id:      orgId,
+          customer_id: customer.id,
+          type:        doc.type,
+          title:       doc.title,
+          content:     doc.content,
+          status:      'signed',
+          signer_name: signerName,
+          signed_at:   new Date().toISOString()
+        }));
+        if (rows.length === 0) throw new Error('No consent documents provided');
+
+        const { data, error } = await sb
+          .from('consent_documents')
+          .insert(rows)
+          .select();
+        if (error) throw error;
+        console.log('[FarmaciaAPI] Consent documents accepted:', (data || []).length);
+        return { data, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] acceptConsentDocuments failed:', err.message);
         return { data: null, error: err };
       }
     }

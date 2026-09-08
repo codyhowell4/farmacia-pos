@@ -64,6 +64,13 @@ let membershipTier = 'free';
 // True while handling a Supabase password-recovery link (type=recovery in URL hash)
 let isPasswordRecovery = false;
 
+// Consent gate: the standard documents every signed-in user must have
+// signed before using the app (texts live in js/consentDocs.js).
+// While consentGateActive is true, renderPage() is locked to the
+// full-screen consent-onboarding view.
+const REQUIRED_CONSENT_TYPES = ['privacidad', 'general', 'teleconsulta'];
+let consentGateActive = false;
+
 // Pages that require an active membership.
 // NOTE: 'consulta' is intentionally NOT gated — telehealth is pay-per-consult
 // for free users and included/discounted for members.
@@ -170,7 +177,9 @@ async function initAuth() {
       updateMenuUserInfo();
       // During password recovery keep the reset form on screen
       if (!isPasswordRecovery) {
-        renderPage(currentPage);
+        // Consent gate: block normal content until the 3 standard docs are signed
+        const gated = await checkConsentGate();
+        if (!gated) renderPage(currentPage);
       }
     } else {
       console.log('[Auth] No active session');
@@ -291,6 +300,10 @@ async function handleLogin() {
   updateTierBadges();
   
   updateMenuUserInfo();
+
+  // Consent gate: block normal content until the 3 standard docs are signed
+  if (await checkConsentGate()) return;
+
   currentPage = 'consulta';
   navItems.forEach(nav => nav.classList.remove('active'));
   document.querySelector('[data-page="consulta"]')?.classList.add('active');
@@ -416,7 +429,9 @@ async function handleSignup() {
   // If email confirmation is not required, auto-login feel
   if (data.session) {
     currentCustomerProfile = await FarmaciaAPI.getCustomerProfile();
-    setTimeout(() => {
+    setTimeout(async () => {
+      // Consent gate: sign the standard documents right after account creation
+      if (await checkConsentGate()) return;
       currentPage = 'consulta';
       navItems.forEach(nav => nav.classList.remove('active'));
       document.querySelector('[data-page="consulta"]')?.classList.add('active');
@@ -662,6 +677,133 @@ function renderPrivacidad() {
   `;
 }
 
+// ============================================================
+// CONSENT ONBOARDING GATE
+// Every signed-in user must have signed the three standard
+// documents (window.APOLO_CONSENT_DOCS) before using the app.
+// While the gate is active, renderPage() renders only this
+// full-screen view; guests (no session) are never gated.
+// ============================================================
+
+// Returns true when the gate was rendered (caller must not render
+// anything else); false when the user may proceed normally.
+async function checkConsentGate() {
+  if (!currentAuthUser) return false; // guests keep normal behavior
+  try {
+    const signedTypes = await FarmaciaAPI.getMySignedConsentTypes();
+    if (!signedTypes) {
+      // Verification failed (DB/RLS error, missing customer record):
+      // fail open — don't lock users out of the app on transient errors
+      console.warn('[Consent] Could not verify signed documents; skipping gate');
+      return false;
+    }
+    const missing = REQUIRED_CONSENT_TYPES.filter(t => !signedTypes.includes(t));
+    if (missing.length === 0) return false;
+    consentGateActive = true;
+    renderConsentOnboarding();
+    return true;
+  } catch (e) {
+    // Fail open on unexpected errors: don't lock users out of the app
+    console.warn('[Consent] Gate check failed:', e);
+    return false;
+  }
+}
+
+// Hide/show the app chrome (bottom nav + header actions) while the gate is up
+function setAppChromeVisible(visible) {
+  const display = visible ? '' : 'none';
+  const bottomNav = document.querySelector('.bottom-nav');
+  const headerActions = document.querySelector('.header-actions');
+  const searchBox = document.querySelector('.search-box');
+  if (bottomNav) bottomNav.style.display = display;
+  if (headerActions) headerActions.style.display = display;
+  if (searchBox) searchBox.style.display = display;
+}
+
+function renderConsentOnboarding() {
+  closeMenu();
+  setAppChromeVisible(false);
+
+  const docs = (window.APOLO_CONSENT_DOCS || []).filter(d => REQUIRED_CONSENT_TYPES.includes(d.type));
+  const signerName = (currentCustomerProfile?.name || currentAuthUser?.user_metadata?.full_name || '')
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+  const cardsHtml = docs.map(doc => `
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
+        <h3 style="margin: 0 0 0.25rem; font-size: 1rem; font-weight: 700; color: #1E2A8A;">${doc.title}</h3>
+        <p style="margin: 0 0 0.75rem; font-size: 0.8rem; color: #64748b; line-height: 1.4;">${doc.summary}</p>
+        <div style="max-height: 180px; overflow-y: auto; -webkit-overflow-scrolling: touch; background: #F8FAFC; border: 1px solid #E3E8F2; border-radius: 10px; padding: 0.75rem; font-size: 0.8rem; color: #334155; line-height: 1.55; white-space: pre-wrap;">${doc.content}</div>
+        <label style="display: flex; align-items: flex-start; gap: 0.5rem; margin-top: 0.75rem; cursor: pointer;">
+          <input type="checkbox" id="consent-check-${doc.type}" onchange="updateConsentSubmitButton()" style="margin-top: 0.15rem; width: 1rem; height: 1rem; flex-shrink: 0; accent-color: #46AC78; cursor: pointer;">
+          <span style="font-size: 0.8rem; color: #475569; line-height: 1.4;">He leído y acepto este documento</span>
+        </label>
+      </div>
+  `).join('');
+
+  mainContent.innerHTML = `
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📋 Documentos de consentimiento</h1>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Para usar la app, lee y acepta los siguientes documentos. Solo es necesario una vez.</p>
+    </div>
+
+    <div style="padding: 1rem;">
+      ${cardsHtml}
+
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
+        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Nombre de quien firma</label>
+        <input type="text" id="consent-signer-name" value="${signerName}" placeholder="Tu nombre completo" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+      </div>
+
+      <button id="consent-submit-btn" onclick="handleConsentOnboardingSubmit()" disabled style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; opacity: 0.5; margin-bottom: 1.5rem;">Firmar y continuar</button>
+    </div>
+  `;
+
+  window.scrollTo(0, 0);
+}
+
+// Master button stays disabled until every document is accepted
+function updateConsentSubmitButton() {
+  const docs = (window.APOLO_CONSENT_DOCS || []).filter(d => REQUIRED_CONSENT_TYPES.includes(d.type));
+  const allChecked = docs.length > 0 && docs.every(d => document.getElementById('consent-check-' + d.type)?.checked);
+  const btn = document.getElementById('consent-submit-btn');
+  if (btn) {
+    btn.disabled = !allChecked;
+    btn.style.opacity = allChecked ? '1' : '0.5';
+    btn.style.cursor = allChecked ? 'pointer' : 'default';
+  }
+}
+
+async function handleConsentOnboardingSubmit() {
+  const docs = (window.APOLO_CONSENT_DOCS || []).filter(d => REQUIRED_CONSENT_TYPES.includes(d.type));
+  const allChecked = docs.length > 0 && docs.every(d => document.getElementById('consent-check-' + d.type)?.checked);
+  if (!allChecked) return;
+
+  const signerName = (document.getElementById('consent-signer-name')?.value || '').trim()
+    || currentCustomerProfile?.name
+    || currentAuthUser?.email
+    || 'Paciente';
+
+  const btn = document.getElementById('consent-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Firmando...'; }
+
+  const { error } = await FarmaciaAPI.acceptConsentDocuments(docs, signerName);
+
+  if (error) {
+    // Stay on the gate so the user can retry
+    showToast('No pudimos registrar tu consentimiento. Intenta de nuevo.', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Firmar y continuar'; }
+    return;
+  }
+
+  consentGateActive = false;
+  setAppChromeVisible(true);
+  showToast('Documentos firmados correctamente. ¡Bienvenido!', 'success');
+  currentPage = 'consulta';
+  navItems.forEach(nav => nav.classList.remove('active'));
+  document.querySelector('.bottom-nav .nav-item[data-page="consulta"]')?.classList.add('active');
+  renderPage('consulta');
+}
+
 // Membership gate placeholder for paid sections
 function renderLocked(featureName) {
   closeMenu();
@@ -833,7 +975,11 @@ async function handleLogout() {
   currentCustomerProfile = null;
   membershipTier = 'free';
   updateTierBadges();
-  
+
+  // Reset the consent gate so a gated session can't stick to the next one
+  consentGateActive = false;
+  setAppChromeVisible(true);
+
   updateMenuUserInfo();
   closeMenu();
   renderPage('consulta');
@@ -1106,6 +1252,13 @@ function updateMenuActiveState(page) {
 }
 
 function renderPage(page) {
+  // Consent gate: while the standard documents are pending, the
+  // full-screen consent-onboarding view is the only thing that renders.
+  if (consentGateActive) {
+    renderConsentOnboarding();
+    return;
+  }
+
   // Clear any running intervals
   if (window.fastTimerInterval) clearInterval(window.fastTimerInterval);
   
@@ -3948,6 +4101,9 @@ window.renderMembresias = renderMembresias;
 window.renderPage = renderPage;
 window.handleLogin = handleLogin;
 window.handleSignup = handleSignup;
+window.updateConsentSubmitButton = updateConsentSubmitButton;
+window.handleConsentOnboardingSubmit = handleConsentOnboardingSubmit;
+window.renderConsentOnboarding = renderConsentOnboarding;
 window.handleForgotPassword = handleForgotPassword;
 window.handleResetPassword = handleResetPassword;
 
