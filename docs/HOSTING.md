@@ -7,9 +7,16 @@ The frontend is 100% static (Vite build + the vanilla customer app) — any stat
 | Platform | Role | URL |
 |---|---|---|
 | **Cloudflare Pages** (`apolofarmacia`) | Production | `app.apolofarmacia.com.mx` (+ `apolofarmacia.pages.dev`) |
+| **Cloudflare Pages** (same project) | In-store tablet check-in | `formularios.apolofarmacia.com.mx` → `/registro/` |
 | **Vercel** | Testing / staging front-end | `farmacia-pos.vercel.app` |
 
 The apex domain (`apolofarmacia.com.mx` / `www`) is **reserved for the future marketing website**. The app lives on the `app.` subdomain. For now the apex only has one rule: `apolofarmacia.com.mx/membresias` (and `www`) → **301 redirect** to `https://app.apolofarmacia.com.mx/membresias` (Cloudflare Redirect Rule + AAAA `100::` discard records so the edge can answer). When the website lands, point the apex at it and remove the discard records.
+
+## Tablet check-in (`formularios.` subdomain)
+
+`formularios.apolofarmacia.com.mx` is a Pages custom domain on the same project; a Redirect Rule sends its root to `/registro/` (`public/registro/index.html`, self-contained). Staff pin the in-store tablet to that URL.
+
+Flow: patient/guardian fills name/email/phone (+ guardian for minors) → accepts the 3 standard consent documents → optional reason for visit → the `tablet-checkin` edge function (public, service-role) creates/reuses the customer, provisions the app account (password arrives via auth recovery email), stores the signed consents (clears the app's consent gate), adds a **confirmed walk-in cita** for the org's first active doctor, and writes a **medical note** labeled as customer self-report.
 
 Both auto-deploy the same `main` branch on every push. **Both point at the same Supabase project** — same database, same auth, same edge functions. Testing on the Vercel URL touches production data; treat it as "preview the build", not an isolated sandbox.
 
