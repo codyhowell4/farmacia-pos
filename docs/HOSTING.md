@@ -6,8 +6,10 @@ The frontend is 100% static (Vite build + the vanilla customer app) — any stat
 
 | Platform | Role | URL |
 |---|---|---|
-| **Cloudflare Pages** | Production | custom domain (bought on Cloudflare) |
-| **Vercel** | Testing / staging front-end | `*.vercel.app` |
+| **Cloudflare Pages** (`apolofarmacia`) | Production | `app.apolofarmacia.com.mx` (+ `apolofarmacia.pages.dev`) |
+| **Vercel** | Testing / staging front-end | `farmacia-pos.vercel.app` |
+
+The apex domain (`apolofarmacia.com.mx` / `www`) is **reserved for the future marketing website** — no DNS records point it anywhere yet. The app lives on the `app.` subdomain.
 
 Both auto-deploy the same `main` branch on every push. **Both point at the same Supabase project** — same database, same auth, same edge functions. Testing on the Vercel URL touches production data; treat it as "preview the build", not an isolated sandbox.
 
@@ -26,16 +28,14 @@ Both auto-deploy the same `main` branch on every push. **Both point at the same 
    - `VITE_PAYPAL_ENV`, `VITE_PAYPAL_CLIENT_ID`, `VITE_PAYPAL_PLAN_INDIVIDUAL`, `VITE_PAYPAL_PLAN_FAMILIAR`
 4. Attach the custom domain — automatic since DNS is already on Cloudflare.
 
-## Supabase Auth (both domains must work)
+## Supabase Auth (all front-end origins must work)
 
 Dashboard → Authentication → URL Configuration:
 
-- **Site URL**: the production domain
-- **Redirect URLs**: add BOTH domains' paths —
-  - `https://<prod-domain>/customer-app/`, `https://<prod-domain>/reset-password`
-  - `https://<vercel-url>/customer-app/`, `https://<vercel-url>/reset-password`
+- **Site URL**: `https://app.apolofarmacia.com.mx`
+- **Redirect URLs** (`uri_allow_list`): `https://app.apolofarmacia.com.mx/**`, `https://apolofarmacia.pages.dev/**`, `https://farmacia-pos.vercel.app/**`, `http://localhost:3000/**`
 
-Password-reset emails use `window.location.origin`, so each environment links back to itself; both origins must be whitelisted.
+Password-reset emails use `window.location.origin`, so each environment links back to itself; all origins must be whitelisted.
 
 ## Notes
 
