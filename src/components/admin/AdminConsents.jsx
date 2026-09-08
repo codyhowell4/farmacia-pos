@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Search, RefreshCw, FileSignature, ChevronDown, ChevronUp, Send, MessageCircle, Mail, Copy } from 'lucide-react';
+import { Search, RefreshCw, FileSignature, ChevronDown, ChevronUp, Send, MessageCircle, Mail, Copy, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -132,6 +132,7 @@ const AdminConsents = () => {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={load}><RefreshCw className="w-4 h-4 mr-2" />Actualizar</Button>
+          <Button variant="outline" size="sm" onClick={() => window.open(appLink, '_blank')}><ExternalLink className="w-4 h-4 mr-2" />Ver página de firma</Button>
           <Button size="sm" onClick={openSendDialog}><Send className="w-4 h-4 mr-2" />Enviar formularios</Button>
         </div>
       </div>
