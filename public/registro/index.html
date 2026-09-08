@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1E2A8A">
+  <title>Registro — Farmacia Apolo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+    html, body { min-height: 100vh; background: linear-gradient(180deg, #141B5E 0%, #1E2A8A 100%); background-attachment: fixed; }
+    body { display: flex; justify-content: center; padding: 16px; }
+    .wrap { width: 100%; max-width: 560px; }
+    .brand { text-align: center; color: white; padding: 1.25rem 0 1rem; }
+    .brand-over { font-size: 0.7rem; letter-spacing: 0.25em; opacity: 0.7; }
+    .brand-name { font-size: 1.9rem; font-weight: 800; letter-spacing: 0.08em; }
+    .brand-sub { font-size: 0.85rem; opacity: 0.85; margin-top: 0.25rem; }
+    .card { background: white; border-radius: 20px; padding: 1.25rem; margin-bottom: 1rem; }
+    .card h2 { font-size: 1.05rem; color: #1E2A8A; margin-bottom: 0.875rem; }
+    label { display: block; font-size: 0.85rem; font-weight: 600; color: #334155; margin-bottom: 0.3rem; }
+    input[type=text], input[type=email], input[type=tel], textarea {
+      width: 100%; padding: 0.8rem; border: 1.5px solid #E3E8F2; border-radius: 12px;
+      font-size: 1rem; margin-bottom: 0.875rem; outline: none;
+    }
+    input:focus, textarea:focus { border-color: #1E2A8A; }
+    textarea { min-height: 90px; resize: vertical; }
+    .check-row { display: flex; align-items: center; gap: 0.625rem; padding: 0.625rem 0; cursor: pointer; }
+    .check-row input { width: 1.25rem; height: 1.25rem; accent-color: #1E2A8A; cursor: pointer; }
+    .check-row span { font-size: 0.95rem; color: #1a1a2e; font-weight: 600; }
+    .hint { font-size: 0.8rem; color: #64748b; margin-top: -0.5rem; margin-bottom: 0.75rem; }
+    details { border: 1.5px solid #E3E8F2; border-radius: 14px; margin-bottom: 0.75rem; overflow: hidden; }
+    summary { padding: 0.875rem 1rem; font-weight: 700; color: #1E2A8A; font-size: 0.95rem; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+    summary::after { content: '+'; font-size: 1.2rem; color: #94a3b8; }
+    details[open] summary::after { content: '−'; }
+    .doc-body { padding: 0 1rem 1rem; }
+    .doc-summary { font-size: 0.85rem; color: #475569; margin-bottom: 0.625rem; }
+    .doc-content { max-height: 220px; overflow-y: auto; background: #F8FAFC; border-radius: 10px; padding: 0.875rem; font-size: 0.8rem; color: #334155; white-space: pre-wrap; line-height: 1.55; }
+    .accept-row { display: flex; align-items: flex-start; gap: 0.625rem; padding: 0.75rem 1rem; border-top: 1px solid #EEF2F7; cursor: pointer; background: #F0FDF4; }
+    .accept-row input { width: 1.25rem; height: 1.25rem; margin-top: 0.1rem; accent-color: #359268; cursor: pointer; }
+    .accept-row span { font-size: 0.9rem; color: #166534; font-weight: 600; }
+    .btn { width: 100%; padding: 1rem; border: none; border-radius: 14px; font-size: 1.05rem; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #46AC78, #359268); color: white; }
+    .btn:disabled { background: #CBD5E1; cursor: not-allowed; }
+    .error-box { display: none; background: #FEF2F2; border: 1px solid #FECACA; color: #B91C1C; border-radius: 12px; padding: 0.75rem 1rem; font-size: 0.9rem; margin-bottom: 1rem; }
+    .success-wrap { text-align: center; color: white; padding: 2rem 0; }
+    .success-icon { font-size: 4rem; margin-bottom: 1rem; }
+    .success-title { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.5rem; }
+    .success-text { font-size: 0.95rem; opacity: 0.9; max-width: 380px; margin: 0 auto 1.5rem; line-height: 1.6; }
+    .success-card { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); border-radius: 16px; padding: 1rem; text-align: left; font-size: 0.85rem; line-height: 1.7; margin-bottom: 1.5rem; }
+    .hp-field { position: absolute; left: -9999px; top: -9999px; height: 0; width: 0; overflow: hidden; }
+    .loading { opacity: 0.7; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="form-view">
+    <div class="brand">
+      <div class="brand-over">— FARMACIA —</div>
+      <div class="brand-name">APOLO</div>
+      <div class="brand-sub">Registro de pacientes y consentimientos</div>
+    </div>
+
+    <div class="error-box" id="error-box"></div>
+
+    <form id="checkin-form" novalidate>
+      <div class="card">
+        <h2>1. Datos del paciente</h2>
+        <label for="patient_name">Nombre completo del paciente *</label>
+        <input type="text" id="patient_name" autocomplete="name" required>
+
+        <label class="check-row" for="is_minor">
+          <input type="checkbox" id="is_minor">
+          <span>El paciente es menor de edad</span>
+        </label>
+
+        <div id="guardian-block" style="display: none;">
+          <label for="guardian_name">Nombre completo del padre, madre o tutor *</label>
+          <input type="text" id="guardian_name">
+          <p class="hint">La cuenta y los consentimientos quedarán a nombre del tutor.</p>
+        </div>
+
+        <label for="email">Correo electrónico *</label>
+        <input type="email" id="email" autocomplete="email" required>
+        <p class="hint" id="email-hint">Te enviaremos un correo para activar tu cuenta de la app.</p>
+
+        <label for="phone">Teléfono *</label>
+        <input type="tel" id="phone" autocomplete="tel" required>
+      </div>
+
+      <div class="card">
+        <h2>2. Motivo de visita <span style="font-weight: 400; font-size: 0.8rem; color: #64748b;">(opcional)</span></h2>
+        <textarea id="reason" placeholder="Ej. dolor de garganta, fiebre desde ayer, seguimiento de receta..."></textarea>
+      </div>
+
+      <div class="card">
+        <h2>3. Documentos de consentimiento</h2>
+        <p class="hint" style="margin-top: -0.25rem;">Lee cada documento y márcalo como aceptado.</p>
+        <div id="docs-container"></div>
+      </div>
+
+      <!-- Honeypot: no llenar (anti-spam) -->
+      <div class="hp-field" aria-hidden="true">
+        <label>Empresa <input type="text" id="company" tabindex="-1" autocomplete="off"></label>
+      </div>
+
+      <button type="submit" class="btn" id="submit-btn" disabled>Acepto y registro mi visita</button>
+      <p style="text-align: center; font-size: 0.75rem; color: rgba(255,255,255,0.7); margin-top: 0.75rem;">
+        Al registrarte aceptas los documentos marcados. Tus datos están protegidos conforme al aviso de privacidad.
+      </p>
+    </form>
+  </div>
+
+  <div class="wrap success-wrap" id="success-view" style="display: none;">
+    <div class="success-icon">✅</div>
+    <div class="success-title">¡Registro completo!</div>
+    <p class="success-text">Avisa al personal que ya terminaste. En breve te llamarán para tu consulta.</p>
+    <div class="success-card" id="success-details"></div>
+    <button class="btn" onclick="location.reload()">Registrar a otra persona</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/customer-app/js/supabase.js?v=1"></script>
+  <script src="/customer-app/js/consentDocs.js?v=1"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      var config = window.farmaciaSupabaseConfig || {};
+      var FUNCTION_URL = (config.URL || '') + '/functions/v1/tablet-checkin';
+      var docs = window.APOLO_CONSENT_DOCS || [];
+
+      var form = document.getElementById('checkin-form');
+      var submitBtn = document.getElementById('submit-btn');
+      var errorBox = document.getElementById('error-box');
+      var isMinorEl = document.getElementById('is_minor');
+      var guardianBlock = document.getElementById('guardian-block');
+      var guardianNameEl = document.getElementById('guardian_name');
+      var emailHint = document.getElementById('email-hint');
+
+      // ---- Consent document cards ----
+      var container = document.getElementById('docs-container');
+      docs.forEach(function (doc) {
+        var details = document.createElement('details');
+        details.innerHTML =
+          '<summary>' + doc.title + '</summary>' +
+          '<div class="doc-body">' +
+            (doc.summary ? '<div class="doc-summary">' + doc.summary + '</div>' : '') +
+            '<div class="doc-content"></div>' +
+          '</div>' +
+          '<label class="accept-row">' +
+            '<input type="checkbox" class="accept-check" data-type="' + doc.type + '">' +
+            '<span>He leído y acepto: ' + doc.title + '</span>' +
+          '</label>';
+        details.querySelector('.doc-content').textContent = doc.content;
+        container.appendChild(details);
+      });
+
+      function allAccepted() {
+        var checks = document.querySelectorAll('.accept-check');
+        for (var i = 0; i < checks.length; i++) {
+          if (!checks[i].checked) return false;
+        }
+        return checks.length > 0;
+      }
+
+      container.addEventListener('change', function () {
+        submitBtn.disabled = !allAccepted();
+      });
+
+      isMinorEl.addEventListener('change', function () {
+        var isMinor = isMinorEl.checked;
+        guardianBlock.style.display = isMinor ? 'block' : 'none';
+        emailHint.textContent = isMinor
+          ? 'Enviaremos el correo de activación de la app al tutor.'
+          : 'Te enviaremos un correo para activar tu cuenta de la app.';
+        if (!isMinor) guardianNameEl.value = '';
+      });
+
+      function showError(msg) {
+        errorBox.textContent = msg;
+        errorBox.style.display = 'block';
+        errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+
+      function hideError() {
+        errorBox.style.display = 'none';
+      }
+
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        hideError();
+
+        var patientName = document.getElementById('patient_name').value.trim();
+        var email = document.getElementById('email').value.trim();
+        var phone = document.getElementById('phone').value.trim();
+        var isMinor = isMinorEl.checked;
+        var guardianName = guardianNameEl.value.trim();
+        var reason = document.getElementById('reason').value.trim();
+
+        if (!patientName) return showError('Escribe el nombre del paciente.');
+        if (!email || email.indexOf('@') === -1) return showError('Escribe un correo electrónico válido.');
+        if (!phone) return showError('Escribe el teléfono.');
+        if (isMinor && !guardianName) return showError('Escribe el nombre del padre, madre o tutor.');
+        if (!allAccepted()) return showError('Debes aceptar los tres documentos de consentimiento.');
+
+        var consentDocs = docs.map(function (doc) {
+          return { type: doc.type, title: doc.title, content: doc.content };
+        });
+
+        form.classList.add('loading');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Registrando...';
+
+        try {
+          var res = await fetch(FUNCTION_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              org_id: config.DEFAULT_ORG_ID,
+              patient_name: patientName,
+              email: email,
+              phone: phone,
+              is_minor: isMinor,
+              guardian_name: isMinor ? guardianName : '',
+              reason: reason,
+              company: document.getElementById('company').value,
+              consent_docs: consentDocs
+            })
+          });
+
+          var result = await res.json().catch(function () { return {}; });
+          if (!res.ok || result.error) {
+            throw new Error(result.error || 'No se pudo completar el registro. Avisa al personal.');
+          }
+
+          var details = [];
+          details.push('<strong>' + (isMinor ? guardianName : patientName) + '</strong>');
+          if (isMinor) details.push('Paciente: ' + patientName + ' (menor de edad)');
+          details.push('Consentimientos firmados ✓');
+          if (result.account === 'created' && result.recovery_email_sent) {
+            details.push('📧 Te enviamos un correo a <strong>' + email + '</strong> para crear la contraseña de tu app.');
+          } else if (result.account === 'existed') {
+            details.push('Ya tenías una cuenta en la app — inicia sesión con tu correo.');
+          }
+          document.getElementById('success-details').innerHTML = details.join('<br>');
+
+          document.getElementById('form-view').style.display = 'none';
+          document.getElementById('success-view').style.display = 'block';
+          window.scrollTo(0, 0);
+        } catch (err) {
+          showError(err.message || 'Error de conexión. Intenta de nuevo o avisa al personal.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Acepto y registro mi visita';
+          form.classList.remove('loading');
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

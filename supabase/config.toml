@@ -12,6 +12,10 @@ verify_jwt = true
 [functions.paypal-capture-consult]
 verify_jwt = false
 
+# Public in-store tablet check-in (no user session on the tablet)
+[functions.tablet-checkin]
+verify_jwt = false
+
 # Cron-invoked queue processor — auth is via the x-cron-secret header instead
 [functions.send-notifications]
 verify_jwt = false
