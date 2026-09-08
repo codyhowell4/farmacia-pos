@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
-import { Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal, Upload, FileSpreadsheet, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal, Upload, FileSpreadsheet, ChevronDown, ChevronUp, Link2, X } from 'lucide-react';
 import ApoloBrand from '@/components/ApoloBrand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
-import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory, getAllInventoryBatches, restockInventoryItem, isServiceItem } from '@/lib/db';
+import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory, getAllInventoryBatches, restockInventoryItem, isServiceItem, getProductLinks, getAllProductLinks, addProductLink, removeProductLink, buildLinkedStockMap } from '@/lib/db';
 
 const LOW_STOCK_THRESHOLD = 0;
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -61,6 +61,12 @@ const InventoryDashboard = () => {
   const [isRestockSaving, setIsRestockSaving] = useState(false);
   const [batchesByItem, setBatchesByItem] = useState({});
 
+  // Productos vinculados: edit-modal list + org-wide links for the
+  // low-stock banner's "cubierto por vinculados" annotation
+  const [linkedProducts, setLinkedProducts] = useState([]);
+  const [linkSearch, setLinkSearch] = useState('');
+  const [allLinks, setAllLinks] = useState([]);
+
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
@@ -108,6 +114,13 @@ const InventoryDashboard = () => {
       setBatchesByItem(map);
     } catch (e) {
       console.error('Could not load inventory batches:', e);
+    }
+    try {
+      setAllLinks(await getAllProductLinks());
+    } catch (e) {
+      // product_links table may not exist yet (migration pending) — links are optional
+      console.warn('Could not load product links:', e?.message);
+      setAllLinks([]);
     }
   };
 
@@ -173,6 +186,52 @@ const InventoryDashboard = () => {
       notes: item.notes || '',
     });
     setIsDialogOpen(true);
+    loadProductLinks(item);
+  };
+
+  // Linked products shown in the edit modal: resolve each link's other
+  // side against the already-loaded inventory (no extra fetch needed).
+  const loadProductLinks = async (item) => {
+    setLinkedProducts([]);
+    setLinkSearch('');
+    try {
+      const links = await getProductLinks(item.id);
+      const resolved = links.map(link => {
+        const otherId = link.product_a_id === item.id ? link.product_b_id : link.product_a_id;
+        const linked = inventory.find(i => i.id === otherId);
+        return linked
+          ? { linkId: link.id, id: linked.id, name: linked.name, quantity: linked.quantity || 0, price: linked.price }
+          : null;
+      }).filter(Boolean);
+      setLinkedProducts(resolved);
+    } catch (e) {
+      // product_links table may not exist yet (migration pending) — links are optional
+      console.warn('Could not load product links:', e?.message);
+    }
+  };
+
+  const handleAddLink = async (linkedItem) => {
+    if (!editingItem) return;
+    try {
+      const link = await addProductLink(editingItem.id, linkedItem.id);
+      setLinkedProducts(prev => [...prev, { linkId: link.id, id: linkedItem.id, name: linkedItem.name, quantity: linkedItem.quantity || 0, price: linkedItem.price }]);
+      setAllLinks(prev => [...prev, { id: link.id, product_a_id: link.product_a_id, product_b_id: link.product_b_id }]);
+      setLinkSearch('');
+      toast({ title: 'Producto vinculado', description: linkedItem.name });
+    } catch (err) {
+      toast({ title: 'Error al vincular', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  const handleRemoveLink = async (entry) => {
+    try {
+      await removeProductLink(entry.linkId);
+      setLinkedProducts(prev => prev.filter(p => p.linkId !== entry.linkId));
+      setAllLinks(prev => prev.filter(l => l.id !== entry.linkId));
+      toast({ title: 'Vínculo eliminado', description: entry.name });
+    } catch (err) {
+      toast({ title: 'Error al quitar el vínculo', description: err.message, variant: 'destructive' });
+    }
   };
 
   const handleAdjustStock = (item) => {
@@ -394,6 +453,8 @@ const InventoryDashboard = () => {
   const resetForm = () => {
     setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false, batchNumber: '', supplierId: '', department: '', itemType: 'product', notes: '' });
     setEditingItem(null);
+    setLinkedProducts([]);
+    setLinkSearch('');
   };
 
   // CSV import helpers
@@ -631,6 +692,20 @@ const InventoryDashboard = () => {
   const lowStockItems = inventory.filter(item => !isServiceItem(item) && item.quantity > 0 && item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD));
   const expiringItems = inventory.filter(isItemExpiring);
 
+  // Linked-stock coverage: productId -> { linkedQty, linkedItems }
+  const linkedStockMap = buildLinkedStockMap(inventory, allLinks);
+
+  // Candidates for the modal's "vincular producto" search (exclude self + already linked)
+  const linkCandidates = (() => {
+    if (!editingItem || !linkSearch.trim()) return [];
+    const q = linkSearch.toLowerCase().trim();
+    const linkedIds = new Set(linkedProducts.map(p => p.id));
+    return inventory
+      .filter(i => i.id !== editingItem.id && !linkedIds.has(i.id))
+      .filter(i => (i.name && i.name.toLowerCase().includes(q)) || (i.barcode && i.barcode.toLowerCase().includes(q)))
+      .slice(0, 6);
+  })();
+
   const sortItems = (list) => {
     const sorted = [...list];
     switch (sortBy) {
@@ -702,7 +777,19 @@ const InventoryDashboard = () => {
                 </div>
                 {lowStockExpanded && (
                   <div className="px-4 pb-4">
-                    <p className="text-sm text-orange-700">{lowStockItems.map(i => i.name).join(', ')}</p>
+                    <ul className="text-sm text-orange-700 space-y-0.5">
+                      {lowStockItems.map(i => {
+                        const linked = linkedStockMap.get(i.id);
+                        return (
+                          <li key={i.id}>
+                            {i.name}
+                            {linked && linked.linkedQty > 0 && (
+                              <span className="text-green-700 font-medium"> — cubierto por {linked.linkedQty} pzas en vinculados ({linked.linkedItems.map(li => li.name).join(', ')})</span>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
                 )}
               </div>
@@ -826,6 +913,64 @@ const InventoryDashboard = () => {
                         <Label htmlFor="requiresPrescription" className="cursor-pointer">
                           Requiere receta médica (Rx) — el cajero debe ingresar el número de receta al cobrar
                         </Label>
+                      </div>
+                      <div className="md:col-span-2 space-y-2">
+                        <Label className="flex items-center gap-1.5"><Link2 className="w-4 h-4" />Productos vinculados</Label>
+                        <p className="text-xs text-slate-500">
+                          Productos equivalentes (otra marca o presentación) que pueden cubrir este artículo. Si un vinculado tiene stock, el sistema no recomendará reordenar este producto. Los vínculos se guardan al agregarlos o quitarlos.
+                        </p>
+                        {editingItem ? (
+                          <>
+                            {linkedProducts.length > 0 && (
+                              <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
+                                {linkedProducts.map(p => (
+                                  <li key={p.linkId} className="flex items-center justify-between gap-2 px-3 py-2">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-medium text-slate-800 truncate">{p.name}</p>
+                                      <p className="text-xs text-slate-500">{formatMXN(p.price || 0)}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${p.quantity > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        Stock: {p.quantity}
+                                      </span>
+                                      <button type="button" onClick={() => handleRemoveLink(p)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-red-600" title="Quitar vínculo">
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            <div className="relative">
+                              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                              <Input
+                                className="pl-10"
+                                placeholder="Buscar producto para vincular (nombre o código)…"
+                                value={linkSearch}
+                                onChange={(e) => setLinkSearch(e.target.value)}
+                              />
+                              {linkSearch.trim() && (
+                                <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-56 overflow-y-auto">
+                                  {linkCandidates.length > 0 ? linkCandidates.map(c => (
+                                    <button
+                                      key={c.id}
+                                      type="button"
+                                      onClick={() => handleAddLink(c)}
+                                      className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center justify-between gap-2"
+                                    >
+                                      <span className="text-sm text-slate-800 truncate">{c.name}</span>
+                                      <span className={`text-xs font-semibold flex-shrink-0 ${c.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>Stock: {c.quantity}</span>
+                                    </button>
+                                  )) : (
+                                    <p className="px-3 py-2 text-sm text-slate-500">Sin coincidencias</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">Guarda el producto primero para poder vincular otros productos.</p>
+                        )}
                       </div>
                       <div className="md:col-span-2 space-y-2">
                         <Label>Notas generales</Label>

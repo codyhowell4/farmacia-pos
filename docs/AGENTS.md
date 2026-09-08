@@ -204,6 +204,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key-here
 - `organizations`, `locations` — multi-tenancy hierarchy
 - `profiles` — extends `auth.users` with role, org, location, PIN
 - `inventory` — medicines with barcode, expiry, batch, Rx flag, stock count
+- `product_links` — symmetric links between equivalent products (other brand / discounted); linked stock suppresses reorder recommendations
 - `sales`, `sale_items`, `sale_payments` — transactions (supports split payments)
 - `returns`, `return_items` — return processing
 - `shifts` — cashier shift tracking

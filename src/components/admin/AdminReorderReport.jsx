@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Download, Printer, AlertTriangle, Package, ArrowDown,
   Settings, Truck, ClipboardList, TrendingUp, TrendingDown,
-  Clock, Shield, BarChart3, MapPin
+  Clock, Shield, BarChart3, MapPin, Link2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +13,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { formatMXN } from '@/lib/currency';
 import {
   getReorderRecommendations, getInventorySettings, upsertInventorySettings,
-  getLocations
+  getLocations, getAllProductLinks, getInventory, buildLinkedStockMap
 } from '@/lib/db';
 
 const getRiskBadge = (score) => {
@@ -32,6 +32,7 @@ const TABS = [
 const AdminReorderReport = () => {
   const [activeTab, setActiveTab] = useState('reorder');
   const [items, setItems] = useState([]);
+  const [coveredItems, setCoveredItems] = useState([]);
   const [settings, setSettings] = useState(null);
   const [settingsForm, setSettingsForm] = useState({});
   const [locations, setLocations] = useState([]);
@@ -76,7 +77,31 @@ const AdminReorderReport = () => {
       const data = await getReorderRecommendations(locationId);
       // Only show items that need to be ordered (recommended_qty >= 1)
       const filteredData = (data || []).filter(item => item.recommended_qty >= 1);
-      setItems(filteredData);
+
+      // Productos vinculados: an item covered by stock in linked products
+      // (other brand / equivalent) is not a reorder candidate — it moves to
+      // the "covered" list instead of the recommendation table.
+      let linkedMap = new Map();
+      try {
+        const [links, catalog] = await Promise.all([getAllProductLinks(), getInventory()]);
+        linkedMap = buildLinkedStockMap(catalog, links);
+      } catch (linkErr) {
+        // product_links table may not exist yet (migration pending) — treat nothing as covered
+        console.warn('Could not load product links:', linkErr?.message);
+      }
+
+      const uncovered = [];
+      const covered = [];
+      for (const item of filteredData) {
+        const linked = linkedMap.get(item.id);
+        if (linked && linked.linkedQty > 0) {
+          covered.push({ ...item, linkedQty: linked.linkedQty, linkedNames: linked.linkedItems.map(li => li.name).join(', ') });
+        } else {
+          uncovered.push(item);
+        }
+      }
+      setItems(uncovered);
+      setCoveredItems(covered);
     } catch (e) {
       console.error(e);
       toast({ title: 'Error', description: 'No se pudo cargar el reporte', variant: 'destructive' });
@@ -505,6 +530,27 @@ const AdminReorderReport = () => {
               <p className="text-xs text-slate-500">Proveedores afectados</p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Cubiertos por productos vinculados: low/out items that don't need
+          a purchase because a linked product (other brand/equivalent) has stock */}
+      {!loading && coveredItems.length > 0 && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Link2 className="w-4 h-4 text-green-700" />
+            <p className="text-sm font-semibold text-green-800">
+              {coveredItems.length} producto{coveredItems.length > 1 ? 's' : ''} cubierto{coveredItems.length > 1 ? 's' : ''} por vinculados — no requieren compra
+            </p>
+          </div>
+          <ul className="text-sm text-green-800 space-y-1">
+            {coveredItems.map(i => (
+              <li key={i.id}>
+                <span className="font-medium">{i.name}</span>
+                <span className="text-green-700"> ← {i.linkedQty} pzas disponibles en: {i.linkedNames}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

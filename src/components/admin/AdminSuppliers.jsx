@@ -17,6 +17,8 @@ import {
   receivePurchaseOrder,
   getInventory,
   getSalesInRange,
+  getAllProductLinks,
+  buildLinkedStockMap,
 } from '@/lib/db';
 
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -184,7 +186,18 @@ const AdminSuppliers = () => {
         }
       }
 
+      // Productos vinculados: skip items covered by stock in a linked
+      // product (other brand / equivalent) — they don't need a purchase.
+      let linkedMap = new Map();
+      try {
+        linkedMap = buildLinkedStockMap(inventory, await getAllProductLinks());
+      } catch (linkErr) {
+        // product_links table may not exist yet (migration pending) — nothing is covered
+        console.warn('Could not load product links:', linkErr?.message);
+      }
+
       const suggestions = [];
+      let coveredCount = 0;
       for (const item of inventory) {
         const sold30 = salesMap[item.id] || 0;
         const avgDaily = sold30 / 30;
@@ -197,6 +210,10 @@ const AdminSuppliers = () => {
         const suggestQty = Math.max(0, target - current);
 
         if (suggestQty > 0 && (stockDays < 30 || current < threshold)) {
+          if ((linkedMap.get(item.id)?.linkedQty || 0) > 0) {
+            coveredCount++;
+            continue;
+          }
           suggestions.push({
             medicineName: item.name,
             quantity: String(suggestQty),
@@ -205,11 +222,12 @@ const AdminSuppliers = () => {
         }
       }
 
+      const coveredNote = coveredCount > 0 ? ` ${coveredCount} omitido${coveredCount > 1 ? 's' : ''} por stock en productos vinculados.` : '';
       if (suggestions.length === 0) {
-        toast({ title: 'Sin sugerencias', description: 'El inventario está bien abastecido por los próximos 30 días.' });
+        toast({ title: 'Sin sugerencias', description: `El inventario está bien abastecido por los próximos 30 días.${coveredNote}` });
       } else {
         setPoItems(suggestions);
-        toast({ title: `${suggestions.length} artículos sugeridos`, description: 'Basado en ventas de los últimos 30 días.' });
+        toast({ title: `${suggestions.length} artículos sugeridos`, description: `Basado en ventas de los últimos 30 días.${coveredNote}` });
       }
     } catch (err) {
       toast({ title: 'Error al sugerir', description: err.message, variant: 'destructive' });

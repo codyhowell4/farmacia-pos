@@ -208,6 +208,74 @@ export const deleteInventoryItem = async (id) => {
 export const isServiceItem = (item) =>
   ['service', 'servicio'].includes((item?.item_type || 'product').toString().trim().toLowerCase());
 
+// ── PRODUCT LINKS (Productos vinculados) ────────────────────
+// Symmetric links between two inventory items that can cover each
+// other (same product from another brand / discounted equivalent).
+// Rows are stored once per pair in canonical order
+// (product_a_id < product_b_id); lookups check both columns.
+
+export const getProductLinks = async (inventoryId) => {
+  const { data, error } = await supabase
+    .from('product_links')
+    .select('id, product_a_id, product_b_id')
+    .or(`product_a_id.eq.${inventoryId},product_b_id.eq.${inventoryId}`);
+  if (error) throw error;
+  return data || [];
+};
+
+export const getAllProductLinks = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('product_links')
+    .select('id, product_a_id, product_b_id')
+    .eq('org_id', orgId);
+  if (error) throw error;
+  return data || [];
+};
+
+export const addProductLink = async (productAId, productBId) => {
+  const orgId = await getOrgId();
+  const [a, b] = [productAId, productBId].sort();
+  const { data, error } = await supabase
+    .from('product_links')
+    .insert({ org_id: orgId, product_a_id: a, product_b_id: b })
+    .select()
+    .single();
+  if (error) {
+    if (error.code === '23505') throw new Error('Estos productos ya están vinculados.');
+    throw error;
+  }
+  return data;
+};
+
+export const removeProductLink = async (linkId) => {
+  const { error } = await supabase.from('product_links').delete().eq('id', linkId);
+  if (error) throw error;
+};
+
+// Pure helper shared by every reorder surface: given the full inventory
+// list and all links, returns Map<inventoryId, { linkedQty, linkedItems }>
+// where linkedQty is the total stock available in linked products.
+export const buildLinkedStockMap = (inventory, links) => {
+  const byId = new Map((inventory || []).map(item => [item.id, item]));
+  const map = new Map();
+  const add = (productId, linkedItem) => {
+    const entry = map.get(productId) || { linkedQty: 0, linkedItems: [] };
+    entry.linkedQty += linkedItem.quantity || 0;
+    entry.linkedItems.push({ id: linkedItem.id, name: linkedItem.name, quantity: linkedItem.quantity || 0 });
+    map.set(productId, entry);
+  };
+  (links || []).forEach(link => {
+    const a = byId.get(link.product_a_id);
+    const b = byId.get(link.product_b_id);
+    if (a && b) {
+      add(link.product_a_id, b);
+      add(link.product_b_id, a);
+    }
+  });
+  return map;
+};
+
 export const logInventoryMovement = async (movement) => {
   try {
     const orgId = await getOrgId();
