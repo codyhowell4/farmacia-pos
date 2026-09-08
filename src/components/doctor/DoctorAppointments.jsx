@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  Calendar, Plus, Search, Clock, Phone, Check, Trash2, Edit2, Video, FileText
+  Calendar, CalendarPlus, Plus, Search, Clock, Phone, Check, Trash2, Edit2, Video, FileText, Activity
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +19,9 @@ import {
   getAppointmentsByDoctor, createAppointment, updateAppointment, deleteAppointment,
   getCustomersForDoctor, confirmVideoAppointment
 } from '@/lib/db';
+import { gcalUrl } from '@/lib/gcal';
 import PostVisitDialog from './PostVisitDialog';
+import NurseVitalsDialog from './NurseVitalsDialog';
 import { toast } from 'sonner';
 
 const statusColors = {
@@ -82,6 +84,8 @@ const DoctorAppointments = () => {
   const [editing, setEditing] = useState(null);
   const [postVisitAppt, setPostVisitAppt] = useState(null);
   const [postVisitOpen, setPostVisitOpen] = useState(false);
+  const [nurseVitalsAppt, setNurseVitalsAppt] = useState(null);
+  const [nurseVitalsOpen, setNurseVitalsOpen] = useState(false);
   const [form, setForm] = useState({
     customer_id: '',
     walkin_name: '',
@@ -158,6 +162,18 @@ const DoctorAppointments = () => {
     setDialogOpen(true);
   };
 
+  // Opens a prefilled Google Calendar event in a new tab (no OAuth needed)
+  const openGcal = (appt) => {
+    const name = appt?.customers?.full_name || appt?.walkin_name || 'Paciente';
+    const phone = appt?.customers?.phone || appt?.walkin_phone || '';
+    window.open(gcalUrl({
+      title: `Consulta — ${name}`,
+      startIso: appt?.appointment_date,
+      durationMin: 30,
+      details: [phone && `Tel: ${phone}`, appt?.notes].filter(Boolean).join('\n'),
+    }), '_blank', 'noopener,noreferrer');
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!user?.id) return;
@@ -211,9 +227,10 @@ const DoctorAppointments = () => {
         loadData();
         return;
       }
-      // Completing a consulta goes through the post-visit form:
-      // the doctor must leave a note (receta/vitals optional) before
-      // the cita is marked Completada.
+      // Completing a consulta goes through the post-visit form: the doctor
+      // must leave the structured nota de evolución (padecimiento and
+      // diagnóstico required; receta optional) before the cita is marked
+      // Completada.
       if (newStatus === 'completed') {
         setPostVisitAppt(appt);
         setPostVisitOpen(true);
@@ -301,6 +318,11 @@ const DoctorAppointments = () => {
                           {paymentLabels[appt?.payment_status || 'unpaid']}
                         </Badge>
                       )}
+                      {appt?.nurse_vitals && (
+                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
+                          ✓ Signos
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-4 mt-1 text-sm text-slate-500 flex-wrap">
                       <span className="flex items-center gap-1">
@@ -347,15 +369,27 @@ const DoctorAppointments = () => {
                       </Button>
                     )}
                     {appt?.status === 'confirmed' && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                        title="Completar"
-                        onClick={() => quickStatusChange(appt, 'completed')}
-                      >
-                        <Check className="w-4 h-4" />
-                      </Button>
+                      <>
+                        {/* Captura pre-consulta de signos (flujo de enfermería) */}
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50"
+                          title="Capturar signos"
+                          onClick={() => { setNurseVitalsAppt(appt); setNurseVitalsOpen(true); }}
+                        >
+                          <Activity className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                          title="Completar"
+                          onClick={() => quickStatusChange(appt, 'completed')}
+                        >
+                          <Check className="w-4 h-4" />
+                        </Button>
+                      </>
                     )}
                     {appt?.status === 'completed' && (
                       <Button
@@ -368,6 +402,15 @@ const DoctorAppointments = () => {
                         <FileText className="w-4 h-4" />
                       </Button>
                     )}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="text-slate-500 hover:text-slate-700"
+                      title="Agregar a Google Calendar"
+                      onClick={() => openGcal(appt)}
+                    >
+                      <CalendarPlus className="w-4 h-4" />
+                    </Button>
                     <Button
                       size="icon"
                       variant="ghost"
@@ -394,11 +437,19 @@ const DoctorAppointments = () => {
         </div>
       )}
 
-      {/* Post-visit form (nota obligatoria, receta opcional) */}
+      {/* Nota de evolución estructurada (padecimiento + diagnóstico obligatorios) */}
       <PostVisitDialog
         open={postVisitOpen}
         onOpenChange={setPostVisitOpen}
         appointment={postVisitAppt}
+        onSaved={loadData}
+      />
+
+      {/* Captura de signos vitales pre-consulta (enfermería) */}
+      <NurseVitalsDialog
+        open={nurseVitalsOpen}
+        onOpenChange={setNurseVitalsOpen}
+        appointment={nurseVitalsAppt}
         onSaved={loadData}
       />
 

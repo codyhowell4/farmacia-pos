@@ -327,6 +327,13 @@ function renderSignup() {
           <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Confirmar contraseña</label>
           <input type="password" id="signup-confirm" placeholder="Repite tu contraseña" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
         </div>
+
+        <div style="margin-bottom: 1.5rem; display: flex; align-items: flex-start; gap: 0.5rem;">
+          <input type="checkbox" id="signup-consent" style="margin-top: 0.2rem; width: 1rem; height: 1rem; flex-shrink: 0; accent-color: #46AC78; cursor: pointer;">
+          <label for="signup-consent" style="font-size: 0.8rem; color: #475569; line-height: 1.4; cursor: pointer;">
+            He leído el <button type="button" onclick="renderPage('privacidad')" style="background: none; border: none; padding: 0; color: #1E2A8A; font-weight: 600; font-size: 0.8rem; cursor: pointer; text-decoration: underline;">aviso de privacidad</button> y consiento el tratamiento de mis datos personales, incluidos datos sensibles de salud.
+          </label>
+        </div>
         
         <button onclick="handleSignup()" style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; margin-bottom: 1rem;">Crear cuenta</button>
         
@@ -370,6 +377,13 @@ async function handleSignup() {
   
   if (password !== confirm) {
     errorEl.textContent = 'Las contraseñas no coinciden';
+    errorEl.style.display = 'block';
+    successEl.style.display = 'none';
+    return;
+  }
+
+  if (!document.getElementById('signup-consent')?.checked) {
+    errorEl.textContent = 'Debes leer el aviso de privacidad y aceptar el tratamiento de tus datos personales para crear tu cuenta';
     errorEl.style.display = 'block';
     successEl.style.display = 'none';
     return;
@@ -524,6 +538,128 @@ async function handleResetPassword() {
       </div>
     `;
   }
+}
+
+// Aviso de privacidad (LFPDPPP) - página informativa, acceso libre.
+function renderPrivacidad() {
+  closeMenu();
+
+  const sectionStyle = 'margin-bottom: 1rem;';
+  const h3Style = 'margin: 0 0 0.5rem; font-size: 0.95rem; font-weight: 700; color: #46AC78;';
+  const pStyle = 'margin: 0 0 0.5rem; font-size: 0.85rem; color: rgba(255,255,255,0.85); line-height: 1.6;';
+  const liStyle = 'font-size: 0.85rem; color: rgba(255,255,255,0.85); line-height: 1.6; margin-bottom: 0.25rem;';
+
+  mainContent.innerHTML = `
+    <!-- Header -->
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📄 Aviso de Privacidad</h1>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Farmacia Apolo · Última actualización: septiembre 2025</p>
+    </div>
+
+    <div style="padding: 1rem;">
+      <div class="glass-card" style="padding: 1.25rem; flex-direction: column; align-items: stretch;">
+
+        <div style="${sectionStyle}">
+          <h3 style="${h3Style}">1. Responsable del tratamiento de tus datos</h3>
+          <p style="${pStyle}">
+            <strong>Farmacia Apolo</strong> (en adelante "la Farmacia"), con domicilio en el establecimiento
+            físico de la Farmacia, es el responsable del tratamiento de tus datos personales y de tus datos
+            personales sensibles de salud, conforme a la Ley Federal de Protección de Datos Personales en
+            Posesión de los Particulares (LFPDPPP) y, en materia de expediente clínico, a la NOM-004-SSA3-2012.
+          </p>
+        </div>
+
+        <div style="${sectionStyle}">
+          <h3 style="${h3Style}">2. Datos personales que recabamos</h3>
+          <p style="${pStyle}">Para la prestación de nuestros servicios recabamos los siguientes datos personales:</p>
+          <ul style="margin: 0; padding-left: 1.25rem;">
+            <li style="${liStyle}">Nombre completo, fecha de nacimiento y género.</li>
+            <li style="${liStyle}">Correo electrónico, teléfono y número de membresía.</li>
+            <li style="${liStyle}">Datos de contacto de emergencia.</li>
+            <li style="${liStyle}">Información de compras y pedidos en la farmacia.</li>
+          </ul>
+          <p style="${pStyle}">Además, con tu consentimiento expreso, recabamos <strong>datos personales sensibles de salud</strong>:</p>
+          <ul style="margin: 0; padding-left: 1.25rem;">
+            <li style="${liStyle}">Padecimiento actual, antecedentes y notas de consulta médica.</li>
+            <li style="${liStyle}">Diagnósticos, pronósticos, planes de tratamiento y recetas médicas.</li>
+            <li style="${liStyle}">Signos vitales, alergias, condiciones médicas y medicamentos actuales.</li>
+            <li style="${liStyle}">Métricas de salud registradas en la aplicación (peso, altura, sueño, ayuno, actividad física).</li>
+            <li style="${liStyle}">Documentos de consentimiento informado que firmes.</li>
+          </ul>
+        </div>
+
+        <div style="${sectionStyle}">
+          <h3 style="${h3Style}">3. Finalidades del tratamiento</h3>
+          <p style="${pStyle}"><strong>Finalidades primarias (necesarias):</strong></p>
+          <ul style="margin: 0; padding-left: 1.25rem;">
+            <li style="${liStyle}">Prestación de servicios de salud, incluyendo consulta médica general y teleconsulta.</li>
+            <li style="${liStyle}">Integración, resguardo y actualización de tu expediente clínico.</li>
+            <li style="${liStyle}">Despacho de medicamentos y gestión de pedidos de farmacia.</li>
+            <li style="${liStyle}">Agenda, recordatorios y seguimiento de citas médicas.</li>
+            <li style="${liStyle}">Facturación, cobro y administración de tu membresía.</li>
+          </ul>
+          <p style="${pStyle}"><strong>Finalidades secundarias (opcionales):</strong> envío de promociones, programas de lealtad y estadísticas internas de mejora del servicio. Si no deseas que tus datos sean tratados para estas finalidades secundarias, puedes manifestarlo en cualquier momento por los medios descritos en la sección 5.</p>
+        </div>
+
+        <div style="${sectionStyle}">
+          <h3 style="${h3Style}">4. Transferencias de datos personales</h3>
+          <p style="${pStyle}">
+            Tus datos personales <strong>no serán transferidos</strong> a terceros sin tu consentimiento, salvo en los
+            casos previstos por el artículo 37 de la LFPDPPP, incluyendo: (a) profesionales de la salud que
+            participen en tu atención y que están obligados al secreto profesional; (b) autoridades sanitarias
+            competentes cuando así lo exija la legislación aplicable; y (c) proveedores de servicios que actúan
+            como encargados del tratamiento (por ejemplo, hospedaje seguro de la información y procesamiento de
+            pagos), bajo acuerdos de confidencialidad.
+          </p>
+          <p style="${pStyle}">
+            Tus datos sensibles de salud se almacenan y tratan conforme a la NOM-004-SSA3-2012 del expediente
+            clínico y solo el personal autorizado tiene acceso a ellos.
+          </p>
+        </div>
+
+        <div style="${sectionStyle}">
+          <h3 style="${h3Style}">5. Derechos ARCO (Acceso, Rectificación, Cancelación y Oposición)</h3>
+          <p style="${pStyle}">
+            Puedes ejercer tus derechos de Acceso, Rectificación, Cancelación u Oposición (derechos ARCO)
+            enviando una solicitud al correo electrónico de contacto de la Farmacia, o presentándola
+            directamente en el mostrador del establecimiento. Tu solicitud debe incluir tu nombre completo,
+            el derecho que deseas ejercer y una descripción clara del dato respecto del cual lo ejerces.
+            La Farmacia responderá en un plazo máximo de 20 días hábiles conforme a la LFPDPPP.
+          </p>
+        </div>
+
+        <div style="${sectionStyle}">
+          <h3 style="${h3Style}">6. Revocación del consentimiento</h3>
+          <p style="${pStyle}">
+            En cualquier momento puedes revocar el consentimiento que has otorgado para el tratamiento de tus
+            datos personales, incluidos tus datos sensibles de salud, sin que se leguen efectos retroactivos.
+            Para revocar tu consentimiento, envía tu solicitud al correo electrónico de contacto de la Farmacia
+            o preséntala en el establecimiento. Ten en cuenta que la revocación puede implicar que no sea
+            posible seguir prestando los servicios de salud, teleconsulta o farmacia que requieran dichos datos.
+          </p>
+        </div>
+
+        <div style="${sectionStyle}">
+          <h3 style="${h3Style}">7. Cambios al aviso de privacidad</h3>
+          <p style="${pStyle}">
+            El presente aviso de privacidad puede sufrir modificaciones, cambios o actualizaciones derivadas de
+            nuevos requerimientos legales, mejoras de nuestros procesos o de nuestros servicios. Cualquier cambio
+            será publicado en esta misma sección de la aplicación y, cuando el cambio sea significativo, te lo
+            notificaremos a través de la aplicación o de tu correo electrónico registrado. La versión vigente
+            indicará siempre su fecha de última actualización.
+          </p>
+        </div>
+
+        <div style="margin-top: 0.5rem; padding: 0.75rem; background: rgba(70,172,120,0.1); border: 1px solid rgba(70,172,120,0.3); border-radius: 10px;">
+          <p style="margin: 0; font-size: 0.8rem; color: rgba(255,255,255,0.75); line-height: 1.5;">
+            Al crear tu cuenta y marcar la casilla de aceptación consientes el tratamiento de tus datos
+            personales conforme a este aviso. Si tienes dudas, acude a la Farmacia o escríbenos al correo
+            de contacto publicado en el establecimiento.
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 // Membership gate placeholder for paid sections
@@ -1004,6 +1140,7 @@ function renderPage(page) {
     case 'login': renderLogin(); break;
     case 'signup': renderSignup(); break;
     case 'forgot-password': renderForgotPassword(); break;
+    case 'privacidad': renderPrivacidad(); break;
     default: renderHome();
   }
 }
@@ -3805,6 +3942,7 @@ window.renderPrescripciones = renderPrescripciones;
 window.renderShop = renderShop;
 window.renderForgotPassword = renderForgotPassword;
 window.renderResetPassword = renderResetPassword;
+window.renderPrivacidad = renderPrivacidad;
 window.renderLocked = renderLocked;
 window.renderMembresias = renderMembresias;
 window.renderPage = renderPage;
@@ -8423,11 +8561,18 @@ async function renderPrescripciones() {
   
   // Fetch from API
   let systemPrescriptions = [];
+  let consultaNotes = [];
+  let consentDocuments = [];
   try {
-    systemPrescriptions = await FarmaciaAPI.getPrescriptions();
+    [systemPrescriptions, consultaNotes, consentDocuments] = await Promise.all([
+      FarmaciaAPI.getPrescriptions(),
+      FarmaciaAPI.getConsultaNotes ? FarmaciaAPI.getConsultaNotes() : Promise.resolve([]),
+      FarmaciaAPI.getConsentDocuments ? FarmaciaAPI.getConsentDocuments() : Promise.resolve([])
+    ]);
   } catch (e) {
     console.warn('[renderPrescripciones] Error fetching prescriptions:', e);
   }
+  const pendingConsents = consentDocuments.filter(d => d.status === 'pending');
   
   // Cache
   window.__prescriptionsCache = systemPrescriptions;
@@ -8466,6 +8611,76 @@ async function renderPrescripciones() {
         <button onclick="showUploadPrescriptionModal()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Subir</button>
       </div>
     </div>
+
+    <!-- Pending Consent Documents -->
+    ${pendingConsents.length > 0 ? `
+      <div style="padding: 1rem 1rem 0;">
+        <div class="glass-card" style="padding: 1rem; border-left: 4px solid #f59e0b; flex-direction: column; align-items: stretch;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+            <span style="font-size: 1.5rem;">✍️</span>
+            <div>
+              <div style="font-weight: 600; color: white;">Tienes documentos por firmar</div>
+              <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${pendingConsents.length} documento(s) de consentimiento pendientes</div>
+            </div>
+          </div>
+          ${pendingConsents.map(doc => `
+            <div style="background: rgba(255,255,255,0.08); border-radius: 10px; padding: 0.75rem; margin-top: 0.5rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                <div style="flex: 1; min-width: 0;">
+                  <div style="font-weight: 600; font-size: 0.9rem; color: white;">${escapeHtml(doc.title)}</div>
+                  <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5);">${doc.type ? escapeHtml(doc.type) + ' · ' : ''}${new Date(doc.createdAt).toLocaleDateString('es-MX')}</div>
+                </div>
+                <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
+                  <button onclick="toggleConsentDoc(this)" style="padding: 0.4rem 0.75rem; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; font-size: 0.8rem; cursor: pointer;">Ver</button>
+                  <button onclick="signConsentDoc('${doc.id}')" style="padding: 0.4rem 0.75rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">Firmar</button>
+                </div>
+              </div>
+              <div style="display: none; margin-top: 0.5rem; font-size: 0.8rem; color: rgba(255,255,255,0.8); line-height: 1.5; white-space: pre-wrap;">${escapeHtml(doc.content)}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- Consulta Notes (from Supabase) -->
+    ${consultaNotes.length > 0 ? `
+      <div style="padding: 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+          <span style="font-weight: 600; color: white;">🩺 Notas de consulta</span>
+          <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.1); padding: 0.25rem 0.5rem; border-radius: 12px;">${consultaNotes.length} notas</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+          ${consultaNotes.map(n => `
+            <div class="glass-card" style="padding: 1rem; border-left: 4px solid #f472b6; flex-direction: column; align-items: stretch;">
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                <span style="font-size: 1.5rem;">🩺</span>
+                <div style="flex: 1;">
+                  <div style="font-weight: 600; color: white;">${new Date(n.createdAt).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                  ${n.padecimientoActual ? `<div style="font-size: 0.85rem; color: rgba(255,255,255,0.75);">${escapeHtml(n.padecimientoActual)}</div>` : ''}
+                </div>
+              </div>
+              ${n.diagnostico ? `
+                <div style="font-size: 0.85rem; color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.08); padding: 0.5rem 0.75rem; border-radius: 8px; margin-bottom: 0.5rem;">
+                  <span style="font-weight: 600; color: white;">Diagnóstico:</span> ${escapeHtml(n.diagnostico)}
+                </div>
+              ` : ''}
+              ${n.cie10Codes.length > 0 ? `
+                <div style="display: flex; flex-wrap: wrap; gap: 0.375rem; margin-bottom: 0.5rem;">
+                  ${n.cie10Codes.map(c => `<span title="${escapeHtml(c.description || '').replace(/"/g, '&quot;')}" style="background: rgba(244,114,182,0.15); color: #f9a8d4; border: 1px solid rgba(244,114,182,0.3); padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.7rem; font-weight: 600;">CIE-10 ${escapeHtml(c.code || '')}</span>`).join('')}
+                </div>
+              ` : ''}
+              <button onclick="toggleConsultaNote(this)" style="align-self: flex-start; padding: 0.4rem 0.75rem; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; font-size: 0.8rem; cursor: pointer;">Ver nota</button>
+              <div style="display: none; margin-top: 0.5rem; background: rgba(255,255,255,0.06); border-radius: 8px; padding: 0.75rem;">
+                ${n.exploracionFisica ? `<div style="font-size: 0.8rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;"><strong style="color: white;">Exploración física:</strong> ${escapeHtml(n.exploracionFisica)}</div>` : ''}
+                ${n.pronostico ? `<div style="font-size: 0.8rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;"><strong style="color: white;">Pronóstico:</strong> ${escapeHtml(n.pronostico)}</div>` : ''}
+                ${n.plan ? `<div style="font-size: 0.8rem; color: rgba(255,255,255,0.8);"><strong style="color: white;">Plan:</strong> ${escapeHtml(n.plan)}</div>` : ''}
+                ${!n.exploracionFisica && !n.pronostico && !n.plan ? `<div style="font-size: 0.8rem; color: rgba(255,255,255,0.5); font-style: italic;">Sin detalles adicionales.</div>` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
 
     <!-- System Prescriptions (from Supabase) -->
     ${systemPrescriptions.length > 0 ? `
@@ -8651,6 +8866,38 @@ async function renderPrescripciones() {
 
 window.switchProfileForPrescripciones = function(profileId) {
   Store.setActiveProfile(profileId);
+  renderPrescripciones();
+};
+
+// Toggle the collapsed detail of a consulta-note card ('Ver nota' button)
+window.toggleConsultaNote = function(btn) {
+  const detail = btn.nextElementSibling;
+  if (!detail) return;
+  const isHidden = detail.style.display === 'none';
+  detail.style.display = isHidden ? 'block' : 'none';
+  btn.textContent = isHidden ? 'Ocultar nota' : 'Ver nota';
+};
+
+// Toggle the content of a pending consent document ('Ver' button)
+window.toggleConsentDoc = function(btn) {
+  const detail = btn.parentElement.parentElement.nextElementSibling;
+  if (!detail) return;
+  const isHidden = detail.style.display === 'none';
+  detail.style.display = isHidden ? 'block' : 'none';
+  btn.textContent = isHidden ? 'Ocultar' : 'Ver';
+};
+
+// Sign a pending consent document: prompt for the signer name, then update.
+window.signConsentDoc = async function(docId) {
+  const signerName = prompt('Escribe tu nombre completo para firmar el documento:', currentCustomerProfile?.name || Store.getProfile()?.name || '');
+  if (!signerName || !signerName.trim()) return;
+
+  const { error } = await FarmaciaAPI.signConsentDocument(docId, signerName.trim());
+  if (error) {
+    showToast('No se pudo firmar el documento. Intenta de nuevo.', 'error');
+    return;
+  }
+  showToast('Documento firmado correctamente', 'success');
   renderPrescripciones();
 };
 

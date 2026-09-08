@@ -1055,17 +1055,6 @@ export const getPrescriptions = async (filters = {}) => {
   return data || [];
 };
 
-export const getCustomerDocuments = async () => {
-  const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('customer_documents')
-    .select('*, customers(id, full_name, email, profile_id)')
-    .eq('org_id', orgId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
-};
-
 export const voidPrescription = async (prescriptionId, voidedBy) => {
   const { error } = await supabase
     .from('prescriptions')
@@ -1577,6 +1566,197 @@ export const getDoctorDashboardStats = async (doctorId) => {
 export const deleteMedicalNote = async (id) => {
   const { error } = await supabase.from('medical_notes').delete().eq('id', id);
   if (error) throw error;
+};
+
+// ── CONSULTA NOTES (NOM-004 structured, append-only) ────────
+// Notes are immutable rows; "editing" inserts a new row with
+// replaces_id pointing at the previous version.
+
+export const createConsultaNote = async (note) => {
+  const orgId = await getOrgId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from('consulta_notes')
+    .insert({ ...note, org_id: orgId, created_by: user?.id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const getConsultaNotesByAppointment = async (appointmentId) => {
+  const { data, error } = await supabase
+    .from('consulta_notes')
+    .select('*, profiles:doctor_id(full_name)')
+    .eq('appointment_id', appointmentId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getConsultaNotesByCustomer = async (customerId) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('consulta_notes')
+    .select('*, profiles:doctor_id(full_name)')
+    .eq('org_id', orgId)
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getConsultaNotesByDoctor = async (doctorId, { from = null, to = null } = {}) => {
+  const orgId = await getOrgId();
+  let query = supabase
+    .from('consulta_notes')
+    .select('*')
+    .eq('org_id', orgId)
+    .eq('doctor_id', doctorId)
+    .order('created_at', { ascending: false });
+  if (from) query = query.gte('created_at', from);
+  if (to) query = query.lte('created_at', to);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+};
+
+// ── CIE-10 CATALOG ──────────────────────────────────────────
+
+export const searchCie10 = async (query, limit = 15) => {
+  const q = (query || '').trim();
+  if (q.length < 2) return [];
+  const { data, error } = await supabase
+    .from('cie10_codes')
+    .select('code, description, chapter')
+    .or(`code.ilike.${q}%,description.ilike.%${q}%`)
+    .order('code')
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+};
+
+// ── MEDICAL HISTORY VERSIONS ────────────────────────────────
+
+export const saveMedicalHistoryVersion = async ({ customerId, snapshot, changeSummary = null }) => {
+  const orgId = await getOrgId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from('medical_history_versions')
+    .insert({ org_id: orgId, customer_id: customerId, snapshot, change_summary: changeSummary, changed_by: user?.id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const getMedicalHistoryVersions = async (customerId) => {
+  const { data, error } = await supabase
+    .from('medical_history_versions')
+    .select('id, change_summary, changed_by, created_at, profiles:changed_by(full_name)')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  if (error) throw error;
+  return data || [];
+};
+
+// ── CONSENT DOCUMENTS ───────────────────────────────────────
+
+export const createConsentDocument = async (doc) => {
+  const orgId = await getOrgId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from('consent_documents')
+    .insert({ ...doc, org_id: orgId, created_by: user?.id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const getConsentDocuments = async (customerId) => {
+  const { data, error } = await supabase
+    .from('consent_documents')
+    .select('*')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const updateConsentStatus = async (id, { status, signer_name = null }) => {
+  const { data, error } = await supabase
+    .from('consent_documents')
+    .update({ status, signer_name, signed_at: status === 'signed' ? new Date().toISOString() : null })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// ── PATIENT ATTACHMENTS (customer_documents + storage) ──────
+
+export const getCustomerDocuments = async (customerId) => {
+  const { data, error } = await supabase
+    .from('customer_documents')
+    .select('*')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const uploadPatientDocument = async (customerId, file, { documentType = 'otro', notes = null } = {}) => {
+  const orgId = await getOrgId();
+  const path = `${orgId}/${customerId}/${Date.now()}_${file.name}`;
+  const { error: upErr } = await supabase.storage
+    .from('patient-documents')
+    .upload(path, file);
+  if (upErr) throw upErr;
+  const { data, error } = await supabase
+    .from('customer_documents')
+    .insert({ org_id: orgId, customer_id: customerId, document_type: documentType, file_url: path, notes, status: 'approved' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// Bucket is private — generate a short-lived signed URL for viewing
+export const getPatientDocumentUrl = async (path) => {
+  const { data, error } = await supabase.storage
+    .from('patient-documents')
+    .createSignedUrl(path, 3600);
+  if (error) throw error;
+  return data?.signedUrl;
+};
+
+// ── NURSE PRE-CONSULTA VITALS ───────────────────────────────
+
+export const saveNurseVitals = async (appointmentId, vitals) => {
+  const { data, error } = await supabase
+    .from('appointments')
+    .update({ nurse_vitals: vitals })
+    .eq('id', appointmentId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// ── RECETA ELECTRONIC SIGNATURE ─────────────────────────────
+
+export const signPrescription = async (id, { signed_payload, signature, signer_cert_serial, signed_at }) => {
+  const { data, error } = await supabase
+    .from('prescriptions')
+    .update({ signed_payload, signature, signer_cert_serial, signed_at })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 };
 
 

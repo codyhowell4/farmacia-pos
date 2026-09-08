@@ -10,7 +10,8 @@
 //   getCustomerProfile, getProducts,
 //   getCustomerOrders, getAppointments, getPrescriptions,
 //   getDoctors, getDoctorBookedSlots, getMembershipDetails, getConsultPrice,
-//   createAppointment, updateAppointment
+//   createAppointment, updateAppointment,
+//   getConsultaNotes, getConsentDocuments, signConsentDocument
 // ============================================================
 
 window.FarmaciaAPI = (function () {
@@ -1164,6 +1165,137 @@ window.FarmaciaAPI = (function () {
         return { error: null };
       } catch (err) {
         return { error: err };
+      }
+    },
+
+    /**
+     * Get consulta notes (notas de consulta) for the current user.
+     * consulta_notes rows are linked via customers.profile_id = auth.uid().
+     * Returns [] when unavailable so the Recetas page degrades gracefully.
+     */
+    async getConsultaNotes() {
+      if (!sb) {
+        console.log('[FarmaciaAPI] getConsultaNotes fallback - Supabase not available');
+        return [];
+      }
+      try {
+        const user = await getAuthUser();
+        if (!user) return [];
+
+        const { data: customer, error: custErr } = await sb
+          .from('customers')
+          .select('id')
+          .eq('profile_id', user.id)
+          .single();
+        if (custErr || !customer) {
+          console.log('[FarmaciaAPI] No customer record, consulta notes empty');
+          return [];
+        }
+
+        const { data, error } = await sb
+          .from('consulta_notes')
+          .select('*')
+          .eq('customer_id', customer.id)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+
+        console.log('[FarmaciaAPI] Consulta notes loaded:', (data || []).length);
+        return (data || []).map(n => ({
+          id:                  n.id,
+          customerId:          n.customer_id,
+          doctorId:            n.doctor_id,
+          padecimientoActual:  n.padecimiento_actual || '',
+          exploracionFisica:   n.exploracion_fisica || '',
+          vitals:              n.vitals || null,
+          diagnostico:         n.diagnostico || '',
+          cie10Codes:          Array.isArray(n.cie10_codes) ? n.cie10_codes : [],
+          pronostico:          n.pronostico || '',
+          plan:                n.plan || '',
+          replacesId:          n.replaces_id || null,
+          createdAt:           n.created_at,
+          source:              'supabase'
+        }));
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getConsultaNotes error:', err.message);
+        return [];
+      }
+    },
+
+    /**
+     * Get consent documents for the current user (all statuses).
+     * Returns [] when unavailable.
+     */
+    async getConsentDocuments() {
+      if (!sb) {
+        console.log('[FarmaciaAPI] getConsentDocuments fallback - Supabase not available');
+        return [];
+      }
+      try {
+        const user = await getAuthUser();
+        if (!user) return [];
+
+        const { data: customer, error: custErr } = await sb
+          .from('customers')
+          .select('id')
+          .eq('profile_id', user.id)
+          .single();
+        if (custErr || !customer) {
+          console.log('[FarmaciaAPI] No customer record, consent documents empty');
+          return [];
+        }
+
+        const { data, error } = await sb
+          .from('consent_documents')
+          .select('*')
+          .eq('customer_id', customer.id)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+
+        return (data || []).map(d => ({
+          id:         d.id,
+          customerId: d.customer_id,
+          type:       d.type || '',
+          title:      d.title || 'Documento de consentimiento',
+          content:    d.content || '',
+          status:     d.status || 'pending',
+          signerName: d.signer_name || null,
+          signedAt:   d.signed_at || null,
+          createdAt:  d.created_at,
+          source:     'supabase'
+        }));
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getConsentDocuments error:', err.message);
+        return [];
+      }
+    },
+
+    /**
+     * Sign a consent document as the current customer.
+     * NOTE: requires the RLS policy 'consent_documents_customer_sign'
+     * (see supabase/migrations/MIGRATION_consent_customer_sign.sql) —
+     * without it the UPDATE is rejected because customers only have SELECT.
+     */
+    async signConsentDocument(id, signerName) {
+      if (!sb) {
+        return { data: null, error: new Error('Supabase not available') };
+      }
+      try {
+        const { data, error } = await sb
+          .from('consent_documents')
+          .update({
+            status:      'signed',
+            signer_name: signerName,
+            signed_at:   new Date().toISOString()
+          })
+          .eq('id', id)
+          .select()
+          .single();
+        if (error) throw error;
+        console.log('[FarmaciaAPI] Consent document signed:', id);
+        return { data, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] signConsentDocument failed:', err.message);
+        return { data: null, error: err };
       }
     }
   };

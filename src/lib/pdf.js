@@ -1,4 +1,6 @@
 import { jsPDF } from 'jspdf';
+import QRCode from 'qrcode';
+import { buildRecetaQrText } from './cda';
 
 const INCH = 72;
 
@@ -28,7 +30,7 @@ function calculateAge(dob) {
  * @param {Object} customer   — customer record (optional)
  * @param {string} filename   — download filename
  */
-export const downloadPrescriptionPDF = (prescription, customer, filename = 'receta.pdf') => {
+export const downloadPrescriptionPDF = async (prescription, customer, filename = 'receta.pdf') => {
   if (!prescription) return;
 
   // ── Data ──────────────────────────────────────────────────────────
@@ -165,6 +167,22 @@ export const downloadPrescriptionPDF = (prescription, customer, filename = 'rece
   const cedValX = DOC_X + tw(lblCed) + 0.03;
   txt(prescription.doctor_license_number || '', cedValX, DOC_Y + 0.28 * scale);
   line(cedValX, DOC_Y + 0.28 * scale + 0.07 * scale, DOC_X + tw(lblCed) + UNDER_W, DOC_Y + 0.28 * scale + 0.07 * scale);
+
+  // ── Firma electrónica: verification QR near the signature area ──
+  // (only when the receta was electronically signed; QR failure must
+  // never block the PDF download)
+  if (prescription.signature) {
+    try {
+      const qrDataUrl = await QRCode.toDataURL(buildRecetaQrText(prescription), { margin: 0, width: 160 });
+      const QR_SIZE = 0.79; // ≈2cm
+      const QR_X = LOGO_X + 1.0;
+      const QR_Y = HEAD_Y;
+      pdf.addImage(qrDataUrl, 'PNG', QR_X, QR_Y, QR_SIZE, QR_SIZE);
+      setFont('normal', 5.5);
+      const caption = pdf.splitTextToSize('Firma electrónica — verifique con el folio', QR_SIZE + 0.4);
+      pdf.text(caption, QR_X + QR_SIZE / 2, QR_Y + QR_SIZE + 0.10 * scale, { align: 'center' });
+    } catch { /* keep the PDF usable without the QR */ }
+  }
 
   // ── BODY ──────────────────────────────────────────────────────────
   const BODY_Y = HEAD_Y + HEADER_H + BODY_GAP;

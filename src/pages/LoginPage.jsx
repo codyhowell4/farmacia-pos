@@ -51,6 +51,9 @@ const LoginPage = () => {
         navigate('/inventory');
       } else if (profile.role === 'doctor') {
         navigate('/doctor');
+      } else if (profile.role === 'secretary' || profile.role === 'nurse') {
+        // Secretary (agenda) and nurse (vitals) share the doctor portal agenda
+        navigate('/doctor/appointments');
       } else if (profile.role === 'customer') {
         // Customer portal is a separate static app; full page navigation
         window.location.href = '/customer-app/';

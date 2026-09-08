@@ -1,14 +1,17 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Edit2, Trash2, CheckCircle, XCircle, AlertTriangle,
   HeartPulse, Activity, Users, Baby, Syringe, Stethoscope, ClipboardList,
+  History, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { updateCustomer } from '@/lib/db';
+import { useAuth } from '@/contexts/AuthContext';
+import { updateCustomer, saveMedicalHistoryVersion, getMedicalHistoryVersions } from '@/lib/db';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { toast } from 'sonner';
 
 // Section definitions — order matches the clinical-history reference layout.
@@ -82,12 +85,36 @@ const SECTIONS = [
 const EMPTY_ENTRY = { label: '', value: '', status: 'positive' };
 
 const PatientMedicalHistory = ({ customer, onSaved }) => {
+  const { user } = useAuth();
+  const readOnly = user?.role === 'nurse';
   const history = customer?.medical_history || {};
   const [dialogOpen, setDialogOpen] = useState(false);
   const [activeSection, setActiveSection] = useState(null); // section key being edited
   const [editIndex, setEditIndex] = useState(null); // null = adding new
   const [entryForm, setEntryForm] = useState(EMPTY_ENTRY);
   const [saving, setSaving] = useState(false);
+  const [versions, setVersions] = useState([]);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+
+  const loadVersions = useCallback(async () => {
+    if (!customer?.id) return;
+    try {
+      const data = await getMedicalHistoryVersions(customer.id);
+      setVersions(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('getMedicalHistoryVersions failed:', err);
+    }
+  }, [customer?.id]);
+
+  useEffect(() => {
+    loadVersions();
+  }, [loadVersions]);
+
+  const formatVersionDate = (ts) => {
+    if (!ts) return '-';
+    const d = new Date(ts);
+    return `${d.toLocaleDateString('es-MX')} ${d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`;
+  };
 
   const getEntries = (sectionKey) => {
     const entries = history[sectionKey];
@@ -109,10 +136,27 @@ const PatientMedicalHistory = ({ customer, onSaved }) => {
     setDialogOpen(true);
   };
 
-  const saveHistory = async (newHistory, successMessage) => {
+  const saveHistory = async (newHistory, successMessage, changeSummary) => {
     setSaving(true);
     try {
       await updateCustomer(customer.id, { medical_history: newHistory });
+      // NOM-024 audit trail: snapshot every change, never silently overwrite
+      try {
+        await saveMedicalHistoryVersion({
+          customerId: customer.id,
+          snapshot: newHistory,
+          changeSummary,
+        });
+        loadVersions();
+      } catch (versionErr) {
+        console.error('saveMedicalHistoryVersion failed:', versionErr);
+        toast.error('El historial se guardó, pero falló el registro de versión');
+      }
+      logAudit({
+        action: AUDIT_ACTIONS.HISTORY_UPDATE,
+        user,
+        details: `${changeSummary} — paciente ${customer?.full_name || customer.id}`,
+      });
       toast.success(successMessage);
       onSaved?.();
     } catch (err) {
@@ -144,15 +188,22 @@ const PatientMedicalHistory = ({ customer, onSaved }) => {
       entries.push(entry);
     }
     const newHistory = { ...history, [activeSection]: entries };
+    const sectionTitle = SECTIONS.find((s) => s.key === activeSection)?.title || activeSection;
+    const changeSummary = editIndex !== null
+      ? `${sectionTitle}: edited "${entry.label}"`
+      : `${sectionTitle}: added "${entry.label}"`;
     setDialogOpen(false);
-    await saveHistory(newHistory, editIndex !== null ? 'Entrada actualizada' : 'Entrada agregada');
+    await saveHistory(newHistory, editIndex !== null ? 'Entrada actualizada' : 'Entrada agregada', changeSummary);
   };
 
   const handleDeleteEntry = async (sectionKey, index) => {
     if (!confirm('¿Eliminar esta entrada del historial?')) return;
+    const deleted = getEntries(sectionKey)[index];
     const entries = getEntries(sectionKey).filter((_, i) => i !== index);
     const newHistory = { ...history, [sectionKey]: entries };
-    await saveHistory(newHistory, 'Entrada eliminada');
+    const sectionTitle = SECTIONS.find((s) => s.key === sectionKey)?.title || sectionKey;
+    const changeSummary = `${sectionTitle}: deleted "${deleted?.label || ''}"`;
+    await saveHistory(newHistory, 'Entrada eliminada', changeSummary);
   };
 
   const activeSectionConfig = SECTIONS.find((s) => s.key === activeSection);
@@ -169,9 +220,11 @@ const PatientMedicalHistory = ({ customer, onSaved }) => {
                 <Icon className="w-4 h-4" />
                 {section.title}
               </h3>
-              <Button size="sm" variant="outline" onClick={() => openAdd(section.key)}>
-                <Plus className="w-3 h-3 mr-1" /> Agregar
-              </Button>
+              {!readOnly && (
+                <Button size="sm" variant="outline" onClick={() => openAdd(section.key)}>
+                  <Plus className="w-3 h-3 mr-1" /> Agregar
+                </Button>
+              )}
             </div>
 
             {entries.length === 0 ? (
@@ -197,22 +250,24 @@ const PatientMedicalHistory = ({ customer, onSaved }) => {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <button
-                          onClick={() => openEdit(section.key, index)}
-                          className="text-apolo-navy hover:text-apolo-navy-dark p-1"
-                          title="Editar"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteEntry(section.key, index)}
-                          className="text-red-600 hover:text-red-800 p-1"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      {!readOnly && (
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            onClick={() => openEdit(section.key, index)}
+                            className="text-apolo-navy hover:text-apolo-navy-dark p-1"
+                            title="Editar"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteEntry(section.key, index)}
+                            className="text-red-600 hover:text-red-800 p-1"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
 
@@ -232,6 +287,41 @@ const PatientMedicalHistory = ({ customer, onSaved }) => {
           </div>
         );
       })}
+
+      {/* Change history (NOM-024 versioned audit trail) */}
+      <div className="bg-white rounded-xl border border-slate-200">
+        <button
+          type="button"
+          className="w-full flex items-center justify-between px-6 py-4 text-sm font-medium text-slate-700 hover:bg-slate-50 rounded-xl"
+          onClick={() => setVersionsOpen(!versionsOpen)}
+        >
+          <span className="flex items-center gap-2">
+            <History className="w-4 h-4 text-teal-600" />
+            Historial de cambios
+            {versions.length > 0 && (
+              <span className="text-xs bg-slate-100 text-slate-500 rounded-full px-2 py-0.5">{versions.length}</span>
+            )}
+          </span>
+          {versionsOpen ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+        </button>
+        {versionsOpen && (
+          <div className="px-6 pb-4 space-y-2">
+            {versions.length === 0 ? (
+              <p className="text-sm text-slate-400">Sin cambios registrados.</p>
+            ) : (
+              versions.map((v) => (
+                <div key={v.id} className="flex items-baseline justify-between gap-4 text-sm border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                  <div className="min-w-0">
+                    <p className="text-slate-700 truncate">{v.change_summary || 'Cambio en el historial'}</p>
+                    <p className="text-xs text-slate-400">{v.profiles?.full_name || 'Usuario desconocido'}</p>
+                  </div>
+                  <span className="text-xs text-slate-400 shrink-0">{formatVersionDate(v.created_at)}</span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Add / Edit entry dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

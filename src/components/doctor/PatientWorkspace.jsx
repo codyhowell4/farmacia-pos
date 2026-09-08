@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Users, ArrowLeft, Phone, Mail, Calendar, FileText, ShoppingCart,
   Pill, Clock, Plus, Edit2, Trash2, ChevronDown, ChevronUp,
-  CheckCircle, XCircle, AlertCircle, Printer, FileDown, Search
+  CheckCircle, XCircle, AlertCircle, Printer, FileDown, Search, Ban, ShieldAlert
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -20,11 +20,20 @@ import {
   getAppointmentsByDoctor, createAppointment, updateAppointment, deleteAppointment,
   getCustomerPurchaseHistory, getMedicalNotesByCustomer, createMedicalNote,
   updateMedicalNote, deleteMedicalNote, getInventoryForDoctor, updateCustomer,
+  cancelDoctorPrescription, getDoctorProfile, getConsultaNotesByCustomer, getConsentDocuments,
 } from '@/lib/db';
 import PrintablePrescription from './PrintablePrescription';
 import PatientMedicalHistory from './PatientMedicalHistory';
 import PostVisitDialog from './PostVisitDialog';
+import SignRecetaButton from './SignRecetaButton';
+import ConsultaNotesList from './ConsultaNotesList';
+import AttachmentsTab from './AttachmentsTab';
+import ConsentTab from './ConsentTab';
+import JustificanteDialog from './JustificanteDialog';
 import { downloadPrescriptionPDF } from '@/lib/pdf';
+import { buildPatientRecordPdf, triggerDownload } from '@/lib/recordExport';
+import { isValidCurp } from '@/lib/curp';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
 import { toast } from 'sonner';
 
@@ -46,6 +55,9 @@ const PatientWorkspace = () => {
   const { customerId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const role = user?.role;
+  const isSecretary = role === 'secretary';
+  const isNurse = role === 'nurse';
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('resumen');
@@ -56,6 +68,7 @@ const PatientWorkspace = () => {
   const [purchases, setPurchases] = useState([]);
   const [notes, setNotes] = useState([]);
   const [inventory, setInventory] = useState([]);
+  const [doctorProfile, setDoctorProfile] = useState(null);
 
   // Dialog states
   const [rxDialogOpen, setRxDialogOpen] = useState(false);
@@ -63,12 +76,15 @@ const PatientWorkspace = () => {
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
   const [patientEditOpen, setPatientEditOpen] = useState(false);
-  const [patientForm, setPatientForm] = useState({ height: '', weight: '', notes: '' });
+  const [patientForm, setPatientForm] = useState({ height: '', weight: '', notes: '', curp: '', sexo: '', birth_state: '' });
+  const [curpError, setCurpError] = useState('');
   const [savingPatient, setSavingPatient] = useState(false);
   const [printRx, setPrintRx] = useState(null);
   const [medSearchOpen, setMedSearchOpen] = useState({}); // { [idx]: boolean }
   const [postVisitAppt, setPostVisitAppt] = useState(null);
   const [postVisitOpen, setPostVisitOpen] = useState(false);
+  const [justificanteOpen, setJustificanteOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Form states
   const [rxForm, setRxForm] = useState({
@@ -100,6 +116,11 @@ const PatientWorkspace = () => {
 
   const loadAll = useCallback(async () => {
     if (!customerId) return;
+    // Secretaries manage the agenda only — never load clinical data
+    if (isSecretary) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       // Load customer first — this must succeed
@@ -129,6 +150,12 @@ const PatientWorkspace = () => {
           ? appts.filter(a => a.customer_id === customerId)
           : [];
         setAppointments(customerAppts);
+
+        const docProfile = await getDoctorProfile(user.id).catch(e => {
+          console.error('getDoctorProfile failed:', e);
+          return null;
+        });
+        setDoctorProfile(docProfile);
       }
 
       const hist = await getCustomerPurchaseHistory(customerId).catch(e => {
@@ -157,7 +184,7 @@ const PatientWorkspace = () => {
     } finally {
       setLoading(false);
     }
-  }, [customerId, user?.id]);
+  }, [customerId, user?.id, isSecretary]);
 
   useEffect(() => {
     loadAll();
@@ -188,7 +215,7 @@ const PatientWorkspace = () => {
         patient_name: customer?.full_name || '',
         patient_curp: customer?.curp || null,
         doctor_name: user?.name || user?.email || '',
-        doctor_license_number: '', // Could be fetched from doctor_profiles
+        doctor_license_number: doctorProfile?.license_number || '',
         medication: first.medication.trim(),
         dosage: first.dosage.trim() || null,
         frequency: first.frequency.trim() || null,
@@ -215,6 +242,11 @@ const PatientWorkspace = () => {
         next_appointment: rxForm.next_appointment || null,
       };
       await createDoctorPrescription(payload);
+      logAudit({
+        action: AUDIT_ACTIONS.RECETA_CREATE,
+        user,
+        details: `Receta creada (${validMeds.length} medicamento${validMeds.length !== 1 ? 's' : ''}) — paciente ${customer?.full_name || ''}`,
+      });
       toast.success('Receta creada exitosamente');
       setRxDialogOpen(false);
       setRxForm({
@@ -227,6 +259,59 @@ const PatientWorkspace = () => {
       loadAll();
     } catch (err) {
       toast.error(err.message || 'Error creando receta');
+    }
+  };
+
+  const handleCancelRx = async (rx) => {
+    if (!confirm(`¿Cancelar la receta ${rx.prescription_number || ''}? Esta acción no se puede deshacer.`)) return;
+    try {
+      await cancelDoctorPrescription(rx.id);
+      logAudit({
+        action: AUDIT_ACTIONS.RECETA_CANCEL,
+        user,
+        details: `Receta ${rx.prescription_number || rx.id} cancelada — paciente ${customer?.full_name || ''}`,
+      });
+      toast.success('Receta cancelada');
+      loadAll();
+    } catch (err) {
+      toast.error(err.message || 'Error cancelando receta');
+    }
+  };
+
+  // ── RECORD EXPORT (expediente clínico PDF) ──
+  const handleExportRecord = async () => {
+    if (!customer) return;
+    setExporting(true);
+    try {
+      const [consultaNotes, consents] = await Promise.all([
+        getConsultaNotesByCustomer(customerId).catch(e => {
+          console.error('getConsultaNotesByCustomer failed:', e);
+          return [];
+        }),
+        getConsentDocuments(customerId).catch(e => {
+          console.error('getConsentDocuments failed:', e);
+          return [];
+        }),
+      ]);
+      const doc = buildPatientRecordPdf({
+        customer,
+        history: customer.medical_history || {},
+        consultaNotes: Array.isArray(consultaNotes) ? consultaNotes : [],
+        prescriptions,
+        consents: Array.isArray(consents) ? consents : [],
+      });
+      const safeName = (customer.full_name || 'paciente').replace(/\s+/g, '_');
+      triggerDownload(doc, `Expediente_${safeName}.pdf`);
+      logAudit({
+        action: AUDIT_ACTIONS.RECORD_EXPORT,
+        user,
+        details: `Expediente clínico exportado — paciente ${customer.full_name || ''}`,
+      });
+    } catch (err) {
+      console.error('Record export failed:', err);
+      toast.error('Error exportando expediente');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -291,17 +376,30 @@ const PatientWorkspace = () => {
       height: customer?.height || '',
       weight: customer?.weight || '',
       notes: customer?.notes || '',
+      curp: customer?.curp || '',
+      sexo: customer?.sexo || '',
+      birth_state: customer?.birth_state || '',
     });
+    setCurpError('');
     setPatientEditOpen(true);
   };
 
   const handleUpdatePatient = async () => {
+    const curp = patientForm.curp.trim().toUpperCase();
+    if (curp && !isValidCurp(curp)) {
+      setCurpError('CURP inválida: revisa el formato y el dígito verificador');
+      return;
+    }
+    setCurpError('');
     setSavingPatient(true);
     try {
       await updateCustomer(customerId, {
         height: patientForm.height ? parseFloat(patientForm.height) : null,
         weight: patientForm.weight ? parseFloat(patientForm.weight) : null,
         notes: patientForm.notes.trim() || null,
+        curp: curp || null,
+        sexo: patientForm.sexo || null,
+        birth_state: patientForm.birth_state.trim() || null,
       });
       toast.success('Información del paciente actualizada');
       setPatientEditOpen(false);
@@ -358,6 +456,19 @@ const PatientWorkspace = () => {
     setNoteDialogOpen(true);
   };
 
+  // Secretaries manage the agenda only — the clinical record is off-limits
+  if (isSecretary) {
+    return (
+      <div className="text-center py-12">
+        <ShieldAlert className="w-12 h-12 text-amber-400 mx-auto mb-4" />
+        <p className="text-slate-700 font-medium">Tu rol no tiene acceso al expediente clínico</p>
+        <Button onClick={() => navigate('/doctor/customers')} variant="outline" className="mt-4">
+          <ArrowLeft className="w-4 h-4 mr-2" /> Volver a pacientes
+        </Button>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -398,27 +509,42 @@ const PatientWorkspace = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="outline" size="icon" onClick={() => navigate('/doctor/customers')}>
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">{customer.full_name}</h2>
-          <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
-            {customer.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{customer.phone}</span>}
-            {customer.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{customer.email}</span>}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" onClick={() => navigate('/doctor/customers')}>
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">{customer.full_name}</h2>
+            <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
+              {customer.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{customer.phone}</span>}
+              {customer.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{customer.email}</span>}
+            </div>
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {!isNurse && (
+            <Button variant="outline" size="sm" onClick={() => setJustificanteOpen(true)}>
+              <FileText className="w-4 h-4 mr-1" /> Justificante
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={handleExportRecord} disabled={exporting}>
+            <FileDown className="w-4 h-4 mr-1" /> {exporting ? 'Exportando...' : 'Exportar expediente'}
+          </Button>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-6 w-full">
+        <TabsList className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 w-full h-auto">
           <TabsTrigger value="resumen">Resumen</TabsTrigger>
           <TabsTrigger value="historia">Historia</TabsTrigger>
+          <TabsTrigger value="consulta">Notas consulta</TabsTrigger>
           <TabsTrigger value="recetas">Recetas</TabsTrigger>
           <TabsTrigger value="citas">Citas</TabsTrigger>
           <TabsTrigger value="compras">Compras</TabsTrigger>
           <TabsTrigger value="notas">Notas</TabsTrigger>
+          <TabsTrigger value="adjuntos">Adjuntos</TabsTrigger>
+          <TabsTrigger value="consent">Consent.</TabsTrigger>
         </TabsList>
 
         {/* RESUMEN TAB */}
@@ -461,7 +587,9 @@ const PatientWorkspace = () => {
               <div><span className="text-slate-500">Email:</span> {customer.email || '-'}</div>
               <div><span className="text-slate-500">Teléfono:</span> {customer.phone || '-'}</div>
               <div><span className="text-slate-500">CURP:</span> {customer.curp || '-'}</div>
+              <div><span className="text-slate-500">Sexo:</span> {customer.sexo === 'M' ? 'Mujer' : customer.sexo === 'H' ? 'Hombre' : '-'}</div>
               <div><span className="text-slate-500">Nacimiento:</span> {formatDate(customer.date_of_birth)}</div>
+              <div><span className="text-slate-500">Entidad de nacimiento:</span> {customer.birth_state || '-'}</div>
               <div><span className="text-slate-500">Registro:</span> {formatDate(customer.created_at)}</div>
               <div><span className="text-slate-500">Talla:</span> {customer.height ? `${customer.height} cm` : '-'}</div>
               <div><span className="text-slate-500">Peso:</span> {customer.weight ? `${customer.weight} kg` : '-'}</div>
@@ -475,13 +603,21 @@ const PatientWorkspace = () => {
           <PatientMedicalHistory customer={customer} onSaved={loadAll} />
         </TabsContent>
 
+        {/* NOTAS CONSULTA TAB (structured NOM-004 notes) */}
+        <TabsContent value="consulta" className="space-y-4">
+          <h3 className="text-lg font-semibold">Notas de consulta</h3>
+          <ConsultaNotesList customer={customer} />
+        </TabsContent>
+
         {/* RECETAS TAB */}
         <TabsContent value="recetas" className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">Recetas médicas</h3>
-            <Button onClick={openRxDialog} size="sm">
-              <Plus className="w-4 h-4 mr-1" /> Nueva Receta
-            </Button>
+            {!isNurse && (
+              <Button onClick={openRxDialog} size="sm">
+                <Plus className="w-4 h-4 mr-1" /> Nueva Receta
+              </Button>
+            )}
           </div>
 
           {prescriptions.length === 0 ? (
@@ -530,9 +666,19 @@ const PatientWorkspace = () => {
                           </p>
                         )}
                       </div>
-                      <Button size="sm" variant="ghost" className="text-slate-500 shrink-0" onClick={() => setPrintRx(rx)}>
-                        <Printer className="w-4 h-4" />
-                      </Button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {!isNurse && (
+                          <SignRecetaButton prescription={rx} customer={customer} onSigned={loadAll} />
+                        )}
+                        <Button size="sm" variant="ghost" className="text-slate-500" title="Imprimir" onClick={() => setPrintRx(rx)}>
+                          <Printer className="w-4 h-4" />
+                        </Button>
+                        {!isNurse && rx.status === 'active' && (
+                          <Button size="sm" variant="ghost" className="text-red-600" title="Cancelar receta" onClick={() => handleCancelRx(rx)}>
+                            <Ban className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -579,7 +725,7 @@ const PatientWorkspace = () => {
                               <CheckCircle className="w-3 h-3 mr-1" /> Confirmar
                             </Button>
                           )}
-                          {ap.status === 'confirmed' && (
+                          {ap.status === 'confirmed' && !isNurse && (
                             <Button size="sm" variant="outline" onClick={() => handleApptStatus(ap.id, 'completed')}>
                               <CheckCircle className="w-3 h-3 mr-1" /> Completar
                             </Button>
@@ -659,9 +805,11 @@ const PatientWorkspace = () => {
         <TabsContent value="notas" className="space-y-4">
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">Notas médicas</h3>
-            <Button onClick={() => { setEditingNote(null); setNoteForm({ note: '' }); setNoteDialogOpen(true); }} size="sm">
-              <Plus className="w-4 h-4 mr-1" /> Nueva Nota
-            </Button>
+            {!isNurse && (
+              <Button onClick={() => { setEditingNote(null); setNoteForm({ note: '' }); setNoteDialogOpen(true); }} size="sm">
+                <Plus className="w-4 h-4 mr-1" /> Nueva Nota
+              </Button>
+            )}
           </div>
           {notes.length === 0 ? (
             <div className="bg-white rounded-xl p-8 text-center border border-slate-200">
@@ -677,19 +825,31 @@ const PatientWorkspace = () => {
                       <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.note}</p>
                       <p className="text-xs text-slate-400 mt-2">{formatDateTime(note.created_at)}</p>
                     </div>
-                    <div className="flex gap-1 ml-4">
-                      <Button size="sm" variant="ghost" onClick={() => openEditNote(note)}>
-                        <Edit2 className="w-3 h-3" />
-                      </Button>
-                      <Button size="sm" variant="ghost" className="text-red-600" onClick={() => handleDeleteNote(note.id)}>
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </div>
+                    {!isNurse && (
+                      <div className="flex gap-1 ml-4">
+                        <Button size="sm" variant="ghost" onClick={() => openEditNote(note)}>
+                          <Edit2 className="w-3 h-3" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-red-600" onClick={() => handleDeleteNote(note.id)}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           )}
+        </TabsContent>
+
+        {/* ADJUNTOS TAB */}
+        <TabsContent value="adjuntos">
+          <AttachmentsTab customer={customer} />
+        </TabsContent>
+
+        {/* CONSENTIMIENTOS TAB */}
+        <TabsContent value="consent">
+          <ConsentTab customer={customer} />
         </TabsContent>
       </Tabs>
 
@@ -936,6 +1096,42 @@ const PatientWorkspace = () => {
             <DialogTitle>Editar información del paciente</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>CURP</Label>
+              <Input
+                placeholder="18 caracteres"
+                value={patientForm.curp}
+                onChange={(e) => {
+                  setPatientForm({ ...patientForm, curp: e.target.value.toUpperCase() });
+                  setCurpError('');
+                }}
+                className={curpError ? 'border-red-500 focus-visible:ring-red-500' : ''}
+              />
+              {curpError && <p className="text-xs text-red-600">{curpError}</p>}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Sexo</Label>
+                <Select
+                  value={patientForm.sexo}
+                  onValueChange={(v) => setPatientForm({ ...patientForm, sexo: v })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleccionar" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="M">Mujer</SelectItem>
+                    <SelectItem value="H">Hombre</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Entidad de nacimiento</Label>
+                <Input
+                  placeholder="Ej. Ciudad de México"
+                  value={patientForm.birth_state}
+                  onChange={(e) => setPatientForm({ ...patientForm, birth_state: e.target.value })}
+                />
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Talla (cm)</Label>
@@ -987,6 +1183,13 @@ const PatientWorkspace = () => {
         onOpenChange={setPostVisitOpen}
         appointment={postVisitAppt}
         onSaved={loadAll}
+      />
+
+      {/* Justificante médico generator */}
+      <JustificanteDialog
+        open={justificanteOpen}
+        onOpenChange={setJustificanteOpen}
+        customer={customer}
       />
 
       {/* Print Prescription Dialog */}

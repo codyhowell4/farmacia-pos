@@ -9,9 +9,11 @@ import {
 } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  updateAppointment, createMedicalNote, updateMedicalNote,
-  getMedicalNoteByAppointment, createDoctorPrescription
+  updateAppointment, createDoctorPrescription,
+  createConsultaNote, getConsultaNotesByAppointment, getDoctorProfile
 } from '@/lib/db';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
+import Cie10Search from './Cie10Search';
 import { toast } from 'sonner';
 
 const emptyMed = () => ({ medication: '', dosage: '', frequency: '', duration: '', notes: '' });
@@ -20,22 +22,36 @@ const emptyVitals = () => ({
   ta: '', fc: '', fr: '', so2: '', glicemia: '', alergias: '',
 });
 
+// Merge a stored vitals jsonb (nurse capture or a previous note) over the
+// empty grid, coercing nulls to '' so the inputs stay controlled.
+const mergeVitals = (stored) => {
+  const merged = { ...emptyVitals(), ...(stored || {}) };
+  return Object.fromEntries(Object.entries(merged).map(([k, v]) => [k, v ?? '']));
+};
+
 /**
- * Post-visit form shown when a doctor marks a cita as Completada.
- * The consulta note is required; the receta and vitals are optional.
- * The note is stored in medical_notes (linked via appointment_id) and
- * the receta in prescriptions — both are visible in the customer portal
- * and in the PatientWorkspace for future reference.
+ * Structured NOM-004 nota de evolución shown when a doctor marks a cita as
+ * Completada (or re-opens a completed one). Padecimiento actual and
+ * diagnóstico are required; the receta is optional. Notes live in
+ * consulta_notes, which is append-only: re-saving a completed cita inserts
+ * a new version with replaces_id pointing at the previous note. Signos
+ * vitales are prefilled from the nurse capture (appointments.nurse_vitals)
+ * and stored on the note itself.
  */
 const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
-  const [note, setNote] = useState('');
-  const [existingNoteId, setExistingNoteId] = useState(null);
+  const [padecimiento, setPadecimiento] = useState('');
+  const [exploracion, setExploracion] = useState('');
+  const [diagnostico, setDiagnostico] = useState('');
+  const [cie10, setCie10] = useState([]);
+  const [pronostico, setPronostico] = useState('');
+  const [plan, setPlan] = useState('');
+  const [vitals, setVitals] = useState(emptyVitals());
+  const [previousNote, setPreviousNote] = useState(null);
+  const [doctorProfile, setDoctorProfile] = useState(null);
   const [showRx, setShowRx] = useState(false);
   const [medications, setMedications] = useState([emptyMed()]);
-  const [showVitals, setShowVitals] = useState(false);
-  const [vitals, setVitals] = useState(emptyVitals());
 
   const patientName = appointment?.customers?.full_name || appointment?.walkin_name || 'Paciente';
   const hasCustomer = !!appointment?.customer_id;
@@ -43,24 +59,42 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
 
   useEffect(() => {
     if (!open || !appointment?.id) return;
-    setNote('');
-    setExistingNoteId(null);
+    setPadecimiento('');
+    setExploracion('');
+    setDiagnostico('');
+    setCie10([]);
+    setPronostico('');
+    setPlan('');
+    setVitals(mergeVitals(appointment.nurse_vitals));
+    setPreviousNote(null);
+    setDoctorProfile(null);
     setShowRx(false);
     setMedications([emptyMed()]);
-    setShowVitals(false);
-    setVitals(emptyVitals());
-    // Editing a completed consulta: preload its existing note
-    if (appointment.status === 'completed') {
-      getMedicalNoteByAppointment(appointment.id)
-        .then(existing => {
-          if (existing) {
-            setExistingNoteId(existing.id);
-            setNote(existing.note || '');
-          }
-        })
-        .catch(err => console.error('getMedicalNoteByAppointment failed:', err));
+    // The receta needs the doctor's cédula profesional from doctor_profiles
+    if (user?.id) {
+      getDoctorProfile(user.id)
+        .then(setDoctorProfile)
+        .catch(err => console.error('getDoctorProfile failed:', err));
     }
-  }, [open, appointment?.id, appointment?.status]);
+    // Re-opening a completed consulta: preload the latest note version so the
+    // doctor can correct it — saving inserts a new version (append-only).
+    if (appointment.status === 'completed') {
+      getConsultaNotesByAppointment(appointment.id)
+        .then(notes => {
+          const latest = notes?.[0];
+          if (!latest) return;
+          setPreviousNote(latest);
+          setPadecimiento(latest.padecimiento_actual || '');
+          setExploracion(latest.exploracion_fisica || '');
+          setDiagnostico(latest.diagnostico || '');
+          setPronostico(latest.pronostico || '');
+          setPlan(latest.plan || '');
+          setCie10(Array.isArray(latest.cie10_codes) ? latest.cie10_codes : []);
+          if (latest.vitals) setVitals(mergeVitals(latest.vitals));
+        })
+        .catch(err => console.error('getConsultaNotesByAppointment failed:', err));
+    }
+  }, [open, appointment?.id, appointment?.status, appointment?.nurse_vitals, user?.id]);
 
   const updateMed = (idx, field, value) => {
     const updated = [...medications];
@@ -68,9 +102,23 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
     setMedications(updated);
   };
 
+  const setVital = (field) => (e) => setVitals({ ...vitals, [field]: e.target.value });
+
+  // Trimmed vitals for the note's jsonb column; null when nothing was captured
+  const cleanedVitals = () => {
+    const obj = Object.fromEntries(
+      Object.entries(vitals).map(([k, v]) => [k, (v ?? '').toString().trim() || null])
+    );
+    return Object.values(obj).every(v => v === null) ? null : obj;
+  };
+
   const handleSave = async () => {
-    if (!note.trim()) {
-      toast.error('La nota de la consulta es obligatoria');
+    if (!padecimiento.trim()) {
+      toast.error('El padecimiento actual es obligatorio');
+      return;
+    }
+    if (!diagnostico.trim()) {
+      toast.error('El diagnóstico es obligatorio');
       return;
     }
     if (!appointment?.id || !user?.id) return;
@@ -80,17 +128,27 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
         await updateAppointment(appointment.id, { status: 'completed' });
       }
 
-      if (existingNoteId) {
-        await updateMedicalNote(existingNoteId, { note: note.trim() });
-      } else {
-        await createMedicalNote({
-          customer_id: appointment.customer_id || null,
-          walkin_name: appointment.customer_id ? null : (appointment.walkin_name || null),
-          doctor_id: user.id,
-          note: note.trim(),
-          appointment_id: appointment.id,
-        });
-      }
+      // consulta_notes is append-only — saving over a completed consulta
+      // inserts a new version pointing at the previous note.
+      await createConsultaNote({
+        appointment_id: appointment.id,
+        customer_id: appointment.customer_id || null,
+        doctor_id: user.id,
+        padecimiento_actual: padecimiento.trim(),
+        exploracion_fisica: exploracion.trim() || null,
+        vitals: cleanedVitals(),
+        diagnostico: diagnostico.trim(),
+        cie10_codes: cie10,
+        pronostico: pronostico.trim() || null,
+        plan: plan.trim() || null,
+        replaces_id: previousNote?.id || null,
+      });
+      await logAudit({
+        action: AUDIT_ACTIONS.CLINICAL_NOTE_CREATE,
+        user,
+        details: `Nota de evolución para ${patientName} (cita ${appointment.id})` +
+          (previousNote?.id ? ` — reemplaza nota ${previousNote.id}` : ''),
+      });
 
       const validMeds = medications.filter(m => m.medication.trim());
       if (validMeds.length > 0 && hasCustomer) {
@@ -100,7 +158,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
           patient_name: patientName,
           patient_curp: null,
           doctor_name: user?.name || user?.email || '',
-          doctor_license_number: '',
+          doctor_license_number: doctorProfile?.license_number || '',
           medication: first.medication.trim(),
           dosage: first.dosage.trim() || null,
           frequency: first.frequency.trim() || null,
@@ -128,11 +186,11 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
         });
       }
 
-      toast.success(alreadyCompleted ? 'Nota actualizada' : 'Consulta completada');
+      toast.success(alreadyCompleted ? 'Nota guardada (nueva versión)' : 'Consulta completada');
       onOpenChange(false);
       onSaved?.();
     } catch (err) {
-      toast.error(err.message || 'Error guardando la nota post-consulta');
+      toast.error(err.message || 'Error guardando la nota de evolución');
       console.error(err);
     } finally {
       setSaving(false);
@@ -144,21 +202,89 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {alreadyCompleted ? 'Nota post-consulta' : 'Completar consulta'} — {patientName}
+            {alreadyCompleted ? 'Nota de evolución' : 'Completar consulta'} — {patientName}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Consulta note (required) */}
+          {/* Nota de evolución (NOM-004) */}
           <div className="space-y-2">
             <Label className="flex items-center gap-1">
-              <FileText className="w-4 h-4" /> Nota de la consulta *
+              <FileText className="w-4 h-4" /> Padecimiento actual *
             </Label>
             <Textarea
-              placeholder="Diagnóstico, observaciones, indicaciones... (ej. paciente sin padecimiento, no requiere receta)"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={5}
+              placeholder="Motivo de consulta y evolución del padecimiento actual..."
+              value={padecimiento}
+              onChange={(e) => setPadecimiento(e.target.value)}
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Exploración física</Label>
+            <Textarea
+              placeholder="Hallazgos de la exploración física (opcional)..."
+              value={exploracion}
+              onChange={(e) => setExploracion(e.target.value)}
+              rows={3}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1">
+              <Activity className="w-4 h-4" /> Signos vitales
+              {appointment?.nurse_vitals && (
+                <span className="text-xs font-normal text-teal-600 ml-1">
+                  (precargados por enfermería)
+                </span>
+              )}
+            </Label>
+            <div className="grid grid-cols-3 gap-2">
+              <Input placeholder="Edad" value={vitals.edad} onChange={setVital('edad')} />
+              <Input placeholder="Talla (cm)" value={vitals.height_cm} onChange={setVital('height_cm')} />
+              <Input placeholder="Peso (kg)" value={vitals.weight_kg} onChange={setVital('weight_kg')} />
+              <Input placeholder="Temp" value={vitals.temperatura} onChange={setVital('temperatura')} />
+              <Input placeholder="T/A" value={vitals.ta} onChange={setVital('ta')} />
+              <Input placeholder="FC" value={vitals.fc} onChange={setVital('fc')} />
+              <Input placeholder="FR" value={vitals.fr} onChange={setVital('fr')} />
+              <Input placeholder="So2%" value={vitals.so2} onChange={setVital('so2')} />
+              <Input placeholder="Glicemia" value={vitals.glicemia} onChange={setVital('glicemia')} />
+            </div>
+            <Input placeholder="Alergias" value={vitals.alergias} onChange={setVital('alergias')} />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Diagnóstico *</Label>
+            <Textarea
+              placeholder="Diagnóstico clínico..."
+              value={diagnostico}
+              onChange={(e) => setDiagnostico(e.target.value)}
+              rows={2}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Diagnósticos CIE-10</Label>
+            <Cie10Search value={cie10} onChange={setCie10} />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Pronóstico</Label>
+            <Textarea
+              placeholder="Pronóstico (opcional)..."
+              value={pronostico}
+              onChange={(e) => setPronostico(e.target.value)}
+              rows={2}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Plan / indicación terapéutica</Label>
+            <Textarea
+              placeholder="Plan de tratamiento, indicaciones, estudios solicitados... (opcional)"
+              value={plan}
+              onChange={(e) => setPlan(e.target.value)}
+              rows={2}
             />
           </div>
 
@@ -215,44 +341,12 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
             </p>
           )}
 
-          {/* Vitals (optional, only useful with a receta) */}
-          {hasCustomer && showRx && (
-            <div className="border border-slate-200 rounded-lg">
-              <button
-                type="button"
-                className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                onClick={() => setShowVitals(!showVitals)}
-              >
-                <span className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-teal-600" /> Signos vitales (opcional)
-                </span>
-                <span className="text-slate-400">{showVitals ? '−' : '+'}</span>
-              </button>
-              {showVitals && (
-                <div className="px-4 pb-4 space-y-2">
-                  <div className="grid grid-cols-3 gap-2">
-                    <Input placeholder="Edad" value={vitals.edad} onChange={(e) => setVitals({ ...vitals, edad: e.target.value })} />
-                    <Input placeholder="Talla (cm)" value={vitals.height_cm} onChange={(e) => setVitals({ ...vitals, height_cm: e.target.value })} />
-                    <Input placeholder="Peso (kg)" value={vitals.weight_kg} onChange={(e) => setVitals({ ...vitals, weight_kg: e.target.value })} />
-                    <Input placeholder="Temp" value={vitals.temperatura} onChange={(e) => setVitals({ ...vitals, temperatura: e.target.value })} />
-                    <Input placeholder="T/A" value={vitals.ta} onChange={(e) => setVitals({ ...vitals, ta: e.target.value })} />
-                    <Input placeholder="FC" value={vitals.fc} onChange={(e) => setVitals({ ...vitals, fc: e.target.value })} />
-                    <Input placeholder="FR" value={vitals.fr} onChange={(e) => setVitals({ ...vitals, fr: e.target.value })} />
-                    <Input placeholder="So2%" value={vitals.so2} onChange={(e) => setVitals({ ...vitals, so2: e.target.value })} />
-                    <Input placeholder="Glicemia" value={vitals.glicemia} onChange={(e) => setVitals({ ...vitals, glicemia: e.target.value })} />
-                  </div>
-                  <Input placeholder="Alergias" value={vitals.alergias} onChange={(e) => setVitals({ ...vitals, alergias: e.target.value })} />
-                </div>
-              )}
-            </div>
-          )}
-
           <div className="flex gap-3 pt-2">
             <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancelar
             </Button>
             <Button className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600" onClick={handleSave} disabled={saving}>
-              {saving ? 'Guardando...' : alreadyCompleted ? 'Guardar cambios' : 'Guardar y completar'}
+              {saving ? 'Guardando...' : alreadyCompleted ? 'Guardar nueva versión' : 'Guardar y completar'}
             </Button>
           </div>
         </div>

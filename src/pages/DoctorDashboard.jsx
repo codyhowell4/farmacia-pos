@@ -14,6 +14,7 @@ import DoctorAppointments from '@/components/doctor/DoctorAppointments';
 import DoctorCustomers from '@/components/doctor/DoctorCustomers';
 import DoctorProfile from '@/components/doctor/DoctorProfile';
 import DoctorInventory from '@/components/doctor/DoctorInventory';
+import DoctorReports from '@/components/doctor/DoctorReports';
 import PatientWorkspace from '@/components/doctor/PatientWorkspace';
 
 const DoctorDashboard = () => {
@@ -22,6 +23,11 @@ const DoctorDashboard = () => {
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
+  const role = user?.role;
+  const isSecretary = role === 'secretary';
+  const canSeeAll = role === 'doctor' || role === 'admin';
+  const homePath = canSeeAll ? '/doctor' : '/doctor/appointments';
+
   const getCurrentTab = () => {
     const path = location.pathname;
     if (path.includes('/appointments')) return 'appointments';
@@ -29,6 +35,7 @@ const DoctorDashboard = () => {
     if (path.includes('/expiring')) return 'inventory'; // legacy route, redirects
     if (path.includes('/customers/')) return 'customers';
     if (path.includes('/customers')) return 'customers';
+    if (path.includes('/reports')) return 'reports';
     if (path.includes('/profile')) return 'profile';
     return 'overview';
   };
@@ -40,13 +47,15 @@ const DoctorDashboard = () => {
     navigate('/login');
   };
 
-  const navItems = [
-    { id: 'overview', label: 'Resumen', icon: BarChart3, path: '/doctor' },
-    { id: 'appointments', label: 'Citas', icon: Calendar, path: '/doctor/appointments' },
-    { id: 'customers', label: 'Pacientes', icon: Users, path: '/doctor/customers' },
-    { id: 'inventory', label: 'Inventario', icon: Package, path: '/doctor/inventory' },
-    { id: 'profile', label: 'Mi perfil', icon: UserCircle, path: '/doctor/profile' },
+  const allNavItems = [
+    { id: 'overview', label: 'Resumen', icon: BarChart3, path: '/doctor', roles: ['doctor', 'admin'] },
+    { id: 'appointments', label: 'Citas', icon: Calendar, path: '/doctor/appointments', roles: ['doctor', 'admin', 'secretary', 'nurse'] },
+    { id: 'customers', label: 'Pacientes', icon: Users, path: '/doctor/customers', roles: ['doctor', 'admin', 'nurse'] },
+    { id: 'inventory', label: 'Inventario', icon: Package, path: '/doctor/inventory', roles: ['doctor', 'admin', 'nurse'] },
+    { id: 'reports', label: 'Reportes', icon: BarChart3, path: '/doctor/reports', roles: ['doctor', 'admin'] },
+    { id: 'profile', label: 'Mi perfil', icon: UserCircle, path: '/doctor/profile', roles: ['doctor', 'admin', 'secretary', 'nurse'] },
   ];
+  const navItems = allNavItems.filter((item) => item.roles.includes(role));
 
   const SideNav = () => (
     <nav className="space-y-2">
@@ -91,7 +100,9 @@ const DoctorDashboard = () => {
                 </Button>
                 <ApoloBrand size="md" />
                 <div>
-                  <p className="text-xs text-slate-500">Bienvenido, Dr. {user?.name}</p>
+                  <p className="text-xs text-slate-500">
+                    Bienvenido, {role === 'nurse' ? 'Enf. ' : role === 'secretary' ? '' : 'Dr. '}{user?.name}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -144,13 +155,15 @@ const DoctorDashboard = () => {
             </aside>
             <main className="lg:col-span-9 xl:col-span-10">
               <Routes>
-                <Route path="/" element={<DoctorOverview />} />
+                <Route path="/" element={canSeeAll ? <DoctorOverview /> : <Navigate to="/doctor/appointments" replace />} />
                 <Route path="/appointments" element={<DoctorAppointments />} />
-                <Route path="/customers" element={<DoctorCustomers />} />
-                <Route path="/customers/:customerId" element={<PatientWorkspace />} />
-                <Route path="/inventory" element={<DoctorInventory />} />
+                <Route path="/customers" element={isSecretary ? <Navigate to="/doctor/appointments" replace /> : <DoctorCustomers />} />
+                <Route path="/customers/:customerId" element={isSecretary ? <Navigate to="/doctor/appointments" replace /> : <PatientWorkspace />} />
+                <Route path="/inventory" element={isSecretary ? <Navigate to="/doctor/appointments" replace /> : <DoctorInventory />} />
                 <Route path="/expiring" element={<Navigate to="/doctor/inventory" replace />} />
+                <Route path="/reports" element={canSeeAll ? <DoctorReports /> : <Navigate to="/doctor/appointments" replace />} />
                 <Route path="/profile" element={<DoctorProfile />} />
+                <Route path="*" element={<Navigate to={homePath} replace />} />
               </Routes>
             </main>
           </div>

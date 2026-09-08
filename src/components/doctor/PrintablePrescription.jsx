@@ -1,6 +1,25 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
+import { buildRecetaQrText } from '@/lib/cda';
 
 const PrintablePrescription = ({ prescription, customer }) => {
+  const [qrUrl, setQrUrl] = useState(null);
+
+  // Signed recetas get a verification QR next to the signature area.
+  // Generated async because QRCode.toDataURL returns a promise.
+  const qrText = prescription?.signature ? buildRecetaQrText(prescription) : null;
+  useEffect(() => {
+    let cancelled = false;
+    if (qrText) {
+      QRCode.toDataURL(qrText, { margin: 0, width: 160 })
+        .then((url) => { if (!cancelled) setQrUrl(url); })
+        .catch(() => { if (!cancelled) setQrUrl(null); });
+    } else {
+      setQrUrl(null);
+    }
+    return () => { cancelled = true; };
+  }, [qrText]);
+
   if (!prescription) return null;
 
   const meds = Array.isArray(prescription.medications) && prescription.medications.length > 0
@@ -116,6 +135,24 @@ const PrintablePrescription = ({ prescription, customer }) => {
           min-width: 1.8in;
           border-bottom: 1px solid #1a1a1a;
           margin-left: 4px;
+        }
+        .rx-qr-block {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 2px;
+          padding-top: 0.1in;
+          flex-shrink: 0;
+        }
+        .rx-qr-block img {
+          width: 0.79in; /* ≈2cm */
+          height: 0.79in;
+        }
+        .rx-qr-caption {
+          font-size: 5.5pt;
+          text-align: center;
+          max-width: 0.95in;
+          line-height: 1.25;
         }
         .rx-body {
           display: flex;
@@ -263,6 +300,12 @@ const PrintablePrescription = ({ prescription, customer }) => {
               <div><label>NOMBRE DE DOCTOR:</label><span className="underline">{prescription.doctor_name || ''}</span></div>
               <div><label>CÉDULA:</label><span className="underline">{prescription.doctor_license_number || ''}</span></div>
             </div>
+            {prescription.signature && qrUrl && (
+              <div className="rx-qr-block">
+                <img src={qrUrl} alt="QR de verificación de firma electrónica" />
+                <div className="rx-qr-caption">Firma electrónica — verifique con el folio</div>
+              </div>
+            )}
           </div>
 
           {/* Body */}
