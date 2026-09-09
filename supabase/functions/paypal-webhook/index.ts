@@ -185,6 +185,79 @@ const addMonthsWithLastDayRule = (start: Date, months: number) => {
 
 const formatDate = (d: Date) => d.toISOString().split('T')[0];
 
+interface MembershipRow {
+  id: string;
+  org_id: string;
+  customer_id: string | null;
+  plan_id: string | null;
+  status: string;
+  pending_cancellation: boolean;
+  next_renewal_date: string | null;
+  payments_made: number | null;
+  created_at: string;
+  customers?: { full_name?: string | null; email?: string | null } | null;
+}
+
+const getMembershipBySubscription = async (
+  supabase: ReturnType<typeof supabaseAdmin>,
+  subscriptionId: string
+): Promise<MembershipRow | null> => {
+  const { data, error } = await supabase
+    .from('memberships')
+    .select('id, org_id, customer_id, plan_id, status, pending_cancellation, next_renewal_date, payments_made, created_at, customers(full_name, email)')
+    .eq('processor_subscription_id', subscriptionId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as MembershipRow | null) ?? null;
+};
+
+// Enqueues a membership lifecycle email + in-app notification, mirroring the
+// pattern record_membership_payment uses in SQL. Never throws: notification
+// failures must not break webhook processing.
+const notifyMembership = async (
+  supabase: ReturnType<typeof supabaseAdmin>,
+  membership: MembershipRow,
+  template: string,
+  payload: Record<string, unknown>,
+  notification: { type: string; title: string; message: string }
+) => {
+  try {
+    if (membership.customer_id) {
+      const { error } = await supabase.from('notifications').insert({
+        org_id: membership.org_id,
+        customer_id: membership.customer_id,
+        type: notification.type,
+        title: notification.title,
+        message: notification.message,
+        related_id: membership.id,
+        related_table: 'memberships',
+      });
+      if (error) console.error('[paypal-webhook] in-app notification failed:', error);
+    }
+
+    const email = membership.customers?.email;
+    if (email) {
+      const { error } = await supabase.from('notification_queue').insert({
+        org_id: membership.org_id,
+        channel: 'email',
+        recipient: email,
+        template,
+        payload: {
+          membership_id: membership.id,
+          plan_id: membership.plan_id,
+          patient_name: membership.customers?.full_name || '',
+          ...payload,
+        },
+        scheduled_for: new Date().toISOString(),
+      });
+      if (error) console.error('[paypal-webhook] email enqueue failed:', error);
+    }
+  } catch (err) {
+    console.error('[paypal-webhook] notifyMembership failed:', err);
+  }
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders, status: 204 });
@@ -242,29 +315,99 @@ Deno.serve(async (req) => {
 
         // Count this as a paid month only for actual payment events.
         if (renewed && event.event_type === 'PAYMENT.SALE.COMPLETED') {
-          try {
-            await supabase.rpc('record_membership_payment', { p_membership_id: renewed.id });
-          } catch (paymentErr) {
-            console.error('[paypal-webhook] record_membership_payment failed:', paymentErr);
+          // Double-count guard: the signup RPC already recorded payment #1,
+          // and PayPal fires SALE.COMPLETED for that first payment too.
+          // Skip only when the membership was just created (fresh signup);
+          // reinstated memberships keep their old created_at, so their
+          // first re-subscription payment is recorded normally.
+          const membership = await getMembershipBySubscription(supabase, subscriptionId);
+          const createdAt = membership?.created_at ? new Date(membership.created_at) : null;
+          const isRecentSignup =
+            createdAt !== null && Date.now() - createdAt.getTime() < 2 * 24 * 60 * 60 * 1000;
+          const alreadyCountedSignup = (membership?.payments_made ?? 0) >= 1 && isRecentSignup;
+
+          if (alreadyCountedSignup) {
+            console.log('[paypal-webhook] skipping record_membership_payment for recent signup (already counted):', renewed.id);
+          } else {
+            try {
+              const resource = (event.resource || {}) as Record<string, unknown>;
+              const amountInfo = (resource.amount || {}) as Record<string, unknown>;
+              const rawTotal = amountInfo.total;
+              const amount = typeof rawTotal === 'string' ? Number(rawTotal) : null;
+              await supabase.rpc('record_membership_payment', {
+                p_membership_id: renewed.id,
+                p_amount: Number.isFinite(amount) ? amount : null,
+                p_payment_method: 'paypal',
+                p_staff_id: null,
+                p_is_signup: false,
+              });
+            } catch (paymentErr) {
+              console.error('[paypal-webhook] record_membership_payment failed:', paymentErr);
+            }
           }
         }
         break;
       }
 
       case 'BILLING.SUBSCRIPTION.PAYMENT.FAILED':
-      case 'BILLING.SUBSCRIPTION.SUSPENDED':
+      case 'BILLING.SUBSCRIPTION.SUSPENDED': {
         // Suspended maps to paused (mirrors the admin "Pausado" action);
         // only an explicit cancellation cancels the membership.
         await updateMembershipBySubscription(supabase, subscriptionId, {
           status: 'paused',
         });
-        break;
 
-      case 'BILLING.SUBSCRIPTION.CANCELLED':
-        await updateMembershipBySubscription(supabase, subscriptionId, {
-          status: 'cancelled',
-        });
+        const membership = await getMembershipBySubscription(supabase, subscriptionId);
+        if (membership) {
+          await notifyMembership(
+            supabase,
+            membership,
+            'membership_payment_failed',
+            {},
+            {
+              type: 'membership_payment_failed',
+              title: 'Pago de membresía fallido',
+              message: `No pudimos cobrar la mensualidad de tu membresía ${membership.plan_id || ''}. Tus beneficios están pausados hasta que el pago se regularice.`,
+            }
+          );
+        }
         break;
+      }
+
+      case 'BILLING.SUBSCRIPTION.CANCELLED': {
+        const membership = await getMembershipBySubscription(supabase, subscriptionId);
+
+        if (membership?.pending_cancellation) {
+          // Member self-cancelled in the app: benefits run until period end
+          // and process_membership_renewals flips the status at
+          // next_renewal_date. Do NOT cancel here.
+          console.log('[paypal-webhook] subscription cancelled with pending_cancellation — membership stays active until', membership.next_renewal_date);
+        } else {
+          // Admin- or PayPal-side cancellation: effective immediately.
+          await updateMembershipBySubscription(supabase, subscriptionId, {
+            status: 'cancelled',
+          });
+        }
+
+        if (membership) {
+          const selfCancelled = membership.pending_cancellation === true;
+          const effectiveDate = selfCancelled ? membership.next_renewal_date : null;
+          await notifyMembership(
+            supabase,
+            membership,
+            'membership_cancelled',
+            { effective_date: effectiveDate, immediate: !selfCancelled },
+            {
+              type: 'membership_cancelled',
+              title: 'Membresía cancelada',
+              message: selfCancelled
+                ? `Tu membresía ${membership.plan_id || ''} quedará cancelada al final del periodo actual${effectiveDate ? ` (${effectiveDate})` : ''}. Conservas tus beneficios hasta entonces.`
+                : `Tu membresía ${membership.plan_id || ''} fue cancelada. Si no reconoces esta acción, contáctanos.`,
+            }
+          );
+        }
+        break;
+      }
 
       default:
         break;

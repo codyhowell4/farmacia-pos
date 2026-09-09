@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Users, User, ChevronDown, ChevronUp, Edit2, Loader2, RefreshCw, Activity } from 'lucide-react';
+import { Search, Users, User, ChevronDown, ChevronUp, Edit2, Loader2, RefreshCw, Activity, UserPlus, Trash2, Check, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -7,9 +7,43 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { getMemberships, searchMemberships, updateMembership, processMembershipRenewals, getTrackerFulfillments, fulfillMembershipTrackers, recordMembershipPayment, getPendingMemberRevisions } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 import { formatMXN } from '@/lib/currency';
 
 const PAYPAL_STATUS_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paypal-subscription-status`;
+
+const ROSTER_COOLDOWN_DAYS = 90;
+
+const ROSTER_ERROR_MESSAGES = {
+  roster_full: 'El plan familiar permite hasta 5 integrantes adicionales.',
+  member_not_found: 'No se encontró al integrante.',
+  cannot_remove_owner: 'No se puede quitar al titular de la membresía.',
+  not_authorized: 'No tienes autorización para cambiar los integrantes.',
+  name_required: 'Escribe el nombre del integrante.',
+  membership_not_found: 'No se encontró la membresía.',
+  invalid_action: 'Acción no válida.',
+};
+
+const formatDate = (value) => {
+  if (!value) return '—';
+  let d;
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, day] = value.split('-').map(Number);
+    d = new Date(y, m - 1, day);
+  } else {
+    d = new Date(value);
+  }
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+};
+
+const getNextRosterChangeDate = (membership) => {
+  if (!membership?.last_roster_change_at) return null;
+  const last = new Date(membership.last_roster_change_at);
+  if (Number.isNaN(last.getTime())) return null;
+  const next = new Date(last.getTime() + ROSTER_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
+  return next > new Date() ? next : null;
+};
 
 const syncStatusToPayPal = async (subscriptionId, status) => {
   if (!subscriptionId) return null;
@@ -73,7 +107,14 @@ const AdminMemberships = () => {
   const [revisionsByMembership, setRevisionsByMembership] = useState({});
   const [loadingRevisions, setLoadingRevisions] = useState({});
   const [recordingPaymentId, setRecordingPaymentId] = useState(null);
+  const [newMemberName, setNewMemberName] = useState('');
+  const [editingMemberId, setEditingMemberId] = useState(null);
+  const [editingMemberName, setEditingMemberName] = useState('');
+  const [rosterBusy, setRosterBusy] = useState(false);
+  const [rosterOverride, setRosterOverride] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   const loadData = async () => {
     setIsLoading(true);
@@ -132,6 +173,13 @@ const AdminMemberships = () => {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
+  useEffect(() => {
+    setNewMemberName('');
+    setEditingMemberId(null);
+    setEditingMemberName('');
+    setRosterOverride(false);
+  }, [editing?.id]);
+
   const handleFulfillTracker = async (membership) => {
     setFulfillingId(membership.id);
     try {
@@ -172,6 +220,117 @@ const AdminMemberships = () => {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const refreshEditingMembership = async () => {
+    if (!editing) return;
+    const { data, error } = await supabase
+      .from('memberships')
+      .select('*, customers(*), membership_members(*)')
+      .eq('id', editing.id)
+      .single();
+    if (error) {
+      console.error(error);
+      return;
+    }
+    setEditing((prev) => {
+      if (!prev) return prev;
+      return {
+        ...data,
+        customers: {
+          ...data.customers,
+          full_name: prev.customers?.full_name,
+          email: prev.customers?.email,
+          phone: prev.customers?.phone,
+        },
+        discount_percent: prev.discount_percent,
+        visits_remaining: prev.visits_remaining,
+        status: prev.status,
+      };
+    });
+  };
+
+  const handleManageMember = async (action, { memberId = null, name = null } = {}) => {
+    if (!editing) return false;
+    setRosterBusy(true);
+    try {
+      const { data, error } = await supabase.rpc('manage_family_member', {
+        p_membership_id: editing.id,
+        p_action: action,
+        p_member_id: memberId,
+        p_name: name,
+        p_override: isAdmin && rosterOverride,
+      });
+      if (error) throw error;
+      if (!data?.success) {
+        const code = data?.error;
+        if (code === 'roster_locked') {
+          toast({
+            title: 'Cambios de integrantes bloqueados',
+            description: `Próximo cambio de integrantes disponible el ${formatDate(data?.next_change_date)}.`,
+            variant: 'destructive',
+          });
+        } else {
+          toast({
+            title: 'No se pudo aplicar el cambio',
+            description: ROSTER_ERROR_MESSAGES[code] || 'Ocurrió un error inesperado.',
+            variant: 'destructive',
+          });
+        }
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error(e);
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+      return false;
+    } finally {
+      setRosterBusy(false);
+    }
+  };
+
+  const handleAddMember = async () => {
+    const name = newMemberName.trim();
+    if (!name) {
+      toast({ title: 'Verifica los datos', description: 'Escribe el nombre del integrante.', variant: 'destructive' });
+      return;
+    }
+    const ok = await handleManageMember('add', { name });
+    if (ok) {
+      setNewMemberName('');
+      toast({ title: 'Integrante agregado', description: name });
+      await refreshEditingMembership();
+      await loadData();
+    }
+  };
+
+  const handleRemoveMember = async (member) => {
+    if (!window.confirm(`¿Quitar a ${member.name} de la membresía ${editing?.plan_id || ''}?`)) return;
+    const ok = await handleManageMember('remove', { memberId: member.id });
+    if (ok) {
+      toast({ title: 'Integrante eliminado', description: member.name });
+      await refreshEditingMembership();
+      await loadData();
+    }
+  };
+
+  const handleSaveMemberName = async (member) => {
+    const name = editingMemberName.trim();
+    if (!name) {
+      toast({ title: 'Verifica los datos', description: 'Escribe el nombre del integrante.', variant: 'destructive' });
+      return;
+    }
+    if (name === member.name) {
+      setEditingMemberId(null);
+      return;
+    }
+    const ok = await handleManageMember('edit', { memberId: member.id, name });
+    if (ok) {
+      setEditingMemberId(null);
+      toast({ title: 'Nombre actualizado' });
+      await refreshEditingMembership();
+      await loadData();
     }
   };
 
@@ -221,6 +380,12 @@ const AdminMemberships = () => {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     }
   };
+
+  const editingNextRosterChange = editing ? getNextRosterChangeDate(editing) : null;
+  const editingRosterLocked = !!editingNextRosterChange;
+  const editingNonOwnerCount = (editing?.membership_members || []).filter((mm) => !mm.is_owner).length;
+  const editingRosterFull = editingNonOwnerCount >= 5;
+  const rosterChangesDisabled = rosterBusy || (editingRosterLocked && !(isAdmin && rosterOverride));
 
   return (
     <div className="space-y-6">
@@ -385,7 +550,14 @@ const AdminMemberships = () => {
                         </button>
                       </td>
                       <td className="px-4 py-3">
-                        <StatusBadge status={m.status} />
+                        <div className="flex flex-wrap items-center gap-1">
+                          <StatusBadge status={m.status} />
+                          {m.pending_cancellation && (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                              Cancela el {formatDate(m.next_renewal_date)}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
@@ -442,6 +614,12 @@ const AdminMemberships = () => {
                                   </p>
                                 )}
                               </div>
+                              {m.pending_cancellation && (
+                                <div>
+                                  <p className="text-xs font-semibold text-slate-500 uppercase">Cancelación programada</p>
+                                  <p>Activa hasta el {formatDate(m.next_renewal_date)}</p>
+                                </div>
+                              )}
                             </div>
 
                             {m.plan_type === 'familiar' && (
@@ -479,11 +657,12 @@ const AdminMemberships = () => {
       )}
 
       <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className={`${editing?.plan_type === 'familiar' ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] overflow-y-auto`}>
           <DialogHeader>
             <DialogTitle>Editar membresía</DialogTitle>
           </DialogHeader>
           {editing && (
+            <>
             <form onSubmit={handleSaveEdit} className="space-y-4">
               <div>
                 <Label>Plan ID</Label>
@@ -565,6 +744,145 @@ const AdminMemberships = () => {
                 <Button type="submit">Guardar cambios</Button>
               </div>
             </form>
+
+            {editing.plan_type === 'familiar' && (
+              <div className="border-t pt-4 mt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-900">Integrantes</h3>
+                  <span className="text-xs text-slate-500">{editingNonOwnerCount} de 5 adicionales</span>
+                </div>
+
+                {editingRosterLocked && (
+                  <p className="text-xs bg-amber-50 text-amber-800 border border-amber-200 rounded px-3 py-2">
+                    Próximo cambio de integrantes disponible el {formatDate(editingNextRosterChange)}.
+                  </p>
+                )}
+
+                <div className="space-y-2">
+                  {(editing.membership_members || []).map((mm) => (
+                    <div key={mm.id} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      <div className="flex-1 min-w-0">
+                        {editingMemberId === mm.id ? (
+                          <Input
+                            value={editingMemberName}
+                            onChange={(e) => setEditingMemberName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleSaveMemberName(mm);
+                              }
+                            }}
+                            disabled={rosterBusy}
+                            autoFocus
+                          />
+                        ) : (
+                          <>
+                            <p className="text-sm font-medium text-slate-900 truncate">
+                              {mm.name}
+                              {mm.is_owner && <span className="ml-2 text-xs font-normal text-apolo-navy">Titular</span>}
+                            </p>
+                            <p className="text-xs text-slate-500 font-mono">{mm.sub_id}</p>
+                          </>
+                        )}
+                      </div>
+                      {editingMemberId === mm.id ? (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            disabled={rosterBusy}
+                            onClick={() => handleSaveMemberName(mm)}
+                            title="Guardar nombre"
+                          >
+                            <Check className="w-4 h-4 text-green-600" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            disabled={rosterBusy}
+                            onClick={() => setEditingMemberId(null)}
+                            title="Cancelar"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            disabled={rosterBusy}
+                            onClick={() => {
+                              setEditingMemberId(mm.id);
+                              setEditingMemberName(mm.name);
+                            }}
+                            title="Corregir nombre"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          {!mm.is_owner && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              disabled={rosterChangesDisabled}
+                              onClick={() => handleRemoveMember(mm)}
+                              title="Quitar integrante"
+                            >
+                              <Trash2 className="w-4 h-4 text-red-600" />
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Nombre del nuevo integrante"
+                    value={newMemberName}
+                    onChange={(e) => setNewMemberName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddMember();
+                      }
+                    }}
+                    disabled={rosterChangesDisabled || editingRosterFull}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={rosterChangesDisabled || editingRosterFull || !newMemberName.trim()}
+                    onClick={handleAddMember}
+                  >
+                    {rosterBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4 mr-1" />}
+                    Agregar
+                  </Button>
+                </div>
+                {editingRosterFull && (
+                  <p className="text-xs text-slate-500">El plan familiar permite hasta 5 integrantes adicionales.</p>
+                )}
+
+                {isAdmin && (
+                  <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={rosterOverride}
+                      onChange={(e) => setRosterOverride(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    Autorizar cambio (admin) — ignora la regla de los 90 días
+                  </label>
+                )}
+              </div>
+            )}
+            </>
           )}
         </DialogContent>
       </Dialog>

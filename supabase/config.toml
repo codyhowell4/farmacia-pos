@@ -9,6 +9,15 @@ verify_jwt = false
 [functions.paypal-subscription-status]
 verify_jwt = true
 
+# Member self-service cancellation — caller is the member's portal session
+[functions.cancel-my-membership]
+verify_jwt = true
+
+# Family-member account activation — the person has no session yet; the
+# registered member name is the identity proof
+[functions.family-member-signup]
+verify_jwt = false
+
 [functions.paypal-capture-consult]
 verify_jwt = false
 

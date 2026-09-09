@@ -25,6 +25,7 @@ interface RequestPayload {
   premium_trackers?: number;
   org_id: string;
   password?: string;
+  terms_accepted_at?: string;
 }
 
 const PLANS: Record<string, { price: number; visits: number; basicTrackers: number }> = {
@@ -159,6 +160,7 @@ const createMembership = async (
       status: 'active',
     },
     p_member_names: payload.member_names || [],
+    p_terms_accepted_at: payload.terms_accepted_at || null,
   });
 
   if (error) throw error;

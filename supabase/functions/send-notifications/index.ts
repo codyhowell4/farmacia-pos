@@ -28,13 +28,37 @@ interface NotificationRow {
   org_id: string;
   channel: 'email' | 'whatsapp' | 'sms';
   recipient: string;
-  template: 'booking_confirmation' | 'appointment_reminder' | 'consulta_link' | 'membership_revision';
+  template:
+    | 'booking_confirmation'
+    | 'appointment_reminder'
+    | 'consulta_link'
+    | 'membership_revision'
+    | 'membership_receipt'
+    | 'membership_welcome'
+    | 'membership_payment_failed'
+    | 'membership_cancelled';
   payload: {
     appointment_id?: string;
     patient_name?: string;
     appointment_date?: string;
     type?: string;
     meeting_url?: string;
+    plan_id?: string;
+    plan_type?: string;
+    milestone?: number;
+    package_label?: string;
+    amount?: number | string;
+    currency?: string;
+    payment_method?: string;
+    payments_made?: number;
+    payment_date?: string;
+    next_renewal_date?: string;
+    sale_id?: string;
+    monthly_amount?: number | string;
+    visits_limit?: number;
+    discount_percent?: number;
+    effective_date?: string;
+    immediate?: boolean;
   };
   scheduled_for: string;
 }
@@ -66,6 +90,24 @@ const escapeHtml = (value: string) =>
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+
+// Date-only values ('YYYY-MM-DD') are calendar dates, not instants — format
+// them in UTC so the Mexico-City offset never shifts them to the prior day.
+const formatDateOnly = (iso: string) =>
+  new Intl.DateTimeFormat('es-MX', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(iso));
+
+const formatMoney = (amount: unknown, currency = 'MXN') => {
+  const n = Number(amount);
+  return `$${(Number.isFinite(n) ? n : 0).toFixed(2)} ${currency}`;
+};
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  cash: 'Efectivo',
+  card: 'Tarjeta',
+  paypal: 'PayPal',
+  transferencia: 'Transferencia',
+  insurance: 'Seguro',
+};
 
 // Builds { subject, html, text } per template. `text` is the plain body
 // used for WhatsApp/SMS and as the Resend text fallback.
@@ -113,19 +155,102 @@ const buildMessage = (row: NotificationRow) => {
     return { subject: 'Tienes una revisión de membresía disponible — Farmacia Apolo', html, text };
   }
 
+  if (row.template === 'membership_receipt') {
+    const planId = String(row.payload.plan_id || '');
+    const amount = formatMoney(row.payload.amount, row.payload.currency || 'MXN');
+    const methodRaw = String(row.payload.payment_method || '');
+    const method = PAYMENT_METHOD_LABELS[methodRaw] || methodRaw;
+    const paymentsMade = row.payload.payments_made != null ? String(row.payload.payments_made) : '';
+    const paymentDate = row.payload.payment_date ? formatAppointmentDate(String(row.payload.payment_date)) : '';
+    const nextRenewal = row.payload.next_renewal_date ? formatDateOnly(String(row.payload.next_renewal_date)) : '';
+    const text = `${greeting} recibimos tu pago de ${amount} de tu membresía ${planId}${paymentsMade ? ` (pago número ${paymentsMade})` : ''}.${method ? ` Método: ${method}.` : ''}${nextRenewal ? ` Próxima renovación: ${nextRenewal}.` : ''} Farmacia Apolo.`;
+    const html =
+      `<p>${escapeHtml(greeting)}</p>` +
+      `<p><strong>Recibimos el pago de tu membresía.</strong></p>` +
+      `<p>Membresía: ${escapeHtml(planId)}</p>` +
+      `<p>Monto: ${escapeHtml(amount)}</p>` +
+      (method ? `<p>Método de pago: ${escapeHtml(method)}</p>` : '') +
+      (paymentsMade ? `<p>Pago número: ${escapeHtml(paymentsMade)}</p>` : '') +
+      (paymentDate ? `<p>Fecha de pago: ${escapeHtml(paymentDate)}</p>` : '') +
+      (nextRenewal ? `<p>Próxima renovación: ${escapeHtml(nextRenewal)}</p>` : '') +
+      '<p>Farmacia Apolo</p>';
+    return { subject: 'Recibo de pago de tu membresía — Farmacia Apolo', html, text };
+  }
+
+  if (row.template === 'membership_welcome') {
+    const planId = String(row.payload.plan_id || '');
+    const planLabel = row.payload.plan_type === 'familiar' ? 'Plan Familiar' : 'Plan Individual';
+    const monthly = formatMoney(row.payload.monthly_amount, 'MXN');
+    const visits = row.payload.visits_limit != null ? String(row.payload.visits_limit) : '';
+    const pct = row.payload.discount_percent != null ? String(row.payload.discount_percent) : '';
+    const nextRenewal = row.payload.next_renewal_date ? formatDateOnly(String(row.payload.next_renewal_date)) : '';
+    const text = `${greeting} ¡bienvenido a Membresías Apolo! Tu membresía ${planId} (${planLabel}) ya está activa:${visits ? ` ${visits} consultas al mes,` : ''}${pct ? ` ${pct}% de descuento en toda la tienda,` : ''} toma de presión gratis y revisiones de laboratorio cada 6 meses. Mensualidad: ${monthly}.${nextRenewal ? ` Próxima renovación: ${nextRenewal}.` : ''} Farmacia Apolo.`;
+    const html =
+      `<p>${escapeHtml(greeting)}</p>` +
+      `<p><strong>¡Bienvenido a Membresías Apolo!</strong></p>` +
+      `<p>Tu membresía ${escapeHtml(planId)} (${escapeHtml(planLabel)}) ya está activa.</p>` +
+      (visits ? `<p>Consultas incluidas: ${escapeHtml(visits)} al mes</p>` : '') +
+      (pct ? `<p>Descuento en tienda: ${escapeHtml(pct)}%</p>` : '') +
+      `<p>Mensualidad: ${escapeHtml(monthly)}</p>` +
+      (nextRenewal ? `<p>Próxima renovación: ${escapeHtml(nextRenewal)}</p>` : '') +
+      '<p>También disfrutas toma de presión gratis y revisiones de laboratorio cada 6 meses.</p>' +
+      '<p>Farmacia Apolo</p>';
+    return { subject: '¡Bienvenido a Membresías Apolo! — Farmacia Apolo', html, text };
+  }
+
+  if (row.template === 'membership_payment_failed') {
+    const planId = String(row.payload.plan_id || '');
+    const text = `${greeting} no pudimos cobrar la mensualidad de tu membresía ${planId}. Tus beneficios están pausados hasta que el pago se regularice. Actualiza tu método de pago o contáctanos para ayudarte. Farmacia Apolo.`;
+    const html =
+      `<p>${escapeHtml(greeting)}</p>` +
+      `<p><strong>No pudimos cobrar la mensualidad de tu membresía.</strong></p>` +
+      `<p>Membresía: ${escapeHtml(planId)}</p>` +
+      '<p>Tus beneficios están <strong>pausados</strong> hasta que el pago se regularice.</p>' +
+      '<p>Actualiza tu método de pago o contáctanos para ayudarte a conservar tu membresía.</p>' +
+      '<p>Farmacia Apolo</p>';
+    return { subject: 'No pudimos cobrar tu membresía — Farmacia Apolo', html, text };
+  }
+
+  if (row.template === 'membership_cancelled') {
+    const planId = String(row.payload.plan_id || '');
+    const immediate = row.payload.immediate === true;
+    const effective = row.payload.effective_date ? formatDateOnly(String(row.payload.effective_date)) : '';
+    const text = immediate
+      ? `${greeting} tu membresía ${planId} fue cancelada. Si no reconoces esta acción o deseas reactivarla, contáctanos. Farmacia Apolo.`
+      : `${greeting} tu membresía ${planId} quedará cancelada al final del periodo actual${effective ? ` (${effective})` : ''}. Conservas todos tus beneficios hasta entonces. Farmacia Apolo.`;
+    const html =
+      `<p>${escapeHtml(greeting)}</p>` +
+      `<p><strong>Tu membresía ha sido cancelada.</strong></p>` +
+      `<p>Membresía: ${escapeHtml(planId)}</p>` +
+      (immediate
+        ? '<p>La cancelación es efectiva de inmediato. Si no reconoces esta acción o deseas reactivarla, contáctanos.</p>'
+        : `<p>La cancelación se hará efectiva al final del periodo actual${effective ? ` (${escapeHtml(effective)})` : ''}. Conservas todos tus beneficios hasta entonces.</p>`) +
+      '<p>Farmacia Apolo</p>';
+    return { subject: 'Tu membresía ha sido cancelada — Farmacia Apolo', html, text };
+  }
+
   // consulta_link
-  const meetingUrl = row.payload.meeting_url || '';
-  const linkPart = meetingUrl ? ` Enlace para unirte: ${meetingUrl}` : '';
-  const text = `${greeting} tu consulta por video está lista${date ? ` para el ${date}` : ''}.${linkPart}`;
-  const html =
-    `<p>${escapeHtml(greeting)}</p>` +
-    `<p><strong>Tu consulta por video está lista.</strong></p>` +
-    (date ? `<p>Fecha y hora: ${escapeHtml(date)}</p>` : '') +
-    (meetingUrl
-      ? `<p><a href="${escapeHtml(meetingUrl)}">Unirme a la consulta</a></p>`
-      : '') +
-    '<p>Farmacia Apolo</p>';
-  return { subject: 'Enlace de tu consulta — Farmacia Apolo', html, text };
+  if (row.template === 'consulta_link') {
+    const meetingUrl = row.payload.meeting_url || '';
+    const linkPart = meetingUrl ? ` Enlace para unirte: ${meetingUrl}` : '';
+    const text = `${greeting} tu consulta por video está lista${date ? ` para el ${date}` : ''}.${linkPart}`;
+    const html =
+      `<p>${escapeHtml(greeting)}</p>` +
+      `<p><strong>Tu consulta por video está lista.</strong></p>` +
+      (date ? `<p>Fecha y hora: ${escapeHtml(date)}</p>` : '') +
+      (meetingUrl
+        ? `<p><a href="${escapeHtml(meetingUrl)}">Unirme a la consulta</a></p>`
+        : '') +
+      '<p>Farmacia Apolo</p>';
+    return { subject: 'Enlace de tu consulta — Farmacia Apolo', html, text };
+  }
+
+  // Unknown template: log it loudly instead of silently rendering the wrong
+  // format, and send a harmless generic body so the queue keeps draining.
+  console.error('[send-notifications] unknown template:', row.template, 'row id:', row.id);
+  const text = `${greeting} tienes una notificación de Farmacia Apolo.`;
+  const html = `<p>${escapeHtml(greeting)}</p><p>Tienes una notificación de Farmacia Apolo.</p>`;
+  return { subject: 'Notificación — Farmacia Apolo', html, text };
 };
 
 // Thrown when a provider call fails; the row is marked 'failed' with the

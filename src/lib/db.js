@@ -673,6 +673,16 @@ export const voidSale = async (saleId, voidedByName) => {
     voided_at: new Date().toISOString(),
   }).eq('id', saleId);
   if (error) throw error;
+
+  // Give back any membership benefits this ticket consumed (visits and
+  // revision usages). Non-fatal: the void itself already succeeded.
+  if (sale.membership_id) {
+    try {
+      await supabase.rpc('restore_membership_sale_benefits', { p_sale_id: saleId });
+    } catch (restoreErr) {
+      console.warn('restore_membership_sale_benefits failed for sale', saleId, restoreErr);
+    }
+  }
 };
 
 // ── RETURNS ─────────────────────────────────────────────────
@@ -2558,96 +2568,222 @@ const addMonthsWithLastDayRule = (date, months) => {
   return d;
 };
 
+// Server-side renewal processing (also scheduled daily via pg_cron job
+// 'membership-renewals-daily'). Returns the number of memberships whose
+// status changed so existing callers can report a count.
 export const processMembershipRenewals = async () => {
-  const orgId = await getOrgId();
-  const today = new Date().toISOString().split('T')[0];
-  const { data: due, error } = await supabase
-    .from('memberships')
-    .select('*')
-    .eq('org_id', orgId)
-    .lte('next_renewal_date', today)
-    .in('status', ['active', 'paused']);
+  const { data, error } = await supabase.rpc('process_membership_renewals');
   if (error) throw error;
-  if (!due?.length) return 0;
-
-  let processed = 0;
-  for (const m of due) {
-    // PayPal subscriptions are renewed by PayPal webhooks; skip them here.
-    if (m.payment_processor === 'paypal') {
-      continue;
-    }
-
-    const newDate = addMonthsWithLastDayRule(m.next_renewal_date, 1);
-    const nextRenewal = newDate.toISOString().split('T')[0];
-    const renewalDay = newDate.getDate();
-
-    if (m.payment_method === 'cash') {
-      await supabase.from('memberships').update({
-        status: 'pending_payment',
-        next_renewal_date: nextRenewal,
-        renewal_day: renewalDay,
-        updated_at: new Date().toISOString(),
-      }).eq('id', m.id);
-    } else {
-      await supabase.from('memberships').update({
-        visits_remaining: m.visits_limit,
-        next_renewal_date: nextRenewal,
-        renewal_day: renewalDay,
-        status: 'active',
-        updated_at: new Date().toISOString(),
-      }).eq('id', m.id);
-    }
-    processed += 1;
-  }
-  return processed;
+  return (data?.cancelled || 0) + (data?.pending_payment || 0);
 };
 
-export const createMembership = async ({ customer, membership, familyMembers = [] }) => {
+const membershipStatusLabelEs = (status) => ({
+  active: 'activa',
+  paused: 'pausada',
+  pending_payment: 'pendiente de pago',
+  cancelled: 'cancelada',
+  expired: 'expirada',
+}[status] || status);
+
+// Staff (cash) signup. Re-signups reuse the existing customer (matched by
+// email OR phone) and REINSTATE a cancelled/expired membership instead of
+// inserting a new one — payments_made is kept so revision progress
+// continues. In all cases the signup is recorded as payment #1 through the
+// record_membership_payment RPC (books the sale, fires welcome/receipt
+// notifications). Returns the membership row (with customers(*) and
+// membership_members(*)) augmented with `reinstated: boolean`.
+export const createMembership = async ({
+  customer,
+  membership,
+  familyMembers = [],
+  termsAcceptedAt = null,
+  amountCollected = null,
+}) => {
   const orgId = await getOrgId();
-  const createdCustomer = await createCustomer(customer);
+
+  // Find an existing customer by email OR phone so a re-signup never
+  // duplicates the customer row.
+  const email = (customer?.email || '').trim().toLowerCase();
+  const phone = (customer?.phone || '').trim();
+  const matchClauses = [];
+  if (email) matchClauses.push(`email.ilike.${email}`);
+  if (phone) matchClauses.push(`phone.eq.${phone}`);
+
+  let existingCustomer = null;
+  if (matchClauses.length > 0) {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('org_id', orgId)
+      .or(matchClauses.join(','))
+      .limit(1);
+    if (error) throw error;
+    existingCustomer = data?.[0] || null;
+  }
+
+  let existingMemberships = [];
+  if (existingCustomer) {
+    const { data, error } = await supabase
+      .from('memberships')
+      .select('*, membership_members(*)')
+      .eq('org_id', orgId)
+      .eq('customer_id', existingCustomer.id)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    existingMemberships = data || [];
+  }
+
+  const blocking = existingMemberships.find((m) => ['active', 'paused', 'pending_payment'].includes(m.status));
+  if (blocking) {
+    throw new Error(
+      `Este cliente ya tiene una membresía ${membershipStatusLabelEs(blocking.status)} (${blocking.plan_id}). Cancélala antes de registrar una nueva.`
+    );
+  }
+  const restorable = existingMemberships.find((m) => ['cancelled', 'expired'].includes(m.status)) || null;
 
   const startDate = new Date();
   const nextRenewal = addMonthsWithLastDayRule(startDate, 1);
+  const termsAt = termsAcceptedAt || membership.terms_accepted_at || null;
 
-  const { data: membershipRow, error } = await supabase
-    .from('memberships')
-    .insert({
-      ...membership,
-      org_id: orgId,
-      customer_id: createdCustomer.id,
-      visits_remaining: membership.visits_limit,
-      basic_trackers_included: membership.basic_trackers_included ?? 0,
-      basic_trackers_fulfilled: membership.basic_trackers_fulfilled ?? 0,
-      next_renewal_date: nextRenewal.toISOString().split('T')[0],
-      renewal_day: nextRenewal.getDate(),
-    })
-    .select('*, customers(*)')
-    .single();
-  if (error) throw error;
+  let membershipId;
+  let reinstated = false;
 
-  const members = [
-    {
-      membership_id: membershipRow.id,
-      sub_id: `${membershipRow.plan_id}-1`,
-      name: customer.full_name,
-      is_owner: true,
-    },
-  ];
-  (familyMembers || []).forEach((name, idx) => {
-    members.push({
-      membership_id: membershipRow.id,
-      sub_id: `${membershipRow.plan_id}-${idx + 2}`,
+  if (restorable) {
+    // ── Reinstate: keep payments_made so revision progress continues ──
+    reinstated = true;
+    const { data: updated, error } = await supabase
+      .from('memberships')
+      .update({
+        plan_type: membership.plan_type,
+        monthly_amount: membership.monthly_amount,
+        visits_limit: membership.visits_limit,
+        discount_percent: membership.discount_percent,
+        status: 'active',
+        visits_remaining: membership.visits_limit,
+        basic_trackers_included: membership.basic_trackers_included ?? 0,
+        basic_trackers_fulfilled: 0,
+        next_renewal_date: nextRenewal.toISOString().split('T')[0],
+        renewal_day: nextRenewal.getDate(),
+        payment_method: 'cash',
+        payment_processor: null,
+        processor_customer_id: null,
+        processor_subscription_id: null,
+        card_token: null,
+        card_last4: null,
+        pending_cancellation: false,
+        cancel_requested_at: null,
+        terms_accepted_at: termsAt,
+        last_roster_change_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', restorable.id)
+      .select('id, plan_id')
+      .single();
+    if (error) throw error;
+    membershipId = updated.id;
+
+    // Replace the roster. The titular row is KEPT (its id anchors the
+    // titular's pending revisions); old family rows are replaced by the
+    // new member list.
+    const oldMembers = restorable.membership_members || [];
+    const ownerRow = oldMembers.find((m) => m.is_owner) || null;
+
+    const { error: delErr } = await supabase
+      .from('membership_members')
+      .delete()
+      .eq('membership_id', membershipId)
+      .eq('is_owner', false);
+    if (delErr) throw delErr;
+
+    if (ownerRow) {
+      const { error: ownerErr } = await supabase
+        .from('membership_members')
+        .update({ name: customer.full_name })
+        .eq('id', ownerRow.id);
+      if (ownerErr) throw ownerErr;
+    } else {
+      const { error: ownerErr } = await supabase
+        .from('membership_members')
+        .insert({
+          membership_id: membershipId,
+          sub_id: `${updated.plan_id}-1`,
+          name: customer.full_name,
+          is_owner: true,
+        });
+      if (ownerErr) throw ownerErr;
+    }
+
+    const familyRows = (familyMembers || []).map((name, idx) => ({
+      membership_id: membershipId,
+      sub_id: `${updated.plan_id}-${idx + 2}`,
       name,
       is_owner: false,
-    });
-  });
+    }));
+    if (familyRows.length > 0) {
+      const { error: famErr } = await supabase.from('membership_members').insert(familyRows);
+      if (famErr) throw famErr;
+    }
+  } else {
+    // ── New membership (reusing the matched customer row when found) ──
+    const createdCustomer = existingCustomer || await createCustomer(customer);
 
-  if (members.length > 0) {
-    const { error: mErr } = await supabase.from('membership_members').insert(members);
-    if (mErr) throw mErr;
+    const { data: membershipRow, error } = await supabase
+      .from('memberships')
+      .insert({
+        ...membership,
+        org_id: orgId,
+        customer_id: createdCustomer.id,
+        visits_remaining: membership.visits_limit,
+        basic_trackers_included: membership.basic_trackers_included ?? 0,
+        basic_trackers_fulfilled: membership.basic_trackers_fulfilled ?? 0,
+        next_renewal_date: nextRenewal.toISOString().split('T')[0],
+        renewal_day: nextRenewal.getDate(),
+        terms_accepted_at: termsAt,
+      })
+      .select('*, customers(*)')
+      .single();
+    if (error) throw error;
+    membershipId = membershipRow.id;
+
+    const members = [
+      {
+        membership_id: membershipId,
+        sub_id: `${membershipRow.plan_id}-1`,
+        name: customer.full_name,
+        is_owner: true,
+      },
+    ];
+    (familyMembers || []).forEach((name, idx) => {
+      members.push({
+        membership_id: membershipId,
+        sub_id: `${membershipRow.plan_id}-${idx + 2}`,
+        name,
+        is_owner: false,
+      });
+    });
+
+    if (members.length > 0) {
+      const { error: mErr } = await supabase.from('membership_members').insert(members);
+      if (mErr) throw mErr;
+    }
   }
 
-  return { ...membershipRow, membership_members: members };
+  // Signup = payment #1: counts the payment, books the sale, fires
+  // welcome/receipt notifications. Guarded so a bookkeeping hiccup cannot
+  // fail the signup itself (mirrors public_signup_membership).
+  try {
+    await recordMembershipPayment(membershipId, {
+      amount: amountCollected ?? membership.monthly_amount ?? null,
+      paymentMethod: 'cash',
+      isSignup: true,
+    });
+  } catch (paymentErr) {
+    console.warn('createMembership: signup payment recording failed for membership', membershipId, paymentErr);
+  }
+
+  // Re-read so the returned row reflects payments_made = 1 and the roster.
+  const fresh = await getMembershipById(membershipId);
+  return { ...fresh, reinstated };
 };
 
 export const getMemberships = async () => {
@@ -2723,20 +2859,13 @@ export const updateMembership = async (id, { customerUpdates, membershipUpdates 
 };
 
 export const decrementMembershipVisits = async (membershipId, count) => {
-  if (!membershipId || count <= 0) return;
-  const { data: current, error: fetchErr } = await supabase
-    .from('memberships')
-    .select('visits_remaining')
-    .eq('id', membershipId)
-    .single();
-  if (fetchErr) throw fetchErr;
-
-  const newValue = Math.max(0, (current?.visits_remaining || 0) - count);
-  const { error } = await supabase
-    .from('memberships')
-    .update({ visits_remaining: newValue, updated_at: new Date().toISOString() })
-    .eq('id', membershipId);
+  if (!membershipId) return;
+  const { data, error } = await supabase.rpc('decrement_membership_visits', {
+    p_membership_id: membershipId,
+    p_count: count,
+  });
   if (error) throw error;
+  return data;
 };
 
 export const ensureMembershipConsultationProduct = async () => {
@@ -2900,9 +3029,45 @@ export const getTrackerFulfillments = async () => {
     .sort((a, b) => b.trackers_pending - a.trackers_pending);
 };
 
-export const recordMembershipPayment = async (membershipId) => {
+// Works both with just an id (admin "Registrar pago" button: amount is read
+// from the membership row) and with explicit payment details (staff signup
+// flow). staffId defaults to the current session user.
+export const recordMembershipPayment = async (membershipId, { amount, paymentMethod = 'cash', staffId, isSignup = false } = {}) => {
+  let resolvedAmount = amount;
+  if (resolvedAmount === undefined || resolvedAmount === null) {
+    const { data: membership, error: fetchErr } = await supabase
+      .from('memberships')
+      .select('monthly_amount')
+      .eq('id', membershipId)
+      .single();
+    if (fetchErr) throw fetchErr;
+    resolvedAmount = membership?.monthly_amount ?? null;
+  }
+
+  let resolvedStaffId = staffId;
+  if (!resolvedStaffId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    resolvedStaffId = user?.id || null;
+  }
+
   const { data, error } = await supabase.rpc('record_membership_payment', {
     p_membership_id: membershipId,
+    p_amount: resolvedAmount,
+    p_payment_method: paymentMethod,
+    p_staff_id: resolvedStaffId,
+    p_is_signup: isSignup,
+  });
+  if (error) throw error;
+  return data;
+};
+
+// Read-only, server-authoritative pricing/entitlement check for the POS.
+// items: [{ inventory_id, qty }]
+export const validateMembershipCheckout = async (membershipId, memberId, items) => {
+  const { data, error } = await supabase.rpc('validate_membership_checkout', {
+    p_membership_id: membershipId,
+    p_member_id: memberId || null,
+    p_items: items,
   });
   if (error) throw error;
   return data;

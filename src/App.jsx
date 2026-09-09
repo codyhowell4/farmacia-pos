@@ -1,11 +1,13 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import LoginPage from '@/pages/LoginPage';
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/ResetPasswordPage';
 import CustomerRegisterPage from '@/pages/CustomerRegisterPage';
+import HomePage from '@/pages/HomePage';
 import MembershipPublicPage from '@/pages/MembershipPublicPage';
+import MembershipTermsPage from '@/pages/MembershipTermsPage';
 import AdminDashboard from '@/pages/AdminDashboard';
 import PoSDashboard from '@/pages/PoSDashboard';
 import InventoryDashboard from '@/pages/InventoryDashboard';
@@ -21,12 +23,13 @@ function App() {
       <ShiftProvider>
         <Router>
           <Routes>
-            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="/" element={<HomePage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/customer-register" element={<CustomerRegisterPage />} />
             <Route path="/membresias" element={<MembershipPublicPage />} />
+            <Route path="/membresias/terminos" element={<MembershipTermsPage />} />
             <Route
               path="/admin/*"
               element={

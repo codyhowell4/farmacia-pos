@@ -21,6 +21,7 @@ import {
   processMembershipRenewals, ensureMembershipConsultationProduct, decrementMembershipVisits,
   fulfillMembershipTrackers, getMembershipById, isServiceItem,
   ensureMembershipRevisionProducts, getPendingMemberRevisions, markMembershipRevisionUsed,
+  validateMembershipCheckout,
 } from '@/lib/db';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -219,6 +220,79 @@ const PoSDashboard = () => {
   };
 
   const getRevisionType = (item) => item?.revision_type || null;
+
+  // Benefit pricing must never survive the benefit itself: when the attached
+  // membership/member changes, revision lines (allocated to a specific
+  // member) are removed, and — when no active membership remains —
+  // blood-pressure and membership-consulta lines return to catalog price.
+  const repriceCartForMembershipChange = (currentCart, { membershipStillActive }) => {
+    let removedRevisions = 0;
+    const next = [];
+    for (const item of currentCart) {
+      if (isMembershipRevision(item)) {
+        removedRevisions += 1;
+        continue;
+      }
+      if (!membershipStillActive && (isMembershipBloodPressure(item) || isMembershipConsultation(item))) {
+        next.push({ ...item, price: item.originalPrice });
+        continue;
+      }
+      next.push(item);
+    }
+    return { next, removedRevisions };
+  };
+
+  const handleSelectMembership = (membership) => {
+    if (membership?.id !== selectedMembership?.id && cart.length > 0) {
+      const { next, removedRevisions } = repriceCartForMembershipChange(cart, {
+        membershipStillActive: membership?.status === 'active',
+      });
+      setCart(next);
+      if (removedRevisions > 0) {
+        toast({
+          title: 'Revisiones eliminadas del carrito',
+          description: 'Las revisiones requieren una membresía activa. Vuelve a agregarlas con la membresía seleccionada.',
+        });
+      }
+    }
+    setSelectedMembership(membership);
+  };
+
+  const handleSelectMember = (member) => {
+    // Revision lines are member-specific: switching beneficiary drops them.
+    // Blood-pressure/consulta pricing is a membership-level benefit and
+    // stays while the membership is active.
+    if (selectedMember?.id && member?.id !== selectedMember.id && cart.length > 0) {
+      const { next, removedRevisions } = repriceCartForMembershipChange(cart, {
+        membershipStillActive: selectedMembership?.status === 'active',
+      });
+      setCart(next);
+      if (removedRevisions > 0) {
+        toast({
+          title: 'Revisiones eliminadas del carrito',
+          description: 'Las revisiones estaban asignadas a otro miembro. Vuelve a agregarlas para el nuevo beneficiario.',
+        });
+      }
+    }
+    setSelectedMember(member);
+  };
+
+  const handleClearMembership = () => {
+    if (cart.length > 0) {
+      const { next, removedRevisions } = repriceCartForMembershipChange(cart, {
+        membershipStillActive: false,
+      });
+      setCart(next);
+      if (removedRevisions > 0) {
+        toast({
+          title: 'Revisiones eliminadas del carrito',
+          description: 'Las revisiones requieren una membresía activa.',
+        });
+      }
+    }
+    setSelectedMembership(null);
+    setSelectedMember(null);
+  };
 
   const findPendingRevisionForMember = (item, memberId) => {
     if (!memberId || !isMembershipRevision(item)) return null;
@@ -660,6 +734,103 @@ const PoSDashboard = () => {
         return;
       }
 
+      // ── Server-authoritative membership validation ─────────────
+      // Membership carts must not proceed unvalidated (owner requirement):
+      // any RPC/network failure aborts the sale. Non-membership sales skip
+      // this entirely.
+      let membershipLineById = new Map();
+      let serverRevisionIds = [];
+      if (isMembershipActive) {
+        let validation;
+        try {
+          validation = await validateMembershipCheckout(
+            selectedMembership.id,
+            selectedMember?.id || null,
+            cart.map((item) => ({ inventory_id: item.id, qty: item.quantity }))
+          );
+        } catch (validationErr) {
+          console.error('validate_membership_checkout failed:', validationErr);
+          toast({
+            title: 'No se pudo validar la membresía',
+            description: 'El servidor no pudo verificar los beneficios de la membresía. Por seguridad la venta no se procesó — intenta de nuevo.',
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        if (!validation?.valid) {
+          const reason = validation?.reason;
+          toast({
+            title: 'Membresía no válida para esta venta',
+            description:
+              reason === 'membership_not_active'
+                ? `La membresía ya no está activa${validation?.membership_status ? ` (estado: ${validation.membership_status})` : ''}.`
+                : reason === 'membership_not_found'
+                  ? 'La membresía ya no existe en el servidor.'
+                  : 'El servidor rechazó la validación de la membresía.',
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        const invalidLines = (validation.items || []).filter((line) => line.error);
+        if (invalidLines.length > 0) {
+          const line = invalidLines[0];
+          toast({
+            title: 'Beneficio no disponible',
+            description:
+              line.error === 'no_revision_available'
+                ? `${line.name || 'La revisión'}: este miembro no tiene suficientes revisiones disponibles (disponibles: ${line.available ?? 0}). Ajusta el carrito.`
+                : `${line.name || 'Un artículo'} no pudo validarse (${line.error}). Ajusta el carrito.`,
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        membershipLineById = new Map((validation.items || []).map((line) => [line.inventory_id, line]));
+        serverRevisionIds = (validation.items || [])
+          .filter((line) => Array.isArray(line.revision_ids))
+          .flatMap((line) => line.revision_ids);
+
+        // Reconcile non-consulta lines with server-authoritative prices.
+        // (Consulta member pricing is applied at sale-item level below from
+        // the same validation response.)
+        const correctedNames = [];
+        const reconciledCart = cart.map((item) => {
+          const line = membershipLineById.get(item.id);
+          if (!line || line.kind === 'membership_consultation') return item;
+          const nextItem = Array.isArray(line.revision_ids) ? { ...item, revisionIds: line.revision_ids } : { ...item };
+          // Admin-PIN price overrides are intentional; the server's catalog
+          // price does not know about them, so leave those lines alone.
+          if (item.overrideBy) return nextItem;
+          const serverPrice = Number(line.unit_price ?? item.price);
+          if (Number.isFinite(serverPrice) && Math.abs(serverPrice - item.price) > 0.01) {
+            correctedNames.push(item.name);
+            nextItem.price = serverPrice;
+          }
+          return nextItem;
+        });
+
+        const serverVisits = validation.visits_remaining;
+        const visitsChanged = typeof serverVisits === 'number' && serverVisits !== (selectedMembership.visits_remaining || 0);
+
+        if (correctedNames.length > 0 || visitsChanged) {
+          // Totals changed: update the cart and stop so the cashier can
+          // confirm the corrected total before charging.
+          setCart(reconciledCart);
+          if (visitsChanged) {
+            setSelectedMembership((prev) => (prev ? { ...prev, visits_remaining: serverVisits } : prev));
+          }
+          toast({
+            title: 'Precios corregidos por el servidor',
+            description: correctedNames.length > 0
+              ? `Se ajustó el precio de: ${correctedNames.join(', ')}. Revisa el nuevo total y confirma la venta de nuevo.`
+              : 'El saldo de consultas de la membresía cambió. Revisa el nuevo total y confirma la venta de nuevo.',
+          });
+          return;
+        }
+      }
+
       try {
         const cashPayment = payments?.find(p => p?.payment_method === 'cash');
 
@@ -669,16 +840,24 @@ const PoSDashboard = () => {
           let price = item.price;
           let originalPrice = item.originalPrice;
           if (isMembershipActive && isMembershipConsultation(item)) {
-            const freeQty = Math.max(0, Math.min(item.quantity, remainingVisits));
+            // Prefer the server-validated free/paid split so consumption
+            // matches the authoritative validation.
+            const validated = membershipLineById.get(item.id);
+            const freeQty = validated
+              ? Math.max(0, Math.min(item.quantity, validated.free_qty || 0))
+              : Math.max(0, Math.min(item.quantity, remainingVisits));
+            const paidUnitPrice = validated
+              ? Number(validated.paid_unit_price ?? item.price * 0.5)
+              : item.price * 0.5;
             const paidQty = item.quantity - freeQty;
             remainingVisits -= freeQty;
             usedVisits += freeQty;
             if (freeQty === item.quantity) {
               price = 0;
             } else if (paidQty === item.quantity) {
-              price = item.price * 0.5;
+              price = paidUnitPrice;
             } else {
-              price = (paidQty * item.price * 0.5) / item.quantity;
+              price = (paidQty * paidUnitPrice) / item.quantity;
             }
           }
           return {
@@ -703,7 +882,7 @@ const PoSDashboard = () => {
           amount_given: cashPayment ? cashPayment.amount : null,
           change_due: cashPayment ? (cashPayment.amount - (cashPayment.amountApplied || cashPayment.amount)) : null,
           discount_code: useMembershipDiscount ? 'MEMBRESIA' : (discount?.code || null),
-          discount_value: useMembershipDiscount ? selectedMembership.discount_percent : (discount?.value || null),
+          discount_value: useMembershipDiscount ? membershipDiscountPercent : (discount?.value || null),
           discount_amount: discountAmount || null,
           iva_enabled: taxSettings.ivaEnabled,
           iva_rate: taxSettings.ivaRate,
@@ -716,6 +895,7 @@ const PoSDashboard = () => {
           is_split_payment: isSplitPayment,
           status: 'completed',
           membership_id: selectedMembership?.id || null,
+          membership_visits_used: isMembershipActive ? usedVisits : 0,
         };
 
         console.log('Creating sale with record:', saleRecord);
@@ -732,15 +912,16 @@ const PoSDashboard = () => {
           }
         }
 
-        // Mark any consumed membership revisions as used.
-        const revisionItems = cart.filter((item) => (item.revisionIds || []).length > 0);
-        for (const item of revisionItems) {
-          for (const revisionId of item.revisionIds) {
-            try {
-              await markMembershipRevisionUsed(revisionId, sale.id);
-            } catch (revErr) {
-              console.warn('Failed to mark revision as used:', revErr);
-            }
+        // Mark any consumed membership revisions as used — prefer the ids the
+        // server validation allocated so consumption and validation match.
+        const revisionIdsToMark = serverRevisionIds.length > 0
+          ? serverRevisionIds
+          : cart.flatMap((item) => item.revisionIds || []);
+        for (const revisionId of revisionIdsToMark) {
+          try {
+            await markMembershipRevisionUsed(revisionId, sale.id);
+          } catch (revErr) {
+            console.warn('Failed to mark revision as used:', revErr);
           }
         }
 
@@ -825,7 +1006,14 @@ const PoSDashboard = () => {
             requiresPrescription: cart.find(c => c.id === item.inventory_id)?.requires_prescription,
           })),
           payments: payments,
-          discount: discount ? { code: discount.code, amount: discountAmount } : null,
+          discount: (discount || useMembershipDiscount) && discountAmount !== 0
+            ? {
+                code: useMembershipDiscount ? 'MEMBRESIA' : (discount?.code || null),
+                name: appliedDiscountLabel,
+                percent: appliedDiscountPercent,
+                amount: discountAmount,
+              }
+            : null,
           iva: { rate: taxSettings.ivaRate, amount: ivaAmount },
           pharmacyLocation: user?.pharmacyLocation || user?.locationId,
           amountGiven: cashPayment ? (paymentMethod === 'cash' && !isSplitPayment ? parseFloat(amountGiven) : cashPayment.amount) : null,
@@ -890,11 +1078,16 @@ const PoSDashboard = () => {
     }
   };
 
-  // Membership-aware totals
+  // Membership-aware totals.
+  // Membership consultas are ALWAYS member-priced (free up to the visit
+  // balance, then 50%) — that is a benefit, not a discount, so consultas are
+  // excluded from the discount base. For the remaining items the membership
+  // % and the promo-code % compete on the SAME base and only the larger one
+  // applies (no double-dip).
   const isMembershipActive = selectedMembership?.status === 'active';
   const originalSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const regularItems = cart.filter((item) => !isMembershipConsultation(item));
-  const consultationItems = cart.filter((item) => isMembershipConsultation(item));
+  const consultationItems = isMembershipActive ? cart.filter((item) => isMembershipConsultation(item)) : [];
+  const regularItems = isMembershipActive ? cart.filter((item) => !isMembershipConsultation(item)) : cart;
   const regularSubtotal = regularItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const originalConsultationSubtotal = consultationItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
@@ -913,11 +1106,6 @@ const PoSDashboard = () => {
     });
   }
 
-  const membershipProductDiscount = isMembershipActive
-    ? regularSubtotal * (selectedMembership.discount_percent / 100)
-    : 0;
-  const membershipConsultationSavings = originalConsultationSubtotal - consultationEffectiveTotal;
-  const membershipTotalSavings = membershipProductDiscount + membershipConsultationSavings;
   // Cost-plus pricing (employee codes): each item sells at cost * (1 + value/100).
   // Items without a recorded cost keep their regular price.
   const isCostPlus = discount?.type === 'cost_plus';
@@ -928,15 +1116,27 @@ const PoSDashboard = () => {
       }, 0)
     : 0;
 
-  const codeDiscountAmount = discount && !isCostPlus ? originalSubtotal * (discount.value / 100) : 0;
+  // Both %-discounts are measured over the same base (regularSubtotal = the
+  // whole cart for non-members; everything except member-priced consultas
+  // for members). The bigger one wins.
+  const membershipDiscountPercent = isMembershipActive ? (selectedMembership.discount_percent ?? 10) : 0;
+  const membershipDiscountAmount = isMembershipActive && !isCostPlus
+    ? regularSubtotal * (membershipDiscountPercent / 100)
+    : 0;
+  const codeDiscountAmount = discount && !isCostPlus ? regularSubtotal * (discount.value / 100) : 0;
 
-  const useMembershipDiscount = isMembershipActive && !isCostPlus && membershipTotalSavings >= codeDiscountAmount;
-  const appliedDiscountAmount = useMembershipDiscount ? membershipProductDiscount : codeDiscountAmount;
+  const useMembershipDiscount = isMembershipActive && !isCostPlus && membershipDiscountAmount >= codeDiscountAmount;
+  const appliedDiscountAmount = useMembershipDiscount ? membershipDiscountAmount : codeDiscountAmount;
   const appliedDiscountLabel = useMembershipDiscount
-    ? `Membresía ${selectedMembership.discount_percent}%`
+    ? `Membresía ${membershipDiscountPercent}%`
     : isCostPlus
       ? `${discount.code} (costo +${discount.value}%)`
       : discount?.code || null;
+  const appliedDiscountPercent = useMembershipDiscount
+    ? membershipDiscountPercent
+    : isCostPlus
+      ? null
+      : discount?.value || null;
 
   const subtotal = originalSubtotal;
   const discountAmount = isCostPlus ? originalSubtotal - costPlusSubtotal : appliedDiscountAmount;
@@ -1507,9 +1707,9 @@ const PoSDashboard = () => {
                 <MembershipPosLookup
                   selectedMembership={selectedMembership}
                   selectedMember={selectedMember}
-                  onSelect={setSelectedMembership}
-                  onSelectMember={setSelectedMember}
-                  onClear={() => { setSelectedMembership(null); setSelectedMember(null); }}
+                  onSelect={handleSelectMembership}
+                  onSelectMember={handleSelectMember}
+                  onClear={handleClearMembership}
                   onFulfillTrackers={handleFulfillTracker}
                   fulfillingTrackers={fulfillingTrackers}
                 />

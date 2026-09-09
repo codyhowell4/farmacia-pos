@@ -273,6 +273,10 @@ function renderLogin() {
         <div style="text-align: center; color: #64748b; font-size: 0.85rem;">
           ¿No tienes cuenta? <button onclick="renderSignup()" style="background: none; border: none; color: #1E2A8A; font-weight: 600; cursor: pointer;">Regístrate</button>
         </div>
+
+        <div style="text-align: center; margin-top: 0.75rem; color: #64748b; font-size: 0.8rem;">
+          ¿Eres integrante de un plan familiar? <button onclick="renderFamilyActivation()" style="background: none; border: none; color: #1E2A8A; font-weight: 600; cursor: pointer;">Activa tu cuenta</button>
+        </div>
         
         <div id="login-error" style="display: none; margin-top: 1rem; padding: 0.75rem; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px; color: #DC2626; font-size: 0.85rem; text-align: center;"></div>
       </div>
@@ -332,6 +336,124 @@ async function handleLogin() {
   renderPage('consulta');
   showToast('Bienvenido de vuelta, ' + (currentCustomerProfile?.name || currentAuthUser.email), 'success');
 }
+
+// Family-plan member account activation: the member proves their identity
+// with their sub-ID (APOLO-00001-2) + registered name, picks an email and
+// password, and is signed in straight after the function claims their row.
+function renderFamilyActivation() {
+  closeMenu();
+  setAppChromeVisible(true);
+  mainContent.innerHTML = `
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">👨‍👩‍👧‍👦 Activa tu cuenta</h1>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Para integrantes de un Plan Familiar (sin ser titular)</p>
+    </div>
+
+    <div style="padding: 1.5rem 1rem;">
+      <div class="glass-card" style="padding: 1.5rem; background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; backdrop-filter: none; -webkit-backdrop-filter: none;">
+        <p style="margin: 0 0 1rem; font-size: 0.85rem; color: #475569; line-height: 1.5;">
+          Pide al titular tu <strong>número de integrante</strong> y escribe tu nombre tal como lo registró en la farmacia.
+        </p>
+
+        <div style="margin-bottom: 1rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Número de integrante</label>
+          <input type="text" id="family-sub-id" placeholder="APOLO-00001-2" autocapitalize="characters" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box; font-family: monospace;">
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Nombre completo (como te registraron)</label>
+          <input type="text" id="family-name" placeholder="María García López" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Correo electrónico</label>
+          <input type="email" id="family-email" placeholder="tu@email.com" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Contraseña</label>
+          <input type="password" id="family-password" placeholder="Mínimo 6 caracteres" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+        </div>
+
+        <button onclick="handleFamilyActivation()" id="family-activation-btn" style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; margin-bottom: 1rem;">Activar mi cuenta</button>
+
+        <div style="text-align: center; color: #64748b; font-size: 0.85rem;">
+          ¿Ya la activaste? <button onclick="renderLogin()" style="background: none; border: none; color: #1E2A8A; font-weight: 600; cursor: pointer;">Inicia sesión</button>
+        </div>
+
+        <div id="family-error" style="display: none; margin-top: 1rem; padding: 0.75rem; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px; color: #DC2626; font-size: 0.85rem; text-align: center;"></div>
+      </div>
+    </div>
+  `;
+}
+
+async function handleFamilyActivation() {
+  const subId = document.getElementById('family-sub-id')?.value.trim();
+  const name = document.getElementById('family-name')?.value.trim();
+  const email = document.getElementById('family-email')?.value.trim();
+  const password = document.getElementById('family-password')?.value;
+  const errorEl = document.getElementById('family-error');
+  const submitBtn = document.getElementById('family-activation-btn');
+
+  const showError = (msg) => {
+    errorEl.textContent = msg;
+    errorEl.style.display = 'block';
+  };
+
+  if (!subId || !name || !email || !password) {
+    showError('Por favor completa todos los campos');
+    return;
+  }
+  if (password.length < 6) {
+    showError('La contraseña debe tener al menos 6 caracteres');
+    return;
+  }
+
+  errorEl.style.display = 'none';
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Activando...';
+  }
+
+  const { data, error } = await FarmaciaAPI.familyMemberSignup({ sub_id: subId, name, email, password });
+
+  if (error) {
+    showError(error.message || 'No se pudo activar tu cuenta. Intenta de nuevo.');
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Activar mi cuenta';
+    }
+    return;
+  }
+
+  // Account created + claimed: sign in with the brand-new credentials.
+  const { data: loginData, error: loginError } = await FarmaciaAPI.signIn(email, password);
+  if (loginError) {
+    renderLogin();
+    showToast('¡Cuenta activada! Inicia sesión con tu correo y contraseña.', 'success');
+    return;
+  }
+
+  currentAuthUser = loginData.user;
+  currentCustomerProfile = await FarmaciaAPI.getCustomerProfile();
+  await FarmaciaAPI.ensureCustomerProfile(currentCustomerProfile?.name || name);
+
+  membershipTier = await FarmaciaAPI.getMembershipTier();
+  updateTierBadges();
+  updateMenuUserInfo();
+
+  // Consent gate: sign the standard documents right after activation
+  if (await checkConsentGate()) return;
+
+  currentPage = 'membresias';
+  navItems.forEach(nav => nav.classList.remove('active'));
+  document.querySelector('[data-page="membresias"]')?.classList.add('active');
+  renderPage('membresias');
+  showToast('¡Cuenta activada! Bienvenido a tu membresía familiar', 'success');
+}
+
+window.renderFamilyActivation = renderFamilyActivation;
+window.handleFamilyActivation = handleFamilyActivation;
 
 function renderSignup() {
   closeMenu();
@@ -1185,10 +1307,18 @@ async function renderMembresias() {
     const visits = membership.visits_remaining != null ? membership.visits_remaining : 0;
     const visitsLimit = membership.visits_limit || 0;
     const discount = membership.discount_percent != null ? membership.discount_percent : 10;
-    const memberName = currentCustomerProfile?.name || 'Miembro Apolo';
+    const isFamilyMember = !!membership.isFamilyMember;
+    const memberName = isFamilyMember
+      ? (membership.memberName || 'Miembro Apolo')
+      : (currentCustomerProfile?.name || 'Miembro Apolo');
+    const cardNumber = isFamilyMember
+      ? (membership.memberSubId || membership.plan_id)
+      : membership.plan_id;
     const renewal = membership.next_renewal_date
       ? new Date(membership.next_renewal_date + 'T00:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })
       : null;
+    const pendingCancel = !!membership.pending_cancellation;
+    const isPayPal = membership.payment_processor === 'paypal';
 
     statusEl.innerHTML = `
       <div style="background: linear-gradient(135deg, #141B5E 0%, #1E2A8A 55%, #2A3BB5 100%); border-radius: 20px; padding: 1.25rem; color: white; box-shadow: 0 12px 30px rgba(20,27,94,0.35); position: relative; overflow: hidden;">
@@ -1210,9 +1340,9 @@ async function renderMembresias() {
 
           <div style="display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem;">
             <div style="min-width: 0;">
-              <div style="font-size: 0.6rem; letter-spacing: 0.15em; opacity: 0.7;">TITULAR</div>
+              <div style="font-size: 0.6rem; letter-spacing: 0.15em; opacity: 0.7;">${isFamilyMember ? 'INTEGRANTE' : 'TITULAR'}</div>
               <div style="font-weight: 700; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(memberName)}</div>
-              ${membership.plan_id ? `<div style="font-family: monospace; font-size: 0.8rem; opacity: 0.85; margin-top: 0.15rem;">${escapeHtml(membership.plan_id)}</div>` : ''}
+              ${cardNumber ? `<div style="font-family: monospace; font-size: 0.8rem; opacity: 0.85; margin-top: 0.15rem;">${escapeHtml(cardNumber)}</div>` : ''}
             </div>
             <div style="text-align: right; flex-shrink: 0;">
               <div style="font-size: 0.6rem; letter-spacing: 0.15em; opacity: 0.7;">DESCUENTO</div>
@@ -1226,7 +1356,9 @@ async function renderMembresias() {
       <div style="background: rgba(255,255,255,0.95); border-radius: 16px; padding: 1rem 1.25rem; margin-top: 1rem; font-size: 0.85rem;">
         <div style="display: flex; justify-content: space-between; padding: 0.375rem 0;">
           <span style="color: #64748b;">Estado</span>
-          <span style="font-weight: 600; color: #15803d;">✓ Activa</span>
+          ${pendingCancel
+            ? '<span style="font-weight: 600; color: #b45309;">Cancelación programada</span>'
+            : '<span style="font-weight: 600; color: #15803d;">✓ Activa</span>'}
         </div>
         <div style="display: flex; justify-content: space-between; padding: 0.375rem 0;">
           <span style="color: #64748b;">Consultas adicionales</span>
@@ -1255,6 +1387,71 @@ async function renderMembresias() {
           <p style="font-size: 0.75rem; color: #166534; margin: 0.5rem 0 0;">Pasa a la farmacia para agendar tu revisión.</p>
         </div>
       ` : ''}
+
+      ${pendingCancel ? `
+        <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 16px; padding: 1rem 1.25rem; margin-top: 1rem;">
+          <div style="font-weight: 700; font-size: 0.9rem; color: #92400e; margin-bottom: 0.375rem;">Cancelación programada</div>
+          <p style="font-size: 0.85rem; color: #b45309; margin: 0; line-height: 1.5;">
+            Tu membresía está programada para cancelarse el <strong>${renewal || 'fin de tu periodo'}</strong>. Conservas todos tus beneficios hasta esa fecha.
+          </p>
+          ${!isFamilyMember && !isPayPal ? `
+            <button onclick="handleResumeMembership('${membership.id}')" style="width: 100%; margin-top: 0.75rem; padding: 0.75rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer;">Mantener membresía</button>
+          ` : ''}
+          ${!isFamilyMember && isPayPal ? `
+            <p style="font-size: 0.8rem; color: #92400e; margin: 0.625rem 0 0;">Puedes reactivarla cuando quieras desde <a href="/membresias" style="color: #1E2A8A; font-weight: 600;">/membresias</a> — conservamos tus pagos acumulados.</p>
+          ` : ''}
+        </div>
+      ` : ''}
+
+      ${!pendingCancel && !isFamilyMember ? `
+        <div style="text-align: center; margin-top: 1.25rem;">
+          <button onclick="handleCancelMembership('${membership.id}')" style="background: none; border: none; color: rgba(255,255,255,0.6); font-size: 0.8rem; cursor: pointer; text-decoration: underline;">Cancelar membresía</button>
+        </div>
+      ` : ''}
+    `;
+  } else if (membership && membership.status) {
+    // ---- Lapsed member (cancelled/expired/paused/pending_payment):
+    // reactivation state instead of silently looking like a free user ----
+    const lapsedPlanLabel = membership.plan_type === 'familiar' ? 'Familiar' : 'Individual';
+    const lapsedStatus = membership.status;
+    let lapsedTitle, lapsedMsg;
+    if (lapsedStatus === 'paused') {
+      lapsedTitle = 'Tu pago no pudo procesarse';
+      lapsedMsg = 'Regulariza tu pago en sucursal o reactiva tu suscripción para recuperar tus consultas y descuentos.';
+    } else if (lapsedStatus === 'pending_payment') {
+      lapsedTitle = 'Membresía pendiente de pago';
+      lapsedMsg = 'Tu renovación está pendiente. Regulariza tu pago en sucursal para conservar tus beneficios.';
+    } else {
+      lapsedTitle = lapsedStatus === 'expired' ? 'Tu membresía venció' : 'Tu membresía está cancelada';
+      lapsedMsg = 'Re-actívala para volver a disfrutar tus consultas, descuentos y revisiones.';
+    }
+
+    statusEl.innerHTML = `
+      <div style="background: rgba(255,255,255,0.97); border-radius: 20px; padding: 1.25rem; border: 1px solid #E3E8F2; margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.875rem; margin-bottom: 0.875rem;">
+          <div style="font-size: 2rem;">⭐</div>
+          <div style="min-width: 0;">
+            <div style="font-weight: 700; font-size: 1rem; color: #1E2A8A;">Membresía ${lapsedPlanLabel}</div>
+            ${membership.plan_id ? `<div style="font-family: monospace; font-size: 0.8rem; color: #64748b;">${escapeHtml(membership.plan_id)}</div>` : ''}
+          </div>
+          <span style="margin-left: auto; flex-shrink: 0; font-size: 0.7rem; font-weight: 700; padding: 0.25rem 0.625rem; border-radius: 20px; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca;">INACTIVA</span>
+        </div>
+
+        <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; padding: 0.875rem 1rem; margin-bottom: 0.875rem;">
+          <div style="font-weight: 700; font-size: 0.9rem; color: #92400e; margin-bottom: 0.25rem;">${lapsedTitle}</div>
+          <p style="font-size: 0.85rem; color: #b45309; margin: 0; line-height: 1.5;">${lapsedMsg}</p>
+        </div>
+
+        ${membership.payments_made != null ? `
+          <div style="display: flex; justify-content: space-between; padding: 0.375rem 0; font-size: 0.85rem;">
+            <span style="color: #64748b;">Pagos acumulados</span>
+            <span style="font-weight: 600; color: #1a1a2e;">${membership.payments_made}</span>
+          </div>
+          <p style="font-size: 0.75rem; color: #64748b; margin: 0 0 0.875rem; line-height: 1.4;">Tu avance se conserva: al reactivar sigues acumulando pagos hacia tu próxima revisión gratis.</p>
+        ` : ''}
+
+        <a href="/membresias" style="display: block; text-align: center; padding: 0.85rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border-radius: 12px; font-weight: 600; text-decoration: none;">Reactivar membresía</a>
+      </div>
     `;
   } else {
     // ---- Guest / free user: plan cards + CTAs ----
@@ -1334,6 +1531,65 @@ async function renderMembresias() {
     `;
   }
 }
+
+// Self-service cancellation: cancel at period end (benefits continue until
+// the next renewal date; no partial refunds; revision progress — pagos
+// acumulados — is preserved on later reactivation).
+async function handleCancelMembership(membershipId) {
+  if (!membershipId) return;
+
+  let membership = null;
+  try {
+    membership = await FarmaciaAPI.getMembershipDetails();
+  } catch (e) { /* fall through to generic copy */ }
+
+  const renewal = membership?.next_renewal_date
+    ? new Date(membership.next_renewal_date + 'T00:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null;
+
+  const confirmed = confirm(
+    '¿Cancelar tu membresía?\n\n' +
+    (renewal ? `• Conservas todos tus beneficios hasta el ${renewal}.\n` : '• Conservas tus beneficios hasta el fin de tu periodo actual.\n') +
+    '• No hay reembolsos parciales.\n' +
+    '• Tu avance (pagos acumulados hacia tu revisión gratis) se conserva si la reactivas después.'
+  );
+  if (!confirmed) return;
+
+  const { data, error } = await FarmaciaAPI.cancelMyMembership(membershipId, 'cancel');
+  if (error || !data?.success) {
+    showToast(error?.message || 'No se pudo programar la cancelación. Intenta de nuevo.', 'error');
+    return;
+  }
+
+  if (data.warning) {
+    showToast(data.warning, 'error');
+  } else {
+    showToast('Tu membresía quedó programada para cancelarse', 'success');
+  }
+  renderMembresias();
+}
+
+// Clear the pending cancellation (cash memberships only — PayPal members
+// re-sign up from /membresias).
+async function handleResumeMembership(membershipId) {
+  if (!membershipId) return;
+
+  const { data, error } = await FarmaciaAPI.cancelMyMembership(membershipId, 'resume');
+  if (error) {
+    showToast(error.message || 'No se pudo reanudar tu membresía. Intenta de nuevo.', 'error');
+    return;
+  }
+  if (!data?.success) {
+    showToast(data?.message || 'No se pudo reanudar tu membresía.', 'error');
+    return;
+  }
+
+  showToast('¡Listo! Tu membresía sigue activa', 'success');
+  renderMembresias();
+}
+
+window.handleCancelMembership = handleCancelMembership;
+window.handleResumeMembership = handleResumeMembership;
 
 // Add/remove 🔒 badges on nav tabs and menu items for paid pages (free tier only)
 function updateTierBadges() {
@@ -1466,6 +1722,11 @@ async function showNotificationModal() {
     refill: '💊',
     appointment: '📅',
     order: '📦',
+    membership_payment: '💳',
+    membership_payment_failed: '⚠️',
+    membership_welcome: '⭐',
+    membership_cancelled: '❌',
+    membership_revision: '🩺',
     default: '🔔'
   };
 
@@ -1486,7 +1747,7 @@ async function showNotificationModal() {
 
   const itemsHtml = notifications.length > 0
     ? notifications.map(n => `
-      <div class="notification-item ${n.isRead ? '' : 'unread'}" data-id="${n.id}" onclick="markCustomerNotificationRead('${n.id}')">
+      <div class="notification-item ${n.isRead ? '' : 'unread'}" data-id="${n.id}" onclick="handleCustomerNotificationTap('${n.id}', '${n.type || ''}')">
         <div class="notification-icon ${n.type || 'default'}">${typeIcons[n.type] || typeIcons.default}</div>
         <div class="notification-content">
           <div class="notification-title">${escapeHtml(n.title)}</div>
@@ -1548,6 +1809,32 @@ async function markCustomerNotificationRead(id) {
     console.error('[Notifications] Failed to mark read:', err);
   }
 }
+
+// Tap on a notification: membership notifications jump to the Membresías
+// tab (after marking read); everything else just marks read as before.
+async function handleCustomerNotificationTap(id, type) {
+  if (!(type || '').startsWith('membership')) {
+    markCustomerNotificationRead(id);
+    return;
+  }
+
+  try {
+    await FarmaciaAPI.markNotificationRead(id);
+    const n = __notificationsCache.find(x => x.id === id);
+    if (n) n.isRead = true;
+    updateNotificationBadge(__notificationsCache.filter(x => !x.isRead).length);
+  } catch (err) {
+    console.error('[Notifications] Failed to mark read:', err);
+  }
+
+  closeNotificationModal();
+  currentPage = 'membresias';
+  navItems.forEach(nav => nav.classList.remove('active'));
+  document.querySelector('.bottom-nav .nav-item[data-page="membresias"]')?.classList.add('active');
+  updateMenuActiveState('membresias');
+  renderPage('membresias');
+}
+window.handleCustomerNotificationTap = handleCustomerNotificationTap;
 
 async function markAllCustomerNotificationsRead() {
   try {
@@ -1676,6 +1963,7 @@ function renderPage(page) {
     case 'guides': renderHealthGuides(); break;
     case 'login': renderLogin(); break;
     case 'signup': renderSignup(); break;
+    case 'family-activation': renderFamilyActivation(); break;
     case 'forgot-password': renderForgotPassword(); break;
     case 'privacidad': renderPrivacidad(); break;
     default: renderConsulta();

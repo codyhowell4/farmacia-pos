@@ -26,7 +26,21 @@ Also shipped in the same pass:
 
 ---
 
-## 1. What exists today (verified working per code)
+## Update 2026-09-09 — membership hardening pass
+
+Shipped in `supabase/migrations/20260522120000_membership_hardening.sql` + POS/app/edge-function changes (migration must be applied via SQL editor; CLI push unavailable on this network):
+
+- **Renewals:** daily pg_cron `membership-renewals-daily` runs server-side `process_membership_renewals()` (flips due cash/card rows to `pending_payment`; PayPal stays webhook-driven). Client `processMembershipRenewals` is now a thin RPC call — no more renew-only-when-POS-opens, and no more visits-without-payment for card rows.
+- **Bookkeeping:** `record_membership_payment` now books a `sales`/`sale_items`/`sale_payments` row (products `MEMBRESIA INDIVIDUAL`/`MEMBRESIA FAMILIAR`, dept `membresias`), so membership revenue shows in reports/accounting. Signup counts as payment #1 (PayPal via `public_signup_membership`, cash via `createMembership`); webhook guards the first-payment duplicate.
+- **POS integrity:** `validate_membership_checkout` RPC recomputes member pricing server-side at checkout (aborts on mismatch/failure); atomic `decrement_membership_visits`; `voidSale` restores visits + revisiones via `restore_membership_sale_benefits` (`sales.membership_visits_used`); blood pressure is $0 only with an active membership attached (detach reprices cart); discount logic is biggest-wins between membership 10% and promo code (double-dip fixed); membership discount prints on receipts; RLS enabled on `membership_revisions`; anon revoked from membership RPCs.
+- **Family plans:** signup forms allow 0–5 integrantes (was exactly 5); admin roster manager (add/remove/edit) with one-change-per-90-days rule (`manage_family_member` RPC, admin-PIN override); cash re-signup now reinstates the old membership (keeps `payments_made`) instead of duplicating; family members can activate their own app account with their sub-ID + name via `family-member-signup` and get full paid-tier access.
+- **Member self-service:** cancel in the customer app (`cancel-my-membership` edge fn) — benefits run to end of paid period (`pending_cancellation`, cron flips to `cancelled`); lapsed members see a reactivate state instead of silently dropping to free.
+- **Notifications:** welcome, payment receipt, payment-failed, and cancellation emails (+ in-app) added to `send-notifications`; revision-earned email already existed.
+- **Terms:** `/membresias/terminos` (terms, 90-day roster rule, cancellation, telehealth, privacy/ARCO) with a required acceptance checkbox in both signup flows (`terms_accepted_at`). `/` is now a public landing linking `/membresias` (staff use `/login`).
+
+Still open (unchanged): premium tracker never billed, no refund handling, no partner redemption tracking, plan catalog still hardcoded in several places, full cart pricing (non-membership) still client-side.
+
+---
 
 - Public self-signup at `/membresias` (`src/pages/MembershipPublicPage.jsx`) — plan pick → form → PayPal subscription → activation via `paypal-subscription` edge function (verifies subscription with PayPal, dedupes by email/phone, reinstates cancelled memberships, provisions the customer-app login).
 - Staff registration at `/admin/membership-register` (`src/components/admin/MembershipRegistration.jsx`) — cash or PayPal, family members, tracker counts.

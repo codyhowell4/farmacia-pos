@@ -67,6 +67,7 @@ const MembershipRegistration = () => {
     member5: '',
     member6: '',
     paymentMethod: 'paypal',
+    termsAccepted: false,
   });
 
   const formRef = useRef(form);
@@ -95,17 +96,7 @@ const MembershipRegistration = () => {
     if (!form.email.trim()) return 'El correo electrónico es obligatorio.';
     if (!form.phone.trim()) return 'El teléfono es obligatorio.';
     if (form.password.length < 6) return 'La contraseña del portal debe tener al menos 6 caracteres.';
-    if (selectedPlanKey === 'familiar') {
-      if (
-        !form.member2.trim() ||
-        !form.member3.trim() ||
-        !form.member4.trim() ||
-        !form.member5.trim() ||
-        !form.member6.trim()
-      ) {
-        return 'Debes registrar los 5 integrantes adicionales del plan familiar.';
-      }
-    }
+    if (!form.termsAccepted) return 'El titular debe aceptar los Términos y Condiciones y el Aviso de Privacidad.';
     if (form.paymentMethod === 'paypal' && !isPayPalConfigured()) {
       return 'PayPal no está configurado.';
     }
@@ -140,6 +131,7 @@ const MembershipRegistration = () => {
         processor_subscription_id: null,
       },
       familyMembers: getFamilyMembers(),
+      termsAcceptedAt: form.termsAccepted ? new Date().toISOString() : null,
     });
 
     return result;
@@ -196,17 +188,7 @@ const MembershipRegistration = () => {
       if (!currentForm.email.trim()) return 'El correo electrónico es obligatorio.';
       if (!currentForm.phone.trim()) return 'El teléfono es obligatorio.';
       if (currentForm.password.length < 6) return 'La contraseña del portal debe tener al menos 6 caracteres.';
-      if (currentPlanKey === 'familiar') {
-        if (
-          !currentForm.member2.trim() ||
-          !currentForm.member3.trim() ||
-          !currentForm.member4.trim() ||
-          !currentForm.member5.trim() ||
-          !currentForm.member6.trim()
-        ) {
-          return 'Debes registrar los 5 integrantes adicionales del plan familiar.';
-        }
-      }
+      if (!currentForm.termsAccepted) return 'El titular debe aceptar los Términos y Condiciones y el Aviso de Privacidad.';
       if (!isPayPalConfigured()) return 'PayPal no está configurado.';
       return null;
     })();
@@ -240,6 +222,7 @@ const MembershipRegistration = () => {
           member_names: familyMembers,
           trackers_to_fulfill: 0,
           org_id: orgId,
+          terms_accepted_at: new Date().toISOString(),
         }),
       });
 
@@ -264,6 +247,7 @@ const MembershipRegistration = () => {
       step === 'form' &&
       plan &&
       form.paymentMethod === 'paypal' &&
+      form.termsAccepted &&
       !paypalRendered.current &&
       isPayPalConfigured()
     ) {
@@ -285,7 +269,7 @@ const MembershipRegistration = () => {
         paypalRendered.current = false;
       });
     }
-  }, [step, plan, form.paymentMethod, selectedPlanKey]);
+  }, [step, plan, form.paymentMethod, form.termsAccepted, selectedPlanKey]);
 
   const renderPlans = () => (
     <div className="space-y-6">
@@ -370,14 +354,17 @@ const MembershipRegistration = () => {
         {selectedPlanKey === 'familiar' && (
           <div className="space-y-2">
             <h2 className="text-lg font-semibold">Integrantes adicionales</h2>
+            <p className="text-sm text-slate-500">
+              Puedes registrar hasta 5 integrantes adicionales ahora, o agregarlos después en sucursal.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[2, 3, 4, 5, 6].map((n) => (
                 <div key={n}>
-                  <Label>Integrante {n} *</Label>
+                  <Label>Integrante {n} (opcional)</Label>
                   <Input
                     value={form[`member${n}`]}
                     onChange={(e) => updateField(`member${n}`, e.target.value)}
-                    required
+                    placeholder="Nombre completo (opcional)"
                   />
                 </div>
               ))}
@@ -431,20 +418,50 @@ const MembershipRegistration = () => {
           </div>
         )}
 
+        <div className="flex items-start gap-3">
+          <input
+            id="terms-accepted-staff"
+            type="checkbox"
+            checked={form.termsAccepted}
+            onChange={(e) => {
+              updateField('termsAccepted', e.target.checked);
+              if (!e.target.checked) paypalRendered.current = false;
+            }}
+            className="mt-1 w-4 h-4 flex-shrink-0"
+          />
+          <Label htmlFor="terms-accepted-staff" className="text-sm font-normal text-slate-700 cursor-pointer leading-snug">
+            El titular acepta los{' '}
+            <a
+              href="/membresias/terminos"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-apolo-navy underline"
+            >
+              Términos y Condiciones y el Aviso de Privacidad
+            </a>
+          </Label>
+        </div>
+
         <div className="border-t pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
             <p className="text-sm text-slate-500">Total mensual</p>
             <p className="text-2xl font-bold text-slate-900">${monthlyTotal.toFixed(2)} MXN</p>
           </div>
           {form.paymentMethod === 'cash' && (
-            <Button type="submit" disabled={loading} size="lg">
+            <Button type="submit" disabled={loading || !form.termsAccepted} size="lg">
               {loading ? 'Registrando...' : 'Registrar membresía'}
             </Button>
           )}
         </div>
 
         {form.paymentMethod === 'paypal' && (
-          <div id="paypal-button-container-admin" className="min-h-[120px]" />
+          form.termsAccepted ? (
+            <div id="paypal-button-container-admin" className="min-h-[120px]" />
+          ) : (
+            <p className="text-sm text-slate-500 text-center">
+              Acepta los Términos y Condiciones para mostrar las opciones de pago.
+            </p>
+          )
         )}
       </form>
     </div>
@@ -484,6 +501,7 @@ const MembershipRegistration = () => {
             member5: '',
             member6: '',
             paymentMethod: 'paypal',
+            termsAccepted: false,
           });
         }}>
           Registrar otra

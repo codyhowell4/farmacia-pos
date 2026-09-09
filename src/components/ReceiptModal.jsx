@@ -55,7 +55,7 @@ const ReceiptContent = ({ sale }) => {
         <div className="flex justify-between"><span>Subtotal</span><span>{formatMXN(subtotalBeforeDiscount)}</span></div>
         {discountAmt > 0 && (
           <div className="flex justify-between text-slate-600">
-            <span>Descuento {sale.discount?.code ? `(${sale.discount.code})` : ''}</span>
+            <span>Descuento{sale.discount?.name ? ` (${sale.discount.name})` : sale.discount?.code ? ` (${sale.discount.code})` : ''}</span>
             <span>-{formatMXN(discountAmt)}</span>
           </div>
         )}

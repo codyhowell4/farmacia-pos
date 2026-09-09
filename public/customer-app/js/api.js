@@ -10,6 +10,8 @@
 //   getCustomerProfile, getProducts,
 //   getCustomerOrders, getAppointments, getPrescriptions,
 //   getDoctors, getDoctorBookedSlots, getMembershipDetails, getConsultPrice,
+//   getMembershipTier, getMembershipRevisions,
+//   cancelMyMembership, familyMemberSignup,
 //   createAppointment, updateAppointment,
 //   getConsultaNotes, getConsentDocuments, signConsentDocument,
 //   getMySignedConsentTypes, acceptConsentDocuments, updateMyCustomerPhone
@@ -72,6 +74,41 @@ window.FarmaciaAPI = (function () {
       return data ? data.id : null;
     } catch (err) {
       console.warn('[FarmaciaAPI] getCustomerId failed:', err.message);
+      return null;
+    }
+  }
+
+  // Claimed-family-member lookup: the member's own customers row (created by
+  // the handle_new_user trigger at signup) owns no membership; their access
+  // comes from membership_members.claimed_user_id pointing at their auth uid.
+  // Both tables are readable through the same org-scoped RLS policies the
+  // titular path relies on (the member's profile is provisioned with the
+  // org id). Returns { membership, member } or null.
+  async function getClaimedFamilyMembership() {
+    const user = await getAuthUser();
+    if (!user) return null;
+    try {
+      const { data: member, error: memberError } = await sb
+        .from('membership_members')
+        .select('id, membership_id, sub_id, name')
+        .eq('claimed_user_id', user.id)
+        .limit(1)
+        .maybeSingle();
+      if (memberError) throw memberError;
+      if (!member) return null;
+
+      const { data: membership, error: membershipError } = await sb
+        .from('memberships')
+        .select('id, status, visits_remaining, discount_percent, plan_id, plan_type, visits_limit, monthly_amount, next_renewal_date, payments_made, pending_cancellation, cancel_requested_at, payment_processor, customer_id')
+        .eq('id', member.membership_id)
+        .maybeSingle();
+      if (membershipError) throw membershipError;
+      if (!membership) return null;
+
+      return { membership, member };
+    } catch (err) {
+      // Pre-migration DBs lack claimed_user_id / the new columns: no family path
+      console.warn('[FarmaciaAPI] getClaimedFamilyMembership failed:', err.message);
       return null;
     }
   }
@@ -214,23 +251,15 @@ window.FarmaciaAPI = (function () {
 
     /**
      * Resolve the membership tier for the current customer.
-     * Returns 'paid' when any memberships row is active, else 'free'.
-     * Fails closed: any error returns 'free'.
+     * Returns 'paid' only when an ACTIVE membership is in reach — the
+     * titular's own row or (for claimed family members) the parent
+     * membership. Lapsed statuses stay 'free'. Fails closed on any error.
      */
     async getMembershipTier() {
       if (!sb) return 'free';
       try {
-        const customerId = await getCustomerId();
-        if (!customerId) return 'free';
-
-        const { data, error } = await sb
-          .from('memberships')
-          .select('status')
-          .eq('customer_id', customerId);
-        if (error) throw error;
-
-        const hasActive = (data || []).some(row => row.status === 'active');
-        return hasActive ? 'paid' : 'free';
+        const details = await this.getMembershipDetails();
+        return details && details.status === 'active' ? 'paid' : 'free';
       } catch (err) {
         console.warn('[FarmaciaAPI] getMembershipTier error:', err.message);
         return 'free';
@@ -752,35 +781,65 @@ window.FarmaciaAPI = (function () {
     },
 
     /**
-     * Get the active membership row for the current customer.
+     * Get the membership row for the current customer.
      * Returns the active row (status, visits_remaining, discount_percent, plan_id,
-     * plan_type, visits_limit, monthly_amount, next_renewal_date)
-     * or a 'free' fallback shape when there is no active membership.
+     * plan_type, visits_limit, monthly_amount, next_renewal_date, payments_made,
+     * pending_cancellation, cancel_requested_at, payment_processor) with
+     * isActive: true. Lapsed memberships (cancelled/expired/paused/
+     * pending_payment) are returned with isActive: false so the Membresías tab
+     * can show a reactivation state; claimed family members get the PARENT
+     * membership plus isFamilyMember/memberName/memberSubId. When there is no
+     * membership at all, returns the 'free' fallback shape.
      */
     async getMembershipDetails() {
-      const freeFallback = { status: null, visits_remaining: 0 };
+      const freeFallback = { status: null, visits_remaining: 0, isActive: false };
       if (!sb) return freeFallback;
       try {
         const customerId = await getCustomerId();
-        if (!customerId) return freeFallback;
-
-        // Extended select; if the live DB is missing any of the newer
-        // columns, retry with the original minimal set.
-        let { data, error } = await sb
-          .from('memberships')
-          .select('id, status, visits_remaining, discount_percent, plan_id, plan_type, visits_limit, monthly_amount, next_renewal_date, payments_made')
-          .eq('customer_id', customerId);
-        if (error) {
-          const retry = await sb
+        if (customerId) {
+          // Extended select; if the live DB is missing any of the newer
+          // columns, retry with the original minimal set.
+          let { data, error } = await sb
             .from('memberships')
-            .select('id, status, visits_remaining, discount_percent, plan_id')
-            .eq('customer_id', customerId);
-          if (retry.error) throw retry.error;
-          data = retry.data;
+            .select('id, status, visits_remaining, discount_percent, plan_id, plan_type, visits_limit, monthly_amount, next_renewal_date, payments_made, pending_cancellation, cancel_requested_at, payment_processor')
+            .eq('customer_id', customerId)
+            .order('created_at', { ascending: false });
+          if (error) {
+            const retry = await sb
+              .from('memberships')
+              .select('id, status, visits_remaining, discount_percent, plan_id')
+              .eq('customer_id', customerId);
+            if (retry.error) throw retry.error;
+            data = retry.data;
+          }
+
+          const rows = data || [];
+          const active = rows.find(row => row.status === 'active');
+          if (active) return { ...active, isActive: true };
+
+          // Lapsed membership: surface it (with pagos acumulados) so the UI
+          // can offer reactivation instead of looking like a free user.
+          const lapsed = rows.find(row =>
+            ['cancelled', 'expired', 'paused', 'pending_payment'].includes(row.status)
+          );
+          if (lapsed) return { ...lapsed, isActive: false };
         }
 
-        const active = (data || []).find(row => row.status === 'active');
-        return active || freeFallback;
+        // Claimed family member: no membership on their own customers row —
+        // resolve the parent membership through membership_members.
+        const family = await getClaimedFamilyMembership();
+        if (family) {
+          return {
+            ...family.membership,
+            isActive: family.membership.status === 'active',
+            isFamilyMember: true,
+            memberId: family.member.id,
+            memberName: family.member.name,
+            memberSubId: family.member.sub_id,
+          };
+        }
+
+        return freeFallback;
       } catch (err) {
         console.warn('[FarmaciaAPI] getMembershipDetails error:', err.message);
         return freeFallback;
@@ -789,30 +848,108 @@ window.FarmaciaAPI = (function () {
 
     /**
      * Get pending membership revisions for the current customer's active membership.
+     * Claimed family members get only their own revisions (filtered by member_id).
      */
     async getMembershipRevisions() {
       if (!sb) return [];
       try {
         const customerId = await getCustomerId();
-        if (!customerId) return [];
+        let membershipId = null;
+        let onlyMemberId = null;
 
-        const { data: membership, error: membershipError } = await sb
-          .from('memberships')
-          .select('id')
-          .eq('customer_id', customerId)
-          .eq('status', 'active')
-          .maybeSingle();
-        if (membershipError) throw membershipError;
-        if (!membership?.id) return [];
+        if (customerId) {
+          const { data: membership, error: membershipError } = await sb
+            .from('memberships')
+            .select('id')
+            .eq('customer_id', customerId)
+            .eq('status', 'active')
+            .maybeSingle();
+          if (membershipError) throw membershipError;
+          membershipId = membership?.id || null;
+        }
+
+        if (!membershipId) {
+          // Claimed family member: revisions live on the parent membership
+          const family = await getClaimedFamilyMembership();
+          if (family && family.membership.status === 'active') {
+            membershipId = family.membership.id;
+            onlyMemberId = family.member.id;
+          }
+        }
+
+        if (!membershipId) return [];
 
         const { data, error } = await sb.rpc('get_pending_member_revisions', {
-          p_membership_id: membership.id,
+          p_membership_id: membershipId,
         });
         if (error) throw error;
-        return data || [];
+        const rows = data || [];
+        return onlyMemberId ? rows.filter(r => r.member_id === onlyMemberId) : rows;
       } catch (err) {
         console.warn('[FarmaciaAPI] getMembershipRevisions error:', err.message);
         return [];
+      }
+    },
+
+    /**
+     * Self-service membership cancellation via the cancel-my-membership
+     * edge function (verify_jwt on; sends the session access token).
+     * action 'cancel' → { success, effective_date, paypal_cancelled, warning? }
+     * action 'resume' → { success } or { success: false, reason, message }
+     *   ('paypal_resignup' for PayPal memberships, which must re-sign up).
+     * Returns { data, error } like the other API methods.
+     */
+    async cancelMyMembership(membershipId, action) {
+      if (!sb) return { data: null, error: new Error('Supabase not available') };
+      try {
+        const { data: sessionData } = await sb.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (!token) throw new Error('Inicia sesión para continuar');
+
+        const cfg = window.farmaciaSupabaseConfig || {};
+        const res = await fetch(cfg.URL + '/functions/v1/cancel-my-membership', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(cfg.ANON_KEY ? { apikey: cfg.ANON_KEY } : {}),
+            Authorization: 'Bearer ' + token,
+          },
+          body: JSON.stringify({ membership_id: membershipId, action }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || 'No se pudo procesar la solicitud');
+        return { data: json, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] cancelMyMembership failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
+     * Activate a family member's own portal account (plan familiar) via the
+     * public family-member-signup edge function. On success the caller can
+     * sign in with the email + password they just registered.
+     */
+    async familyMemberSignup({ sub_id, name, email, password }) {
+      if (!sb) return { data: null, error: new Error('Supabase not available') };
+      try {
+        const cfg = window.farmaciaSupabaseConfig || {};
+        const res = await fetch(cfg.URL + '/functions/v1/family-member-signup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(cfg.ANON_KEY ? { apikey: cfg.ANON_KEY } : {}),
+          },
+          body: JSON.stringify({ sub_id, name, email, password }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || json.error) {
+          throw new Error(json.error || 'No se pudo activar tu cuenta');
+        }
+        return { data: json, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] familyMemberSignup failed:', err.message);
+        return { data: null, error: err };
       }
     },
 
