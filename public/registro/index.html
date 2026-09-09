@@ -85,6 +85,12 @@
         <label for="phone">Teléfono</label>
         <input type="tel" id="phone" autocomplete="tel">
         <p class="hint">Captura al menos uno: correo electrónico o teléfono. *</p>
+
+        <div id="password-block" style="display: none;">
+          <label for="password">Crea una contraseña para la app *</label>
+          <input type="password" id="password" minlength="6" autocomplete="new-password">
+          <p class="hint">Sin correo, entrarás a la app con tu teléfono y esta contraseña.</p>
+        </div>
       </div>
 
       <div class="card">
@@ -176,6 +182,16 @@
         if (!isMinor) guardianNameEl.value = '';
       });
 
+      // Sin correo, la contraseña se crea aquí mismo (entran con teléfono + contraseña).
+      var emailEl = document.getElementById('email');
+      var passwordBlock = document.getElementById('password-block');
+      emailEl.addEventListener('input', function () {
+        var hasEmail = emailEl.value.trim().length > 0;
+        passwordBlock.style.display = hasEmail ? 'none' : 'block';
+        if (hasEmail) document.getElementById('password').value = '';
+      });
+      passwordBlock.style.display = 'block';
+
       function showError(msg) {
         errorBox.textContent = msg;
         errorBox.style.display = 'block';
@@ -196,10 +212,12 @@
         var isMinor = isMinorEl.checked;
         var guardianName = guardianNameEl.value.trim();
         var reason = document.getElementById('reason').value.trim();
+        var password = document.getElementById('password').value;
 
         if (!patientName) return showError('Escribe el nombre del paciente.');
         if (!email && !phone) return showError('Captura el correo electrónico o el teléfono (al menos uno).');
         if (email && email.indexOf('@') === -1) return showError('Escribe un correo electrónico válido.');
+        if (!email && password.length < 6) return showError('Crea una contraseña de al menos 6 caracteres (la necesitas para entrar a la app).');
         if (isMinor && !guardianName) return showError('Escribe el nombre del padre, madre o tutor.');
         if (!allAccepted()) return showError('Debes aceptar los tres documentos de consentimiento.');
 
@@ -223,6 +241,7 @@
               is_minor: isMinor,
               guardian_name: isMinor ? guardianName : '',
               reason: reason,
+              password: email ? '' : password,
               company: document.getElementById('company').value,
               consent_docs: consentDocs
             })
@@ -239,8 +258,10 @@
           details.push('Consentimientos firmados ✓');
           if (result.account === 'created' && result.recovery_email_sent) {
             details.push('📧 Te enviamos un correo a <strong>' + email + '</strong> para crear la contraseña de tu app.');
+          } else if (result.account === 'created' && !email) {
+            details.push('📱 Entra a la app con tu teléfono y la contraseña que creaste.');
           } else if (result.account === 'existed') {
-            details.push('Ya tenías una cuenta en la app — inicia sesión con tu correo.');
+            details.push('Ya tenías una cuenta en la app — inicia sesión con tu correo o teléfono.');
           }
           document.getElementById('success-details').innerHTML = details.join('<br>');
 

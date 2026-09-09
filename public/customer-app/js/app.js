@@ -94,10 +94,9 @@ const PAID_PAGE_NAMES = {
 
 document.addEventListener('DOMContentLoaded', () => {
   // Check if onboarding is needed
-  if (!Store.isOnboardingComplete()) {
-    showOnboardingModal();
-  }
-  
+  // The profile-onboarding modal (height/IMC, fitness era) is retired along
+  // with the fitness sections — do not auto-show it.
+
   // Supabase password-recovery links land here with tokens in the URL hash
   // (#access_token=...&type=recovery). Show the reset form instead of the
   // normal start page; the hash stays until the password update succeeds.

@@ -48,6 +48,7 @@ interface RequestPayload {
   is_minor?: boolean;
   guardian_name?: string;
   reason?: string;
+  password?: string; // required when registering without an email
   checkin?: CheckinAnswers;
   company?: string; // honeypot — must be empty
   consent_docs?: ConsentDocPayload[];
@@ -72,11 +73,13 @@ const isAlreadyRegisteredError = (err: { message?: string; code?: string }) => {
 };
 
 // Creates (or reuses) the portal auth account and links it to the customers
-// row. No password is set; the caller sends a recovery email afterwards.
+// row. Phone-only registrations use a synthetic internal email plus the
+// password chosen on the tablet (no real email exists to send a recovery to).
 const provisionAccount = async (
   supabase: ReturnType<typeof supabaseAdmin>,
   customer: { id: string; email: string; profile_id: string | null },
-  orgId: string
+  orgId: string,
+  password?: string
 ) => {
   if (customer.profile_id) return { accountExisted: true };
 
@@ -85,6 +88,7 @@ const provisionAccount = async (
 
   const { data: created, error: createError } = await supabase.auth.admin.createUser({
     email: customer.email,
+    password: password || undefined,
     email_confirm: true,
     user_metadata: { role: 'customer', org_id: orgId },
   });
@@ -227,6 +231,10 @@ Deno.serve(async (req) => {
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return jsonResponse({ error: 'Correo electrónico inválido' }, 400);
     }
+    const password = payload.password || '';
+    if (mode !== 'checkin' && !email && password.length < 6) {
+      return jsonResponse({ error: 'Sin correo, crea una contraseña de al menos 6 caracteres para la app' }, 400);
+    }
     if (isMinor && !guardianName) {
       return jsonResponse({ error: 'El nombre del padre o tutor es obligatorio para menores' }, 400);
     }
@@ -282,18 +290,32 @@ Deno.serve(async (req) => {
       await supabase.from('customers').update({ phone }).eq('id', customer.id);
     }
 
-    // 2. Portal account + recovery email — register mode with an email only.
+    // 2. Portal account. With an email: password arrives via recovery email.
+    //    Phone-only: the tablet collected a password; the account gets a
+    //    synthetic internal email (login resolves phone -> that email via
+    //    lookup_login_email). The synthetic address never touches the
+    //    customers row.
     let account: 'created' | 'existed' | 'none' = 'none';
     let recoveryEmailSent = false;
-    if (mode === 'register' && email) {
+    if (mode === 'register' && (email || password)) {
+      let accountEmail = email;
+      if (!accountEmail) {
+        const digits = phone.replace(/\D/g, '');
+        if (digits.length < 7) {
+          return jsonResponse({ error: 'Sin correo necesitamos un teléfono válido para crear tu cuenta' }, 400);
+        }
+        accountEmail = `tel${digits}@telefono.apolofarmacia.com.mx`;
+      }
+
       const { accountExisted } = await provisionAccount(
         supabase,
-        { id: customer.id, email: customer.email || email, profile_id: customer.profile_id },
-        orgId
+        { id: customer.id, email: customer.email || accountEmail, profile_id: customer.profile_id },
+        orgId,
+        email ? undefined : password
       );
       account = accountExisted ? 'existed' : 'created';
 
-      if (!accountExisted) {
+      if (!accountExisted && email) {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: APP_RESET_URL,
         });
