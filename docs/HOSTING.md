@@ -39,6 +39,9 @@ Both auto-deploy the same `main` branch on every push. **Both point at the same 
    - `VITE_PUBLIC_ORG_ID`
    - `VITE_PAYPAL_ENV`, `VITE_PAYPAL_CLIENT_ID`, `VITE_PAYPAL_PLAN_INDIVIDUAL`, `VITE_PAYPAL_PLAN_FAMILIAR`
 4. Attach the custom domain — automatic since DNS is already on Cloudflare.
+5. Zone → Caching → Configuration → **Browser Cache TTL = "Respect Existing Headers"** (API value `0`). The Cloudflare default (4 hours) overrides `public/_headers` and makes browsers hold stale copies of `customer-app/js/app.js` (stable URL, no content hash) for hours after each deploy. With "Respect Existing Headers", `_headers` wins: content-hashed `/assets/*` cache for a year, everything else revalidates each load.
+
+Note: the dashboard's "Workers & Pages" list also shows a `subdomain-router` Worker — it has no routes on this zone and serves no traffic; leave it alone. (A leftover `farmacia-pos` hello-world Worker from the first setup attempt was deleted — its auto-builds failed on every push and were pure noise; the real site is the `apolofarmacia` Pages project.)
 
 ## Supabase Auth (all front-end origins must work)
 
