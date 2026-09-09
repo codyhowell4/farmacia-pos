@@ -330,7 +330,7 @@ const AdminDashboard = () => {
                         animate={{ x: 0 }}
                         exit={{ x: '-100%' }}
                         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                        className="fixed top-0 left-0 h-full w-72 bg-apolo-navy text-white shadow-xl p-4 overflow-y-auto"
+                        className="fixed top-0 left-0 h-full w-80 bg-apolo-navy text-white shadow-xl p-4 overflow-y-auto no-scrollbar"
                         onClick={e => e.stopPropagation()}
                     >
                         <div className="flex justify-between items-center mb-6">
@@ -347,12 +347,12 @@ const AdminDashboard = () => {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="lg:grid lg:grid-cols-12 lg:gap-8">
-            <aside className="hidden lg:block lg:col-span-3 xl:col-span-2">
-                <div className="bg-apolo-navy text-white rounded-xl shadow-lg p-4 sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto">
+            <aside className="hidden lg:block lg:col-span-4 xl:col-span-3">
+                <div className="bg-apolo-navy text-white rounded-xl shadow-lg p-4 sticky top-24 max-h-[calc(100vh-8rem)] overflow-y-auto no-scrollbar">
                     <SideNav />
                 </div>
             </aside>
-            <main className="lg:col-span-9 xl:col-span-10">
+            <main className="lg:col-span-8 xl:col-span-9">
               <Routes>
                 <Route path="/" element={<AdminOverview />} />
                 <Route path="/users" element={<AdminUsers />} />
