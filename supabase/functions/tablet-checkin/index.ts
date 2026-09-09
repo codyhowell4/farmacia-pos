@@ -211,7 +211,7 @@ Deno.serve(async (req) => {
     const payload = (await req.json()) as RequestPayload;
 
     // Honeypot: real users never fill the hidden field.
-    if (payload.company) {
+    if (payload.company && payload.company.trim()) {
       return jsonResponse({ error: 'Solicitud inválida' }, 400);
     }
 

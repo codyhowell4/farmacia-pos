@@ -106,7 +106,7 @@
 
       <!-- Honeypot: no llenar (anti-spam) -->
       <div class="hp-field" aria-hidden="true">
-        <label>Empresa <input type="text" id="company" tabindex="-1" autocomplete="off"></label>
+        <label>Confirmación <input type="text" id="hp_field_1" tabindex="-1" autocomplete="off"></label>
       </div>
 
       <button type="submit" class="btn" id="submit-btn" disabled>Acepto y registro mi visita</button>
@@ -230,6 +230,9 @@
         submitBtn.textContent = 'Registrando...';
 
         try {
+          // Reset honeypot in case a browser autofill touched the hidden field.
+          document.getElementById('hp_field_1').value = '';
+
           var res = await fetch(FUNCTION_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -242,7 +245,7 @@
               guardian_name: isMinor ? guardianName : '',
               reason: reason,
               password: email ? '' : password,
-              company: document.getElementById('company').value,
+              company: document.getElementById('hp_field_1').value,
               consent_docs: consentDocs
             })
           });
