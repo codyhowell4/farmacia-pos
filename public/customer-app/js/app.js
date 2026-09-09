@@ -71,6 +71,10 @@ let isPasswordRecovery = false;
 const REQUIRED_CONSENT_TYPES = ['privacidad', 'general', 'teleconsulta'];
 let consentGateActive = false;
 
+// Check-in mode (?checkin=1): after login, route to the pre-visit
+// check-in form instead of the normal start page.
+let pendingCheckin = false;
+
 // Pages that require an active membership.
 // NOTE: 'consulta' is intentionally NOT gated — telehealth is pay-per-consult
 // for free users and included/discounted for members.
@@ -103,6 +107,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // documents and their account is created in the same step. If a session
   // already exists, initAuth's consent gate takes over instead.
   const wantsFirma = new URLSearchParams(window.location.search).has('firma');
+
+  // Check-in link (?checkin=1): after auth, route to the pre-visit form.
+  pendingCheckin = new URLSearchParams(window.location.search).has('checkin');
 
   if (isPasswordRecovery) {
     renderResetPassword();
@@ -179,11 +186,20 @@ async function initAuth() {
         // Consent gate: block normal content until the 3 standard docs are signed
         const gated = await checkConsentGate();
         // Restore chrome in case the public firma view hid it
-        if (!gated) { setAppChromeVisible(true); renderPage(currentPage); }
+        if (!gated) {
+          setAppChromeVisible(true);
+          if (pendingCheckin) {
+            renderCheckinForm();
+          } else {
+            renderPage(currentPage);
+          }
+        }
       }
     } else {
       console.log('[Auth] No active session');
       updateMenuUserInfo();
+      // Check-in requires an account: send guests to login first
+      if (pendingCheckin) renderLogin();
     }
   } catch (e) {
     console.warn('[Auth] Session check failed:', e);
@@ -304,6 +320,12 @@ async function handleLogin() {
 
   // Consent gate: block normal content until the 3 standard docs are signed
   if (await checkConsentGate()) return;
+
+  if (pendingCheckin) {
+    renderCheckinForm();
+    showToast('Bienvenido de vuelta, ' + (currentCustomerProfile?.name || currentAuthUser.email), 'success');
+    return;
+  }
 
   currentPage = 'consulta';
   navItems.forEach(nav => nav.classList.remove('active'));
@@ -954,6 +976,128 @@ async function handleFirmaRegistroSubmit() {
   navItems.forEach(nav => nav.classList.remove('active'));
   document.querySelector('.bottom-nav .nav-item[data-page="consulta"]')?.classList.add('active');
   renderPage('consulta');
+}
+
+// ============================================================
+// CHECK-IN EN LÍNEA (?checkin=1) — account holders answer a short
+// pre-visit form; it creates a walk-in cita the doctor can see.
+// Requires login: guests are routed to renderLogin by the boot
+// hook / initAuth, and handleLogin routes back here on success.
+// ============================================================
+function renderCheckinForm() {
+  currentPage = 'checkin';
+  setAppChromeVisible(true);
+  closeMenu();
+
+  const displayName = currentCustomerProfile?.name || currentAuthUser?.user_metadata?.full_name || currentAuthUser?.email || '';
+
+  mainContent.innerHTML = `
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🩺 Check-in</h1>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Hola${displayName ? `, ${escapeHtml(displayName)}` : ''} — cuéntanos cómo te sientes para preparar tu visita.</p>
+    </div>
+
+    <form onsubmit="handleCheckinSubmit(event)" style="padding: 1rem;">
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem;">
+        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem; color: #141B5E;">1. ¿Cuál es el motivo de tu visita? *</label>
+        <input type="text" id="checkin-reason" placeholder="Ej. consulta general, seguimiento, receta..." style="width: 100%; padding: 0.8rem; border: 1.5px solid #E3E8F2; border-radius: 12px; font-size: 1rem; margin-bottom: 1rem;">
+
+        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem; color: #141B5E;">2. ¿Qué síntomas tienes? *</label>
+        <textarea id="checkin-symptoms" placeholder="Ej. fiebre, dolor de garganta y tos..." style="width: 100%; padding: 0.8rem; border: 1.5px solid #E3E8F2; border-radius: 12px; font-size: 1rem; min-height: 80px; resize: vertical; margin-bottom: 1rem;"></textarea>
+
+        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem; color: #141B5E;">3. ¿Desde cuándo tienes estos síntomas?</label>
+        <select id="checkin-duration" style="width: 100%; padding: 0.8rem; border: 1.5px solid #E3E8F2; border-radius: 12px; font-size: 1rem; background: white; margin-bottom: 1rem;">
+          <option value="Hoy">Hoy</option>
+          <option value="1-3 días">1-3 días</option>
+          <option value="4-7 días">4-7 días</option>
+          <option value="Más de una semana">Más de una semana</option>
+        </select>
+
+        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem; color: #141B5E;">4. ¿Tomas algún medicamento actualmente? <span style="font-weight: 400; color: #64748b;">(opcional)</span></label>
+        <input type="text" id="checkin-medications" placeholder="Ej. paracetamol, ninguno..." style="width: 100%; padding: 0.8rem; border: 1.5px solid #E3E8F2; border-radius: 12px; font-size: 1rem; margin-bottom: 1rem;">
+
+        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.4rem; color: #141B5E;">5. ¿Tienes alergias conocidas? <span style="font-weight: 400; color: #64748b;">(opcional)</span></label>
+        <input type="text" id="checkin-allergies" placeholder="Ej. penicilina, ninguna..." style="width: 100%; padding: 0.8rem; border: 1.5px solid #E3E8F2; border-radius: 12px; font-size: 1rem;">
+      </div>
+
+      <div id="checkin-error" style="display: none; background: #FEF2F2; border: 1px solid #FECACA; color: #B91C1C; border-radius: 12px; padding: 0.75rem 1rem; font-size: 0.9rem; margin-bottom: 1rem;"></div>
+
+      <button type="submit" id="checkin-submit" style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 700; font-size: 1.05rem; cursor: pointer;">Hacer check-in</button>
+    </form>
+  `;
+
+  // Drop ?checkin=1 from the URL so back/forward navigation doesn't loop
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('checkin')) {
+      url.searchParams.delete('checkin');
+      history.replaceState(null, '', url.toString());
+    }
+  } catch (e) { /* non-fatal */ }
+}
+
+async function handleCheckinSubmit(e) {
+  e.preventDefault();
+  const errorEl = document.getElementById('checkin-error');
+  const submitBtn = document.getElementById('checkin-submit');
+  errorEl.style.display = 'none';
+
+  const reason = document.getElementById('checkin-reason').value.trim();
+  const symptoms = document.getElementById('checkin-symptoms').value.trim();
+  const duration = document.getElementById('checkin-duration').value;
+  const medications = document.getElementById('checkin-medications').value.trim();
+  const allergies = document.getElementById('checkin-allergies').value.trim();
+
+  if (!reason || !symptoms) {
+    errorEl.textContent = 'Contesta al menos el motivo de visita y tus síntomas.';
+    errorEl.style.display = 'block';
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Enviando...';
+
+  try {
+    const config = window.farmaciaSupabaseConfig || {};
+    const patientName = currentCustomerProfile?.name || currentAuthUser?.user_metadata?.full_name || currentAuthUser?.email || 'Cliente';
+
+    const res = await fetch(`${config.URL}/functions/v1/tablet-checkin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        org_id: config.DEFAULT_ORG_ID,
+        mode: 'checkin',
+        patient_name: patientName,
+        email: currentAuthUser?.email || '',
+        phone: currentCustomerProfile?.phone || '',
+        checkin: { reason, symptoms, duration, medications, allergies },
+        company: ''
+      })
+    });
+
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok || result.error) {
+      throw new Error(result.error || 'No se pudo completar el check-in.');
+    }
+
+    mainContent.innerHTML = `
+      <div style="padding: 3rem 1.5rem; text-align: center; color: white;">
+        <div style="font-size: 4rem; margin-bottom: 1rem;">✅</div>
+        <h1 style="margin: 0 0 0.5rem; font-size: 1.5rem; font-weight: 800;">¡Check-in listo!</h1>
+        <p style="margin: 0 auto 0.5rem; max-width: 340px; font-size: 0.95rem; opacity: 0.9; line-height: 1.6;">
+          El doctor${result.doctor_assigned ? ` (${escapeHtml(result.doctor_assigned)})` : ''} ya puede ver tu información. Avisa al personal que ya hiciste check-in.
+        </p>
+        <button onclick="renderPage('consulta')" style="margin-top: 1.5rem; padding: 0.9rem 2rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 700; font-size: 1rem; cursor: pointer;">Volver al inicio</button>
+      </div>
+    `;
+    window.scrollTo(0, 0);
+    pendingCheckin = false;
+  } catch (err) {
+    errorEl.textContent = err.message || 'Error de conexión. Intenta de nuevo o avisa al personal.';
+    errorEl.style.display = 'block';
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Hacer check-in';
+  }
 }
 
 // Membership gate placeholder for paid sections
@@ -4315,6 +4459,7 @@ window.renderMembresias = renderMembresias;
 window.renderPage = renderPage;
 window.handleLogin = handleLogin;
 window.handleSignup = handleSignup;
+window.handleCheckinSubmit = handleCheckinSubmit;
 window.updateConsentSubmitButton = updateConsentSubmitButton;
 window.handleConsentOnboardingSubmit = handleConsentOnboardingSubmit;
 window.renderConsentOnboarding = renderConsentOnboarding;
