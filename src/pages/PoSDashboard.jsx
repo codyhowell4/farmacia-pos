@@ -377,12 +377,18 @@ const PoSDashboard = () => {
     // which breaks rapid barcode-scanner input.
     const term = (rawTerm ?? searchTerm).trim();
     const lowerSearchTerm = term.toLowerCase();
+    const searchWords = lowerSearchTerm.split(/\s+/).filter(Boolean);
     const matchesItem = (item) => {
       const barcode = String(item.barcode || '').trim();
-      return barcode === term ||
-        item.name.toLowerCase().includes(lowerSearchTerm) ||
-        item.use?.toLowerCase().includes(lowerSearchTerm) ||
-        item.department?.toLowerCase().includes(lowerSearchTerm);
+      if (barcode === term) return true;
+      const haystack = [
+        item.name,
+        item.use,
+        item.department,
+      ].filter(Boolean).map((s) => String(s).toLowerCase());
+      // Every search word must appear in at least one field (name/use/department).
+      // This makes queries like "cuidad de piel" match "CUIDADO DE LA PIEL".
+      return searchWords.every((word) => haystack.some((field) => field.includes(word)));
     };
     // Sellable matches are clickable; out-of-stock/expired matches are still
     // shown (disabled, with the reason) so a scanned product is always found.
