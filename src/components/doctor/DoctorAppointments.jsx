@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import {
-  Calendar, CalendarPlus, Plus, Search, Clock, Phone, Check, Trash2, Edit2, Video, FileText, Activity
+  Calendar, CalendarPlus, Plus, Search, Clock, Phone, Check, Trash2, Edit2, Video, FileText, Activity,
+  FolderOpen, StickyNote, MoreVertical
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,13 +15,15 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog';
 import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem
+} from '@/components/ui/dropdown-menu';
+import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem
 } from '@/components/ui/select';
 import {
   getAppointmentsByDoctor, createAppointment, updateAppointment, deleteAppointment,
-  getCustomersForDoctor, confirmVideoAppointment
+  getCustomersForDoctor, confirmVideoAppointment, createMedicalNote
 } from '@/lib/db';
-import { gcalUrl } from '@/lib/gcal';
 import PostVisitDialog from './PostVisitDialog';
 import NurseVitalsDialog from './NurseVitalsDialog';
 import { toast } from 'sonner';
@@ -74,6 +78,7 @@ const formatDisplayTime = (iso) => {
 };
 
 const DoctorAppointments = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [appointments, setAppointments] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -86,6 +91,15 @@ const DoctorAppointments = () => {
   const [postVisitOpen, setPostVisitOpen] = useState(false);
   const [nurseVitalsAppt, setNurseVitalsAppt] = useState(null);
   const [nurseVitalsOpen, setNurseVitalsOpen] = useState(false);
+  const [quickNoteAppt, setQuickNoteAppt] = useState(null);
+  const [quickNoteOpen, setQuickNoteOpen] = useState(false);
+  const [quickNoteText, setQuickNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [followUpAppt, setFollowUpAppt] = useState(null);
+  const [followUpOpen, setFollowUpOpen] = useState(false);
+  const [followUpDate, setFollowUpDate] = useState('');
+  const [followUpNotes, setFollowUpNotes] = useState('');
+  const [savingFollowUp, setSavingFollowUp] = useState(false);
   const [form, setForm] = useState({
     customer_id: '',
     walkin_name: '',
@@ -162,18 +176,6 @@ const DoctorAppointments = () => {
     setDialogOpen(true);
   };
 
-  // Opens a prefilled Google Calendar event in a new tab (no OAuth needed)
-  const openGcal = (appt) => {
-    const name = appt?.customers?.full_name || appt?.walkin_name || 'Paciente';
-    const phone = appt?.customers?.phone || appt?.walkin_phone || '';
-    window.open(gcalUrl({
-      title: `Consulta — ${name}`,
-      startIso: appt?.appointment_date,
-      durationMin: 30,
-      details: [phone && `Tel: ${phone}`, appt?.notes].filter(Boolean).join('\n'),
-    }), '_blank', 'noopener,noreferrer');
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!user?.id) return;
@@ -243,6 +245,105 @@ const DoctorAppointments = () => {
       toast.error('Error actualizando estado');
       console.error(err);
     }
+  };
+
+  const openPatientRecord = (appt) => {
+    if (!appt?.customer_id) {
+      toast.info('Esta cita es walk-in y aún no tiene expediente vinculado.');
+      return;
+    }
+    navigate(`/doctor/customers/${appt.customer_id}`);
+  };
+
+  const openQuickNote = (appt) => {
+    setQuickNoteAppt(appt);
+    setQuickNoteText('');
+    setQuickNoteOpen(true);
+  };
+
+  const handleSaveQuickNote = async () => {
+    if (!quickNoteAppt || !user?.id) return;
+    const text = quickNoteText.trim();
+    if (!text) {
+      toast.error('Escribe una nota antes de guardar');
+      return;
+    }
+    setSavingNote(true);
+    try {
+      await createMedicalNote({
+        customer_id: quickNoteAppt.customer_id || null,
+        appointment_id: quickNoteAppt.id,
+        doctor_id: user.id,
+        note: text,
+      });
+      toast.success('Nota guardada');
+      setQuickNoteOpen(false);
+      setQuickNoteText('');
+      setQuickNoteAppt(null);
+    } catch (err) {
+      toast.error(err.message || 'Error guardando la nota');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const openFollowUp = (appt) => {
+    setFollowUpAppt(appt);
+    const next = new Date();
+    next.setDate(next.getDate() + 7);
+    next.setMinutes(next.getMinutes() - next.getTimezoneOffset());
+    setFollowUpDate(next.toISOString().slice(0, 16));
+    setFollowUpNotes('');
+    setFollowUpOpen(true);
+  };
+
+  const handleSaveFollowUp = async () => {
+    if (!followUpAppt || !user?.id || !followUpDate) return;
+    setSavingFollowUp(true);
+    try {
+      await createAppointment({
+        customer_id: followUpAppt.customer_id || null,
+        walkin_name: followUpAppt.walkin_name || '',
+        walkin_phone: followUpAppt.walkin_phone || '',
+        doctor_id: user.id,
+        appointment_date: new Date(followUpDate).toISOString(),
+        status: 'pending',
+        type: 'in_person',
+        notes: followUpNotes.trim() || 'Seguimiento',
+      });
+      toast.success('Siguiente cita agendada');
+      setFollowUpOpen(false);
+      setFollowUpDate('');
+      setFollowUpNotes('');
+      setFollowUpAppt(null);
+      loadData();
+    } catch (err) {
+      toast.error(err.message || 'Error agendando la cita');
+    } finally {
+      setSavingFollowUp(false);
+    }
+  };
+
+  // Parse the auto-report stored in appointments.notes (tablet-checkin or
+  // check-in flow) into labeled fields for cleaner display.
+  const parseIntakeNote = (text) => {
+    if (!text) return null;
+    const lines = text.split('\n').filter(l => l.trim());
+    const result = { source: '', fields: [], hasConsents: false };
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('Registro en tableta')) result.source = 'Registro en tableta';
+      else if (trimmed.startsWith('Check-in en línea')) result.source = 'Check-in en línea';
+      else if (/Consentimientos?\s+firmados?|Documentos de consentimiento/i.test(trimmed)) {
+        result.hasConsents = true;
+      } else {
+        const match = trimmed.match(/^([^:]+):\s*(.+)$/);
+        if (match) {
+          result.fields.push({ label: match[1].trim(), value: match[2].trim() });
+        }
+      }
+    });
+    return result;
   };
 
   return (
@@ -340,9 +441,32 @@ const DoctorAppointments = () => {
                         </span>
                       )}
                     </div>
-                    {appt?.notes && (
-                      <p className="text-sm text-slate-600 mt-2 line-clamp-2">{appt.notes}</p>
-                    )}
+                    {(() => {
+                      const intake = parseIntakeNote(appt?.notes);
+                      if (!intake) return null;
+                      return (
+                        <div className="mt-3 space-y-2">
+                          {intake.source && (
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{intake.source}</p>
+                          )}
+                          {intake.fields.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {intake.fields.map((f, i) => (
+                                <div key={i} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
+                                  <span className="text-slate-500 text-xs block">{f.label}</span>
+                                  <span className="text-slate-900 font-medium">{f.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {intake.hasConsents && (
+                            <p className="text-xs text-emerald-700 flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Consentimientos firmados
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
@@ -357,6 +481,18 @@ const DoctorAppointments = () => {
                         Unirse
                       </Button>
                     )}
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-apolo-navy text-apolo-navy hover:bg-apolo-navy/5 h-8"
+                      title="Abrir expediente"
+                      onClick={() => openPatientRecord(appt)}
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 mr-1" />
+                      Expediente
+                    </Button>
+
                     {appt?.status === 'pending' && (
                       <Button
                         size="icon"
@@ -370,7 +506,6 @@ const DoctorAppointments = () => {
                     )}
                     {appt?.status === 'confirmed' && (
                       <>
-                        {/* Captura pre-consulta de signos (flujo de enfermería) */}
                         <Button
                           size="icon"
                           variant="ghost"
@@ -402,33 +537,47 @@ const DoctorAppointments = () => {
                         <FileText className="w-4 h-4" />
                       </Button>
                     )}
+
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="text-slate-500 hover:text-slate-700"
-                      title="Agregar a Google Calendar"
-                      onClick={() => openGcal(appt)}
+                      className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                      title="Nota rápida"
+                      onClick={() => openQuickNote(appt)}
+                    >
+                      <StickyNote className="w-4 h-4" />
+                    </Button>
+
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"
+                      title="Agendar siguiente"
+                      onClick={() => openFollowUp(appt)}
                     >
                       <CalendarPlus className="w-4 h-4" />
                     </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="text-slate-500 hover:text-slate-700"
-                      title="Editar"
-                      onClick={() => openEdit(appt)}
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                      title="Eliminar"
-                      onClick={() => handleDelete(appt?.id)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="text-slate-500 hover:text-slate-700"
+                          title="Más acciones"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEdit(appt)}>
+                          <Edit2 className="w-3.5 h-3.5 mr-2" /> Editar cita
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDelete(appt?.id)} className="text-red-600 focus:text-red-600">
+                          <Trash2 className="w-3.5 h-3.5 mr-2" /> Eliminar
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               </div>
@@ -452,6 +601,68 @@ const DoctorAppointments = () => {
         appointment={nurseVitalsAppt}
         onSaved={loadData}
       />
+
+      {/* Quick note dialog */}
+      <Dialog open={quickNoteOpen} onOpenChange={setQuickNoteOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Nota rápida — {quickNoteAppt?.customers?.full_name || quickNoteAppt?.walkin_name || 'Paciente'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              value={quickNoteText}
+              onChange={e => setQuickNoteText(e.target.value)}
+              placeholder="Escribe una nota sobre esta cita..."
+              rows={5}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setQuickNoteOpen(false)} disabled={savingNote}>
+                Cancelar
+              </Button>
+              <Button onClick={handleSaveQuickNote} disabled={savingNote} className="bg-teal-600 hover:bg-teal-700">
+                {savingNote ? 'Guardando...' : 'Guardar nota'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Follow-up appointment dialog */}
+      <Dialog open={followUpOpen} onOpenChange={setFollowUpOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Agendar siguiente — {followUpAppt?.customers?.full_name || followUpAppt?.walkin_name || 'Paciente'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Fecha y hora</Label>
+              <Input
+                type="datetime-local"
+                value={followUpDate}
+                onChange={e => setFollowUpDate(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <Label>Motivo / notas</Label>
+              <Textarea
+                value={followUpNotes}
+                onChange={e => setFollowUpNotes(e.target.value)}
+                placeholder="Ej. seguimiento, resultado de estudios..."
+                rows={3}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setFollowUpOpen(false)} disabled={savingFollowUp}>
+                Cancelar
+              </Button>
+              <Button onClick={handleSaveFollowUp} disabled={savingFollowUp} className="bg-teal-600 hover:bg-teal-700">
+                {savingFollowUp ? 'Agendando...' : 'Agendar'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

@@ -414,6 +414,7 @@ Deno.serve(async (req) => {
         org_id: orgId,
         doctor_id: doctor.id,
         customer_id: customer.id,
+        appointment_id: appointmentId,
         note: noteLines.join('\n'),
       });
       if (noteError) throw noteError;
