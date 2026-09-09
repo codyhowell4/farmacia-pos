@@ -11,7 +11,7 @@ The frontend is 100% static (Vite build + the vanilla customer app) — any stat
 | **Cloudflare Pages** (same project) | Online check-in (logged-in customers) | `registro.apolofarmacia.com.mx` → `app.apolofarmacia.com.mx/customer-app/?checkin=1` |
 | **Vercel** | Testing / staging front-end | `farmacia-pos.vercel.app` |
 
-The apex domain (`apolofarmacia.com.mx` / `www`) is **reserved for the future marketing website**. The app lives on the `app.` subdomain. For now the apex only has one rule: `apolofarmacia.com.mx/membresias` (and `www`) → **301 redirect** to `https://app.apolofarmacia.com.mx/membresias` (Cloudflare Redirect Rule + AAAA `100::` discard records so the edge can answer). When the website lands, point the apex at it and remove the discard records.
+The apex domain (`apolofarmacia.com.mx` / `www`) is attached to the Pages project but scoped to public use: `/membresias` (the membership signup page) is **served directly on the main domain**, the bare root → 301 to `/membresias`, and any other extensionless path (app routes) → 301 to the `app.` subdomain (static assets and `/membresias` itself stay). The rest of the apex remains reserved for the future marketing website — when it lands, replace these redirect rules with the site. The staff/customer apps live on the `app.` subdomain.
 
 ## Tablet check-in (`formularios.` subdomain)
 
