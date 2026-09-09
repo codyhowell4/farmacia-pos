@@ -1,4 +1,4 @@
-// Service Worker for Farmacia Apollo
+// Service Worker for Farmacia Apolo
 // Handles push notifications for medication reminders
 
 const CACHE_NAME = 'farmacia-apollo-v8';

@@ -1071,7 +1071,7 @@ export const Store = {
     return get('locations') || [
       { 
         id: 'loc1', 
-        name: 'Farmacia Apollo - Centro', 
+        name: 'Farmacia Apolo - Centro', 
         address: 'Av. Juárez 123, Centro, CDMX', 
         phone: '555-1234',
         currentWait: 15, // minutes
@@ -1081,7 +1081,7 @@ export const Store = {
       },
       { 
         id: 'loc2', 
-        name: 'Farmacia Apollo - Polanco', 
+        name: 'Farmacia Apolo - Polanco', 
         address: 'Masaryk 456, Polanco, CDMX', 
         phone: '555-5678',
         currentWait: 5,
@@ -1091,7 +1091,7 @@ export const Store = {
       },
       { 
         id: 'loc3', 
-        name: 'Farmacia Apollo - Condesa', 
+        name: 'Farmacia Apolo - Condesa', 
         address: 'Av. Ámsterdam 789, Condesa, CDMX', 
         phone: '555-9012',
         currentWait: 25,
@@ -1101,7 +1101,7 @@ export const Store = {
       },
       { 
         id: 'loc4', 
-        name: 'Farmacia Apollo - Satélite', 
+        name: 'Farmacia Apolo - Satélite', 
         address: 'Av. Lomas Verdes 321, Naucalpan', 
         phone: '555-3456',
         currentWait: 10,

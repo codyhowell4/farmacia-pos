@@ -51,6 +51,9 @@ const MembershipPublicPage = () => {
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState(null);
   const paypalRendered = useRef(false);
+  // True once the PayPal buttons are on screen for the current form state;
+  // used to lock the terms checkbox so it can't be unchecked mid-payment.
+  const [paypalReady, setPaypalReady] = useState(false);
 
   const [form, setForm] = useState({
     ownerName: '',
@@ -120,7 +123,13 @@ const MembershipPublicPage = () => {
     })();
 
     if (validationError) {
-      toast({ title: 'Verifica los datos', description: validationError, variant: 'destructive' });
+      // PayPal may already have taken the money by the time onApprove runs,
+      // so point the user at the pharmacy instead of showing a bare error.
+      toast({
+        title: 'Verifica los datos',
+        description: `${validationError} Si ya completaste el pago en PayPal, contacta a la farmacia para resolverlo antes de intentar de nuevo.`,
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -189,6 +198,11 @@ const MembershipPublicPage = () => {
             variant: 'destructive',
           });
         },
+      }).then(() => {
+        // Buttons are on screen for the current form state: lock the terms
+        // checkbox so it can't be unchecked mid-payment. Guard against a
+        // stale resolve after the user unchecked terms while the SDK loaded.
+        if (formRef.current.termsAccepted) setPaypalReady(true);
       }).catch((err) => {
         console.error('Failed to render PayPal buttons:', err);
         paypalRendered.current = false;
@@ -246,7 +260,7 @@ const MembershipPublicPage = () => {
 
   const renderForm = () => (
     <div className="max-w-2xl mx-auto space-y-6">
-      <Button variant="outline" onClick={() => { setStep('plans'); paypalRendered.current = false; }} className="flex items-center gap-2">
+      <Button variant="outline" onClick={() => { setStep('plans'); paypalRendered.current = false; setPaypalReady(false); }} className="flex items-center gap-2">
         <ArrowLeft className="w-4 h-4" /> Volver a planes
       </Button>
 
@@ -351,9 +365,13 @@ const MembershipPublicPage = () => {
               id="terms-accepted"
               type="checkbox"
               checked={form.termsAccepted}
+              disabled={paypalReady}
               onChange={(e) => {
                 updateField('termsAccepted', e.target.checked);
-                if (!e.target.checked) paypalRendered.current = false;
+                if (!e.target.checked) {
+                  paypalRendered.current = false;
+                  setPaypalReady(false);
+                }
               }}
               className="mt-1 w-4 h-4 flex-shrink-0"
             />
@@ -369,6 +387,12 @@ const MembershipPublicPage = () => {
               </a>
             </Label>
           </div>
+
+          {paypalReady && (
+            <p className="text-xs text-slate-500">
+              Ya puedes pagar con PayPal — términos aceptados. Si necesitas modificarlos, vuelve a la lista de planes.
+            </p>
+          )}
 
           {form.termsAccepted ? (
             <div id="paypal-button-container" className="min-h-[120px]" />

@@ -929,6 +929,8 @@ window.FarmaciaAPI = (function () {
      * Activate a family member's own portal account (plan familiar) via the
      * public family-member-signup edge function. On success the caller can
      * sign in with the email + password they just registered.
+     * Sends org_id (SUPABASE_CONFIG.DEFAULT_ORG_ID) so the function scopes
+     * the sub_id lookup to this org; omitted automatically if unset.
      */
     async familyMemberSignup({ sub_id, name, email, password }) {
       if (!sb) return { data: null, error: new Error('Supabase not available') };
@@ -940,7 +942,7 @@ window.FarmaciaAPI = (function () {
             'Content-Type': 'application/json',
             ...(cfg.ANON_KEY ? { apikey: cfg.ANON_KEY } : {}),
           },
-          body: JSON.stringify({ sub_id, name, email, password }),
+          body: JSON.stringify({ sub_id, name, email, password, org_id: cfg.DEFAULT_ORG_ID }),
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || json.error) {

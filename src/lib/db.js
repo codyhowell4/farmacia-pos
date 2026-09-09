@@ -661,6 +661,22 @@ export const voidSale = async (saleId, voidedByName) => {
   if (fetchError) throw fetchError;
   if (sale.voided) throw new Error('Venta ya fue anulada');
 
+  // Membership-payment bookings (plan products in the 'membresias' department,
+  // created by record_membership_payment) must not be voided here: voiding
+  // removes the revenue row but leaves payments_made/visits/revisions intact,
+  // so the books diverge. Refuse before making any change.
+  const itemInventoryIds = (sale.sale_items || []).map(i => i.inventory_id).filter(Boolean);
+  if (itemInventoryIds.length > 0) {
+    const { data: itemProducts, error: deptError } = await supabase
+      .from('inventory')
+      .select('id, department')
+      .in('id', itemInventoryIds);
+    if (deptError) throw deptError;
+    if ((itemProducts || []).some(p => p.department === 'membresias')) {
+      throw new Error('Los pagos de membresía no se pueden anular desde aquí. Gestiona el reembolso en PayPal o con el administrador.');
+    }
+  }
+
   await incrementInventory(
     sale.sale_items.map(i => ({ ...i, returnQty: i.quantity })),
     saleId,
@@ -2673,7 +2689,9 @@ export const createMembership = async ({
         pending_cancellation: false,
         cancel_requested_at: null,
         terms_accepted_at: termsAt,
-        last_roster_change_at: new Date().toISOString(),
+        // last_roster_change_at is intentionally left untouched on reinstate:
+        // stamping it here would lock the roster for 90 days and block staff
+        // from fixing a roster typo right after registration.
         updated_at: new Date().toISOString(),
       })
       .eq('id', restorable.id)
@@ -2866,6 +2884,18 @@ export const decrementMembershipVisits = async (membershipId, count) => {
   });
   if (error) throw error;
   return data;
+};
+
+// Best-effort reconcile after a failed decrement_membership_visits: the sale
+// row was already written claiming visits were consumed, so reset the counter
+// to keep void refunds consistent with what the server actually took.
+export const clearSaleMembershipVisitsUsed = async (saleId) => {
+  if (!saleId) return;
+  const { error } = await supabase
+    .from('sales')
+    .update({ membership_visits_used: 0 })
+    .eq('id', saleId);
+  if (error) throw error;
 };
 
 export const ensureMembershipConsultationProduct = async () => {

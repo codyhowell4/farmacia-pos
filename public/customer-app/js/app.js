@@ -249,7 +249,7 @@ function renderLogin() {
   mainContent.innerHTML = `
     <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🔑 Iniciar Sesión</h1>
-      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Accede a tu cuenta de Farmacia Apollo</p>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Accede a tu cuenta de Farmacia Apolo</p>
     </div>
     
     <div style="padding: 1.5rem 1rem;">
@@ -460,7 +460,7 @@ function renderSignup() {
   mainContent.innerHTML = `
     <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">✨ Crear Cuenta</h1>
-      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Únete a Farmacia Apollo</p>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Únete a Farmacia Apolo</p>
     </div>
     
     <div style="padding: 1.5rem 1rem;">
@@ -948,10 +948,24 @@ async function handleConsentOnboardingSubmit() {
   consentGateActive = false;
   setAppChromeVisible(true);
   showToast('Documentos firmados correctamente. ¡Bienvenido!', 'success');
-  currentPage = 'consulta';
+
+  // Claimed family members (plan familiar) land on Membresías — the same
+  // destination the family-activation flow uses when no consent is due.
+  // Titulars and everyone else keep landing on Consulta. The membership
+  // lookup fails open (free shape without isFamilyMember), so on any error
+  // the default landing applies.
+  let landingPage = 'consulta';
+  try {
+    const membership = await FarmaciaAPI.getMembershipDetails();
+    if (membership?.isFamilyMember) landingPage = 'membresias';
+  } catch (e) {
+    console.warn('[Consent] Membership check failed; landing on Consulta:', e);
+  }
+
+  currentPage = landingPage;
   navItems.forEach(nav => nav.classList.remove('active'));
-  document.querySelector('.bottom-nav .nav-item[data-page="consulta"]')?.classList.add('active');
-  renderPage('consulta');
+  document.querySelector(`.bottom-nav .nav-item[data-page="${landingPage}"]`)?.classList.add('active');
+  renderPage(landingPage);
 }
 
 // ============================================================
@@ -975,7 +989,7 @@ function renderFirmaRegistro() {
   mainContent.innerHTML = `
     <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🖊️ Firma tus documentos</h1>
-      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Lee y acepta los documentos y tu cuenta de Farmacia Apollo se crea en el mismo paso. Solo es necesario una vez.</p>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Lee y acepta los documentos y tu cuenta de Farmacia Apolo se crea en el mismo paso. Solo es necesario una vez.</p>
     </div>
 
     <div style="padding: 1rem;">
@@ -1230,7 +1244,7 @@ function renderLocked(featureName) {
         <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">🔒</div>
         <h1 style="margin: 0 0 0.75rem; font-size: 1.25rem; font-weight: 700; color: #1E2A8A;">Disponible con tu Membresía</h1>
         <p style="margin: 0 auto 1.25rem; max-width: 320px; color: #64748b; font-size: 0.9rem; line-height: 1.5;">
-          ${featureName} es parte de los beneficios de tu Membresía Apollo. Actívala para desbloquear esta y todas las herramientas de salud.
+          ${featureName} es parte de los beneficios de tu Membresía Apolo. Actívala para desbloquear esta y todas las herramientas de salud.
         </p>
         <a href="/membresias" style="display: inline-block; padding: 0.85rem 1.75rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border-radius: 12px; font-weight: 600; text-decoration: none;">Ver membresías</a>
       </div>
@@ -1937,6 +1951,17 @@ function renderPage(page) {
     return;
   }
 
+  // Oculto por cumplimiento — restaurar cuando se habilite venta en línea.
+  // La tienda y el catálogo en línea están pausados: cualquier navegación
+  // hacia ellos (menú, deep-link o llamada directa) cae en Consulta.
+  if (page === 'shop' || page === 'store') {
+    showToast('La tienda en línea no está disponible por el momento. Visítanos en sucursal.', 'info');
+    page = 'consulta';
+    currentPage = 'consulta';
+    navItems.forEach(nav => nav.classList.remove('active'));
+    document.querySelector('.bottom-nav .nav-item[data-page="consulta"]')?.classList.add('active');
+  }
+
   // Clear any running intervals
   if (window.fastTimerInterval) clearInterval(window.fastTimerInterval);
   
@@ -2078,7 +2103,7 @@ function renderHome() {
     <!-- Date Header -->
     <div class="date-header">
       <div class="day">${today}</div>
-      <div class="title">Farmacia Apollo</div>
+      <div class="title">Farmacia Apolo</div>
       <div class="subtitle">Cuidamos de ti, cuidamos tu salud</div>
     </div>
 
@@ -3668,7 +3693,7 @@ window.printEmergencyID = function() {
         ` : ''}
       </div>
       <div class="footer">
-        Generado por Farmacia Apollo • ${new Date().toLocaleDateString('es-MX')}
+        Generado por Farmacia Apolo • ${new Date().toLocaleDateString('es-MX')}
       </div>
     </body>
     </html>
@@ -3778,7 +3803,7 @@ window.printAdherenceReport = function() {
       </div>
       
       <div class="footer">
-        <p>Este reporte fue generado automáticamente por Farmacia Apollo.</p>
+        <p>Este reporte fue generado automáticamente por Farmacia Apolo.</p>
         <p>Consulte con su médico para interpretar estos resultados.</p>
       </div>
     </body>
@@ -3799,7 +3824,7 @@ ${emergencyInfo.allergies ? '⚠️ Alergias: ' + emergencyInfo.allergies : ''}
 ${emergencyInfo.conditions ? '🩺 Condiciones: ' + emergencyInfo.conditions : ''}
 ${emergencyInfo.medications ? '💊 Medicamentos: ' + emergencyInfo.medications : ''}
 
-_Enviado desde Farmacia Apollo_`;
+_Enviado desde Farmacia Apolo_`;
 
   if (navigator.share) {
     try {
@@ -5955,7 +5980,7 @@ function renderSalud() {
               <div style="display: flex; flex-direction: column; gap: 0.25rem;">
                 <button onclick="showReminderModal(${p.id})" style="background: rgba(70,172,120,0.2); color: var(--teal-primary); border: 1px solid rgba(70,172,120,0.3); padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.7rem; cursor: pointer;">⏰</button>
                 ${!activeRefill ? `
-                  <button onclick="showRefillRequestModal(${p.id})" style="background: rgba(70,172,120,0.2); color: var(--teal-primary); border: 1px solid rgba(70,172,120,0.3); padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.7rem; cursor: pointer;">🔄</button>
+                  <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea: botón 🔄 "Solicitar Recarga" (showRefillRequestModal, crea pedido anticipado) -->
                 ` : `
                   <button onclick="showRefillStatus('${activeRefill.id}')" style="background: rgba(0,168,232,0.2); color: #00a8e8; border: 1px solid rgba(0,168,232,0.3); padding: 0.25rem 0.5rem; border-radius: 6px; font-size: 0.7rem; cursor: pointer;">📋</button>
                 `}
@@ -6806,6 +6831,12 @@ window.testNotification = function() {
 // ============================================
 
 window.showRefillRequestModal = function(prescriptionId) {
+  // Oculto por cumplimiento — restaurar cuando se habilite venta en línea.
+  // El pedido anticipado (recarga a domicilio/sucursal) está pausado: el
+  // modal ya no se abre; el historial de recargas sigue visible.
+  showToast('Los pedidos anticipados no están disponibles por el momento. Visítanos en sucursal.', 'info');
+  return;
+
   const prescription = Store.getPrescriptions().find(p => p.id === prescriptionId);
   if (!prescription) return;
   
@@ -6844,9 +6875,9 @@ window.showRefillRequestModal = function(prescriptionId) {
         <div style="margin-bottom: 1.5rem;">
           <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem;">Farmacia para recoger</label>
           <select id="refill-pharmacy" style="width: 100%; padding: 0.875rem; border: 2px solid var(--border-color); border-radius: 12px; font-size: 1rem;">
-            <option value="polanco">Farmacia Apollo - Polanco (Masaryk 456)</option>
-            <option value="condesa">Farmacia Apollo - Condesa (Av. México 123)</option>
-            <option value="santafe">Farmacia Apollo - Santa Fe (Centro Comercial)</option>
+            <option value="polanco">Farmacia Apolo - Polanco (Masaryk 456)</option>
+            <option value="condesa">Farmacia Apolo - Condesa (Av. México 123)</option>
+            <option value="santafe">Farmacia Apolo - Santa Fe (Centro Comercial)</option>
             <option value="delivery">Entrega a domicilio</option>
           </select>
         </div>
@@ -6887,9 +6918,9 @@ window.submitRefillRequest = async function(prescriptionId) {
   }
   
   const pharmacyNames = {
-    polanco: 'Farmacia Apollo - Polanco',
-    condesa: 'Farmacia Apollo - Condesa',
-    santafe: 'Farmacia Apollo - Santa Fe',
+    polanco: 'Farmacia Apolo - Polanco',
+    condesa: 'Farmacia Apolo - Condesa',
+    santafe: 'Farmacia Apolo - Santa Fe',
     delivery: 'Entrega a domicilio'
   };
   
@@ -7676,7 +7707,7 @@ window.showChatConsulta = function() {
       ${chatHistory.length === 0 ? `
         <div style="align-self: flex-start; max-width: 85%; background: white; padding: 1rem; border-radius: 16px 16px 16px 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
           <div style="font-weight: 600; color: #1E2A8A; margin-bottom: 0.5rem;">👋 ¡Hola!</div>
-          <div style="color: var(--text-secondary); line-height: 1.5; font-size: 0.95rem;">Soy tu asistente médico. Describe tus síntomas y te ayudaré a encontrar los medicamentos adecuados disponibles en Farmacia Apollo.</div>
+          <div style="color: var(--text-secondary); line-height: 1.5; font-size: 0.95rem;">Soy tu asistente médico. Describe tus síntomas y te ayudaré a encontrar los medicamentos adecuados disponibles en Farmacia Apolo.</div>
           <div style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-color); font-size: 0.7rem; color: #f59e0b;">${MEDICAL_DISCLAIMER}</div>
           <div style="margin-top: 0.75rem; font-size: 0.8rem; color: var(--text-muted);">Ejemplos: "Me duele la cabeza", "Tengo tos", "Dolor de estómago"</div>
         </div>
@@ -7698,7 +7729,8 @@ window.showChatConsulta = function() {
                   <div style="font-size: 0.75rem; opacity: 0.9;">${med.type} • ${med.frequency}</div>
                   <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.375rem;">
                     <div style="font-size: 0.9rem; font-weight: 600;">$${med.price}</div>
-                    <button onclick="addToCartFromChat('${med.name}', ${med.price})" style="padding: 0.375rem 0.75rem; background: ${msg.sender === 'user' ? 'white' : '#46AC78'}; color: ${msg.sender === 'user' ? '#46AC78' : 'white'}; border: none; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer;">🛒 Agregar</button>
+                    <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea: botón "🛒 Agregar" (addToCartFromChat) -->
+                    <div style="font-size: 0.75rem; opacity: 0.8;">Disponible en sucursal</div>
                   </div>
                 </div>
               `).join('')}
@@ -7779,7 +7811,8 @@ window.refreshChatMessages = function() {
               <div style="font-size: 0.75rem; opacity: 0.9;">${med.type} • ${med.frequency}</div>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.375rem;">
                 <div style="font-size: 0.9rem; font-weight: 600;">$${med.price}</div>
-                <button onclick="addToCartFromChat('${med.name}', ${med.price})" style="padding: 0.375rem 0.75rem; background: ${msg.sender === 'user' ? 'white' : '#0ea5e9'}; color: ${msg.sender === 'user' ? '#0ea5e9' : 'white'}; border: none; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer;">🛒 Agregar</button>
+                <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea: botón "🛒 Agregar" (addToCartFromChat) -->
+                <div style="font-size: 0.75rem; opacity: 0.8;">Disponible en sucursal</div>
               </div>
             </div>
           `).join('')}
@@ -7849,7 +7882,7 @@ window.addToCartFromChat = function(medicineName, price) {
 };
 
 window.showEmergencyInfo = function() {
-  alert('🚨 EMERGENCIAS\n\nSi tienes una emergencia médica:\n\n• Llama al 911 inmediatamente\n• O acude a la sala de emergencias más cercana\n\nFarmacia Apollo no sustituye la atención médica profesional en casos de emergencia.');
+  alert('🚨 EMERGENCIAS\n\nSi tienes una emergencia médica:\n\n• Llama al 911 inmediatamente\n• O acude a la sala de emergencias más cercana\n\nFarmacia Apolo no sustituye la atención médica profesional en casos de emergencia.');
 };
 
 
@@ -8483,7 +8516,7 @@ async function mountVideoPayPalButtons() {
       createOrder: (data, actions) => actions.order.create({
         purchase_units: [{
           amount: { value: ctx.amount.toFixed(2), currency_code: 'MXN' },
-          description: 'Video consulta médica - Farmacia Apollo'
+          description: 'Video consulta médica - Farmacia Apolo'
         }]
       }),
       onApprove: async (data) => {
@@ -8926,7 +8959,7 @@ async function renderAppointments() {
     } else {
       return {
         id: appt.id,
-        locationName: 'Farmacia Apollo',
+        locationName: 'Farmacia Apolo',
         patientName: 'Paciente',
         estimatedTime: isoDate,
         queuePosition: '-',
@@ -9517,7 +9550,7 @@ async function renderPrescripciones() {
               ${p.doctorName ? `<div style="font-size: 0.8rem; color: rgba(255,255,255,0.5); margin-bottom: 0.75rem;">👨‍⚕️ Dr. ${p.doctorName} • ${new Date(p.createdAt).toLocaleDateString('es-MX')}</div>` : ''}
               
               <div style="display: flex; gap: 0.5rem; width: 100%;">
-                <button onclick="orderPrescription(${p.id})" style="flex: 1; padding: 0.625rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 10px; font-size: 0.85rem; font-weight: 600; cursor: pointer;">🛒 Ordenar</button>
+                <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea: botón "🛒 Ordenar" (orderPrescription) -->
                 <button onclick="setReminderForPrescription(${p.id})" style="padding: 0.625rem; background: rgba(14,165,233,0.2); color: #7dd3fc; border: 1px solid rgba(14,165,233,0.3); border-radius: 10px; font-size: 0.85rem; cursor: pointer;">⏰</button>
                 <button onclick="markPrescriptionUsed(${p.id})" style="padding: 0.625rem; background: rgba(70,172,120,0.2); color: #46AC78; border: 1px solid rgba(70,172,120,0.3); border-radius: 10px; font-size: 0.85rem; cursor: pointer;">✓</button>
               </div>
@@ -10173,7 +10206,7 @@ async function renderShop() {
     <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">🛒 Farmacia Apollo</h2>
+          <h2 style="margin: 0; font-size: 1.3rem;">🛒 Farmacia Apolo</h2>
           <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">Tu farmacia en línea</p>
         </div>
         <button onclick="showCart()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
@@ -10509,7 +10542,7 @@ window.showCheckout = function() {
         <div style="margin-bottom: 1.5rem;">
           <h3 style="margin: 0 0 1rem; font-size: 1rem;">📍 Entrega</h3>
           <div style="background: #f8fafc; border-radius: 12px; padding: 1rem;">
-            <div style="font-weight: 600; margin-bottom: 0.25rem;">Farmacia Apollo - Polanco</div>
+            <div style="font-weight: 600; margin-bottom: 0.25rem;">Farmacia Apolo - Polanco</div>
             <div style="font-size: 0.85rem; color: var(--text-muted);">Masaryk 456, Polanco, CDMX</div>
             <div style="font-size: 0.85rem; color: #46AC78; margin-top: 0.5rem;">✓ Listo en 30 min</div>
           </div>
@@ -10731,8 +10764,8 @@ async function renderOrders() {
         <div class="glass-card" style="text-align: center; padding: 2rem 1rem;">
           <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📦</div>
           <div style="color: white; font-size: 1rem; margin-bottom: 0.25rem;">No tienes pedidos aún</div>
-          <div style="color: rgba(255,255,255,0.6); font-size: 0.85rem; margin-bottom: 1rem;">Tus compras aparecerán aquí</div>
-          <button onclick="renderShop()" style="padding: 0.75rem 1.5rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Ir a la tienda</button>
+          <div style="color: rgba(255,255,255,0.6); font-size: 0.85rem;">Tus compras aparecerán aquí</div>
+          <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea: botón "Ir a la tienda" -->
         </div>
       ` : `
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
@@ -10782,11 +10815,8 @@ async function renderOrders() {
     
     <!-- Quick Actions -->
     <div style="padding: 0 1rem 2rem;">
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-        <button onclick="renderShop()" class="glass-card" style="padding: 1rem; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 0.5rem;">
-          <div style="font-size: 1.75rem;">🛒</div>
-          <div style="font-size: 0.85rem; font-weight: 600; color: white;">Comprar</div>
-        </button>
+      <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea: tarjeta "Comprar" que abría la tienda -->
+      <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem;">
         <button onclick="renderPrescripciones()" class="glass-card" style="padding: 1rem; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 0.5rem;">
           <div style="font-size: 1.75rem;">📄</div>
           <div style="font-size: 0.85rem; font-weight: 600; color: white;">Mis Recetas</div>
@@ -10876,12 +10906,10 @@ window.showOrderDetail = function(orderId) {
           </div>
         </div>
         
-        ${order.status !== 'Cancelado' ? `
+        ${/* Oculto por cumplimiento — restaurar cuando se habilite venta en línea: botón "🔄 Reordenar" (reorder()) */''}
+        ${order.status === 'Procesando' ? `
           <div style="margin-top: 1.5rem; display: flex; gap: 0.75rem;">
-            <button onclick="reorder('${order.id}')" style="flex: 1; padding: 0.875rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">🔄 Reordenar</button>
-            ${order.status === 'Procesando' ? `
-              <button onclick="cancelOrder('${order.id}')" style="padding: 0.875rem 1.25rem; background: rgba(255,107,107,0.2); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.3); border-radius: 12px; font-weight: 600; cursor: pointer;">Cancelar</button>
-            ` : ''}
+            <button onclick="cancelOrder('${order.id}')" style="flex: 1; padding: 0.875rem 1.25rem; background: rgba(255,107,107,0.2); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.3); border-radius: 12px; font-weight: 600; cursor: pointer;">Cancelar pedido</button>
           </div>
         ` : ''}
       </div>

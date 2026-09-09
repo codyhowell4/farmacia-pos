@@ -1,4 +1,4 @@
-// Notification Manager for Farmacia Apollo
+// Notification Manager for Farmacia Apolo
 // Handles browser notifications for medication reminders
 
 export const NotificationManager = {

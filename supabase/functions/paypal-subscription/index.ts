@@ -170,20 +170,33 @@ const createMembership = async (
 const reinstateMembership = async (
   supabase: ReturnType<typeof supabaseAdmin>,
   membershipId: string,
-  subscriptionId: string,
-  visitsLimit: number,
+  payload: RequestPayload,
+  plan: (typeof PLANS)['individual'],
   trackersToFulfill: number,
   currentFulfilled: number
 ) => {
   const nextRenewal = addMonthsWithLastDayRule(new Date(), 1);
 
+  // payment_method/payment_processor must be 'paypal' (as in the fresh-signup
+  // path): record_membership_payment and process_membership_renewals treat
+  // non-paypal rows as cash-like and advance/expire their dates, which would
+  // fight the webhook-authoritative billing dates. pending_cancellation is
+  // cleared so a prior self-cancellation doesn't cancel the re-subscribed
+  // membership at the next renewal date.
   const { data, error } = await supabase
     .from('memberships')
     .update({
       status: 'active',
-      visits_remaining: visitsLimit,
-      visits_limit: visitsLimit,
-      processor_subscription_id: subscriptionId,
+      plan_type: payload.plan_type,
+      monthly_amount: plan.price,
+      visits_remaining: plan.visits,
+      visits_limit: plan.visits,
+      payment_method: 'paypal',
+      payment_processor: 'paypal',
+      processor_subscription_id: payload.subscription_id,
+      pending_cancellation: false,
+      cancel_requested_at: null,
+      terms_accepted_at: payload.terms_accepted_at || null,
       next_renewal_date: formatDate(nextRenewal),
       renewal_day: nextRenewal.getDate(),
       basic_trackers_fulfilled: currentFulfilled + trackersToFulfill,
@@ -373,8 +386,8 @@ Deno.serve(async (req) => {
         membership = await reinstateMembership(
           supabase,
           existingMembership.id,
-          payload.subscription_id,
-          plan.visits,
+          payload,
+          plan,
           0,
           existingMembership.basic_trackers_fulfilled || 0
         );

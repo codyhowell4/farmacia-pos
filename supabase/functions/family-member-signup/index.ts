@@ -22,6 +22,7 @@ interface RequestPayload {
   name?: string;
   email?: string;
   password?: string;
+  org_id?: string;
 }
 
 const jsonResponse = (body: Record<string, unknown>, status: number) =>
@@ -45,19 +46,19 @@ const normalizeName = (s: string) =>
     .trim()
     .replace(/\s+/g, ' ');
 
-const everyWordIn = (wordsA: string[], wordsB: Set<string>) =>
-  wordsA.length > 0 && wordsA.every((w) => wordsB.has(w));
-
-// Identity proof: exact normalized match, or one name's words are all
-// present in the other (covers middle names / missing apellido).
+// Identity proof: the FULL registered name is the identity proof (the sub_id
+// alone is guessable, e.g. APOLO-00001-2). Require word-set equality after
+// normalization (accent-fold/lowercase/collapse-spaces): same number of
+// words, identical words in any order. No subset matching — "Juan" must not
+// match "Juan García López".
 const namesMatch = (provided: string, registered: string) => {
   const a = normalizeName(provided);
   const b = normalizeName(registered);
   if (!a || !b) return false;
   if (a === b) return true;
-  const wordsA = a.split(' ');
-  const wordsB = new Set(b.split(' '));
-  return everyWordIn(wordsA, wordsB) || everyWordIn([...wordsB], new Set(wordsA));
+  const wordsA = a.split(' ').sort();
+  const wordsB = b.split(' ').sort();
+  return wordsA.length === wordsB.length && wordsA.every((w, i) => w === wordsB[i]);
 };
 
 const isAlreadyRegisteredError = (err: { message?: string; code?: string }) => {
@@ -83,6 +84,7 @@ Deno.serve(async (req) => {
     const name = (payload.name || '').trim();
     const email = (payload.email || '').trim().toLowerCase();
     const password = payload.password || '';
+    const requestOrgId = (payload.org_id || '').trim();
 
     // Sub-ids look like APOLO-00001-2; restricting the charset also keeps
     // LIKE wildcards out of the lookup below.
@@ -102,15 +104,30 @@ Deno.serve(async (req) => {
     const supabase = supabaseAdmin(env);
 
     // ilike with a wildcard-free value = case-insensitive exact match.
-    const { data: member, error: memberError } = await supabase
+    // Sub-ids are only unique within an org, so scope the lookup when the
+    // caller supplies org_id (the !inner embed lets the filter constrain the
+    // parent rows). Without org_id, refuse an ambiguous cross-org match
+    // instead of picking one arbitrarily — same generic 404 as a miss, so
+    // existence in other orgs is not leaked.
+    let memberQuery = supabase
       .from('membership_members')
-      .select('id, membership_id, sub_id, name, email, is_owner, claimed_user_id, memberships(org_id)')
+      .select(
+        requestOrgId
+          ? 'id, membership_id, sub_id, name, email, is_owner, claimed_user_id, memberships!inner(org_id)'
+          : 'id, membership_id, sub_id, name, email, is_owner, claimed_user_id, memberships(org_id)'
+      )
       .ilike('sub_id', subId)
-      .limit(1)
-      .maybeSingle();
+      .limit(2);
+
+    if (requestOrgId) {
+      memberQuery = memberQuery.eq('memberships.org_id', requestOrgId);
+    }
+
+    const { data: memberRows, error: memberError } = await memberQuery;
 
     if (memberError) throw memberError;
-    if (!member) {
+    const member = memberRows?.[0] || null;
+    if (!member || (!requestOrgId && memberRows!.length > 1)) {
       return jsonResponse({ error: 'No encontramos ese número de integrante' }, 404);
     }
 

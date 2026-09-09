@@ -21,7 +21,7 @@ import {
   processMembershipRenewals, ensureMembershipConsultationProduct, decrementMembershipVisits,
   fulfillMembershipTrackers, getMembershipById, isServiceItem,
   ensureMembershipRevisionProducts, getPendingMemberRevisions, markMembershipRevisionUsed,
-  validateMembershipCheckout,
+  validateMembershipCheckout, clearSaleMembershipVisitsUsed,
 } from '@/lib/db';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -243,7 +243,8 @@ const PoSDashboard = () => {
   };
 
   const handleSelectMembership = (membership) => {
-    if (membership?.id !== selectedMembership?.id && cart.length > 0) {
+    const membershipChanged = membership?.id !== selectedMembership?.id;
+    if (membershipChanged && cart.length > 0) {
       const { next, removedRevisions } = repriceCartForMembershipChange(cart, {
         membershipStillActive: membership?.status === 'active',
       });
@@ -254,6 +255,11 @@ const PoSDashboard = () => {
           description: 'Las revisiones requieren una membresía activa. Vuelve a agregarlas con la membresía seleccionada.',
         });
       }
+    }
+    // The selected member belongs to the previous membership's roster; reset
+    // it so MembershipPosLookup auto-selects the new membership's owner.
+    if (membershipChanged) {
+      setSelectedMember(null);
     }
     setSelectedMembership(membership);
   };
@@ -813,19 +819,33 @@ const PoSDashboard = () => {
 
         const serverVisits = validation.visits_remaining;
         const visitsChanged = typeof serverVisits === 'number' && serverVisits !== (selectedMembership.visits_remaining || 0);
+        // The server is also authoritative for the discount % (plan change or
+        // admin edit since lookup): refresh it and re-confirm like any other
+        // totals change. The ?? 10 fallback mirrors the totals block below.
+        const serverDiscount = validation.discount_percent;
+        const discountChanged = typeof serverDiscount === 'number'
+          && serverDiscount !== (selectedMembership.discount_percent ?? 10);
 
-        if (correctedNames.length > 0 || visitsChanged) {
+        if (correctedNames.length > 0 || visitsChanged || discountChanged) {
           // Totals changed: update the cart and stop so the cashier can
           // confirm the corrected total before charging.
           setCart(reconciledCart);
-          if (visitsChanged) {
-            setSelectedMembership((prev) => (prev ? { ...prev, visits_remaining: serverVisits } : prev));
+          if (visitsChanged || discountChanged) {
+            setSelectedMembership((prev) => (prev
+              ? {
+                  ...prev,
+                  ...(visitsChanged ? { visits_remaining: serverVisits } : {}),
+                  ...(discountChanged ? { discount_percent: serverDiscount } : {}),
+                }
+              : prev));
           }
           toast({
             title: 'Precios corregidos por el servidor',
             description: correctedNames.length > 0
               ? `Se ajustó el precio de: ${correctedNames.join(', ')}. Revisa el nuevo total y confirma la venta de nuevo.`
-              : 'El saldo de consultas de la membresía cambió. Revisa el nuevo total y confirma la venta de nuevo.',
+              : visitsChanged
+                ? 'El saldo de consultas de la membresía cambió. Revisa el nuevo total y confirma la venta de nuevo.'
+                : 'El porcentaje de descuento de la membresía cambió. Revisa el nuevo total y confirma la venta de nuevo.',
           });
           return;
         }
@@ -878,6 +898,9 @@ const PoSDashboard = () => {
           salesperson_id: user?.id || null,
           salesperson_name: user?.name || null,
           total: finalTotal,
+          // Post-discount, pre-IVA subtotal (same semantics as the
+          // membership-payment RPC bookings and total - iva_amount reporting).
+          subtotal: subtotalAfterDiscount,
           payment_method: isSplitPayment ? (payments[0]?.payment_method || 'cash') : paymentMethod,
           amount_given: cashPayment ? cashPayment.amount : null,
           change_due: cashPayment ? (cashPayment.amount - (cashPayment.amountApplied || cashPayment.amount)) : null,
@@ -909,6 +932,14 @@ const PoSDashboard = () => {
             await decrementMembershipVisits(selectedMembership.id, usedVisits);
           } catch (visitErr) {
             console.warn('Failed to decrement membership visits:', visitErr);
+            // The sale row above already claims visits were consumed; since
+            // the decrement failed, reconcile it so a later void does not
+            // refund visits the server never took. Best-effort only.
+            try {
+              await clearSaleMembershipVisitsUsed(sale.id);
+            } catch (clearErr) {
+              console.warn('Failed to clear membership_visits_used on sale', sale.id, clearErr);
+            }
           }
         }
 
@@ -1125,7 +1156,10 @@ const PoSDashboard = () => {
     : 0;
   const codeDiscountAmount = discount && !isCostPlus ? regularSubtotal * (discount.value / 100) : 0;
 
-  const useMembershipDiscount = isMembershipActive && !isCostPlus && membershipDiscountAmount >= codeDiscountAmount;
+  // The membership discount only "wins" when it actually discounts something
+  // (> 0). A consulta-only cart has a zero discount base; without this guard
+  // 0 >= 0 tags the sale MEMBRESIA with a null discount amount.
+  const useMembershipDiscount = isMembershipActive && !isCostPlus && membershipDiscountAmount > 0 && membershipDiscountAmount >= codeDiscountAmount;
   const appliedDiscountAmount = useMembershipDiscount ? membershipDiscountAmount : codeDiscountAmount;
   const appliedDiscountLabel = useMembershipDiscount
     ? `Membresía ${membershipDiscountPercent}%`
