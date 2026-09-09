@@ -1,11 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Users, Award, ScanLine, Package } from 'lucide-react';
+import { Search, X, Users, Award, ScanLine, Package, TestTube } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { searchMemberships } from '@/lib/db';
+import { searchMemberships, getPendingMemberRevisions } from '@/lib/db';
 
-const MembershipPosLookup = ({ selectedMembership, onSelect, onClear, onFulfillTrackers, fulfillingTrackers }) => {
+const MembershipPosLookup = ({
+  selectedMembership,
+  selectedMember,
+  onSelect,
+  onSelectMember,
+  onClear,
+  onFulfillTrackers,
+  fulfillingTrackers,
+}) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -13,7 +21,38 @@ const MembershipPosLookup = ({ selectedMembership, onSelect, onClear, onFulfillT
   const [dialogQuery, setDialogQuery] = useState('');
   const [dialogResults, setDialogResults] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
+  const [pendingRevisions, setPendingRevisions] = useState([]);
+  const [loadingRevisions, setLoadingRevisions] = useState(false);
   const inputRef = useRef(null);
+
+  const members = selectedMembership?.membership_members || [];
+  const selectedMemberId = selectedMember?.id || null;
+
+  useEffect(() => {
+    if (!selectedMembership) {
+      setPendingRevisions([]);
+      return;
+    }
+
+    const owner = members.find((m) => m.is_owner) || members[0] || null;
+    if (owner && !selectedMemberId) {
+      onSelectMember?.(owner);
+    }
+
+    const loadRevisions = async () => {
+      setLoadingRevisions(true);
+      try {
+        const data = await getPendingMemberRevisions(selectedMembership.id);
+        setPendingRevisions(data || []);
+      } catch (e) {
+        console.error(e);
+        setPendingRevisions([]);
+      } finally {
+        setLoadingRevisions(false);
+      }
+    };
+    loadRevisions();
+  }, [selectedMembership?.id]);
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -97,6 +136,17 @@ const MembershipPosLookup = ({ selectedMembership, onSelect, onClear, onFulfillT
     const fulfilled = selectedMembership.basic_trackers_fulfilled || 0;
     const trackersAvailable = Math.max(0, included - fulfilled);
 
+    const memberRevisions = pendingRevisions.filter(
+      (r) => r.member_id === selectedMemberId
+    );
+
+    const packageLabel = (type) =>
+      type === 'bh_ego'
+        ? 'BH + EGO + Consulta'
+        : type === 'qs12e'
+        ? 'QS12e + Consulta'
+        : type;
+
     return (
       <div className="space-y-2">
         <div className="flex items-center justify-between p-3 bg-amber-50 border border-amber-200 rounded-lg">
@@ -106,7 +156,7 @@ const MembershipPosLookup = ({ selectedMembership, onSelect, onClear, onFulfillT
               <p className="text-sm font-bold text-amber-900">{selectedMembership.plan_id}</p>
               <p className="text-xs text-amber-700">
                 {selectedMembership.customers?.full_name} · {selectedMembership.discount_percent}% descuento
-                {selectedMembership.plan_type === 'familiar' && ` · ${selectedMembership.membership_members?.length || 0} miembros`}
+                {selectedMembership.plan_type === 'familiar' && ` · ${members.length || 0} miembros`}
                 {' · '}
                 {selectedMembership.visits_remaining || 0} consultas restantes
               </p>
@@ -116,6 +166,43 @@ const MembershipPosLookup = ({ selectedMembership, onSelect, onClear, onFulfillT
             <X className="w-4 h-4" />
           </Button>
         </div>
+
+        {members.length > 1 && (
+          <div className="bg-white border border-slate-200 rounded-lg p-2">
+            <p className="text-xs font-semibold text-slate-500 mb-1.5 uppercase">Miembro beneficiario</p>
+            <div className="flex flex-wrap gap-1.5">
+              {members.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => onSelectMember?.(m)}
+                  className={`text-xs px-2 py-1 rounded-full border ${
+                    selectedMemberId === m.id
+                      ? 'bg-apolo-navy text-white border-apolo-navy'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {m.name} {m.is_owner && '(titular)'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {memberRevisions.length > 0 && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-2">
+            <div className="flex items-center gap-2 text-sm text-green-800 mb-1">
+              <TestTube className="w-4 h-4" />
+              <span className="font-semibold">Revisiones pendientes para {selectedMember?.name}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              {memberRevisions.map((r) => (
+                <div key={r.revision_id} className="text-xs text-green-700">
+                  Mes {r.milestone}: {packageLabel(r.package_type)}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {trackersAvailable > 0 && onFulfillTrackers && (
           <div className="flex items-center justify-between p-2 bg-blue-50 border border-blue-200 rounded-lg">

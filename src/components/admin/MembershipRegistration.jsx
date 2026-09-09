@@ -10,18 +10,21 @@ import { supabase } from '@/lib/supabase';
 import { renderPayPalButtons, PAYPAL_PLAN_IDS, isPayPalConfigured } from '@/lib/paypal';
 import { Users, User, Banknote, ChevronLeft, CheckCircle, Activity, CreditCard } from 'lucide-react';
 
+const REVISION_SUMMARY = 'Revisión semestral gratis (valor $775): incluye Biometría Hemática, Examen General de Orina, Química Sanguínea de 12 elementos y Consulta';
+
 const PLANS = {
   individual: {
     key: 'individual',
     name: 'Plan Individual',
     monthlyPrice: 150,
     visits: 2,
-    basicTrackers: 1,
     features: [
-      '2 consultas médicas mensuales',
-      '10% de descuento en farmacia',
-      '1 rastreador fitness básico',
-      'Consultas adicionales al 50%',
+      '2 visitas mensuales a consultorio',
+      '50% de descuento si rebasas el límite',
+      '10% de descuento en medicamentos',
+      'Toma de presión gratis (cuando quiera)',
+      REVISION_SUMMARY,
+      'Descuentos de negocios aliados',
     ],
   },
   familiar: {
@@ -29,13 +32,14 @@ const PLANS = {
     name: 'Plan Familiar',
     monthlyPrice: 500,
     visits: 8,
-    basicTrackers: 6,
     features: [
       'Hasta 6 personas (titular + 5)',
-      '8 consultas médicas mensuales compartidas',
-      '10% de descuento en farmacia',
-      '6 rastreadores fitness básicos',
-      'Consultas adicionales al 50%',
+      '8 visitas mensuales a consultorio compartidas',
+      '50% de descuento si rebasas el límite',
+      '10% de descuento en medicamentos',
+      'Toma de presión gratis (cuando quiera)',
+      REVISION_SUMMARY + ' para cada miembro',
+      'Descuentos de negocios aliados',
     ],
   },
 };
@@ -63,7 +67,6 @@ const MembershipRegistration = () => {
     member5: '',
     member6: '',
     paymentMethod: 'paypal',
-    basicTrackers: 0,
   });
 
   const formRef = useRef(form);
@@ -82,10 +85,6 @@ const MembershipRegistration = () => {
 
   const handlePlanSelect = (key) => {
     setSelectedPlanKey(key);
-    setForm((f) => ({
-      ...f,
-      basicTrackers: PLANS[key].basicTrackers,
-    }));
     setStep('form');
   };
 
@@ -133,7 +132,7 @@ const MembershipRegistration = () => {
         plan_type: selectedPlanKey,
         discount_percent: 10,
         visits_limit: plan.visits,
-        basic_trackers_included: plan.basicTrackers,
+        basic_trackers_included: 0,
         basic_trackers_fulfilled: 0,
         monthly_amount: monthlyTotal,
         payment_method: 'cash',
@@ -239,7 +238,7 @@ const MembershipRegistration = () => {
             phone: currentForm.phone.trim(),
           },
           member_names: familyMembers,
-          trackers_to_fulfill: Number(currentForm.basicTrackers) || 0,
+          trackers_to_fulfill: 0,
           org_id: orgId,
         }),
       });
@@ -387,37 +386,6 @@ const MembershipRegistration = () => {
         )}
 
         <div className="space-y-2">
-          <h2 className="text-lg font-semibold">Rastreador fitness</h2>
-          <p className="text-sm text-slate-600">
-            Los rastreadores se entregan en la farmacia al momento de la primera visita.
-          </p>
-          {selectedPlanKey === 'individual' ? (
-            <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-slate-50">
-              <input
-                type="checkbox"
-                checked={form.basicTrackers > 0}
-                onChange={(e) => updateField('basicTrackers', e.target.checked ? 1 : 0)}
-                className="w-4 h-4"
-              />
-              <span>Incluir rastreador básico (1 incluido en el plan)</span>
-            </label>
-          ) : (
-            <div className="flex items-center gap-4">
-              <Label>Cantidad de rastreadores básicos incluidos (0–6):</Label>
-              <select
-                value={form.basicTrackers}
-                onChange={(e) => updateField('basicTrackers', Number(e.target.value))}
-                className="px-3 py-2 rounded-md border border-slate-300 text-sm"
-              >
-                {[0, 1, 2, 3, 4, 5, 6].map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-2">
           <h2 className="text-lg font-semibold">Forma de pago</h2>
           <div className="flex gap-4">
             <label className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer ${
@@ -516,7 +484,6 @@ const MembershipRegistration = () => {
             member5: '',
             member6: '',
             paymentMethod: 'paypal',
-            basicTrackers: 0,
           });
         }}>
           Registrar otra

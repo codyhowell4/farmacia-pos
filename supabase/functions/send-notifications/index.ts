@@ -28,7 +28,7 @@ interface NotificationRow {
   org_id: string;
   channel: 'email' | 'whatsapp' | 'sms';
   recipient: string;
-  template: 'booking_confirmation' | 'appointment_reminder' | 'consulta_link';
+  template: 'booking_confirmation' | 'appointment_reminder' | 'consulta_link' | 'membership_revision';
   payload: {
     appointment_id?: string;
     patient_name?: string;
@@ -95,6 +95,22 @@ const buildMessage = (row: NotificationRow) => {
       `<p>Fecha y hora: ${escapeHtml(date)}${escapeHtml(type)}</p>` +
       '<p>Farmacia Apolo</p>';
     return { subject: 'Te recordamos tu cita de mañana — Farmacia Apolo', html, text };
+  }
+
+  // membership_revision
+  if (row.template === 'membership_revision') {
+    const planId = String(row.payload.plan_id || '');
+    const milestone = String(row.payload.milestone || '');
+    const packageLabel = String(row.payload.package_label || '');
+    const text = `${greeting} tu membresía ${planId} tiene una revisión del mes ${milestone} disponible: ${packageLabel}. Pasa a la farmacia para agendarla. Farmacia Apolo.`;
+    const html =
+      `<p>${escapeHtml(greeting)}</p>` +
+      `<p><strong>Tienes una revisión de membresía disponible.</strong></p>` +
+      `<p>Membresía: ${escapeHtml(planId)}</p>` +
+      `<p>Revisión del mes: ${escapeHtml(milestone)}</p>` +
+      `<p>Incluye: ${escapeHtml(packageLabel)}</p>` +
+      '<p>Farmacia Apolo</p>';
+    return { subject: 'Tienes una revisión de membresía disponible — Farmacia Apolo', html, text };
   }
 
   // consulta_link

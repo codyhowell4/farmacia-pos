@@ -238,7 +238,16 @@ Deno.serve(async (req) => {
         const nextBillingTime = billingInfo.next_billing_time as string | undefined;
         const nextDate = nextBillingTime ? new Date(nextBillingTime) : addMonthsWithLastDayRule(new Date(), 1);
 
-        await renewMembershipBySubscription(supabase, subscriptionId, nextDate);
+        const renewed = await renewMembershipBySubscription(supabase, subscriptionId, nextDate);
+
+        // Count this as a paid month only for actual payment events.
+        if (renewed && event.event_type === 'PAYMENT.SALE.COMPLETED') {
+          try {
+            await supabase.rpc('record_membership_payment', { p_membership_id: renewed.id });
+          } catch (paymentErr) {
+            console.error('[paypal-webhook] record_membership_payment failed:', paymentErr);
+          }
+        }
         break;
       }
 

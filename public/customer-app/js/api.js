@@ -768,12 +768,12 @@ window.FarmaciaAPI = (function () {
         // columns, retry with the original minimal set.
         let { data, error } = await sb
           .from('memberships')
-          .select('status, visits_remaining, discount_percent, plan_id, plan_type, visits_limit, monthly_amount, next_renewal_date')
+          .select('id, status, visits_remaining, discount_percent, plan_id, plan_type, visits_limit, monthly_amount, next_renewal_date, payments_made')
           .eq('customer_id', customerId);
         if (error) {
           const retry = await sb
             .from('memberships')
-            .select('status, visits_remaining, discount_percent, plan_id')
+            .select('id, status, visits_remaining, discount_percent, plan_id')
             .eq('customer_id', customerId);
           if (retry.error) throw retry.error;
           data = retry.data;
@@ -784,6 +784,35 @@ window.FarmaciaAPI = (function () {
       } catch (err) {
         console.warn('[FarmaciaAPI] getMembershipDetails error:', err.message);
         return freeFallback;
+      }
+    },
+
+    /**
+     * Get pending membership revisions for the current customer's active membership.
+     */
+    async getMembershipRevisions() {
+      if (!sb) return [];
+      try {
+        const customerId = await getCustomerId();
+        if (!customerId) return [];
+
+        const { data: membership, error: membershipError } = await sb
+          .from('memberships')
+          .select('id')
+          .eq('customer_id', customerId)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (membershipError) throw membershipError;
+        if (!membership?.id) return [];
+
+        const { data, error } = await sb.rpc('get_pending_member_revisions', {
+          p_membership_id: membership.id,
+        });
+        if (error) throw error;
+        return data || [];
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getMembershipRevisions error:', err.message);
+        return [];
       }
     },
 

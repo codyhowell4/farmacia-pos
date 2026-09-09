@@ -1122,11 +1122,12 @@ function renderLocked(featureName) {
 async function renderMembresias() {
   const includesHtml = `
     <div style="display: flex; flex-direction: column; gap: 0.75rem; font-size: 0.9rem; color: #475569;">
-      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Consultas médicas gratis cada mes (2 Individual / 8 Familiar)</span></div>
-      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>50% de descuento en consultas adicionales</span></div>
+      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Visitas mensuales a consultorio (2 Individual / 8 Familiar)</span></div>
+      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>50% de descuento si rebasas el límite</span></div>
       <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>10% de descuento en medicamentos</span></div>
+      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Toma de presión gratis (cuando quiera)</span></div>
+      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Revisión semestral gratis (valor $775): Biometría Hemática, Examen General de Orina, Química Sanguínea de 12 elementos y Consulta</span></div>
       <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Descuentos en negocios aliados</span></div>
-      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Guías de salud e ID médico de emergencia</span></div>
     </div>
   `;
 
@@ -1135,7 +1136,7 @@ async function renderMembresias() {
     <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; text-align: center;">
       <div style="font-size: 2rem; margin-bottom: 0.5rem;">⭐</div>
       <h2 style="margin: 0; font-size: 1.4rem; font-weight: 800;">Membresía Apolo</h2>
-      <p style="margin: 0.5rem auto 0; font-size: 0.9rem; opacity: 0.9; max-width: 300px; line-height: 1.5;">Consultas incluidas cada mes, 10% en medicamentos y descuentos en negocios aliados.</p>
+      <p style="margin: 0.5rem auto 0; font-size: 0.9rem; opacity: 0.9; max-width: 320px; line-height: 1.5;">Visitas incluidas cada mes, descuentos en medicamentos, toma de presión gratis y revisiones periódicas.</p>
     </div>
 
     <!-- Qué incluye -->
@@ -1160,10 +1161,12 @@ async function renderMembresias() {
 
   let membership = { status: null, visits_remaining: 0 };
   let partners = [];
+  let revisions = [];
   try {
-    [membership, partners] = await Promise.all([
+    [membership, partners, revisions] = await Promise.all([
       FarmaciaAPI.getMembershipDetails(),
       FarmaciaAPI.getPartners(),
+      FarmaciaAPI.getMembershipRevisions(),
     ]);
   } catch (e) {
     console.warn('[renderMembresias] lookup failed:', e);
@@ -1227,11 +1230,31 @@ async function renderMembresias() {
         </div>
         <div style="display: flex; justify-content: space-between; padding: 0.375rem 0;">
           <span style="color: #64748b;">Consultas adicionales</span>
-          <span style="font-weight: 600; color: #1a1a2e;">50% de descuento</span>
+          <span style="font-weight: 600; color: #1a1a2e;">50% si rebasas el límite</span>
         </div>
+        <div style="display: flex; justify-content: space-between; padding: 0.375rem 0;">
+          <span style="color: #64748b;">Toma de presión</span>
+          <span style="font-weight: 600; color: #1a1a2e;">Gratis cuando quieras</span>
+        </div>
+        ${membership.payments_made != null ? `<div style="display: flex; justify-content: space-between; padding: 0.375rem 0;"><span style="color: #64748b;">Pagos acumulados</span><span style="font-weight: 600; color: #1a1a2e;">${membership.payments_made}</span></div>` : ''}
         ${membership.monthly_amount ? `<div style="display: flex; justify-content: space-between; padding: 0.375rem 0;"><span style="color: #64748b;">Mensualidad</span><span style="font-weight: 600; color: #1a1a2e;">${formatPrice(Number(membership.monthly_amount))}</span></div>` : ''}
         ${renewal ? `<div style="display: flex; justify-content: space-between; padding: 0.375rem 0;"><span style="color: #64748b;">Próxima renovación</span><span style="font-weight: 600; color: #1a1a2e;">${renewal}</span></div>` : ''}
       </div>
+
+      ${revisions.length > 0 ? `
+        <div style="background: #dcfce7; border: 1px solid #86efac; border-radius: 16px; padding: 1rem 1.25rem; margin-top: 1rem;">
+          <div style="font-weight: 700; font-size: 0.9rem; color: #166534; margin-bottom: 0.5rem;">🩺 Tienes revisiones disponibles</div>
+          <div style="display: flex; flex-direction: column; gap: 0.375rem; font-size: 0.85rem; color: #15803d;">
+            ${revisions.map(r => {
+              const label = r.package_type === 'bh_ego'
+                ? 'Biometría Hemática + Examen General de Orina + Consulta'
+                : 'Química Sanguínea de 12 elementos + Consulta';
+              return `<div>• ${escapeHtml(r.member_name)} — Mes ${r.milestone}: ${label}</div>`;
+            }).join('')}
+          </div>
+          <p style="font-size: 0.75rem; color: #166534; margin: 0.5rem 0 0;">Pasa a la farmacia para agendar tu revisión.</p>
+        </div>
+      ` : ''}
     `;
   } else {
     // ---- Guest / free user: plan cards + CTAs ----
@@ -1256,16 +1279,20 @@ async function renderMembresias() {
     `;
     statusEl.innerHTML = `
       ${planCard('Individual', 'Para ti', '$150', [
-        '2 consultas médicas gratis al mes',
-        '50% de descuento en consultas adicionales',
+        '2 visitas mensuales a consultorio',
+        '50% de descuento si rebasas el límite',
         '10% de descuento en medicamentos',
+        'Toma de presión gratis (cuando quiera)',
+        'Revisión semestral gratis (valor $775): BH, EGO, QS12e y Consulta',
         'Descuentos en negocios aliados'
       ], false)}
       ${planCard('Familiar', 'Para toda la familia', '$500', [
-        '8 consultas médicas gratis al mes',
-        'Cobertura para toda la familia',
-        '50% de descuento en consultas adicionales',
+        'Hasta 6 personas (titular + 5)',
+        '8 visitas mensuales a consultorio compartidas',
+        '50% de descuento si rebasas el límite',
         '10% de descuento en medicamentos',
+        'Toma de presión gratis (cuando quiera)',
+        'Revisión semestral gratis para cada miembro (valor $775): BH, EGO, QS12e y Consulta',
         'Descuentos en negocios aliados'
       ], true)}
       ${!currentAuthUser ? `

@@ -325,17 +325,17 @@ export const decrementInventory = async (items, referenceId = null, referenceTyp
     if (isServiceItem(current)) continue;
 
     const prevQty = current?.quantity || 0;
-    
+    let newQty = Math.max(0, prevQty - item.quantity);
+
     const { error } = await supabase.rpc('decrement_inventory', {
       p_id: inventoryId,
       p_qty: item.quantity,
     });
-    
+
     if (error) {
       console.error('[decrementInventory] RPC decrement_inventory failed:', error);
       // Fallback: manual update
-      const newQty = Math.max(0, prevQty - item.quantity);
-    const { error: updateError } = await supabase.from('inventory').update({
+      const { error: updateError } = await supabase.from('inventory').update({
         quantity: newQty,
         sales_count: (current?.sales_count || 0) + item.quantity,
         updated_at: new Date().toISOString(),
@@ -2898,6 +2898,43 @@ export const getTrackerFulfillments = async () => {
       trackers_pending: Math.max(0, (m.basic_trackers_included || 0) - (m.basic_trackers_fulfilled || 0)),
     }))
     .sort((a, b) => b.trackers_pending - a.trackers_pending);
+};
+
+export const recordMembershipPayment = async (membershipId) => {
+  const { data, error } = await supabase.rpc('record_membership_payment', {
+    p_membership_id: membershipId,
+  });
+  if (error) throw error;
+  return data;
+};
+
+export const getPendingMemberRevisions = async (membershipId) => {
+  const { data, error } = await supabase.rpc('get_pending_member_revisions', {
+    p_membership_id: membershipId,
+  });
+  if (error) throw error;
+  return data || [];
+};
+
+export const markMembershipRevisionUsed = async (revisionId, saleId) => {
+  const { error } = await supabase.rpc('use_membership_revision', {
+    p_revision_id: revisionId,
+    p_sale_id: saleId,
+  });
+  if (error) throw error;
+};
+
+export const ensureMembershipRevisionProducts = async () => {
+  const orgId = await getOrgId();
+  await supabase.rpc('ensure_membership_revision_products', { p_org_id: orgId });
+  const { data, error } = await supabase
+    .from('inventory')
+    .select('*')
+    .eq('org_id', orgId)
+    .is('location_id', null)
+    .or('is_membership_revision.eq.true,is_membership_blood_pressure.eq.true');
+  if (error) throw error;
+  return data || [];
 };
 
 export const getPartners = async () => {

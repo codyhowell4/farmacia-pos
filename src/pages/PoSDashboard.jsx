@@ -20,6 +20,7 @@ import {
   getTaxSettingsDb, getBankAccounts, createPrescription, linkPrescriptionToSale, searchCustomers, createCustomer,
   processMembershipRenewals, ensureMembershipConsultationProduct, decrementMembershipVisits,
   fulfillMembershipTrackers, getMembershipById, isServiceItem,
+  ensureMembershipRevisionProducts, getPendingMemberRevisions, markMembershipRevisionUsed,
 } from '@/lib/db';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -90,8 +91,11 @@ const PoSDashboard = () => {
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [prescriptionData, setPrescriptionData] = useState(null);
   const [selectedMembership, setSelectedMembership] = useState(null);
+  const [selectedMember, setSelectedMember] = useState(null);
+  const [pendingRevisions, setPendingRevisions] = useState([]);
   const [fulfillingTrackers, setFulfillingTrackers] = useState(false);
   const [membershipConsultationProduct, setMembershipConsultationProduct] = useState(null);
+  const [membershipRevisionProducts, setMembershipRevisionProducts] = useState([]);
   const searchInputRef = useRef(null);
   const completingSaleRef = useRef(false);
 
@@ -110,6 +114,27 @@ const PoSDashboard = () => {
         setMembershipConsultationProduct(product);
         setInventory((prev) => (prev.some((i) => i.id === product.id) ? prev : [...prev, product]));
         setDisplayItems((prev) => (prev.some((i) => i.id === product.id) ? prev : [...prev, product]));
+      })
+      .catch(console.error);
+    ensureMembershipRevisionProducts()
+      .then((products) => {
+        setMembershipRevisionProducts(products);
+        if (products.length > 0) {
+          setInventory((prev) => {
+            const merged = [...prev];
+            products.forEach((p) => {
+              if (!merged.some((i) => i.id === p.id)) merged.push(p);
+            });
+            return merged;
+          });
+          setDisplayItems((prev) => {
+            const merged = [...prev];
+            products.forEach((p) => {
+              if (!merged.some((i) => i.id === p.id)) merged.push(p);
+            });
+            return merged;
+          });
+        }
       })
       .catch(console.error);
     processMembershipRenewals().catch(console.error);
@@ -153,6 +178,16 @@ const PoSDashboard = () => {
     }
   };
 
+  useEffect(() => {
+    if (!selectedMembership) {
+      setPendingRevisions([]);
+      return;
+    }
+    getPendingMemberRevisions(selectedMembership.id)
+      .then((data) => setPendingRevisions(data || []))
+      .catch(console.error);
+  }, [selectedMembership?.id]);
+
   const isExpired = (item) => {
     if (!item?.expiration_date) return false;
     const today = new Date();
@@ -173,6 +208,30 @@ const PoSDashboard = () => {
     return item.is_membership_consultation === true || item.name === 'CONSULTA MEDICA MEMBRESIA';
   };
 
+  const isMembershipRevision = (item) => {
+    if (!item) return false;
+    return item.is_membership_revision === true;
+  };
+
+  const isMembershipBloodPressure = (item) => {
+    if (!item) return false;
+    return item.is_membership_blood_pressure === true;
+  };
+
+  const getRevisionType = (item) => item?.revision_type || null;
+
+  const findPendingRevisionForMember = (item, memberId) => {
+    if (!memberId || !isMembershipRevision(item)) return null;
+    const type = getRevisionType(item);
+    const usedRevisionIds = new Set(
+      cart.flatMap((i) => i.revisionIds || [])
+    );
+    const available = pendingRevisions.filter(
+      (r) => r.member_id === memberId && r.package_type === type && !usedRevisionIds.has(r.revision_id)
+    );
+    return available.length > 0 ? available[0] : null;
+  };
+
   const addToCart = (medicine, quantity = 1) => {
     const invItem = inventory.find(i => i.id === medicine.id);
     const service = isServiceItem(invItem);
@@ -184,19 +243,66 @@ const PoSDashboard = () => {
       toast({ title: 'Producto caducado', description: `${medicine.name} ha caducado (${invItem.expiration_date}) y no puede venderse.`, variant: 'destructive' });
       return;
     }
+
+    const membershipActive = selectedMembership?.status === 'active';
+    let finalPrice = medicine.price;
+    let newRevisionIds = [];
+
+    // Membership blood pressure is always free for active members.
+    if (membershipActive && isMembershipBloodPressure(medicine)) {
+      finalPrice = 0;
+    }
+
+    // Membership revisions require an eligible member and are discounted to $0.
+    if (isMembershipRevision(medicine)) {
+      if (!membershipActive || !selectedMember) {
+        toast({
+          title: 'Membresía requerida',
+          description: 'Selecciona una membresía activa y un miembro para aplicar la revisión.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      for (let i = 0; i < quantity; i++) {
+        const revision = findPendingRevisionForMember(medicine, selectedMember.id);
+        if (!revision) {
+          toast({
+            title: 'Revisión no disponible',
+            description: `El miembro ${selectedMember.name} no tiene suficientes revisiones ${getRevisionType(medicine) === 'bh_ego' ? 'BH + EGO' : 'QS12e'} pendientes.`,
+            variant: 'destructive',
+          });
+          return;
+        }
+        newRevisionIds.push(revision.revision_id);
+      }
+      finalPrice = 0;
+    }
+
     const existingItem = cart.find(item => item.id === medicine.id);
     let itemAdded = false;
     if (existingItem) {
       const newQuantity = existingItem.quantity + quantity;
       if (service || newQuantity <= invItem.quantity) {
-        setCart(cart.map(item => item.id === medicine.id ? { ...item, quantity: newQuantity } : item));
+        setCart(cart.map(item => item.id === medicine.id ? {
+          ...item,
+          quantity: newQuantity,
+          price: isMembershipRevision(item) ? 0 : item.price,
+          revisionIds: [...(item.revisionIds || []), ...newRevisionIds],
+        } : item));
         itemAdded = true;
       } else {
         toast({ title: 'Stock insuficiente', variant: 'destructive' });
       }
     } else {
       if (service || quantity <= invItem.quantity) {
-        setCart([...cart, { ...medicine, quantity, originalPrice: medicine.price, price: medicine.price, overrideBy: null }]);
+        setCart([...cart, {
+          ...medicine,
+          quantity,
+          originalPrice: medicine.price,
+          price: finalPrice,
+          overrideBy: null,
+          revisionIds: newRevisionIds,
+        }]);
         itemAdded = true;
       } else {
         toast({ title: 'Stock insuficiente', variant: 'destructive' });
@@ -210,14 +316,53 @@ const PoSDashboard = () => {
   };
 
   const updateQuantity = (id, delta) => {
-    setCart(currentCart => currentCart.map(item => {
-      if (item.id === id) {
+    setCart(currentCart => {
+      let blocked = false;
+      const updated = currentCart.map(item => {
+        if (item.id !== id) return item;
         const newQuantity = item.quantity + delta;
         const inventoryItem = inventory.find(inv => inv.id === id);
-        if (newQuantity > 0 && (isServiceItem(inventoryItem) || newQuantity <= inventoryItem.quantity)) return { ...item, quantity: newQuantity };
+        if (newQuantity <= 0) return { ...item, quantity: newQuantity };
+        if (!isServiceItem(inventoryItem) && newQuantity > inventoryItem.quantity) {
+          blocked = true;
+          return item;
+        }
+
+        if (isMembershipRevision(item)) {
+          if (delta > 0) {
+            const revision = findPendingRevisionForMember(item, selectedMember?.id);
+            if (!revision) {
+              blocked = true;
+              toast({
+                title: 'Revisión no disponible',
+                description: 'No hay más revisiones pendientes para este miembro.',
+                variant: 'destructive',
+              });
+              return item;
+            }
+            return {
+              ...item,
+              quantity: newQuantity,
+              revisionIds: [...(item.revisionIds || []), revision.revision_id],
+            };
+          }
+          // delta < 0: release the last consumed revision
+          const currentIds = item.revisionIds || [];
+          return {
+            ...item,
+            quantity: newQuantity,
+            revisionIds: currentIds.slice(0, -1),
+          };
+        }
+
+        return { ...item, quantity: newQuantity };
+      }).filter(item => item.quantity > 0);
+
+      if (blocked && delta > 0) {
+        toast({ title: 'Stock insuficiente', variant: 'destructive' });
       }
-      return item;
-    }).filter(item => item.quantity > 0));
+      return updated;
+    });
   };
 
   const removeFromCart = (id) => {
@@ -581,6 +726,18 @@ const PoSDashboard = () => {
           }
         }
 
+        // Mark any consumed membership revisions as used.
+        const revisionItems = cart.filter((item) => (item.revisionIds || []).length > 0);
+        for (const item of revisionItems) {
+          for (const revisionId of item.revisionIds) {
+            try {
+              await markMembershipRevisionUsed(revisionId, sale.id);
+            } catch (revErr) {
+              console.warn('Failed to mark revision as used:', revErr);
+            }
+          }
+        }
+
         console.log('Sale created successfully:', sale);
 
         // Create or link prescription record if prescription data exists
@@ -688,7 +845,7 @@ const PoSDashboard = () => {
           setPaymentMethod('cash'); setView('main'); setRxNumbers({});
           setSplitPayments([]); setIsSplitPayment(false);
           setTransferenciaReference(''); setCardReference('');
-          setSelectedCustomer(null); setSelectedMembership(null);
+          setSelectedCustomer(null); setSelectedMembership(null); setSelectedMember(null);
           searchInputRef.current?.focus();
         }, 500);
       } catch (e) {
@@ -1343,8 +1500,10 @@ const PoSDashboard = () => {
                 </div>
                 <MembershipPosLookup
                   selectedMembership={selectedMembership}
+                  selectedMember={selectedMember}
                   onSelect={setSelectedMembership}
-                  onClear={() => setSelectedMembership(null)}
+                  onSelectMember={setSelectedMember}
+                  onClear={() => { setSelectedMembership(null); setSelectedMember(null); }}
                   onFulfillTrackers={handleFulfillTracker}
                   fulfillingTrackers={fulfillingTrackers}
                 />

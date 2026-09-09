@@ -28,8 +28,8 @@ interface RequestPayload {
 }
 
 const PLANS: Record<string, { price: number; visits: number; basicTrackers: number }> = {
-  individual: { price: 150, visits: 2, basicTrackers: 1 },
-  familiar: { price: 500, visits: 8, basicTrackers: 6 },
+  individual: { price: 150, visits: 2, basicTrackers: 0 },
+  familiar: { price: 500, visits: 8, basicTrackers: 0 },
 };
 
 const paypalBaseUrl = (env: Record<string, string>) =>

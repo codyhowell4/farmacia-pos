@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { getMemberships, searchMemberships, updateMembership, processMembershipRenewals, getTrackerFulfillments, fulfillMembershipTrackers } from '@/lib/db';
+import { getMemberships, searchMemberships, updateMembership, processMembershipRenewals, getTrackerFulfillments, fulfillMembershipTrackers, recordMembershipPayment, getPendingMemberRevisions } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { formatMXN } from '@/lib/currency';
 
@@ -70,6 +70,9 @@ const AdminMemberships = () => {
   const [trackers, setTrackers] = useState([]);
   const [trackersLoading, setTrackersLoading] = useState(false);
   const [fulfillingId, setFulfillingId] = useState(null);
+  const [revisionsByMembership, setRevisionsByMembership] = useState({});
+  const [loadingRevisions, setLoadingRevisions] = useState({});
+  const [recordingPaymentId, setRecordingPaymentId] = useState(null);
   const { toast } = useToast();
 
   const loadData = async () => {
@@ -105,6 +108,22 @@ const AdminMemberships = () => {
   }, []);
 
   useEffect(() => {
+    if (!expandedId) return;
+    const loadRevisions = async () => {
+      setLoadingRevisions((prev) => ({ ...prev, [expandedId]: true }));
+      try {
+        const data = await getPendingMemberRevisions(expandedId);
+        setRevisionsByMembership((prev) => ({ ...prev, [expandedId]: data || [] }));
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoadingRevisions((prev) => ({ ...prev, [expandedId]: false }));
+      }
+    };
+    loadRevisions();
+  }, [expandedId]);
+
+  useEffect(() => {
     if (view === 'trackers') loadTrackers();
   }, [view]);
 
@@ -123,6 +142,23 @@ const AdminMemberships = () => {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
     } finally {
       setFulfillingId(null);
+    }
+  };
+
+  const handleRecordPayment = async (membership) => {
+    setRecordingPaymentId(membership.id);
+    try {
+      await recordMembershipPayment(membership.id);
+      toast({ title: 'Pago registrado', description: `Se registró el pago de ${membership.plan_id}` });
+      await loadData();
+      if (expandedId === membership.id) {
+        const data = await getPendingMemberRevisions(membership.id);
+        setRevisionsByMembership((prev) => ({ ...prev, [membership.id]: data || [] }));
+      }
+    } catch (e) {
+      toast({ title: 'Error', description: e.message, variant: 'destructive' });
+    } finally {
+      setRecordingPaymentId(null);
     }
   };
 
@@ -352,9 +388,21 @@ const AdminMemberships = () => {
                         <StatusBadge status={m.status} />
                       </td>
                       <td className="px-4 py-3">
-                        <Button size="sm" variant="ghost" onClick={() => setEditing({ ...m, customers: { ...m.customers } })}>
-                          <Edit2 className="w-4 h-4" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => setEditing({ ...m, customers: { ...m.customers } })}>
+                            <Edit2 className="w-4 h-4" />
+                          </Button>
+                          {m.status === 'pending_payment' && m.payment_method === 'cash' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={recordingPaymentId === m.id}
+                              onClick={() => handleRecordPayment(m)}
+                            >
+                              {recordingPaymentId === m.id ? '...' : 'Registrar pago'}
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                     {expandedId === m.id && (
@@ -377,6 +425,22 @@ const AdminMemberships = () => {
                               <div>
                                 <p className="text-xs font-semibold text-slate-500 uppercase">Renovación</p>
                                 <p>{m.next_renewal_date || '—'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold text-slate-500 uppercase">Pagos acumulados</p>
+                                <p>{m.payments_made || 0}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold text-slate-500 uppercase">Revisiones pendientes</p>
+                                {loadingRevisions[m.id] ? (
+                                  <p>Cargando...</p>
+                                ) : (
+                                  <p>
+                                    {(revisionsByMembership[m.id] || []).length > 0
+                                      ? `${revisionsByMembership[m.id].length} pendiente(s)`
+                                      : 'Ninguna'}
+                                  </p>
+                                )}
                               </div>
                             </div>
 
