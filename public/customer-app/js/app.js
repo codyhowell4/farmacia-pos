@@ -712,7 +712,7 @@ function renderPrivacidad() {
     <!-- Header -->
     <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📄 Aviso de Privacidad</h1>
-      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Farmacia Apolo · Última actualización: septiembre 2025</p>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Farmacia Apolo · Última actualización: septiembre 2026</p>
     </div>
 
     <div style="padding: 1rem;">
@@ -721,10 +721,12 @@ function renderPrivacidad() {
         <div style="${sectionStyle}">
           <h3 style="${h3Style}">1. Responsable del tratamiento de tus datos</h3>
           <p style="${pStyle}">
-            <strong>Farmacia Apolo</strong> (en adelante "la Farmacia"), con domicilio en el establecimiento
-            físico de la Farmacia, es el responsable del tratamiento de tus datos personales y de tus datos
-            personales sensibles de salud, conforme a la Ley Federal de Protección de Datos Personales en
-            Posesión de los Particulares (LFPDPPP) y, en materia de expediente clínico, a la NOM-004-SSA3-2012.
+            <strong>Farmacia Apolo</strong> (en adelante "la Farmacia"), con domicilio en Cometa 4, San
+            Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de México, México, es el responsable del
+            tratamiento de tus datos personales y de tus datos personales sensibles de salud, conforme a la
+            Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP),
+            publicada en el Diario Oficial de la Federación el 20 de marzo de 2025 y, en materia de
+            expediente clínico, a la NOM-004-SSA3-2012.
           </p>
         </div>
 
@@ -764,11 +766,17 @@ function renderPrivacidad() {
           <h3 style="${h3Style}">4. Transferencias de datos personales</h3>
           <p style="${pStyle}">
             Tus datos personales <strong>no serán transferidos</strong> a terceros sin tu consentimiento, salvo en los
-            casos previstos por el artículo 37 de la LFPDPPP, incluyendo: (a) profesionales de la salud que
+            casos previstos por el artículo 36 de la LFPDPPP, incluyendo: (a) profesionales de la salud que
             participen en tu atención y que están obligados al secreto profesional; (b) autoridades sanitarias
             competentes cuando así lo exija la legislación aplicable; y (c) proveedores de servicios que actúan
-            como encargados del tratamiento (por ejemplo, hospedaje seguro de la información y procesamiento de
-            pagos), bajo acuerdos de confidencialidad.
+            como encargados del tratamiento, bajo acuerdos de confidencialidad.
+          </p>
+          <p style="${pStyle}">
+            Para operar esta aplicación, la Farmacia se auxilia de proveedores de servicios que tratan tus
+            datos por cuenta de la Farmacia y con las mismas protecciones previstas en este aviso y en la
+            LFPDPPP: servicios de hospedaje de la información (con servidores ubicados en Estados Unidos),
+            procesamiento de pagos (PayPal), envío de correos electrónicos y mensajes de WhatsApp, y el
+            proveedor de videollamadas utilizado en la teleconsulta.
           </p>
           <p style="${pStyle}">
             Tus datos sensibles de salud se almacenan y tratan conforme a la NOM-004-SSA3-2012 del expediente
@@ -780,9 +788,10 @@ function renderPrivacidad() {
           <h3 style="${h3Style}">5. Derechos ARCO (Acceso, Rectificación, Cancelación y Oposición)</h3>
           <p style="${pStyle}">
             Puedes ejercer tus derechos de Acceso, Rectificación, Cancelación u Oposición (derechos ARCO)
-            enviando una solicitud al correo electrónico de contacto de la Farmacia, o presentándola
-            directamente en el mostrador del establecimiento. Tu solicitud debe incluir tu nombre completo,
-            el derecho que deseas ejercer y una descripción clara del dato respecto del cual lo ejerces.
+            enviando una solicitud al correo citas@apolofarmacia.com.mx, o presentándola directamente en
+            nuestro domicilio en Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de
+            México, México. Tu solicitud debe incluir tu nombre completo, el derecho que deseas ejercer y
+            una descripción clara del dato respecto del cual lo ejerces.
             La Farmacia responderá en un plazo máximo de 20 días hábiles conforme a la LFPDPPP.
           </p>
         </div>
@@ -792,8 +801,8 @@ function renderPrivacidad() {
           <p style="${pStyle}">
             En cualquier momento puedes revocar el consentimiento que has otorgado para el tratamiento de tus
             datos personales, incluidos tus datos sensibles de salud, sin que se leguen efectos retroactivos.
-            Para revocar tu consentimiento, envía tu solicitud al correo electrónico de contacto de la Farmacia
-            o preséntala en el establecimiento. Ten en cuenta que la revocación puede implicar que no sea
+            Para revocar tu consentimiento, envía tu solicitud al correo citas@apolofarmacia.com.mx
+            o preséntala en nuestro domicilio. Ten en cuenta que la revocación puede implicar que no sea
             posible seguir prestando los servicios de salud, teleconsulta o farmacia que requieran dichos datos.
           </p>
         </div>
@@ -812,8 +821,8 @@ function renderPrivacidad() {
         <div style="margin-top: 0.5rem; padding: 0.75rem; background: rgba(70,172,120,0.1); border: 1px solid rgba(70,172,120,0.3); border-radius: 10px;">
           <p style="margin: 0; font-size: 0.8rem; color: rgba(255,255,255,0.75); line-height: 1.5;">
             Al crear tu cuenta y marcar la casilla de aceptación consientes el tratamiento de tus datos
-            personales conforme a este aviso. Si tienes dudas, acude a la Farmacia o escríbenos al correo
-            de contacto publicado en el establecimiento.
+            personales conforme a este aviso. Si tienes dudas, acude a la Farmacia o escríbenos a
+            citas@apolofarmacia.com.mx.
           </p>
         </div>
       </div>
@@ -6875,9 +6884,7 @@ window.showRefillRequestModal = function(prescriptionId) {
         <div style="margin-bottom: 1.5rem;">
           <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem;">Farmacia para recoger</label>
           <select id="refill-pharmacy" style="width: 100%; padding: 0.875rem; border: 2px solid var(--border-color); border-radius: 12px; font-size: 1rem;">
-            <option value="polanco">Farmacia Apolo - Polanco (Masaryk 456)</option>
-            <option value="condesa">Farmacia Apolo - Condesa (Av. México 123)</option>
-            <option value="santafe">Farmacia Apolo - Santa Fe (Centro Comercial)</option>
+            <option value="sucursal">Farmacia Apolo (Cometa 4, San Antonio Zomeyucan)</option>
             <option value="delivery">Entrega a domicilio</option>
           </select>
         </div>
@@ -6918,9 +6925,7 @@ window.submitRefillRequest = async function(prescriptionId) {
   }
   
   const pharmacyNames = {
-    polanco: 'Farmacia Apolo - Polanco',
-    condesa: 'Farmacia Apolo - Condesa',
-    santafe: 'Farmacia Apolo - Santa Fe',
+    sucursal: 'Farmacia Apolo',
     delivery: 'Entrega a domicilio'
   };
   
@@ -7532,7 +7537,7 @@ function renderConsulta() {
           <div style="font-size: 3rem;">🏥</div>
           <div style="flex: 1;">
             <div style="font-weight: 700; font-size: 1.2rem; color: #15803d; margin-bottom: 0.25rem;">Agendar Cita en Persona</div>
-            <div style="font-size: 0.85rem; color: #22c55e; line-height: 1.4;">Visita nuestras sucursales y consulta con un médico</div>
+            <div style="font-size: 0.85rem; color: #22c55e; line-height: 1.4;">Visita nuestra sucursal y consulta con un médico</div>
             <div style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
               <span style="font-size: 0.75rem; background: #46AC78; color: white; padding: 0.25rem 0.5rem; border-radius: 20px;">Tiempo real</span>
               <span style="font-size: 0.75rem; color: var(--text-muted);">Ver tiempos de espera</span>
@@ -7548,9 +7553,10 @@ function renderConsulta() {
       <div class="medicine-card" style="flex-direction: column; padding: 1.25rem; background: #f8fafc;">
         <div style="font-weight: 600; margin-bottom: 0.75rem; color: var(--text-secondary);">📞 ¿Necesitas ayuda urgente?</div>
         <div style="display: flex; gap: 0.75rem;">
-          <a href="tel:555-APOLLO" style="flex: 1; padding: 0.75rem; background: #1E2A8A; color: white; text-decoration: none; border-radius: 12px; text-align: center; font-size: 0.9rem;">
+          <a href="tel:+5214425488893" style="flex: 1; padding: 0.75rem; background: #1E2A8A; color: white; text-decoration: none; border-radius: 12px; text-align: center; font-size: 0.9rem;">
             <div style="font-size: 1.25rem; margin-bottom: 0.25rem;">📞</div>
             <div style="font-weight: 600;">Llamar</div>
+            <div style="font-size: 0.7rem; opacity: 0.9;">+52 1 442 548 8893</div>
           </a>
           <button onclick="showEmergencyInfo()" style="flex: 1; padding: 0.75rem; background: #dc2626; color: white; border: none; border-radius: 12px; font-size: 0.9rem; cursor: pointer;">
             <div style="font-size: 1.25rem; margin-bottom: 0.25rem;">🚨</div>
@@ -8618,7 +8624,7 @@ window.showInPersonConsulta = function() {
       <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
       <div>
         <div style="font-weight: 600;">Cita en Persona</div>
-        <div style="font-size: 0.75rem; opacity: 0.9;">Selecciona tu sucursal</div>
+        <div style="font-size: 0.75rem; opacity: 0.9;">Nuestra sucursal</div>
       </div>
     </div>
     
@@ -8633,12 +8639,12 @@ window.showInPersonConsulta = function() {
           </div>
         </div>
         <div style="font-size: 0.8rem; color: var(--text-secondary);">
-          Agrega tu nombre, elige sucursal y te indicamos cuándo llegar
+          Agrega tu nombre y te indicamos cuándo llegar
         </div>
       </div>
       
       <!-- Locations List -->
-      <div style="font-weight: 600; margin-bottom: 0.75rem; color: var(--text-secondary);">Sucursales cercanas:</div>
+      <div style="font-weight: 600; margin-bottom: 0.75rem; color: var(--text-secondary);">Nuestra sucursal:</div>
       
       <div style="display: flex; flex-direction: column; gap: 0.75rem;">
         ${locations.map(loc => {
@@ -9182,9 +9188,10 @@ async function renderAppointments() {
       <div class="medicine-card" style="flex-direction: column; padding: 1.25rem; background: #f8fafc;">
         <div style="font-weight: 600; margin-bottom: 1rem; color: var(--text-secondary);">¿Necesitas ayuda?</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-          <a href="tel:555-APOLLO" style="padding: 0.75rem; background: #1E2A8A; color: white; text-decoration: none; border-radius: 12px; text-align: center; font-size: 0.9rem;">
+          <a href="tel:+5214425488893" style="padding: 0.75rem; background: #1E2A8A; color: white; text-decoration: none; border-radius: 12px; text-align: center; font-size: 0.9rem;">
             <div style="font-size: 1.25rem; margin-bottom: 0.25rem;">📞</div>
             <div>Llamar</div>
+            <div style="font-size: 0.7rem; opacity: 0.9;">+52 1 442 548 8893</div>
           </a>
           <button onclick="renderConsulta()" style="padding: 0.75rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-size: 0.9rem; cursor: pointer;">
             <div style="font-size: 1.25rem; margin-bottom: 0.25rem;">📅</div>
@@ -10542,8 +10549,8 @@ window.showCheckout = function() {
         <div style="margin-bottom: 1.5rem;">
           <h3 style="margin: 0 0 1rem; font-size: 1rem;">📍 Entrega</h3>
           <div style="background: #f8fafc; border-radius: 12px; padding: 1rem;">
-            <div style="font-weight: 600; margin-bottom: 0.25rem;">Farmacia Apolo - Polanco</div>
-            <div style="font-size: 0.85rem; color: var(--text-muted);">Masaryk 456, Polanco, CDMX</div>
+            <div style="font-weight: 600; margin-bottom: 0.25rem;">Farmacia Apolo</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted);">Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de México, México</div>
             <div style="font-size: 0.85rem; color: #46AC78; margin-top: 0.5rem;">✓ Listo en 30 min</div>
           </div>
         </div>

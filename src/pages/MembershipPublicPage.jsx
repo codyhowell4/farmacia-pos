@@ -436,6 +436,9 @@ const MembershipPublicPage = () => {
         {step === 'form' && renderForm()}
         {step === 'success' && renderSuccess()}
       </div>
+      <p className="text-xs text-slate-500 text-center mt-10">
+        Farmacia Apolo · Cometa 4, San Antonio Zomeyucan, Naucalpan de Juárez · Tel: +52 1 442 548 8893
+      </p>
     </div>
   );
 };

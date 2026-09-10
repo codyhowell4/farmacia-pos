@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { User, Users, CheckCircle, MapPin } from 'lucide-react';
+import { User, Users, CheckCircle, MapPin, Phone, Mail } from 'lucide-react';
 
 const HomePage = () => {
     return (
@@ -71,22 +71,38 @@ const HomePage = () => {
             </main>
 
             <footer className="border-t border-apolo-border bg-white py-6 px-4">
-                <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-slate-500">
-                    <p>Farmacia Apolo</p>
-                    <nav className="flex items-center gap-4">
-                        <Link to="/membresias" className="text-apolo-navy hover:text-apolo-navy-dark">
-                            Membresías Apolo
-                        </Link>
-                        <Link to="/membresias/terminos" className="text-apolo-navy hover:text-apolo-navy-dark">
-                            Términos y Condiciones
-                        </Link>
-                        <a href="/customer-app/" className="text-apolo-navy hover:text-apolo-navy-dark">
-                            Portal de clientes
+                <div className="max-w-4xl mx-auto space-y-4 text-sm text-slate-500">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <p>Farmacia Apolo</p>
+                        <nav className="flex items-center gap-4">
+                            <Link to="/membresias" className="text-apolo-navy hover:text-apolo-navy-dark">
+                                Membresías Apolo
+                            </Link>
+                            <Link to="/membresias/terminos" className="text-apolo-navy hover:text-apolo-navy-dark">
+                                Términos y Condiciones
+                            </Link>
+                            <a href="/customer-app/" className="text-apolo-navy hover:text-apolo-navy-dark">
+                                Portal de clientes
+                            </a>
+                            <Link to="/login" className="text-slate-400 hover:text-slate-600">
+                                Acceso personal
+                            </Link>
+                        </nav>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-5 border-t border-slate-100 pt-4 text-center">
+                        <span className="flex items-center gap-1.5">
+                            <MapPin className="w-4 h-4 flex-shrink-0" />
+                            Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de México, México
+                        </span>
+                        <a href="tel:+5214425488893" className="flex items-center gap-1.5 text-apolo-navy hover:text-apolo-navy-dark">
+                            <Phone className="w-4 h-4 flex-shrink-0" />
+                            +52 1 442 548 8893
                         </a>
-                        <Link to="/login" className="text-slate-400 hover:text-slate-600">
-                            Acceso personal
-                        </Link>
-                    </nav>
+                        <a href="mailto:citas@apolofarmacia.com.mx" className="flex items-center gap-1.5 text-apolo-navy hover:text-apolo-navy-dark">
+                            <Mail className="w-4 h-4 flex-shrink-0" />
+                            citas@apolofarmacia.com.mx
+                        </a>
+                    </div>
                 </div>
             </footer>
         </div>

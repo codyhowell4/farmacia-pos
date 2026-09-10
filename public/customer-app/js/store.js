@@ -1069,45 +1069,15 @@ export const Store = {
   // Pharmacy Locations with wait times
   getLocations() {
     return get('locations') || [
-      { 
-        id: 'loc1', 
-        name: 'Farmacia Apolo - Centro', 
-        address: 'Av. Juárez 123, Centro, CDMX', 
-        phone: '555-1234',
-        currentWait: 15, // minutes
+      {
+        id: 'loc1',
+        name: 'Farmacia Apolo',
+        address: 'Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de México, México',
+        phone: '+52 1 442 548 8893',
+        currentWait: 10, // minutes
         isOpen: true,
         hours: '8:00 - 22:00',
         services: ['Consulta general', 'Vacunación', 'Laboratorio']
-      },
-      { 
-        id: 'loc2', 
-        name: 'Farmacia Apolo - Polanco', 
-        address: 'Masaryk 456, Polanco, CDMX', 
-        phone: '555-5678',
-        currentWait: 5,
-        isOpen: true,
-        hours: '7:00 - 23:00',
-        services: ['Consulta general', 'Especialidades', 'Vacunación', 'Laboratorio']
-      },
-      { 
-        id: 'loc3', 
-        name: 'Farmacia Apolo - Condesa', 
-        address: 'Av. Ámsterdam 789, Condesa, CDMX', 
-        phone: '555-9012',
-        currentWait: 25,
-        isOpen: true,
-        hours: '8:00 - 22:00',
-        services: ['Consulta general', 'Vacunación']
-      },
-      { 
-        id: 'loc4', 
-        name: 'Farmacia Apolo - Satélite', 
-        address: 'Av. Lomas Verdes 321, Naucalpan', 
-        phone: '555-3456',
-        currentWait: 10,
-        isOpen: false,
-        hours: '8:00 - 21:00',
-        services: ['Consulta general', 'Laboratorio']
       }
     ];
   },

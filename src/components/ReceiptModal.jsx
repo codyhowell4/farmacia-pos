@@ -24,8 +24,10 @@ const ReceiptContent = ({ sale }) => {
   return (
     <div className="font-mono text-xs space-y-2 bg-white p-4 text-black">
       <div className="text-center space-y-0.5">
-        <p className="font-bold text-base">FARMACIA</p>
-        <p className="text-slate-600">{sale.pharmacyLocation}</p>
+        <p className="font-bold text-base">FARMACIA APOLO</p>
+        {sale.pharmacyLocation && <p className="text-slate-600">{sale.pharmacyLocation}</p>}
+        <p className="text-slate-600">Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de México, México</p>
+        <p className="text-slate-600">Tel: +52 1 442 548 8893</p>
         <p className="text-slate-500">{new Date(sale.timestamp).toLocaleString('es-MX')}</p>
       </div>
 

@@ -5,6 +5,9 @@ import { ArrowLeft } from 'lucide-react';
 
 const LAST_UPDATED = '9 de septiembre de 2026';
 const CONTACT_EMAIL = 'citas@apolofarmacia.com.mx';
+const CONTACT_PHONE = '+52 1 442 548 8893';
+const CONTACT_PHONE_TEL = 'tel:+5214425488893';
+const BUSINESS_ADDRESS = 'Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de México, México';
 
 const Section = ({ title, children }) => (
   <Card>
@@ -39,6 +42,27 @@ const MembershipTermsPage = () => (
           electrónico o en sucursal antes de entrar en vigor.
         </p>
       </div>
+
+      <Section title="Identidad del responsable">
+        <p>
+          <strong>Farmacia Apolo</strong>, con domicilio en {BUSINESS_ADDRESS}, es el responsable del
+          servicio Membresías Apolo y del tratamiento de sus datos personales.
+        </p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            Teléfono:{' '}
+            <a href={CONTACT_PHONE_TEL} className="text-apolo-navy underline">
+              {CONTACT_PHONE}
+            </a>
+          </li>
+          <li>
+            Correo electrónico:{' '}
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-apolo-navy underline">
+              {CONTACT_EMAIL}
+            </a>
+          </li>
+        </ul>
+      </Section>
 
       <Section title="1. Términos del servicio">
         <p>Membresías Apolo ofrece dos planes con vigencia mensual:</p>
@@ -100,8 +124,12 @@ const MembershipTermsPage = () => (
 
       <Section title="4. Cancelación">
         <p>
-          El titular puede cancelar su membresía en cualquier momento, desde la aplicación de clientes o
-          directamente en sucursal, sin penalizaciones.
+          El titular puede cancelar su membresía en cualquier momento, desde la aplicación de clientes,
+          por teléfono al{' '}
+          <a href={CONTACT_PHONE_TEL} className="text-apolo-navy underline">
+            {CONTACT_PHONE}
+          </a>{' '}
+          o directamente en sucursal, sin penalizaciones.
         </p>
         <p>
           La cancelación es efectiva al final del periodo mensual ya pagado: la membresía permanece
@@ -148,19 +176,30 @@ const MembershipTermsPage = () => (
           cuando una autoridad competente lo requiera conforme a la ley.
         </p>
         <p>
+          Para operar el servicio utilizamos proveedores que pueden procesar sus datos fuera de México:
+          PayPal procesa los pagos con cargo automático, los proveedores de correo electrónico y de
+          mensajería (WhatsApp) gestionan nuestras comunicaciones, y el alojamiento de nuestros sistemas
+          se encuentra en servidores en Estados Unidos. En estos casos, sus datos personales pueden ser
+          tratados en servidores ubicados fuera de México por dichos proveedores, con las mismas
+          protecciones descritas en este aviso de privacidad.
+        </p>
+        <p>
           Usted puede ejercer en cualquier momento sus derechos de Acceso, Rectificación, Cancelación y
           Oposición (derechos ARCO), así como revocar su consentimiento, enviando una solicitud al correo{' '}
           <a href={`mailto:${CONTACT_EMAIL}`} className="text-apolo-navy underline">
             {CONTACT_EMAIL}
-          </a>
-          , indicando su nombre completo y el derecho que desea ejercer. Daremos respuesta en los plazos
-          que marca la Ley Federal de Protección de Datos Personales en Posesión de los Particulares
-          (LFPDPPP).
+          </a>{' '}
+          o por escrito en nuestro domicilio: {BUSINESS_ADDRESS}, indicando su nombre completo y el
+          derecho que desea ejercer. Daremos respuesta en los plazos que marca la Ley Federal de
+          Protección de Datos Personales en Posesión de los Particulares (LFPDPPP), publicada en el
+          Diario Oficial de la Federación el 20 de marzo de 2025. La autoridad garante en materia de
+          protección de datos personales es la Secretaría Anticorrupción y Buen Gobierno.
         </p>
         <p>
-          Los datos personales se resguardan conforme a la LFPDPPP. Los datos clínicos se tratan,
-          además, bajo secreto profesional y con los lineamientos de la Norma Oficial Mexicana NOM-004
-          sobre el expediente clínico.
+          Los datos personales se resguardan conforme a la LFPDPPP vigente, publicada en el Diario
+          Oficial de la Federación el 20 de marzo de 2025. Los datos clínicos se tratan, además, bajo
+          secreto profesional y con los lineamientos de la Norma Oficial Mexicana NOM-004 sobre el
+          expediente clínico.
         </p>
       </Section>
 
