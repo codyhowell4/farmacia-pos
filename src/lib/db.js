@@ -1474,6 +1474,123 @@ export const confirmVideoAppointment = async (appointmentId) => {
   return data;
 };
 
+// ── DOCTOR SHIFTS (clock-in/clock-out) ──────────────────────
+// A doctor_shifts row with clock_out_at IS NULL = doctor is on shift.
+// Doctors can only insert/update their own rows (RLS); all org staff
+// can read who is on shift (needed for the coverage view).
+
+export const getActiveDoctorShift = async (doctorId) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('doctor_shifts')
+    .select('*')
+    .eq('org_id', orgId)
+    .eq('doctor_id', doctorId)
+    .is('clock_out_at', null)
+    .order('clock_in_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+};
+
+export const clockInDoctor = async (doctorId) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('doctor_shifts')
+    .insert({ org_id: orgId, doctor_id: doctorId })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const clockOutDoctor = async (shiftId) => {
+  const { data, error } = await supabase
+    .from('doctor_shifts')
+    .update({ clock_out_at: new Date().toISOString() })
+    .eq('id', shiftId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// profile ids of every doctor currently on shift in this org
+export const getClockedInDoctorIds = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('doctor_shifts')
+    .select('doctor_id')
+    .eq('org_id', orgId)
+    .is('clock_out_at', null);
+  if (error) throw error;
+  return [...new Set((data || []).map(r => r.doctor_id))];
+};
+
+// Doctor id → display name map via the public RPC (RLS-safe for staff)
+export const getOrgDoctorNames = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase.rpc('get_public_doctors', { p_org_id: orgId });
+  if (error) throw error;
+  return Object.fromEntries((data || []).map(d => [d.id, d.full_name]));
+};
+
+// ── CONSULTA QUEUE & COVERAGE ───────────────────────────────
+// Salon-style: unassigned in-person citas (doctor_id null) are free
+// to grab; citas of doctors who are not clocked in can be taken over.
+
+export const getOrgAppointmentsForDate = async (day = new Date()) => {
+  const orgId = await getOrgId();
+  const start = new Date(day); start.setHours(0, 0, 0, 0);
+  const end = new Date(day); end.setHours(23, 59, 59, 999);
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('*, customers(full_name, phone)')
+    .eq('org_id', orgId)
+    .gte('appointment_date', start.toISOString())
+    .lte('appointment_date', end.toISOString())
+    .in('status', ['pending', 'confirmed', 'in_consulta'])
+    .order('appointment_date', { ascending: true });
+  if (error) throw error;
+  return data || [];
+};
+
+// Empezar Consulta: confirmed → in_consulta (two-step; ends in PostVisitDialog)
+export const startConsulta = async (id) => {
+  return updateAppointment(id, {
+    status: 'in_consulta',
+    consulta_started_at: new Date().toISOString(),
+  });
+};
+
+// Claim an unassigned queue cita (doctor_id null → me)
+export const claimAppointment = async (id, doctorId) => {
+  return updateAppointment(id, { doctor_id: doctorId });
+};
+
+// Take over a cita from a doctor who is not clocked in
+export const takeoverAppointment = async (id, newDoctorId, originalDoctorId) => {
+  return updateAppointment(id, {
+    doctor_id: newDoctorId,
+    original_doctor_id: originalDoctorId,
+    taken_over_by: newDoctorId,
+    taken_over_at: new Date().toISOString(),
+  });
+};
+
+// Staff cancellation with membership-visit refund (server-side RPC).
+// Returns { cancelled: true, visit_refunded: boolean }.
+export const cancelAppointmentStaff = async (id, reason) => {
+  const { data, error } = await supabase.rpc('cancel_appointment_staff', {
+    p_appointment_id: id,
+    p_reason: reason || null,
+  });
+  if (error) throw error;
+  return data;
+};
+
+
 // ── PREORDERS ───────────────────────────────────────────────
 
 export const getPreorders = async () => {

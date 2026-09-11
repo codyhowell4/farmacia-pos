@@ -16,7 +16,7 @@ import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import Cie10Search from './Cie10Search';
 import { toast } from 'sonner';
 
-const emptyMed = () => ({ medication: '', dosage: '', frequency: '', duration: '', notes: '' });
+const emptyMed = () => ({ medication: '', dosage: '', via: '', frequency: '', duration: '', notes: '' });
 const emptyVitals = () => ({
   edad: '', height_cm: '', weight_kg: '', temperatura: '',
   ta: '', fc: '', fr: '', so2: '', glicemia: '', alergias: '',
@@ -43,6 +43,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
   const [saving, setSaving] = useState(false);
   const [padecimiento, setPadecimiento] = useState('');
   const [exploracion, setExploracion] = useState('');
+  const [resultados, setResultados] = useState('');
   const [diagnostico, setDiagnostico] = useState('');
   const [cie10, setCie10] = useState([]);
   const [pronostico, setPronostico] = useState('');
@@ -56,11 +57,13 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
   const patientName = appointment?.customers?.full_name || appointment?.walkin_name || 'Paciente';
   const hasCustomer = !!appointment?.customer_id;
   const alreadyCompleted = appointment?.status === 'completed';
+  const inConsulta = appointment?.status === 'in_consulta';
 
   useEffect(() => {
     if (!open || !appointment?.id) return;
     setPadecimiento('');
     setExploracion('');
+    setResultados('');
     setDiagnostico('');
     setCie10([]);
     setPronostico('');
@@ -86,6 +89,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
           setPreviousNote(latest);
           setPadecimiento(latest.padecimiento_actual || '');
           setExploracion(latest.exploracion_fisica || '');
+          setResultados(latest.resultados_estudios || '');
           setDiagnostico(latest.diagnostico || '');
           setPronostico(latest.pronostico || '');
           setPlan(latest.plan || '');
@@ -125,7 +129,10 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
     setSaving(true);
     try {
       if (!alreadyCompleted) {
-        await updateAppointment(appointment.id, { status: 'completed' });
+        await updateAppointment(appointment.id, {
+          status: 'completed',
+          consulta_ended_at: new Date().toISOString(),
+        });
       }
 
       // consulta_notes is append-only — saving over a completed consulta
@@ -136,6 +143,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
         doctor_id: user.id,
         padecimiento_actual: padecimiento.trim(),
         exploracion_fisica: exploracion.trim() || null,
+        resultados_estudios: resultados.trim() || null,
         vitals: cleanedVitals(),
         diagnostico: diagnostico.trim(),
         cie10_codes: cie10,
@@ -170,6 +178,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
           medications: validMeds.map(m => ({
             medication: m.medication.trim(),
             dosage: m.dosage.trim() || null,
+            via: m.via.trim() || null,
             frequency: m.frequency.trim() || null,
             duration: m.duration.trim() || null,
             notes: m.notes.trim() || null,
@@ -186,7 +195,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
         });
       }
 
-      toast.success(alreadyCompleted ? 'Nota guardada (nueva versión)' : 'Consulta completada');
+      toast.success(alreadyCompleted ? 'Nota guardada (nueva versión)' : 'Consulta terminada');
       onOpenChange(false);
       onSaved?.();
     } catch (err) {
@@ -202,7 +211,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {alreadyCompleted ? 'Nota de evolución' : 'Completar consulta'} — {patientName}
+            {alreadyCompleted ? 'Nota de evolución' : inConsulta ? 'Consulta en curso' : 'Completar consulta'} — {patientName}
           </DialogTitle>
         </DialogHeader>
 
@@ -227,6 +236,16 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
               value={exploracion}
               onChange={(e) => setExploracion(e.target.value)}
               rows={3}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Resultados de estudios</Label>
+            <Textarea
+              placeholder="Resultados relevantes de laboratorio, gabinete u otros estudios solicitados previamente (opcional)..."
+              value={resultados}
+              onChange={(e) => setResultados(e.target.value)}
+              rows={2}
             />
           </div>
 
@@ -319,6 +338,8 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
                           onChange={(e) => updateMed(idx, 'medication', e.target.value)} />
                         <Input placeholder="Dosis" value={med.dosage}
                           onChange={(e) => updateMed(idx, 'dosage', e.target.value)} />
+                        <Input placeholder="Vía (oral, tópica, IM...)" value={med.via}
+                          onChange={(e) => updateMed(idx, 'via', e.target.value)} />
                         <Input placeholder="Frecuencia" value={med.frequency}
                           onChange={(e) => updateMed(idx, 'frequency', e.target.value)} />
                         <Input placeholder="Duración" value={med.duration}
@@ -346,7 +367,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
               Cancelar
             </Button>
             <Button className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600" onClick={handleSave} disabled={saving}>
-              {saving ? 'Guardando...' : alreadyCompleted ? 'Guardar nueva versión' : 'Guardar y completar'}
+              {saving ? 'Guardando...' : alreadyCompleted ? 'Guardar nueva versión' : 'Guardar y terminar consulta'}
             </Button>
           </div>
         </div>

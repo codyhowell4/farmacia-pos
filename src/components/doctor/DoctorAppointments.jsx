@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
   Calendar, CalendarPlus, Plus, Search, Clock, Phone, Check, Trash2, Edit2, Video, FileText, Activity,
-  FolderOpen, StickyNote, MoreVertical
+  FolderOpen, StickyNote, MoreVertical, Play, UserCheck, XCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,8 +22,12 @@ import {
 } from '@/components/ui/select';
 import {
   getAppointmentsByDoctor, createAppointment, updateAppointment, deleteAppointment,
-  getCustomersForDoctor, confirmVideoAppointment, createMedicalNote
+  getCustomersForDoctor, confirmVideoAppointment, createMedicalNote,
+  getActiveDoctorShift, getClockedInDoctorIds, getOrgDoctorNames,
+  getOrgAppointmentsForDate, startConsulta, claimAppointment,
+  takeoverAppointment, cancelAppointmentStaff
 } from '@/lib/db';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import PostVisitDialog from './PostVisitDialog';
 import NurseVitalsDialog from './NurseVitalsDialog';
 import { toast } from 'sonner';
@@ -31,6 +35,7 @@ import { toast } from 'sonner';
 const statusColors = {
   pending: 'bg-yellow-100 text-yellow-800 border-yellow-200',
   confirmed: 'bg-blue-100 text-blue-800 border-blue-200',
+  in_consulta: 'bg-cyan-100 text-cyan-800 border-cyan-200',
   completed: 'bg-green-100 text-green-800 border-green-200',
   cancelled: 'bg-red-100 text-red-800 border-red-200',
 };
@@ -38,6 +43,7 @@ const statusColors = {
 const statusLabels = {
   pending: 'Pendiente',
   confirmed: 'Confirmada',
+  in_consulta: 'En consulta',
   completed: 'Completada',
   cancelled: 'Cancelada',
 };
@@ -100,6 +106,17 @@ const DoctorAppointments = () => {
   const [followUpDate, setFollowUpDate] = useState('');
   const [followUpNotes, setFollowUpNotes] = useState('');
   const [savingFollowUp, setSavingFollowUp] = useState(false);
+  // Doctor shift (clock-in) + coverage state
+  const [activeShift, setActiveShift] = useState(null);
+  const [clockedInIds, setClockedInIds] = useState([]);
+  const [doctorNames, setDoctorNames] = useState({});
+  const [orgToday, setOrgToday] = useState([]);
+  const [coverAppt, setCoverAppt] = useState(null);
+  const [coverOpen, setCoverOpen] = useState(false);
+  const [cancelAppt, setCancelAppt] = useState(null);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [busyAction, setBusyAction] = useState(false);
   const [form, setForm] = useState({
     customer_id: '',
     walkin_name: '',
@@ -109,6 +126,8 @@ const DoctorAppointments = () => {
     notes: '',
   });
 
+  const canConsult = ['doctor', 'admin'].includes(user?.role);
+
   const safeAppointments = Array.isArray(appointments) ? appointments : [];
   const safeCustomers = Array.isArray(customers) ? customers : [];
 
@@ -116,12 +135,20 @@ const DoctorAppointments = () => {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const [appts, custs] = await Promise.all([
+      const [appts, custs, shift, clocked, names, today] = await Promise.all([
         getAppointmentsByDoctor(user.id),
         getCustomersForDoctor(),
+        getActiveDoctorShift(user.id).catch(() => null),
+        getClockedInDoctorIds().catch(() => []),
+        getOrgDoctorNames().catch(() => ({})),
+        getOrgAppointmentsForDate().catch(() => []),
       ]);
       setAppointments(appts);
       setCustomers(custs);
+      setActiveShift(shift);
+      setClockedInIds(clocked);
+      setDoctorNames(names);
+      setOrgToday(today);
     } catch (err) {
       toast.error('Error cargando citas');
       console.error(err);
@@ -138,16 +165,28 @@ const DoctorAppointments = () => {
     // Unpaid pending video consultas stay hidden — the patient hasn't paid
     // yet (stale ones auto-cancel after 10 min). They appear once paid
     // and confirmed. Pending in-person citas are unaffected.
-    if (a?.type === 'video' && a?.status === 'pending' &&
-        ['unpaid', 'membership_half'].includes(a?.payment_status || 'unpaid')) {
-      return false;
-    }
+    if (isUnpaidPendingVideo(a)) return false;
     const matchesSearch = !search ||
       (a?.customers?.full_name || a?.walkin_name || '').toLowerCase().includes(search.toLowerCase()) ||
       (a?.customers?.phone || a?.walkin_phone || '').includes(search);
     const matchesStatus = statusFilter === 'all' || a?.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  // Coverage view (salon-style): only relevant when I'm clocked in.
+  // - queueAppts: unassigned in-person citas — free to grab
+  // - coverableAppts: citas whose doctor is NOT clocked in — takeover with
+  //   acknowledgement, reschedule, or cancel (membership visits refunded)
+  const queueAppts = (canConsult && activeShift)
+    ? orgToday.filter(a => !a?.doctor_id && a?.type !== 'video' && !isUnpaidPendingVideo(a))
+    : [];
+  const coverableAppts = (canConsult && activeShift)
+    ? orgToday.filter(a =>
+        a?.doctor_id &&
+        a.doctor_id !== user?.id &&
+        !clockedInIds.includes(a.doctor_id) &&
+        !isUnpaidPendingVideo(a))
+    : [];
 
   const openCreate = () => {
     setEditing(null);
@@ -244,6 +283,94 @@ const DoctorAppointments = () => {
     } catch (err) {
       toast.error('Error actualizando estado');
       console.error(err);
+    }
+  };
+
+  const isUnpaidPendingVideo = (a) =>
+    a?.type === 'video' && a?.status === 'pending' &&
+    ['unpaid', 'membership_half'].includes(a?.payment_status || 'unpaid');
+
+  // Empezar Consulta: two-step — confirmed → in_consulta, then the
+  // NOM-004 form (PostVisitDialog) ends the consulta on save.
+  const handleStartConsulta = async (appt) => {
+    if (!appt?.id) return;
+    if (!activeShift) {
+      toast.error('Inicia tu turno antes de empezar una consulta');
+      return;
+    }
+    try {
+      const updated = await startConsulta(appt.id);
+      toast.success('Consulta iniciada');
+      setPostVisitAppt({ ...appt, ...updated });
+      setPostVisitOpen(true);
+      loadData();
+    } catch (err) {
+      toast.error('No se pudo iniciar la consulta');
+      console.error(err);
+    }
+  };
+
+  // Claim an unassigned in-person cita from the consultorio queue
+  const handleClaim = async (appt) => {
+    if (!appt?.id || !user?.id) return;
+    setBusyAction(true);
+    try {
+      await claimAppointment(appt.id, user.id);
+      toast.success('Cita tomada — aparece en tu lista');
+      loadData();
+    } catch (err) {
+      toast.error('No se pudo tomar la cita');
+      console.error(err);
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
+  // Take over a cita whose doctor is not clocked in (coverage)
+  const handleTakeover = async () => {
+    if (!coverAppt?.id || !user?.id) return;
+    setBusyAction(true);
+    try {
+      await takeoverAppointment(coverAppt.id, user.id, coverAppt.doctor_id);
+      await logAudit({
+        action: AUDIT_ACTIONS.APPOINTMENT_TAKEOVER,
+        user,
+        details: `Cobertura de cita ${coverAppt.id} — médico original ${doctorNames[coverAppt.doctor_id] || coverAppt.doctor_id}`,
+      });
+      toast.success('Cita cubierta — ahora está en tu lista');
+      setCoverOpen(false);
+      setCoverAppt(null);
+      loadData();
+    } catch (err) {
+      toast.error('No se pudo cubrir la cita');
+      console.error(err);
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
+  const handleStaffCancel = async () => {
+    if (!cancelAppt?.id) return;
+    setBusyAction(true);
+    try {
+      const result = await cancelAppointmentStaff(cancelAppt.id, cancelReason.trim());
+      await logAudit({
+        action: AUDIT_ACTIONS.APPOINTMENT_CANCEL,
+        user,
+        details: `Cita ${cancelAppt.id} cancelada por personal — motivo: ${cancelReason.trim() || 'no especificado'}${result?.visit_refunded ? ' — visita de membresía reembolsada' : ''}`,
+      });
+      toast.success(result?.visit_refunded
+        ? 'Cita cancelada — visita de membresía devuelta al paciente'
+        : 'Cita cancelada');
+      setCancelOpen(false);
+      setCancelAppt(null);
+      setCancelReason('');
+      loadData();
+    } catch (err) {
+      toast.error(err.message || 'No se pudo cancelar la cita');
+      console.error(err);
+    } finally {
+      setBusyAction(false);
     }
   };
 
@@ -378,11 +505,80 @@ const DoctorAppointments = () => {
             <SelectItem value="all">Todos</SelectItem>
             <SelectItem value="pending">Pendiente</SelectItem>
             <SelectItem value="confirmed">Confirmada</SelectItem>
+            <SelectItem value="in_consulta">En consulta</SelectItem>
             <SelectItem value="completed">Completada</SelectItem>
             <SelectItem value="cancelled">Cancelada</SelectItem>
           </SelectContent>
         </Select>
       </div>
+
+      {/* Coverage: cola sin asignar + citas de médicos no disponibles */}
+      {(queueAppts.length > 0 || coverableAppts.length > 0) && (
+        <div className="space-y-3">
+          {queueAppts.length > 0 && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+              <h3 className="font-semibold text-emerald-900 mb-1 flex items-center gap-2">
+                <UserCheck className="w-4 h-4" /> Fila del consultorio ({queueAppts.length})
+              </h3>
+              <p className="text-xs text-emerald-700 mb-3">Citas sin médico asignado — tómalas para atenderlas tú.</p>
+              <div className="space-y-2">
+                {queueAppts.map(a => (
+                  <div key={a?.id || Math.random()} className="bg-white rounded-lg border border-emerald-100 p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-900 truncate">
+                        {a?.customers?.full_name || a?.walkin_name || 'Paciente'}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {formatDisplayTime(a?.appointment_date)}
+                        {(a?.customers?.phone || a?.walkin_phone) ? ` · ${a?.customers?.phone || a?.walkin_phone}` : ''}
+                        {' · '}{statusLabels[a?.status] || a?.status}
+                      </p>
+                    </div>
+                    <Button size="sm" disabled={busyAction} className="bg-emerald-600 hover:bg-emerald-700 shrink-0" onClick={() => handleClaim(a)}>
+                      Tomar cita
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {coverableAppts.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <h3 className="font-semibold text-amber-900 mb-1 flex items-center gap-2">
+                <XCircle className="w-4 h-4" /> Citas de médicos no disponibles ({coverableAppts.length})
+              </h3>
+              <p className="text-xs text-amber-700 mb-3">Estas citas pertenecen a médicos que no han iniciado turno. Puedes cubrirlas, reagendarlas o cancelarlas.</p>
+              <div className="space-y-2">
+                {coverableAppts.map(a => (
+                  <div key={a?.id || Math.random()} className="bg-white rounded-lg border border-amber-100 p-3">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-900 truncate">
+                          {a?.customers?.full_name || a?.walkin_name || 'Paciente'}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {formatDisplayTime(a?.appointment_date)} · {a?.type === 'video' ? '📹 Video' : '🏥 Presencial'} · Cita con: <span className="font-medium">{doctorNames[a?.doctor_id] || 'Otro médico'}</span>
+                        </p>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <Button size="sm" disabled={busyAction} className="bg-amber-600 hover:bg-amber-700" onClick={() => { setCoverAppt(a); setCoverOpen(true); }}>
+                          Cubrir
+                        </Button>
+                        <Button size="sm" variant="outline" disabled={busyAction} onClick={() => openEdit(a)}>
+                          Reagendar
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" disabled={busyAction} onClick={() => { setCancelAppt(a); setCancelReason(''); setCancelOpen(true); }}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-3">
@@ -515,15 +711,41 @@ const DoctorAppointments = () => {
                         >
                           <Activity className="w-4 h-4" />
                         </Button>
+                        {canConsult && (
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white h-8"
+                            title="Empezar consulta (pasa a En consulta)"
+                            onClick={() => handleStartConsulta(appt)}
+                          >
+                            <Play className="w-3.5 h-3.5 mr-1" />
+                            Empezar Consulta
+                          </Button>
+                        )}
+                      </>
+                    )}
+                    {appt?.status === 'in_consulta' && (
+                      <>
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                          title="Completar"
-                          onClick={() => quickStatusChange(appt, 'completed')}
+                          className="text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50"
+                          title="Capturar signos"
+                          onClick={() => { setNurseVitalsAppt(appt); setNurseVitalsOpen(true); }}
                         >
-                          <Check className="w-4 h-4" />
+                          <Activity className="w-4 h-4" />
                         </Button>
+                        {canConsult && (
+                          <Button
+                            size="sm"
+                            className="bg-cyan-600 hover:bg-cyan-700 text-white h-8"
+                            title="Continuar la consulta en curso"
+                            onClick={() => { setPostVisitAppt(appt); setPostVisitOpen(true); }}
+                          >
+                            <Play className="w-3.5 h-3.5 mr-1" />
+                            Continuar consulta
+                          </Button>
+                        )}
                       </>
                     )}
                     {appt?.status === 'completed' && (
@@ -585,6 +807,66 @@ const DoctorAppointments = () => {
           </div>
         </div>
       )}
+
+      {/* Cobertura: advertencia de que el médico original no está disponible */}
+      <Dialog open={coverOpen} onOpenChange={setCoverOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cubrir cita de otro médico</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-slate-700">
+              Esta cita está agendada con <span className="font-semibold">{doctorNames[coverAppt?.doctor_id] || 'otro médico'}</span>.
+              Al tomarla aceptas que {doctorNames[coverAppt?.doctor_id] || 'el médico asignado'} no está disponible y no puede atenderla.
+            </p>
+            <p className="text-sm text-slate-500">
+              Paciente: <span className="font-medium text-slate-700">{coverAppt?.customers?.full_name || coverAppt?.walkin_name || 'Paciente'}</span>
+              {coverAppt ? ` · ${formatDisplayTime(coverAppt.appointment_date)}` : ''}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setCoverOpen(false)} disabled={busyAction}>
+                Volver
+              </Button>
+              <Button onClick={handleTakeover} disabled={busyAction} className="bg-amber-600 hover:bg-amber-700">
+                {busyAction ? 'Tomando...' : 'Acepto — cubrir cita'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancelación por personal (con reembolso de visita de membresía) */}
+      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancelar cita — {cancelAppt?.customers?.full_name || cancelAppt?.walkin_name || 'Paciente'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {cancelAppt?.payment_status === 'membership_visit' && (
+              <p className="text-sm bg-purple-50 border border-purple-200 text-purple-800 rounded-lg px-3 py-2">
+                Es una cita de membresía: al cancelar, la visita se devuelve automáticamente al paciente.
+              </p>
+            )}
+            <div>
+              <Label>Motivo de cancelación</Label>
+              <Textarea
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                placeholder="Ej. médico no disponible, paciente no llegó..."
+                rows={3}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setCancelOpen(false)} disabled={busyAction}>
+                Volver
+              </Button>
+              <Button onClick={handleStaffCancel} disabled={busyAction} className="bg-red-600 hover:bg-red-700">
+                {busyAction ? 'Cancelando...' : 'Cancelar cita'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Nota de evolución estructurada (padecimiento + diagnóstico obligatorios) */}
       <PostVisitDialog

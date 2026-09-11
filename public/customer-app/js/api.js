@@ -781,6 +781,25 @@ window.FarmaciaAPI = (function () {
     },
 
     /**
+     * Live consultorio queue status (doctors on shift, patients waiting,
+     * estimated wait) via the get_queue_status RPC. Fails open: returns
+     * null on any error so the UI keeps the schedule-based estimate.
+     * estimated_wait_minutes is null when no doctor is clocked in.
+     */
+    async getQueueStatus() {
+      if (!sb) return null;
+      try {
+        const orgId = (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
+        const { data, error } = await sb.rpc('get_queue_status', { p_org_id: orgId });
+        if (error) throw error;
+        return data || null;
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getQueueStatus error:', err.message);
+        return null;
+      }
+    },
+
+    /**
      * Get the membership row for the current customer.
      * Returns the active row (status, visits_remaining, discount_percent, plan_id,
      * plan_type, visits_limit, monthly_amount, next_renewal_date, payments_made,

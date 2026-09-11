@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import DoctorOverview from '@/components/doctor/DoctorOverview';
 import DoctorAppointments from '@/components/doctor/DoctorAppointments';
+import DoctorClockIn from '@/components/doctor/DoctorClockIn';
 import DoctorCustomers from '@/components/doctor/DoctorCustomers';
 import DoctorProfile from '@/components/doctor/DoctorProfile';
 import DoctorInventory from '@/components/doctor/DoctorInventory';
@@ -106,6 +107,7 @@ const DoctorDashboard = () => {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                {(role === 'doctor' || role === 'admin') && <DoctorClockIn />}
                 <Button onClick={handleLogout} variant="outline" className="flex items-center space-x-2">
                   <LogOut className="w-4 h-4" />
                   <span className="hidden sm:inline">Cerrar sesión</span>

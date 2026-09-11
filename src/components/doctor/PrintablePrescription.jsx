@@ -346,7 +346,7 @@ const PrintablePrescription = ({ prescription, customer }) => {
                   <div key={i} className="rx-med-item">
                     <div className="rx-med-name">{med.medication}</div>
                     <div className="rx-med-detail">
-                      {med.dosage}{med.frequency && ` · ${med.frequency}`}{med.duration && ` · ${med.duration}`}
+                      {med.dosage}{med.via && ` · ${med.via}`}{med.frequency && ` · ${med.frequency}`}{med.duration && ` · ${med.duration}`}
                     </div>
                     {med.notes && <div className="rx-med-detail" style={{ fontStyle: 'italic' }}>{med.notes}</div>}
                   </div>

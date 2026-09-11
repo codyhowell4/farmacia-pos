@@ -8713,7 +8713,7 @@ window.showInPersonConsulta = function() {
                 </div>
                 ${loc.isOpen ? `
                   <div style="text-align: center; background: ${waitBg}; padding: 0.5rem 0.75rem; border-radius: 12px; min-width: 70px;">
-                    <div style="font-size: 1.5rem; font-weight: 700; color: ${waitColor};">${loc.currentWait}</div>
+                    <div id="queue-wait-num-${loc.id}" style="font-size: 1.5rem; font-weight: 700; color: ${waitColor};">${loc.currentWait}</div>
                     <div style="font-size: 0.65rem; color: ${waitColor};">min de espera</div>
                   </div>
                 ` : `
@@ -8723,6 +8723,9 @@ window.showInPersonConsulta = function() {
                 `}
               </div>
               
+              <!-- Live queue note (filled when a doctor is on shift) -->
+              <div id="queue-live-note-${loc.id}" style="display: none; font-size: 0.7rem; color: #46AC78; font-weight: 600; margin: -0.25rem 0 0.5rem;"></div>
+
               <!-- Services -->
               <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem;">
                 ${loc.services.map(s => `<span style="font-size: 0.7rem; background: #f8fafc; padding: 0.25rem 0.5rem; border-radius: 12px; color: var(--text-muted);">${s}</span>`).join('')}
@@ -8745,16 +8748,42 @@ window.showInPersonConsulta = function() {
     </div>
   `;
   document.body.appendChild(modal);
+
+  // Live queue: when at least one doctor is clocked in, replace the
+  // schedule-based estimate with the real one (fila ÷ médicos × ~27 min).
+  if (window.FarmaciaAPI?.getQueueStatus) {
+    FarmaciaAPI.getQueueStatus().then(qs => {
+      if (!qs || !qs.doctors_on_clock || qs.estimated_wait_minutes == null) return;
+      locations.forEach(loc => {
+        const num = document.getElementById(`queue-wait-num-${loc.id}`);
+        const note = document.getElementById(`queue-live-note-${loc.id}`);
+        if (num) num.textContent = qs.estimated_wait_minutes;
+        if (note) {
+          note.textContent = `${qs.doctors_on_clock} médico${qs.doctors_on_clock > 1 ? 's' : ''} disponible${qs.doctors_on_clock > 1 ? 's' : ''} · ${qs.waiting} en fila`;
+          note.style.display = 'block';
+        }
+      });
+    }).catch(() => {});
+  }
 };
 
-window.showLocationBooking = function(locationId) {
+window.showLocationBooking = async function(locationId) {
   const locations = Store.getLocations();
   const location = locations.find(l => l.id === locationId);
   if (!location) return;
-  
+
+  // Prefer the live queue when a doctor is on shift
+  let waitMinutes = location.currentWait;
+  if (window.FarmaciaAPI?.isSupabaseAvailable?.() && FarmaciaAPI?.getQueueStatus) {
+    const qs = await FarmaciaAPI.getQueueStatus().catch(() => null);
+    if (qs && qs.doctors_on_clock > 0 && qs.estimated_wait_minutes != null) {
+      waitMinutes = qs.estimated_wait_minutes;
+    }
+  }
+
   // Calculate estimated time
   const now = new Date();
-  const estimatedTime = new Date(now.getTime() + location.currentWait * 60000);
+  const estimatedTime = new Date(now.getTime() + waitMinutes * 60000);
   const estimatedTimeStr = estimatedTime.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
   
   const modal = document.querySelector('.modal-overlay');
@@ -8781,7 +8810,7 @@ window.showLocationBooking = function(locationId) {
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div>
               <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Tiempo de espera</div>
-              <div style="font-size: 2.5rem; font-weight: 700; color: #46AC78;">${location.currentWait}</div>
+              <div style="font-size: 2.5rem; font-weight: 700; color: #46AC78;">${waitMinutes}</div>
               <div style="font-size: 0.85rem; color: #22c55e;">minutos</div>
             </div>
             <div>
@@ -8865,13 +8894,25 @@ window.confirmInPersonBooking = async function(locationId) {
   const locations = Store.getLocations();
   const location = locations.find(l => l.id === locationId);
   
-  // Calculate wait times
+  // Calculate wait times — prefer the live queue (a doctor on shift),
+  // fall back to the schedule-based local estimate
   const now = new Date();
-  const estimatedTime = new Date(now.getTime() + location.currentWait * 60000);
-  const queuePosition = Math.ceil(location.currentWait / 10); // Approx 10 min per patient
-  
+  let waitMinutes = location.currentWait;
+  let queuePosition = Math.ceil(location.currentWait / 10); // Approx 10 min per patient
+  let liveQueue = null;
+
+  if (window.FarmaciaAPI?.isSupabaseAvailable?.() && FarmaciaAPI?.getQueueStatus) {
+    liveQueue = await FarmaciaAPI.getQueueStatus().catch(() => null);
+    if (liveQueue && liveQueue.doctors_on_clock > 0 && liveQueue.estimated_wait_minutes != null) {
+      waitMinutes = liveQueue.estimated_wait_minutes;
+      queuePosition = liveQueue.waiting + 1;
+    }
+  }
+
+  const estimatedTime = new Date(now.getTime() + waitMinutes * 60000);
+
   let useSupabase = false;
-  
+
   // Try Supabase if authenticated
   if (FarmaciaAPI.isSupabaseAvailable() && currentAuthUser) {
     try {
@@ -8890,7 +8931,7 @@ window.confirmInPersonBooking = async function(locationId) {
       console.warn('[createAppointment] Supabase failed, falling back:', e.message);
     }
   }
-  
+
   // Fallback to localStorage
   if (!useSupabase) {
     Store.addAppointment({
@@ -8899,15 +8940,14 @@ window.confirmInPersonBooking = async function(locationId) {
       patientName: name,
       reason,
       notes,
-      currentWait: location.currentWait,
+      currentWait: waitMinutes,
       estimatedTime: estimatedTime.toISOString(),
       queuePosition
     });
     console.log('[createAppointment] Fallback localStorage appointment created');
+    // Simulate the queue growing locally; real queue comes from Supabase
+    Store.updateLocationWaitTime(locationId, location.currentWait + 15);
   }
-  
-  // Update location wait time (simulate adding to queue)
-  Store.updateLocationWaitTime(locationId, location.currentWait + 15);
   
   document.querySelector('.modal-overlay').innerHTML = `
     <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; text-align: center; overflow-y: auto;">
@@ -8918,7 +8958,7 @@ window.confirmInPersonBooking = async function(locationId) {
         <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Tu posición en la fila:</div>
         <div style="font-size: 3rem; font-weight: 700; color: #46AC78;">#${queuePosition}</div>
         <div style="font-size: 0.9rem; color: #22c55e; margin-top: 0.5rem;">
-          Tiempo estimado: ${location.currentWait} min
+          Tiempo estimado: ${waitMinutes} min de espera
         </div>
       </div>
       
