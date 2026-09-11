@@ -508,7 +508,9 @@ begin
   insert into membership_members (membership_id, sub_id, name, is_owner)
   values (v_membership.id, v_membership.plan_id || '-1', p_customer->>'full_name', true);
 
-  if p_member_names is not null then
+  -- array_length of an EMPTY array is NULL, not 0: guard the loop or the
+  -- whole signup dies with "upper bound of FOR loop cannot be null".
+  if coalesce(array_length(p_member_names, 1), 0) > 0 then
     for i in 1..array_length(p_member_names, 1) loop
       insert into membership_members (membership_id, sub_id, name, is_owner)
       values (v_membership.id, v_membership.plan_id || '-' || (i+1), p_member_names[i], false);
