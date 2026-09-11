@@ -1,0 +1,16 @@
+{
+  "name": "Farmacia Apolo",
+  "short_name": "Apolo",
+  "description": "Consultas, citas, recetas y tu membresía de Farmacia Apolo.",
+  "start_url": "/customer-app/",
+  "scope": "/customer-app/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#141B5E",
+  "theme_color": "#1E2A8A",
+  "lang": "es-MX",
+  "icons": [
+    { "src": "icon-192x192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
