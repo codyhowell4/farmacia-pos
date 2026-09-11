@@ -8685,7 +8685,7 @@ window.showInPersonConsulta = function() {
           <div style="font-size: 2.5rem;">⏱️</div>
           <div>
             <div style="font-weight: 600; color: #15803d;">Tiempos de espera en tiempo real</div>
-            <div style="font-size: 0.85rem; color: #22c55e;">Como Great Clips - únete a la lista</div>
+            <div style="font-size: 0.85rem; color: #22c55e;">Únete a la lista desde donde estés</div>
           </div>
         </div>
         <div style="font-size: 0.8rem; color: var(--text-secondary);">
@@ -8714,7 +8714,7 @@ window.showInPersonConsulta = function() {
                 ${loc.isOpen ? `
                   <div style="text-align: center; background: ${waitBg}; padding: 0.5rem 0.75rem; border-radius: 12px; min-width: 70px;">
                     <div style="font-size: 1.5rem; font-weight: 700; color: ${waitColor};">${loc.currentWait}</div>
-                    <div style="font-size: 0.65rem; color: ${waitColor};">min</div>
+                    <div style="font-size: 0.65rem; color: ${waitColor};">min de espera</div>
                   </div>
                 ` : `
                   <div style="text-align: center; background: #f3f4f6; padding: 0.5rem 0.75rem; border-radius: 12px;">
