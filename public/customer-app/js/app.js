@@ -7566,19 +7566,8 @@ function renderConsulta() {
     <div style="padding: 1rem;">
       <div style="font-weight: 600; margin-bottom: 1rem; color: var(--text-secondary);">Elige cómo quieres consultar:</div>
       
-      <!-- Chat Option -->
-      <div onclick="showChatConsulta()" style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border-radius: 20px; padding: 1.5rem; margin-bottom: 1rem; cursor: pointer; border: 2px solid #bae6fd; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 24px rgba(14, 165, 233, 0.2)'" onmouseout="this.style.transform=''; this.style.boxShadow=''">
-        <div style="display: flex; align-items: center; gap: 1rem;">
-          <div style="font-size: 3rem;">💬</div>
-          <div style="flex: 1;">
-            <div style="font-weight: 700; font-size: 1.2rem; color: #0369a1; margin-bottom: 0.25rem;">Chat Médico</div>
-            <div style="font-size: 0.85rem; color: #0ea5e9; line-height: 1.4;">Describe tus síntomas y recibe recomendaciones de medicamentos disponibles</div>
-            ${hasActiveChat ? `<div style="margin-top: 0.5rem; font-size: 0.75rem; color: #46AC78; font-weight: 600;">✓ Tienes una consulta activa</div>` : ''}
-          </div>
-          <div style="font-size: 1.5rem; color: #0ea5e9;">→</div>
-        </div>
-      </div>
-      
+      <!-- Oculto por ahora — restaurar cuando se habilite Chat Médico: tarjeta "💬 Chat Médico" (showChatConsulta) -->
+
       <!-- Video Consultation Option -->
       <div onclick="showVideoConsulta()" style="background: linear-gradient(135deg, #f5f3ff, #ede9fe); border-radius: 20px; padding: 1.5rem; margin-bottom: 1rem; cursor: pointer; border: 2px solid #ddd6fe; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 24px rgba(139, 92, 246, 0.2)'" onmouseout="this.style.transform=''; this.style.boxShadow=''">
         <div style="display: flex; align-items: center; gap: 1rem;">
