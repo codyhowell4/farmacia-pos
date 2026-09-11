@@ -131,6 +131,10 @@ const DoctorAppointments = () => {
   const safeAppointments = Array.isArray(appointments) ? appointments : [];
   const safeCustomers = Array.isArray(customers) ? customers : [];
 
+  const isUnpaidPendingVideo = (a) =>
+    a?.type === 'video' && a?.status === 'pending' &&
+    ['unpaid', 'membership_half'].includes(a?.payment_status || 'unpaid');
+
   const loadData = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
@@ -285,10 +289,6 @@ const DoctorAppointments = () => {
       console.error(err);
     }
   };
-
-  const isUnpaidPendingVideo = (a) =>
-    a?.type === 'video' && a?.status === 'pending' &&
-    ['unpaid', 'membership_half'].includes(a?.payment_status || 'unpaid');
 
   // Empezar Consulta: two-step — confirmed → in_consulta, then the
   // NOM-004 form (PostVisitDialog) ends the consulta on save.
