@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { renderPayPalButtons, PAYPAL_PLAN_IDS, isPayPalConfigured } from '@/lib/paypal';
-import { Users, User, CheckCircle, Activity, MapPin, ArrowLeft } from 'lucide-react';
+import { Users, User, CheckCircle, Activity, MapPin, ArrowLeft, Clock, RefreshCw } from 'lucide-react';
 
 const REVISION_SUMMARY = 'Revisión semestral gratis (valor $775): incluye Biometría Hemática, Examen General de Orina, Química Sanguínea de 12 elementos y Consulta';
 
@@ -50,6 +50,11 @@ const MembershipPublicPage = () => {
   const [selectedPlanKey, setSelectedPlanKey] = useState(null);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState(null);
+  // Set when PayPal charged but activation failed after all retries: drives
+  // the "pago recibido" screen instead of a bare error. Money was taken, so
+  // the UX must never look like the purchase failed.
+  const [pending, setPending] = useState(null);
+  const [createdSnapshot, setCreatedSnapshot] = useState(null);
   const paypalRendered = useRef(false);
   // True once the PayPal buttons are on screen for the current form state;
   // used to lock the terms checkbox so it can't be unchecked mid-payment.
@@ -106,10 +111,54 @@ const MembershipPublicPage = () => {
       .filter(Boolean);
   };
 
+  // Sends the activation to the edge function. Throws with the server's
+  // error message on failure; callers decide whether to retry.
+  const submitRegistration = async (subscriptionId, planKey, snapshot) => {
+    const familyMembers = planKey === 'familiar'
+      ? [snapshot.member2, snapshot.member3, snapshot.member4, snapshot.member5, snapshot.member6]
+          .map((m) => m.trim())
+          .filter(Boolean)
+      : [];
+
+    const res = await fetch(EDGE_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subscription_id: subscriptionId,
+        plan_type: planKey,
+        password: snapshot.password,
+        customer: {
+          full_name: snapshot.ownerName.trim(),
+          email: snapshot.email.trim(),
+          phone: snapshot.phone.trim(),
+        },
+        member_names: familyMembers,
+        trackers_to_fulfill: 0,
+        org_id: PUBLIC_ORG_ID,
+        terms_accepted_at: new Date().toISOString(),
+      }),
+    });
+
+    const result = await res.json();
+    if (!res.ok || result.error) {
+      throw new Error(result.error || 'Error al registrar la membresía');
+    }
+    return result;
+  };
+
+  const finishRegistration = (result, snapshot) => {
+    setCreated(result.membership);
+    setCreatedSnapshot(snapshot);
+    setStep('success');
+    toast({
+      title: 'Membresía registrada',
+      description: `Plan ID: ${result.membership.plan_id}`,
+    });
+  };
+
   const handlePayPalApprove = async (data) => {
     const currentForm = formRef.current;
     const currentPlanKey = selectedPlanKeyRef.current;
-    const currentPlan = currentPlanKey ? PLANS[currentPlanKey] : null;
 
     const validationError = (() => {
       if (!currentForm.ownerName.trim()) return 'El nombre del titular es obligatorio.';
@@ -133,49 +182,53 @@ const MembershipPublicPage = () => {
       return;
     }
 
-    const familyMembers = currentPlanKey === 'familiar'
-      ? [currentForm.member2, currentForm.member3, currentForm.member4, currentForm.member5, currentForm.member6]
-          .map((m) => m.trim())
-          .filter(Boolean)
-      : [];
-
+    const snapshot = { ...currentForm };
     setLoading(true);
     try {
-      const res = await fetch(EDGE_FUNCTION_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subscription_id: data.subscriptionID,
-          plan_type: currentPlanKey,
-          password: currentForm.password,
-          customer: {
-            full_name: currentForm.ownerName.trim(),
-            email: currentForm.email.trim(),
-            phone: currentForm.phone.trim(),
-          },
-          member_names: familyMembers,
-          trackers_to_fulfill: 0,
-          org_id: PUBLIC_ORG_ID,
-          terms_accepted_at: new Date().toISOString(),
-        }),
-      });
-
-      const result = await res.json();
-      if (!res.ok || result.error) {
-        throw new Error(result.error || 'Error al registrar la membresía');
+      // The payment already happened at PayPal, so a failure here is almost
+      // always transient (network blip, function cold start, schema cache
+      // reload). Retry before ever bothering the user with it.
+      let result = null;
+      let lastError = null;
+      for (let attempt = 0; attempt < 3 && !result; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+        try {
+          result = await submitRegistration(data.subscriptionID, currentPlanKey, snapshot);
+        } catch (err) {
+          console.error(`[membresias] activation attempt ${attempt + 1} failed:`, err);
+          lastError = err;
+        }
       }
 
-      setCreated(result.membership);
-      setStep('success');
-      toast({
-        title: 'Membresía registrada',
-        description: `Plan ID: ${result.membership.plan_id}`,
-      });
+      if (result) {
+        finishRegistration(result, snapshot);
+      } else {
+        setPending({
+          subscriptionId: data.subscriptionID,
+          planKey: currentPlanKey,
+          snapshot,
+          error: lastError?.message || null,
+        });
+        setStep('pending');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRetryActivation = async () => {
+    if (!pending) return;
+    setLoading(true);
+    try {
+      const result = await submitRegistration(pending.subscriptionId, pending.planKey, pending.snapshot);
+      finishRegistration(result, pending.snapshot);
+      setPending(null);
     } catch (err) {
-      console.error(err);
+      console.error('[membresias] manual activation retry failed:', err);
+      setPending((p) => ({ ...p, error: err.message }));
       toast({
-        title: 'Error',
-        description: err.message || 'No se pudo registrar la membresía.',
+        title: 'Aún no se puede activar',
+        description: 'Lo revisamos y te contactamos. Tu pago está seguro.',
         variant: 'destructive',
       });
     } finally {
@@ -409,23 +462,64 @@ const MembershipPublicPage = () => {
   const renderSuccess = () => (
     <div className="max-w-xl mx-auto text-center space-y-6">
       <CheckCircle className="w-16 h-16 text-green-600 mx-auto" />
-      <h1 className="text-3xl font-bold text-slate-900">¡Bienvenido a Membresías Apolo!</h1>
+      <h1 className="text-3xl font-bold text-slate-900">¡Gracias! Tu membresía está activa</h1>
+      <p className="text-lg text-slate-600">Bienvenido a Membresías Apolo.</p>
       <div className="bg-slate-50 rounded-xl p-6 space-y-2 text-left">
         <p className="text-sm text-slate-500">Plan ID</p>
         <p className="text-2xl font-mono font-bold text-slate-900">{created?.plan_id}</p>
         <p className="text-sm text-slate-500">Titular</p>
-        <p className="font-medium">{created?.customers?.full_name}</p>
+        <p className="font-medium">{created?.customers?.full_name || createdSnapshot?.ownerName}</p>
         <p className="text-sm text-slate-500">Renovación</p>
         <p className="font-medium">{created?.next_renewal_date}</p>
         <p className="text-sm text-slate-500">Monto mensual</p>
         <p className="font-medium">${Number(created?.monthly_amount).toFixed(2)} MXN</p>
       </div>
-      <p className="text-slate-600">Guarda tu Plan ID. Lo necesitarás en tu próxima visita.</p>
       <p className="text-slate-600">
-        Ya puedes iniciar sesión en el portal de clientes en{' '}
-        <a href="/customer-app/" className="text-apolo-navy underline">/customer-app/</a>{' '}
-        con tu correo electrónico, teléfono o número de membresía y la contraseña que elegiste.
+        Guarda tu Plan ID — lo necesitarás en tus visitas. Te enviaremos la confirmación a{' '}
+        <span className="font-medium">{createdSnapshot?.email}</span>.
       </p>
+      <div className="space-y-3">
+        <Button className="w-full text-lg py-6" onClick={() => { window.location.href = '/customer-app/'; }}>
+          Entrar a la app de clientes
+        </Button>
+        <p className="text-sm text-slate-500">
+          Inicia sesión con tu correo electrónico, teléfono o número de membresía y la contraseña que elegiste.
+        </p>
+      </div>
+    </div>
+  );
+
+  // PayPal charged but activation didn't confirm: reassure, keep the
+  // evidence on screen, and offer a manual retry (safe — the edge function
+  // treats a repeated subscription id as a replay).
+  const renderPending = () => (
+    <div className="max-w-xl mx-auto text-center space-y-6">
+      <Clock className="w-16 h-16 text-amber-500 mx-auto" />
+      <h1 className="text-3xl font-bold text-slate-900">¡Recibimos tu pago!</h1>
+      <p className="text-lg text-slate-600">
+        PayPal procesó tu pago correctamente. Estamos terminando de activar tu membresía — normalmente toma solo unos minutos.
+      </p>
+      <div className="bg-slate-50 rounded-xl p-6 space-y-2 text-left">
+        <p className="text-sm text-slate-500">Plan</p>
+        <p className="font-medium">{pending?.planKey ? PLANS[pending.planKey].name : ''}</p>
+        <p className="text-sm text-slate-500">Titular</p>
+        <p className="font-medium">{pending?.snapshot?.ownerName}</p>
+        <p className="text-sm text-slate-500">ID de suscripción de PayPal</p>
+        <p className="font-mono font-medium break-all">{pending?.subscriptionId}</p>
+      </div>
+      <Button className="w-full text-lg py-6" disabled={loading} onClick={handleRetryActivation}>
+        <RefreshCw className={`w-5 h-5 mr-2 ${loading ? 'animate-spin' : ''}`} />
+        {loading ? 'Activando...' : 'Reintentar activación'}
+      </Button>
+      <p className="text-slate-600">
+        Si el problema continúa, contáctanos y te activamos de inmediato — tu pago está seguro:
+      </p>
+      <p className="font-medium text-slate-900">
+        Tel: +52 1 442 548 8893 · citas@apolofarmacia.com.mx
+      </p>
+      {pending?.error && (
+        <p className="text-xs text-slate-400">Detalle técnico: {pending.error}</p>
+      )}
     </div>
   );
 
@@ -435,6 +529,7 @@ const MembershipPublicPage = () => {
         {step === 'plans' && renderPlans()}
         {step === 'form' && renderForm()}
         {step === 'success' && renderSuccess()}
+        {step === 'pending' && renderPending()}
       </div>
       <p className="text-xs text-slate-500 text-center mt-10">
         Farmacia Apolo · Cometa 4, San Antonio Zomeyucan, Naucalpan de Juárez · Tel: +52 1 442 548 8893

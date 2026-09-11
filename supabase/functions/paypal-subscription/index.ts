@@ -376,6 +376,21 @@ Deno.serve(async (req) => {
       const existingMembership = await findMembershipByCustomer(supabase, existingCustomer.id);
 
       if (existingMembership && ['active', 'paused'].includes(existingMembership.status)) {
+        if (existingMembership.processor_subscription_id === payload.subscription_id) {
+          // Replay of the same approved PayPal subscription (client retry
+          // after a network blip, or the "Reintentar activación" button on
+          // the pending screen): the membership is already registered, so
+          // answer success instead of blocking a paid signup.
+          return new Response(
+            JSON.stringify({
+              success: true,
+              membership: existingMembership,
+              portal_account: 'skipped',
+              replayed: true,
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
         throw new Error(
           'Ya existe una membresía activa o pausada para este correo o teléfono. Usa el panel de administración para gestionarla.'
         );
@@ -434,7 +449,15 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error('[paypal-subscription] error:', err);
-    const message = err instanceof Error ? err.message : 'Error desconocido';
+    let message = 'Error desconocido';
+    if (err instanceof Error) {
+      message = err.message;
+    } else if (err && typeof err === 'object') {
+      // PostgREST/GoTrue errors are plain objects, not Error instances.
+      // Without this unwrap the client only ever sees "Error desconocido".
+      const e = err as { message?: string; details?: string; hint?: string; code?: string };
+      message = e.message || e.details || (e.code ? `Error de base de datos (${e.code})` : message);
+    }
     return new Response(JSON.stringify({ error: message }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
