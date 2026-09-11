@@ -1658,28 +1658,17 @@ async function handleLogout() {
 
 window.handleLogout = handleLogout;
 
-// Request notification permission
+// Request notification permission — always through the explanation
+// pre-prompt first, so the browser's native popup never appears cold.
 async function requestNotificationPermission() {
   const status = NotificationManager.getStatus();
-  
+
   if (!status.supported) {
     console.log('Notifications not supported in this browser');
     return;
   }
-  
-  if (status.permission === 'default') {
-    const granted = await NotificationManager.requestPermission();
-    if (granted) {
-      // Schedule notifications for existing schedules
-      const schedules = Store.getMedicineSchedules();
-      for (const schedule of schedules) {
-        if (schedule.active) {
-          await NotificationManager.scheduleAllDoses(schedule);
-        }
-      }
-      showToast('Notificaciones activadas. Recibirás alertas cuando sea hora de tus medicamentos.', 'success');
-    }
-  } else if (status.permission === 'granted') {
+
+  if (status.permission === 'granted') {
     // Already granted, schedule notifications for existing schedules
     const schedules = Store.getMedicineSchedules();
     for (const schedule of schedules) {
@@ -1687,7 +1676,79 @@ async function requestNotificationPermission() {
         await NotificationManager.scheduleAllDoses(schedule);
       }
     }
+    return;
   }
+
+  if (status.permission !== 'default') return; // denied: settings explains how to unblock
+
+  // After a dismissal, don't prime again for a week.
+  try {
+    const primedAt = parseInt(localStorage.getItem('apollo_notif_primed_at') || '0', 10);
+    if (primedAt && (Date.now() - primedAt) < 7 * 864e5) return;
+  } catch (e) {}
+
+  showNotificationPrePrompt();
+}
+
+// Branded explanation shown BEFORE the browser's native permission popup:
+// users who understand why we ask are far more likely to accept.
+function showNotificationPrePrompt() {
+  if (document.getElementById('notif-preprompt')) return;
+
+  const modal = document.createElement('div');
+  modal.id = 'notif-preprompt';
+  modal.className = 'modal-overlay';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
+
+  modal.innerHTML = `
+    <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden;">
+      <div style="padding: 1.75rem 1.5rem 1.5rem; text-align: center;">
+        <div style="font-size: 3rem; margin-bottom: 0.75rem;">🔔</div>
+        <h3 style="margin: 0 0 0.75rem;">Activa las notificaciones</h3>
+        <p style="color: var(--text-primary); margin: 0 0 0.75rem; font-size: 0.95rem; line-height: 1.5;">
+          Para poder recordarte tomar tus medicamentos según tu receta, necesitamos que actives las notificaciones.
+        </p>
+        <p style="color: var(--text-muted); margin: 0; font-size: 0.8rem; line-height: 1.5;">
+          Solo recibirás avisos importantes sobre tu salud. Puedes desactivarlas cuando quieras desde Ajustes.
+        </p>
+      </div>
+      <div style="padding: 0 1.5rem 1.5rem; display: flex; flex-direction: column; gap: 0.75rem;">
+        <button id="notif-preprompt-accept" style="width: 100%; padding: 1rem; background: #1E2A8A; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">
+          🔔 Activar notificaciones
+        </button>
+        <button id="notif-preprompt-later" style="width: 100%; padding: 0.875rem; background: #f3f4f6; border: none; border-radius: 12px; cursor: pointer; color: var(--text-muted);">
+          Ahora no
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const close = (dismissed) => {
+    if (dismissed) {
+      try { localStorage.setItem('apollo_notif_primed_at', String(Date.now())); } catch (e) {}
+    }
+    modal.remove();
+  };
+
+  modal.querySelector('#notif-preprompt-later').addEventListener('click', () => close(true));
+
+  modal.querySelector('#notif-preprompt-accept').addEventListener('click', async () => {
+    close(false);
+    const granted = await NotificationManager.requestPermission();
+    if (granted) {
+      const schedules = Store.getMedicineSchedules();
+      for (const schedule of schedules) {
+        if (schedule.active) {
+          await NotificationManager.scheduleAllDoses(schedule);
+        }
+      }
+      showToast('Notificaciones activadas. Recibirás alertas cuando sea hora de tus medicamentos.', 'success');
+    } else {
+      showToast('No se activaron las notificaciones. Puedes activarlas después desde Ajustes.', 'info');
+    }
+  });
 }
 
 // ============================================
@@ -10009,8 +10070,8 @@ function renderCaregiver() {
     <!-- Family Members List -->
     <div style="padding: 0 1rem 1rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-        <span style="font-weight: 600;">Miembros de la familia</span>
-        <span style="font-size: 0.8rem; color: var(--text-muted);">${allProfiles.length} perfiles</span>
+        <span style="font-weight: 600; color: white;">Miembros de la familia</span>
+        <span style="font-size: 0.8rem; color: rgba(255,255,255,0.65);">${allProfiles.length} perfiles</span>
       </div>
       
       <div style="display: flex; flex-direction: column; gap: 0.75rem;">
@@ -10090,7 +10151,20 @@ window.deleteFamilyMember = function(profileId) {
   }
 };
 
-window.showAddFamilyMemberModal = function() {
+window.showAddFamilyMemberModal = async function() {
+  // Adding family profiles is a Plan Familiar benefit: members on the
+  // Individual plan get the upgrade offer instead of the form.
+  let planType = null;
+  try {
+    const membership = await FarmaciaAPI.getMembershipDetails();
+    if (membership && membership.isActive) planType = membership.plan_type || 'individual';
+  } catch (e) { /* fall through and behave as before */ }
+
+  if (planType && planType !== 'familiar') {
+    showFamilyUpgradeModal();
+    return;
+  }
+
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
   modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: flex-end; z-index: 1000;';
@@ -10145,6 +10219,40 @@ window.showAddFamilyMemberModal = function() {
           <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.875rem; background: #f3f4f6; border: none; border-radius: 12px; cursor: pointer; font-weight: 500;">Cancelar</button>
           <button onclick="saveNewFamilyMember()" style="flex: 1; padding: 0.875rem; background: #8b5cf6; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Crear Perfil</button>
         </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+};
+
+// Upgrade offer shown to Individual-plan members who try to add family.
+window.showFamilyUpgradeModal = function() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: flex-end; z-index: 1000;';
+  modal.innerHTML = `
+    <div style="background: white; border-radius: 20px 20px 0 0; width: 100%; max-height: 90vh; overflow-y: auto;">
+      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; text-align: center;">
+        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">👨‍👩‍👧‍👦</div>
+        <h3 style="margin: 0; font-size: 1.2rem;">Pásate al Plan Familiar</h3>
+        <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.85rem;">Los perfiles familiares son un beneficio del Plan Familiar</p>
+      </div>
+      <div style="padding: 1.5rem;">
+        <p style="margin: 0 0 1rem; font-size: 0.95rem; color: var(--text-primary); line-height: 1.6;">
+          Tu plan actual es <strong>Individual</strong>. Con el <strong>Plan Familiar ($500/mes)</strong> agregas hasta <strong>6 personas</strong> y comparten <strong>8 consultas médicas al mes</strong>, conservando todos tus beneficios:
+        </p>
+        <ul style="margin: 0 0 1.25rem; padding-left: 1.2rem; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.8;">
+          <li>Hasta 6 personas (titular + 5)</li>
+          <li>8 consultas médicas mensuales compartidas</li>
+          <li>10% de descuento en toda la tienda</li>
+          <li>Revisión de laboratorio gratis cada 6 meses para cada miembro (valor $775)</li>
+        </ul>
+        <a href="https://wa.me/5214425488893?text=Hola%2C%20quiero%20cambiar%20mi%20membres%C3%ADa%20al%20Plan%20Familiar." target="_blank" rel="noopener noreferrer" style="display: block; width: 100%; padding: 1rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; box-sizing: border-box; margin-bottom: 0.75rem;">
+          💬 Quiero cambiarme al Plan Familiar
+        </a>
+        <button onclick="this.closest('.modal-overlay').remove()" style="width: 100%; padding: 0.875rem; background: #f3f4f6; border: none; border-radius: 12px; cursor: pointer; color: var(--text-muted);">
+          Ahora no
+        </button>
       </div>
     </div>
   `;

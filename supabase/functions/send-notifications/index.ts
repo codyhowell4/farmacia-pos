@@ -109,9 +109,64 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   insurance: 'Seguro',
 };
 
+// ── Brand shell ─────────────────────────────────────────────────────────
+const BRAND = {
+  navy: '#141B5E',
+  blue: '#1E2A8A',
+  green: '#46AC78',
+  address: 'Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan de Juárez, Méx.',
+  phone: '+52 1 442 548 8893',
+};
+
+const appUrl = (env: Record<string, string>) =>
+  env.APP_URL || 'https://apolofarmacia.com.mx/customer-app/';
+const logoUrl = (env: Record<string, string>) =>
+  env.EMAIL_LOGO_URL || 'https://apolofarmacia.com.mx/brand/apolo-logo.png';
+
+// Key-value summary rows (receipts, plan details).
+const kvRow = (k: string, v: string) =>
+  `<tr><td style="padding:7px 0;font-size:13px;color:#64748b;">${k}</td>` +
+  `<td style="padding:7px 0;font-size:14px;font-weight:700;color:#0f172a;text-align:right;">${v}</td></tr>`;
+
+const kvTable = (rows: string) =>
+  `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 4px;border-top:1px solid #e2e8f0;">${rows}</table>`;
+
+const planIdBadge = (planId: string) =>
+  `<div style="margin:16px 0;padding:14px;background:#f0f4ff;border:2px dashed ${BRAND.blue};border-radius:12px;text-align:center;">` +
+  `<div style="font-size:11px;letter-spacing:1px;color:#64748b;text-transform:uppercase;">Tu Plan ID</div>` +
+  `<div style="font-family:'Courier New',monospace;font-size:24px;font-weight:700;color:${BRAND.navy};letter-spacing:2px;">${escapeHtml(planId)}</div></div>`;
+
+// Every email goes out in the same branded shell: navy header with the
+// logo, white content card, footer with the pharmacy's data. Inline styles
+// only — Gmail/Outlook strip <style> blocks.
+const brandedEmail = (
+  env: Record<string, string>,
+  opts: { title: string; body: string; cta?: { href: string; label: string } }
+) => {
+  const ctaHtml = opts.cta
+    ? `<tr><td align="center" style="padding:8px 32px 26px;">` +
+      `<a href="${opts.cta.href}" style="display:inline-block;background:${BRAND.green};color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 34px;border-radius:10px;">${opts.cta.label}</a></td></tr>`
+    : '';
+  return (
+    `<div style="margin:0;padding:0;background:#f1f4f9;">` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f4f9;padding:24px 12px;"><tr><td align="center">` +
+    `<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;">` +
+    `<tr><td align="center" style="background:${BRAND.navy};padding:22px;">` +
+    `<img src="${logoUrl(env)}" alt="Farmacia Apolo" width="120" style="display:block;width:120px;height:auto;border-radius:12px;"/></td></tr>` +
+    `<tr><td style="padding:26px 32px 10px;font-family:Arial,Helvetica,sans-serif;">` +
+    `<h1 style="margin:0 0 12px;font-size:21px;line-height:1.3;color:${BRAND.navy};">${opts.title}</h1>` +
+    `<div style="font-size:15px;line-height:1.6;color:#334155;">${opts.body}</div></td></tr>` +
+    ctaHtml +
+    `<tr><td style="padding:16px 32px 22px;border-top:1px solid #e2e8f0;">` +
+    `<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.6;color:#94a3b8;">` +
+    `Farmacia Apolo · ${BRAND.address}<br/>Tel: ${BRAND.phone}</p></td></tr>` +
+    `</table></td></tr></table></div>`
+  );
+};
+
 // Builds { subject, html, text } per template. `text` is the plain body
 // used for WhatsApp/SMS and as the Resend text fallback.
-const buildMessage = (row: NotificationRow) => {
+const buildMessage = (env: Record<string, string>, row: NotificationRow) => {
   const name = row.payload.patient_name || '';
   const greeting = name ? `Hola ${name},` : 'Hola,';
   const date = row.payload.appointment_date
@@ -121,21 +176,27 @@ const buildMessage = (row: NotificationRow) => {
 
   if (row.template === 'booking_confirmation') {
     const text = `${greeting} tu cita${type} está agendada para el ${date}. Farmacia Apolo.`;
-    const html =
-      `<p>${escapeHtml(greeting)}</p>` +
-      `<p><strong>Tu cita está agendada.</strong></p>` +
-      `<p>Fecha y hora: ${escapeHtml(date)}${escapeHtml(type)}</p>` +
-      '<p>Farmacia Apolo</p>';
+    const html = brandedEmail(env, {
+      title: 'Tu cita está agendada',
+      body:
+        `<p style="margin:0 0 8px;">${escapeHtml(greeting)}</p>` +
+        `<p style="margin:0;">Tu cita${escapeHtml(type)} quedó agendada.</p>` +
+        (date ? kvTable(kvRow('Fecha y hora', escapeHtml(date))) : '') +
+        `<p style="margin:10px 0 0;">Si necesitas reprogramar, contáctanos al ${BRAND.phone}.</p>`,
+    });
     return { subject: 'Tu cita está agendada — Farmacia Apolo', html, text };
   }
 
   if (row.template === 'appointment_reminder') {
     const text = `${greeting} te recordamos tu cita de mañana${type}: ${date}. Farmacia Apolo.`;
-    const html =
-      `<p>${escapeHtml(greeting)}</p>` +
-      `<p><strong>Te recordamos tu cita de mañana.</strong></p>` +
-      `<p>Fecha y hora: ${escapeHtml(date)}${escapeHtml(type)}</p>` +
-      '<p>Farmacia Apolo</p>';
+    const html = brandedEmail(env, {
+      title: 'Te recordamos tu cita de mañana',
+      body:
+        `<p style="margin:0 0 8px;">${escapeHtml(greeting)}</p>` +
+        `<p style="margin:0;">Tienes una cita${escapeHtml(type)} mañana.</p>` +
+        (date ? kvTable(kvRow('Fecha y hora', escapeHtml(date))) : '') +
+        `<p style="margin:10px 0 0;">Si no puedes asistir, avísanos al ${BRAND.phone}.</p>`,
+    });
     return { subject: 'Te recordamos tu cita de mañana — Farmacia Apolo', html, text };
   }
 
@@ -145,13 +206,16 @@ const buildMessage = (row: NotificationRow) => {
     const milestone = String(row.payload.milestone || '');
     const packageLabel = String(row.payload.package_label || '');
     const text = `${greeting} tu membresía ${planId} tiene una revisión del mes ${milestone} disponible: ${packageLabel}. Pasa a la farmacia para agendarla. Farmacia Apolo.`;
-    const html =
-      `<p>${escapeHtml(greeting)}</p>` +
-      `<p><strong>Tienes una revisión de membresía disponible.</strong></p>` +
-      `<p>Membresía: ${escapeHtml(planId)}</p>` +
-      `<p>Revisión del mes: ${escapeHtml(milestone)}</p>` +
-      `<p>Incluye: ${escapeHtml(packageLabel)}</p>` +
-      '<p>Farmacia Apolo</p>';
+    const html = brandedEmail(env, {
+      title: 'Tienes una revisión de membresía disponible',
+      body:
+        `<p style="margin:0 0 8px;">${escapeHtml(greeting)}</p>` +
+        `<p style="margin:0;">Tu membresía cumplió <strong>${escapeHtml(milestone)} meses</strong> y tu revisión de laboratorio ya está disponible — sin costo para ti (valor normal $775).</p>` +
+        planIdBadge(planId) +
+        kvTable(kvRow('Incluye', escapeHtml(packageLabel))) +
+        `<p style="margin:10px 0 0;">Pasa a la farmacia con tu Plan ID para agendarla o agendarla desde la app.</p>`,
+      cta: { href: appUrl(env), label: 'Abrir la app' },
+    });
     return { subject: 'Tienes una revisión de membresía disponible — Farmacia Apolo', html, text };
   }
 
@@ -164,16 +228,21 @@ const buildMessage = (row: NotificationRow) => {
     const paymentDate = row.payload.payment_date ? formatAppointmentDate(String(row.payload.payment_date)) : '';
     const nextRenewal = row.payload.next_renewal_date ? formatDateOnly(String(row.payload.next_renewal_date)) : '';
     const text = `${greeting} recibimos tu pago de ${amount} de tu membresía ${planId}${paymentsMade ? ` (pago número ${paymentsMade})` : ''}.${method ? ` Método: ${method}.` : ''}${nextRenewal ? ` Próxima renovación: ${nextRenewal}.` : ''} Farmacia Apolo.`;
-    const html =
-      `<p>${escapeHtml(greeting)}</p>` +
-      `<p><strong>Recibimos el pago de tu membresía.</strong></p>` +
-      `<p>Membresía: ${escapeHtml(planId)}</p>` +
-      `<p>Monto: ${escapeHtml(amount)}</p>` +
-      (method ? `<p>Método de pago: ${escapeHtml(method)}</p>` : '') +
-      (paymentsMade ? `<p>Pago número: ${escapeHtml(paymentsMade)}</p>` : '') +
-      (paymentDate ? `<p>Fecha de pago: ${escapeHtml(paymentDate)}</p>` : '') +
-      (nextRenewal ? `<p>Próxima renovación: ${escapeHtml(nextRenewal)}</p>` : '') +
-      '<p>Farmacia Apolo</p>';
+    const html = brandedEmail(env, {
+      title: 'Recibimos el pago de tu membresía',
+      body:
+        `<p style="margin:0 0 8px;">${escapeHtml(greeting)}</p>` +
+        `<p style="margin:0;">Gracias — registramos tu pago correctamente.</p>` +
+        kvTable(
+          kvRow('Membresía', escapeHtml(planId)) +
+          kvRow('Monto', escapeHtml(amount)) +
+          (method ? kvRow('Método de pago', escapeHtml(method)) : '') +
+          (paymentsMade ? kvRow('Pago número', escapeHtml(paymentsMade)) : '') +
+          (paymentDate ? kvRow('Fecha de pago', escapeHtml(paymentDate)) : '') +
+          (nextRenewal ? kvRow('Próxima renovación', escapeHtml(nextRenewal)) : '')
+        ),
+      cta: { href: appUrl(env), label: 'Ver mi membresía' },
+    });
     return { subject: 'Recibo de pago de tu membresía — Farmacia Apolo', html, text };
   }
 
@@ -184,30 +253,43 @@ const buildMessage = (row: NotificationRow) => {
     const visits = row.payload.visits_limit != null ? String(row.payload.visits_limit) : '';
     const pct = row.payload.discount_percent != null ? String(row.payload.discount_percent) : '';
     const nextRenewal = row.payload.next_renewal_date ? formatDateOnly(String(row.payload.next_renewal_date)) : '';
-    const text = `${greeting} ¡bienvenido a Membresías Apolo! Tu membresía ${planId} (${planLabel}) ya está activa:${visits ? ` ${visits} consultas al mes,` : ''}${pct ? ` ${pct}% de descuento en toda la tienda,` : ''} toma de presión gratis y revisiones de laboratorio cada 6 meses. Mensualidad: ${monthly}.${nextRenewal ? ` Próxima renovación: ${nextRenewal}.` : ''} Farmacia Apolo.`;
-    const html =
-      `<p>${escapeHtml(greeting)}</p>` +
-      `<p><strong>¡Bienvenido a Membresías Apolo!</strong></p>` +
-      `<p>Tu membresía ${escapeHtml(planId)} (${escapeHtml(planLabel)}) ya está activa.</p>` +
-      (visits ? `<p>Consultas incluidas: ${escapeHtml(visits)} al mes</p>` : '') +
-      (pct ? `<p>Descuento en tienda: ${escapeHtml(pct)}%</p>` : '') +
-      `<p>Mensualidad: ${escapeHtml(monthly)}</p>` +
-      (nextRenewal ? `<p>Próxima renovación: ${escapeHtml(nextRenewal)}</p>` : '') +
-      '<p>También disfrutas toma de presión gratis y revisiones de laboratorio cada 6 meses.</p>' +
-      '<p>Farmacia Apolo</p>';
+    const text = `${greeting} ¡bienvenido a Membresías Apolo! Tu membresía ${planId} (${planLabel}) ya está activa:${visits ? ` ${visits} consultas al mes,` : ''}${pct ? ` ${pct}% de descuento en toda la tienda,` : ''} toma de presión gratis y revisiones de laboratorio cada 6 meses. Mensualidad: ${monthly}.${nextRenewal ? ` Próxima renovación: ${nextRenewal}.` : ''} App: ${appUrl(env)} Farmacia Apolo.`;
+    const html = brandedEmail(env, {
+      title: '¡Bienvenido a Membresías Apolo!',
+      body:
+        `<p style="margin:0 0 8px;">${escapeHtml(greeting)}</p>` +
+        `<p style="margin:0;">Tu membresía <strong>${escapeHtml(planLabel)}</strong> ya está activa. Preséntala con tu Plan ID en cada visita:</p>` +
+        planIdBadge(planId) +
+        `<p style="margin:0 0 6px;font-weight:700;color:#0f172a;">Tus beneficios:</p>` +
+        `<ul style="margin:0;padding-left:20px;">` +
+        (visits ? `<li style="padding:2px 0;">${escapeHtml(visits)} consultas médicas al mes (adicionales al 50%)</li>` : '') +
+        (pct ? `<li style="padding:2px 0;">${escapeHtml(pct)}% de descuento en toda la tienda</li>` : '') +
+        `<li style="padding:2px 0;">Toma de presión gratis cuando quieras</li>` +
+        `<li style="padding:2px 0;">Revisión de laboratorio gratis cada 6 meses (valor $775)</li>` +
+        `<li style="padding:2px 0;">Descuentos con nuestros socios</li>` +
+        `</ul>` +
+        kvTable(
+          kvRow('Mensualidad', escapeHtml(monthly)) +
+          (nextRenewal ? kvRow('Próxima renovación', escapeHtml(nextRenewal)) : '')
+        ) +
+        `<p style="margin:14px 0 0;">En la app puedes ver tus visitas, tus revisiones y agendar consultas. <strong>Guárdala en tu pantalla de inicio</strong>: ábrela y toca «Instalar» (Android) o Compartir → «Agregar a pantalla de inicio» (iPhone).</p>`,
+      cta: { href: appUrl(env), label: 'Entrar a la app' },
+    });
     return { subject: '¡Bienvenido a Membresías Apolo! — Farmacia Apolo', html, text };
   }
 
   if (row.template === 'membership_payment_failed') {
     const planId = String(row.payload.plan_id || '');
     const text = `${greeting} no pudimos cobrar la mensualidad de tu membresía ${planId}. Tus beneficios están pausados hasta que el pago se regularice. Actualiza tu método de pago o contáctanos para ayudarte. Farmacia Apolo.`;
-    const html =
-      `<p>${escapeHtml(greeting)}</p>` +
-      `<p><strong>No pudimos cobrar la mensualidad de tu membresía.</strong></p>` +
-      `<p>Membresía: ${escapeHtml(planId)}</p>` +
-      '<p>Tus beneficios están <strong>pausados</strong> hasta que el pago se regularice.</p>' +
-      '<p>Actualiza tu método de pago o contáctanos para ayudarte a conservar tu membresía.</p>' +
-      '<p>Farmacia Apolo</p>';
+    const html = brandedEmail(env, {
+      title: 'No pudimos cobrar tu membresía',
+      body:
+        `<p style="margin:0 0 8px;">${escapeHtml(greeting)}</p>` +
+        `<div style="margin:12px 0;padding:14px;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;">` +
+        `<p style="margin:0;color:#991b1b;"><strong>El cobro de tu mensualidad no se pudo realizar.</strong></p></div>` +
+        kvTable(kvRow('Membresía', escapeHtml(planId))) +
+        `<p style="margin:10px 0 0;">Tus beneficios están <strong>pausados</strong> hasta que el pago se regularice. Actualiza tu método de pago o llámanos al ${BRAND.phone} y te ayudamos a conservar tu membresía.</p>`,
+    });
     return { subject: 'No pudimos cobrar tu membresía — Farmacia Apolo', html, text };
   }
 
@@ -218,14 +300,15 @@ const buildMessage = (row: NotificationRow) => {
     const text = immediate
       ? `${greeting} tu membresía ${planId} fue cancelada. Si no reconoces esta acción o deseas reactivarla, contáctanos. Farmacia Apolo.`
       : `${greeting} tu membresía ${planId} quedará cancelada al final del periodo actual${effective ? ` (${effective})` : ''}. Conservas todos tus beneficios hasta entonces. Farmacia Apolo.`;
-    const html =
-      `<p>${escapeHtml(greeting)}</p>` +
-      `<p><strong>Tu membresía ha sido cancelada.</strong></p>` +
-      `<p>Membresía: ${escapeHtml(planId)}</p>` +
-      (immediate
-        ? '<p>La cancelación es efectiva de inmediato. Si no reconoces esta acción o deseas reactivarla, contáctanos.</p>'
-        : `<p>La cancelación se hará efectiva al final del periodo actual${effective ? ` (${escapeHtml(effective)})` : ''}. Conservas todos tus beneficios hasta entonces.</p>`) +
-      '<p>Farmacia Apolo</p>';
+    const html = brandedEmail(env, {
+      title: 'Tu membresía ha sido cancelada',
+      body:
+        `<p style="margin:0 0 8px;">${escapeHtml(greeting)}</p>` +
+        kvTable(kvRow('Membresía', escapeHtml(planId))) +
+        (immediate
+          ? `<p style="margin:10px 0 0;">La cancelación es efectiva de inmediato. Si no reconoces esta acción o deseas reactivar tu membresía, contáctanos al ${BRAND.phone}.</p>`
+          : `<p style="margin:10px 0 0;">La cancelación se hará efectiva al final del periodo actual${effective ? ` (<strong>${escapeHtml(effective)}</strong>)` : ''}. Conservas todos tus beneficios hasta entonces, y cuando quieras puedes reactivar tu membresía sin perder tus meses acumulados.</p>`),
+    });
     return { subject: 'Tu membresía ha sido cancelada — Farmacia Apolo', html, text };
   }
 
@@ -234,14 +317,16 @@ const buildMessage = (row: NotificationRow) => {
     const meetingUrl = row.payload.meeting_url || '';
     const linkPart = meetingUrl ? ` Enlace para unirte: ${meetingUrl}` : '';
     const text = `${greeting} tu consulta por video está lista${date ? ` para el ${date}` : ''}.${linkPart}`;
-    const html =
-      `<p>${escapeHtml(greeting)}</p>` +
-      `<p><strong>Tu consulta por video está lista.</strong></p>` +
-      (date ? `<p>Fecha y hora: ${escapeHtml(date)}</p>` : '') +
-      (meetingUrl
-        ? `<p><a href="${escapeHtml(meetingUrl)}">Unirme a la consulta</a></p>`
-        : '') +
-      '<p>Farmacia Apolo</p>';
+    const html = brandedEmail(env, {
+      title: 'Tu consulta por video está lista',
+      body:
+        `<p style="margin:0 0 8px;">${escapeHtml(greeting)}</p>` +
+        (date ? kvTable(kvRow('Fecha y hora', escapeHtml(date))) : '') +
+        (meetingUrl
+          ? `<p style="margin:10px 0 0;">Usa el botón de abajo a la hora de tu cita.</p>`
+          : `<p style="margin:10px 0 0;">Te compartiremos el enlace antes de tu cita.</p>`),
+      cta: meetingUrl ? { href: meetingUrl, label: 'Unirme a la consulta' } : undefined,
+    });
     return { subject: 'Enlace de tu consulta — Farmacia Apolo', html, text };
   }
 
@@ -249,7 +334,10 @@ const buildMessage = (row: NotificationRow) => {
   // format, and send a harmless generic body so the queue keeps draining.
   console.error('[send-notifications] unknown template:', row.template, 'row id:', row.id);
   const text = `${greeting} tienes una notificación de Farmacia Apolo.`;
-  const html = `<p>${escapeHtml(greeting)}</p><p>Tienes una notificación de Farmacia Apolo.</p>`;
+  const html = brandedEmail(env, {
+    title: 'Notificación de Farmacia Apolo',
+    body: `<p style="margin:0;">${escapeHtml(greeting)} tienes una notificación de Farmacia Apolo.</p>`,
+  });
   return { subject: 'Notificación — Farmacia Apolo', html, text };
 };
 
@@ -316,6 +404,36 @@ const sendWhatsApp = async (
   }
 };
 
+// Sample data for preview mode — one row that exercises every field.
+const sampleRow = (template: NotificationRow['template']): NotificationRow => ({
+  id: 'preview',
+  org_id: 'preview',
+  channel: 'email',
+  recipient: 'preview@example.com',
+  template,
+  scheduled_for: new Date().toISOString(),
+  payload: {
+    patient_name: 'María González',
+    appointment_date: new Date().toISOString(),
+    type: 'Video',
+    meeting_url: 'https://apolofarmacia.com.mx/customer-app/',
+    plan_id: 'IND-2026-0001',
+    plan_type: 'individual',
+    milestone: 6,
+    package_label: 'Biometría Hemática, Examen General de Orina y Consulta',
+    amount: 150,
+    currency: 'MXN',
+    payment_method: 'paypal',
+    payments_made: 1,
+    payment_date: new Date().toISOString(),
+    next_renewal_date: new Date(Date.now() + 30 * 864e5).toISOString().split('T')[0],
+    monthly_amount: 150,
+    visits_limit: 2,
+    discount_percent: 10,
+    effective_date: new Date(Date.now() + 30 * 864e5).toISOString().split('T')[0],
+  },
+});
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders, status: 204 });
@@ -336,6 +454,24 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Preview mode: renders a template with sample data and returns the
+    // HTML without sending anything — a safe branding/layout check.
+    let requestBody: Record<string, unknown> = {};
+    try {
+      const raw = await req.text();
+      requestBody = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
+    } catch {
+      requestBody = {};
+    }
+
+    if (requestBody.preview === true && typeof requestBody.template === 'string') {
+      const msg = buildMessage(env, sampleRow(requestBody.template as NotificationRow['template']));
+      return new Response(msg.html, {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' },
+      });
+    }
+
     const supabase = supabaseAdmin(env);
 
     const { data: rows, error: fetchError } = await supabase
@@ -353,7 +489,7 @@ Deno.serve(async (req) => {
     for (const row of (rows || []) as NotificationRow[]) {
       summary.processed += 1;
 
-      const message = buildMessage(row);
+      const message = buildMessage(env, row);
       const providerConfigured =
         row.channel === 'email' ? !!env.RESEND_API_KEY : !!env.WHATSAPP_TOKEN;
 
