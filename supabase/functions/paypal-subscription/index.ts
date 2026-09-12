@@ -237,6 +237,36 @@ const isAlreadyRegisteredError = (err: { message?: string; code?: string }) => {
   return /already|exist|registered|duplicate/i.test(err.message || '');
 };
 
+// Flush the notification queue right away so welcome/receipt emails land
+// within seconds instead of waiting for the 5-minute cron tick.
+const flushNotifications = async (env: Record<string, string>) => {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (env.CRON_SECRET) headers['x-cron-secret'] = env.CRON_SECRET;
+  const res = await fetch(`${env.SUPABASE_URL}/functions/v1/send-notifications`, {
+    method: 'POST',
+    headers,
+    body: '{}',
+  });
+  const text = await res.text();
+  console.log('[paypal-subscription] notification flush:', res.status, text);
+};
+
+// Run the flush in the background when the runtime supports it, otherwise
+// inline — never lets a flush failure break the signup response.
+const scheduleFlush = async (env: Record<string, string>) => {
+  const flush = flushNotifications(env).catch((e) =>
+    console.error('[paypal-subscription] flush failed:', e)
+  );
+  const edgeRuntime = (globalThis as {
+    EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void };
+  }).EdgeRuntime;
+  if (edgeRuntime?.waitUntil) {
+    edgeRuntime.waitUntil(flush);
+  } else {
+    await flush;
+  }
+};
+
 // Provisions a customer portal auth account and links it to the given
 // customers row via customers.profile_id.
 //
@@ -381,6 +411,7 @@ Deno.serve(async (req) => {
           // after a network blip, or the "Reintentar activación" button on
           // the pending screen): the membership is already registered, so
           // answer success instead of blocking a paid signup.
+          await scheduleFlush(env);
           return new Response(
             JSON.stringify({
               success: true,
@@ -406,6 +437,25 @@ Deno.serve(async (req) => {
           0,
           existingMembership.basic_trackers_fulfilled || 0
         );
+
+        // Re-signup = a new payment: count it toward their milestone
+        // progress (payments_made carries over per business rule), book
+        // the sale, and fire receipt + welcome emails. Guarded so a
+        // bookkeeping hiccup never blocks a paid reactivation.
+        try {
+          const { error: payError } = await supabase.rpc('record_membership_payment', {
+            p_membership_id: membership.id,
+            p_amount: plan.price,
+            p_payment_method: 'paypal',
+            p_staff_id: null,
+            p_is_signup: true,
+          });
+          if (payError) {
+            console.error('[paypal-subscription] reinstate payment recording failed:', payError);
+          }
+        } catch (payErr) {
+          console.error('[paypal-subscription] reinstate payment recording failed:', payErr);
+        }
       } else {
         membership = await createMembership(supabase, payload, plan);
       }
@@ -442,6 +492,8 @@ Deno.serve(async (req) => {
         portalAccount = 'error';
       }
     }
+
+    await scheduleFlush(env);
 
     return new Response(JSON.stringify({ success: true, membership, portal_account: portalAccount }), {
       status: 200,

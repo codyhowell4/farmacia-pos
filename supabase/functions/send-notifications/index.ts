@@ -485,6 +485,9 @@ Deno.serve(async (req) => {
     if (fetchError) throw fetchError;
 
     const summary = { processed: 0, sent: 0, skipped: 0, failed: 0 };
+    // Per-row outcome for debugging (no recipient — the endpoint can be
+    // called without auth when CRON_SECRET is unset, so keep PII out).
+    const details: Array<Record<string, unknown>> = [];
 
     for (const row of (rows || []) as NotificationRow[]) {
       summary.processed += 1;
@@ -524,9 +527,17 @@ Deno.serve(async (req) => {
       if (updateError) {
         console.error('[send-notifications] status update failed:', row.id, updateError);
       }
+
+      details.push({
+        id: row.id,
+        template: row.template,
+        channel: row.channel,
+        result: update.status,
+        ...(update.error ? { error: update.error } : {}),
+      });
     }
 
-    return jsonResponse(summary, 200);
+    return jsonResponse({ ...summary, details }, 200);
   } catch (err) {
     console.error('[send-notifications] error:', err);
     const message = err instanceof Error ? err.message : 'Error desconocido';
