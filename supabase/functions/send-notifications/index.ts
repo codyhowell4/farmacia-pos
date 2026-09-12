@@ -474,6 +474,22 @@ Deno.serve(async (req) => {
 
     const supabase = supabaseAdmin(env);
 
+    // Heartbeat: every invocation writes a publicly readable row so the
+    // cron's health is verifiable from the REST API. The x-cron-job
+    // header distinguishes pg_cron fires from manual/enqueue-trigger runs.
+    try {
+      await supabase.from('cron_heartbeat').insert({
+        job: 'send-notifications',
+        source: req.headers.get('x-cron-job') || 'manual',
+      });
+      await supabase
+        .from('cron_heartbeat')
+        .delete()
+        .lt('ran_at', new Date(Date.now() - 7 * 86400000).toISOString());
+    } catch (hbErr) {
+      console.error('[send-notifications] heartbeat failed:', hbErr);
+    }
+
     const { data: rows, error: fetchError } = await supabase
       .from('notification_queue')
       .select('id, org_id, channel, recipient, template, payload, scheduled_for')
