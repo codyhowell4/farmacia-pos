@@ -39,8 +39,8 @@ const DoctorClockIn = () => {
       setShift(row);
       toast.success('Turno iniciado — ya puedes tomar citas');
     } catch (err) {
-      toast.error('No se pudo iniciar el turno');
       console.error(err);
+      toast.error(`No se pudo iniciar el turno: ${err?.message || 'error desconocido'}`);
     } finally {
       setBusy(false);
     }

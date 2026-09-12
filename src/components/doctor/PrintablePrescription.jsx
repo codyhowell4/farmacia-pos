@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { buildRecetaQrText } from '@/lib/cda';
 
+const NAVY = '#1E2A8A';
+const GREEN = '#2E9E7B';
+
 const PrintablePrescription = ({ prescription, customer }) => {
   const [qrUrl, setQrUrl] = useState(null);
 
@@ -11,7 +14,7 @@ const PrintablePrescription = ({ prescription, customer }) => {
   useEffect(() => {
     let cancelled = false;
     if (qrText) {
-      QRCode.toDataURL(qrText, { margin: 0, width: 160 })
+      QRCode.toDataURL(qrText, { margin: 0, width: 160, color: { dark: NAVY } })
         .then((url) => { if (!cancelled) setQrUrl(url); })
         .catch(() => { if (!cancelled) setQrUrl(null); });
     } else {
@@ -66,119 +69,160 @@ const PrintablePrescription = ({ prescription, customer }) => {
         }
         .prescription-sheet {
           width: 8.5in;
-          min-height: 5.5in;
+          height: 5.5in;
           margin: 0 auto;
-          padding: 0.35in;
           box-sizing: border-box;
-          font-family: 'Times New Roman', Times, serif;
+          font-family: 'Century Gothic', 'Futura', 'Trebuchet MS', sans-serif;
+          color: ${NAVY};
           position: relative;
           background: white;
+          overflow: hidden;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
-        .greek-border {
-          border: 3px double #1a1a1a;
-          padding: 0.25in;
+        .rx-frame-img {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+        }
+        .rx-content {
           position: relative;
+          height: 100%;
+          box-sizing: border-box;
+          padding: 0.38in 0.45in 0.3in;
           display: flex;
           flex-direction: column;
-          min-height: 5.3in;
-        }
-        .greek-border::before {
-          content: '';
-          position: absolute;
-          top: 4px; left: 4px; right: 4px; bottom: 4px;
-          border: 1px solid #1a1a1a;
-          pointer-events: none;
         }
         .rx-header {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
-          margin-bottom: 0.15in;
+          margin-bottom: 0.12in;
           flex-shrink: 0;
         }
         .rx-logo {
           text-align: center;
           line-height: 1.1;
+          letter-spacing: 3px;
         }
         .rx-logo-farmacia {
-          font-size: 11pt;
+          font-size: 10pt;
           letter-spacing: 6px;
           font-weight: 400;
         }
         .rx-logo-apolo {
-          font-size: 28pt;
-          font-weight: 900;
-          letter-spacing: 4px;
-          margin: 2px 0;
+          font-size: 26pt;
+          font-weight: 700;
+          letter-spacing: 5px;
+          margin: 1px 0;
         }
-        .rx-logo-line {
-          width: 1.4in;
+        .rx-logo-divider {
+          position: relative;
+          width: 1.9in;
           height: 2px;
-          background: #1a1a1a;
-          margin: 3px auto;
+          background: ${NAVY};
+          margin: 4px auto 5px;
+        }
+        .rx-logo-circle {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          width: 13px;
+          height: 13px;
+          border-radius: 50%;
+          border: 2.5px solid ${GREEN};
+          background: #fff;
+          box-sizing: border-box;
+        }
+        .rx-logo-circle::after {
+          content: '';
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          transform: translate(-50%, -50%);
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: ${NAVY};
         }
         .rx-logo-slogan {
-          font-size: 7pt;
-          letter-spacing: 1px;
-          margin-top: 3px;
+          font-size: 6.5pt;
+          letter-spacing: 1.5px;
         }
         .rx-doctor-info {
-          padding-top: 0.1in;
-          font-size: 10pt;
-          line-height: 1.8;
+          padding-top: 0.08in;
+          font-size: 9.5pt;
+          line-height: 1.9;
+          letter-spacing: 1px;
         }
         .rx-doctor-info label {
-          font-weight: 600;
+          font-weight: 700;
         }
         .rx-doctor-info .underline {
           display: inline-block;
-          min-width: 1.8in;
-          border-bottom: 1px solid #1a1a1a;
+          min-width: 1.7in;
+          border-bottom: 1px solid ${NAVY};
           margin-left: 4px;
+        }
+        .rx-header-right {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.12in;
+        }
+        .rx-caduceus {
+          width: 0.5in;
+          height: 0.68in;
+          flex-shrink: 0;
+          padding-top: 0.05in;
         }
         .rx-qr-block {
           display: flex;
           flex-direction: column;
           align-items: center;
           gap: 2px;
-          padding-top: 0.1in;
+          padding-top: 0.05in;
           flex-shrink: 0;
         }
         .rx-qr-block img {
-          width: 0.79in; /* ≈2cm */
-          height: 0.79in;
+          width: 0.72in;
+          height: 0.72in;
         }
         .rx-qr-caption {
           font-size: 5.5pt;
           text-align: center;
-          max-width: 0.95in;
+          max-width: 0.9in;
           line-height: 1.25;
         }
         .rx-body {
           display: flex;
-          gap: 0.15in;
-          margin-top: 0.1in;
+          gap: 0.14in;
+          margin-top: 0.06in;
           flex: 1;
           min-height: 0;
+          position: relative;
         }
         .rx-vitals {
-          width: 1.0in;
+          width: 1.05in;
           font-size: 8pt;
-          line-height: 1.55;
+          line-height: 1.75;
           flex-shrink: 0;
-          border-right: 1px solid #1a1a1a;
-          padding-right: 0.1in;
+          border-right: 1px solid ${NAVY};
+          padding-right: 0.08in;
+          letter-spacing: 0.5px;
         }
         .rx-vitals label {
           font-weight: 700;
           display: inline-block;
-          width: 0.48in;
-          font-size: 7.5pt;
+          width: 0.55in;
+          font-size: 7pt;
         }
         .rx-vitals .vline {
           display: inline-block;
           width: 0.4in;
-          border-bottom: 1px solid #1a1a1a;
+          border-bottom: 1px solid ${NAVY};
           margin-left: 2px;
           text-align: center;
           font-size: 8pt;
@@ -191,13 +235,23 @@ const PrintablePrescription = ({ prescription, customer }) => {
           display: flex;
           flex-direction: column;
           min-height: 0;
+          position: relative;
+        }
+        .rx-watermark {
+          position: absolute;
+          right: 0.05in;
+          top: 0.35in;
+          width: 2.9in;
+          pointer-events: none;
         }
         .rx-patient-header {
           display: flex;
           justify-content: space-between;
-          font-size: 10pt;
-          margin-bottom: 0.1in;
+          font-size: 9.5pt;
+          margin-bottom: 0.12in;
           flex-shrink: 0;
+          letter-spacing: 1px;
+          position: relative;
         }
         .rx-patient-header label {
           font-weight: 700;
@@ -205,7 +259,7 @@ const PrintablePrescription = ({ prescription, customer }) => {
         .rx-patient-header .underline {
           display: inline-block;
           min-width: 2in;
-          border-bottom: 1px solid #1a1a1a;
+          border-bottom: 1px solid ${NAVY};
           margin-left: 4px;
         }
         .rx-medications {
@@ -214,6 +268,7 @@ const PrintablePrescription = ({ prescription, customer }) => {
           padding-left: 0.1in;
           flex: 1;
           overflow: hidden;
+          position: relative;
         }
         .rx-med-item {
           margin-bottom: 0.08in;
@@ -227,12 +282,14 @@ const PrintablePrescription = ({ prescription, customer }) => {
           padding-left: 0.15in;
         }
         .rx-next-appointment {
-          margin-top: 0.15in;
+          margin-top: 0.1in;
           font-size: 9pt;
           display: flex;
           align-items: center;
           gap: 0.1in;
           flex-shrink: 0;
+          letter-spacing: 1px;
+          position: relative;
         }
         .rx-next-appointment label {
           font-weight: 700;
@@ -240,19 +297,20 @@ const PrintablePrescription = ({ prescription, customer }) => {
         .rx-next-appointment .date-box {
           display: inline-block;
           width: 0.35in;
-          border-bottom: 1px solid #1a1a1a;
+          border-bottom: 1px solid ${NAVY};
           text-align: center;
         }
         .rx-footer {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
-          margin-top: 0.15in;
-          padding-top: 0.1in;
-          border-top: 1px solid #ccc;
-          font-size: 7.5pt;
+          margin-top: 0.1in;
+          padding-top: 0.08in;
+          border-top: 1px solid ${NAVY};
+          font-size: 7pt;
           line-height: 1.5;
           flex-shrink: 0;
+          letter-spacing: 0.5px;
         }
         .rx-footer-col {
           display: flex;
@@ -261,19 +319,20 @@ const PrintablePrescription = ({ prescription, customer }) => {
           max-width: 2.2in;
         }
         .rx-footer-icon {
-          width: 16px;
-          height: 16px;
+          width: 15px;
+          height: 15px;
           flex-shrink: 0;
           margin-top: 1px;
         }
         .rx-footer strong {
-          font-size: 7.5pt;
+          font-size: 7pt;
           display: block;
           margin-bottom: 1px;
         }
         .rx-folio {
           text-align: center;
           font-size: 9pt;
+          letter-spacing: 1px;
         }
         .rx-folio label {
           font-weight: 700;
@@ -287,25 +346,39 @@ const PrintablePrescription = ({ prescription, customer }) => {
       `}</style>
 
       <div className="prescription-sheet">
-        <div className="greek-border">
+        <img className="rx-frame-img" src="/brand/receta-frame.png" alt="" />
+        <div className="rx-content">
           {/* Header */}
           <div className="rx-header">
             <div className="rx-logo">
-              <div className="rx-logo-farmacia">FARMACIA</div>
+              <div className="rx-logo-farmacia">— FARMACIA —</div>
               <div className="rx-logo-apolo">APOLO</div>
-              <div className="rx-logo-line" />
+              <div className="rx-logo-divider"><span className="rx-logo-circle" /></div>
               <div className="rx-logo-slogan">CUIDAMOS DE TI, CUIDAMOS TU SALUD</div>
             </div>
-            <div className="rx-doctor-info">
-              <div><label>NOMBRE DE DOCTOR:</label><span className="underline">{prescription.doctor_name || ''}</span></div>
-              <div><label>CÉDULA:</label><span className="underline">{prescription.doctor_license_number || ''}</span></div>
-            </div>
-            {prescription.signature && qrUrl && (
-              <div className="rx-qr-block">
-                <img src={qrUrl} alt="QR de verificación de firma electrónica" />
-                <div className="rx-qr-caption">Firma electrónica — verifique con el folio</div>
+            <div className="rx-header-right">
+              <div className="rx-doctor-info">
+                <div><label>NOMBRE DE DOCTOR:</label><span className="underline">{prescription.doctor_name || ''}</span></div>
+                <div><label>CÉDULA:</label><span className="underline">{prescription.doctor_license_number || ''}</span></div>
               </div>
-            )}
+              {prescription.signature && qrUrl && (
+                <div className="rx-qr-block">
+                  <img src={qrUrl} alt="QR de verificación de firma electrónica" />
+                  <div className="rx-qr-caption">Firma electrónica — verifique con el folio</div>
+                </div>
+              )}
+              <svg className="rx-caduceus" viewBox="0 0 48 64" fill="none" stroke={NAVY} strokeWidth="2" strokeLinecap="round">
+                {/* wings */}
+                <path d="M24 12 C18 3 8 3 4 9 C10 9 14 11 17 15 C12 15 8 18 7 22 C12 20 16 21 19 23" />
+                <path d="M24 12 C30 3 40 3 44 9 C38 9 34 11 31 15 C36 15 40 18 41 22 C36 20 32 21 29 23" />
+                {/* staff */}
+                <circle cx="24" cy="6" r="2.6" />
+                <line x1="24" y1="9" x2="24" y2="61" />
+                {/* intertwined snakes */}
+                <path d="M24 18 C15 22 33 26 24 30 C15 34 33 38 24 42 C15 46 31 50 24 54" />
+                <path d="M24 18 C33 22 15 26 24 30 C33 34 15 38 24 42 C33 46 17 50 24 54" />
+              </svg>
+            </div>
           </div>
 
           {/* Body */}
@@ -319,13 +392,14 @@ const PrintablePrescription = ({ prescription, customer }) => {
               <div><label>T/A:</label><span className="vline">{vitals.ta}</span></div>
               <div><label>FC:</label><span className="vline">{vitals.fc}</span></div>
               <div><label>FR:</label><span className="vline">{vitals.fr}</span></div>
-              <div><label>So2%:</label><span className="vline">{vitals.so2}</span></div>
+              <div><label>SO2%:</label><span className="vline">{vitals.so2}</span></div>
               <div><label>GLICEMIA:</label><span className="vline">{vitals.glicemia}</span></div>
               <div><label>ALERGIAS:</label><span className="vline">{vitals.alergias}</span></div>
             </div>
 
-            {/* Main area — full width, no watermark */}
+            {/* Main area with statue watermark */}
             <div className="rx-main">
+              <img className="rx-watermark" src="/brand/receta-watermark.png" alt="" />
               <div className="rx-patient-header">
                 <div>
                   <label>NOMBRE:</label>
@@ -333,11 +407,11 @@ const PrintablePrescription = ({ prescription, customer }) => {
                 </div>
                 <div>
                   <label>FECHA:</label>
-                  <span className="underline" style={{ minWidth: '0.8in', textAlign: 'center' }}>{rxDate.day}</span>
+                  <span className="underline" style={{ minWidth: '0.4in', textAlign: 'center' }}>{rxDate.day}</span>
                   <span>/</span>
-                  <span className="underline" style={{ minWidth: '0.8in', textAlign: 'center' }}>{rxDate.month}</span>
+                  <span className="underline" style={{ minWidth: '0.4in', textAlign: 'center' }}>{rxDate.month}</span>
                   <span>/</span>
-                  <span className="underline" style={{ minWidth: '0.8in', textAlign: 'center' }}>{rxDate.year}</span>
+                  <span className="underline" style={{ minWidth: '0.5in', textAlign: 'center' }}>{rxDate.year}</span>
                 </div>
               </div>
 

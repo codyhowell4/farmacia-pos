@@ -25,7 +25,7 @@ import {
   getCustomersForDoctor, confirmVideoAppointment, createMedicalNote,
   getActiveDoctorShift, getClockedInDoctorIds, getOrgDoctorNames,
   getOrgAppointmentsForDate, startConsulta, claimAppointment,
-  takeoverAppointment, cancelAppointmentStaff
+  takeoverAppointment, cancelAppointmentStaff, clockInDoctor
 } from '@/lib/db';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import PostVisitDialog from './PostVisitDialog';
@@ -293,20 +293,26 @@ const DoctorAppointments = () => {
   // Empezar Consulta: two-step — confirmed → in_consulta, then the
   // NOM-004 form (PostVisitDialog) ends the consulta on save.
   const handleStartConsulta = async (appt) => {
-    if (!appt?.id) return;
-    if (!activeShift) {
-      toast.error('Inicia tu turno antes de empezar una consulta');
-      return;
-    }
+    if (!appt?.id || !user?.id) return;
+    setBusyAction(true);
     try {
+      // A doctor starting a consulta is by definition present — if they
+      // forgot to clock in, do it for them instead of blocking.
+      if (!activeShift) {
+        const shift = await clockInDoctor(user.id);
+        setActiveShift(shift);
+        toast.success('Turno iniciado');
+      }
       const updated = await startConsulta(appt.id);
       toast.success('Consulta iniciada');
       setPostVisitAppt({ ...appt, ...updated });
       setPostVisitOpen(true);
       loadData();
     } catch (err) {
-      toast.error('No se pudo iniciar la consulta');
       console.error(err);
+      toast.error(`No se pudo iniciar la consulta: ${err?.message || 'error desconocido'}`);
+    } finally {
+      setBusyAction(false);
     }
   };
 
@@ -716,6 +722,7 @@ const DoctorAppointments = () => {
                             size="sm"
                             className="bg-emerald-600 hover:bg-emerald-700 text-white h-8"
                             title="Empezar consulta (pasa a En consulta)"
+                            disabled={busyAction}
                             onClick={() => handleStartConsulta(appt)}
                           >
                             <Play className="w-3.5 h-3.5 mr-1" />
