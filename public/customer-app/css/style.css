@@ -95,6 +95,42 @@ body {
   top: 0;
   z-index: 100;
   border-bottom: 1px solid var(--card-border);
+  overflow: hidden;
+}
+
+/* Faint marble statue behind the right side of the header */
+.header-statue {
+  position: absolute;
+  right: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 135%;
+  width: auto;
+  pointer-events: none;
+}
+
+.brand-tagline {
+  font-size: 0.45rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+/* Vertical Greek key (meander) strip down the left edge of the app */
+.greek-key-vertical {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: max(0px, calc(50% - 215px));
+  width: 10px;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='20' viewBox='0 0 10 20'%3E%3Cpath d='M2 0v20 M2 16h6V6H4v6' fill='none' stroke='%231E2A8A' stroke-width='1.4'/%3E%3C/svg%3E");
+  background-repeat: repeat-y;
+  background-position: center top;
+  border-right: 1px solid var(--card-border);
+  z-index: 99;
+  pointer-events: none;
 }
 
 .header-top {
@@ -190,9 +226,10 @@ body {
 
 .search-box input {
   width: 100%;
-  padding: 10px 14px 10px 38px;
-  background: var(--bg-app);
-  border: 1px solid var(--card-border);
+  padding: 12px 14px 12px 40px;
+  background: #ffffff;
+  border: 1px solid #EEF1F8;
+  box-shadow: 0 4px 16px rgba(20,27,94,0.10);
   border-radius: 24px;
   color: var(--text-primary);
   font-size: 0.9rem;
@@ -215,9 +252,10 @@ body {
 .icon-btn {
   width: 40px;
   height: 40px;
-  background: var(--bg-app);
-  border: 1px solid var(--card-border);
-  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #EEF1F8;
+  box-shadow: 0 2px 8px rgba(20,27,94,0.10);
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -647,11 +685,25 @@ body {
   max-width: 430px;
   background: rgba(255, 255, 255, 0.97);
   backdrop-filter: blur(20px);
-  border-top: 1px solid var(--card-border);
   display: flex;
   justify-content: space-around;
-  padding: 8px 0 max(20px, env(safe-area-inset-bottom));
+  padding: 18px 0 max(20px, env(safe-area-inset-bottom));
   z-index: 100;
+}
+
+/* Greek key (meander) strip along the top edge of the nav */
+.bottom-nav::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 10px;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='10' viewBox='0 0 20 10'%3E%3Cpath d='M0 8h20 M16 8V2H6v4h6' fill='none' stroke='%231E2A8A' stroke-width='1.4'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-position: center;
+  border-bottom: 1px solid var(--card-border);
 }
 
 .nav-item {
@@ -687,17 +739,17 @@ body {
   filter: drop-shadow(0 0 8px rgba(30,42,138,0.35));
 }
 
-/* Small green dot under the active tab */
+/* Navy bar under the active tab */
 .nav-item.active::after {
   content: '';
   position: absolute;
   bottom: -4px;
   left: 50%;
   transform: translateX(-50%);
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--green);
+  width: 26px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--navy);
 }
 
 /* --- MENU PANEL --- */

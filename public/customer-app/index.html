@@ -12,7 +12,7 @@
   <title>Farmacia Apolo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=3">
+  <link rel="stylesheet" href="css/style.css?v=4">
   <style>
     /* Critical CSS - Ensure design loads */
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -35,13 +35,15 @@
 </head>
 <body>
   <div id="app">
+    <div class="greek-key-vertical" aria-hidden="true"></div>
     <!-- Header -->
     <header class="header">
+      <img class="header-statue" src="/brand/home-statue-header.png" alt="" aria-hidden="true">
       <div class="header-top">
         <div class="brand-wordmark">
           <span class="brand-over">— FARMACIA —</span>
           <span class="brand-name">APOLO</span>
-          <span class="brand-dot"></span>
+          <span class="brand-tagline">CUIDAMOS DE TI, CUIDAMOS TU SALUD</span>
         </div>
         <div class="header-actions">
           <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea:
@@ -75,7 +77,7 @@
     <!-- Bottom Navigation - 5 Tabs -->
     <nav class="bottom-nav">
       <a href="#" class="nav-item" data-page="consulta">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         Consulta
       </a>
       <a href="#" class="nav-item" data-page="appointments">
@@ -83,7 +85,7 @@
         Mis Citas
       </a>
       <a href="#" class="nav-item" data-page="prescripciones">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>
         Recetas
       </a>
       <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea:
@@ -226,8 +228,8 @@
   <!-- Supabase integration (Phase 1) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="js/supabase.js?v=1"></script>
-  <script src="js/api.js?v=2"></script>
-  <script src="js/consentDocs.js?v=2"></script>
+  <script src="js/api.js?v=3"></script>
+  <script src="js/consentDocs.js?v=3"></script>
 
   <!-- PWA: register the service worker on every load (installability) and
        show the "Instalar app" banner when the browser allows it -->
@@ -240,6 +242,6 @@
   </script>
   <script src="js/install.js?v=1"></script>
 
-  <script type="module" src="js/app.js?v=10"></script>
+  <script type="module" src="js/app.js?v=11"></script>
 </body>
 </html>

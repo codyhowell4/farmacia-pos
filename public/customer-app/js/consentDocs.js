@@ -104,7 +104,7 @@ Al firmar este documento otorgo mi consentimiento informado para recibir atenci�
 Acepto que, al marcar la casilla de aceptación y registrar mi nombre en la aplicación o en la tableta de la Farmacia, esa acción constituye mi firma electrónica, la cual tiene la misma validez y efectos jurídicos que mi firma autógrafa, conforme a los artículos 89, 89 Bis y 1205 del Código de Comercio y a la Ley de Firma Electrónica Avanzada.
 
 2. MEDIOS DE IDENTIFICACIÓN
-Mi firma electrónica queda vinculada a mi cuenta (correo electrónico o teléfono y contraseña), a mi nombre completo y a la fecha y hora exactas de cada firma, junto con el contenido íntegro del documento que firmo. Estos elementos permiten atribuirme la firma y acreditar mi voluntad, conforme al artículo 1205 del Código de Comercio.
+Mi firma electrónica queda vinculada a mi cuenta (correo electrónico o teléfono y contraseña), a mi nombre completo, a la fecha y hora exactas de cada firma y a los datos técnicos de la conexión y del dispositivo desde el que firmo (como la dirección IP y el navegador), junto con el contenido íntegro del documento que firmo. Estos elementos permiten atribuirme la firma y acreditar mi voluntad, conforme al artículo 1205 del Código de Comercio.
 
 3. DOCUMENTOS EN FORMATO DIGITAL
 Acepto que los avisos de privacidad, consentimientos informados, términos y condiciones, contratos de membresía, recetas, recibos y demás documentos relacionados con los servicios de la Farmacia sean expedidos, enviados, firmados y conservados en formato digital, con la misma validez que su equivalente en papel, conforme a la NOM-004-SSA3-2012 del Expediente Clínico (numeral 5.10) y a la NOM-024-SSA3-2012 del sistema de expediente clínico electrónico.

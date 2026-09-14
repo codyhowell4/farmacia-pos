@@ -42,5 +42,7 @@ Referencias usadas en el documento "Consentimiento de Firma Electrónica y Docum
   o digital; 5.4: conservación mínima de 5 años desde el último acto médico.
 
 Evidencia que captura el sistema por cada firma: `signer_name` (nombre completo), `signed_at`
-(fecha y hora exactas) y el contenido íntegro del documento firmado, vinculados a la cuenta del
-paciente (tabla `consent_documents`).
+(fecha y hora exactas), `signer_ip` y `signer_user_agent` (IP y dispositivo/navegador; la IP se
+captura en los flujos que pasan por edge function, p. ej. tableta), y el contenido íntegro del
+documento firmado, vinculados a la cuenta del paciente (tabla `consent_documents`,
+migración `20260912140000_consent_signer_attribution.sql`).

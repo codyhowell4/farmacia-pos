@@ -210,6 +210,13 @@ Deno.serve(async (req) => {
     const env = Deno.env.toObject();
     const payload = (await req.json()) as RequestPayload;
 
+    // E-signature attribution evidence (Código de Comercio art. 1205).
+    const signerIp =
+      (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() ||
+      req.headers.get('cf-connecting-ip') ||
+      null;
+    const signerUa = req.headers.get('user-agent') || null;
+
     // Honeypot: real users never fill the hidden field.
     if (payload.company && payload.company.trim()) {
       return jsonResponse({ error: 'Solicitud inválida' }, 400);
@@ -342,6 +349,8 @@ Deno.serve(async (req) => {
           status: 'signed',
           signer_name: holderName,
           signed_at: signedAt,
+          signer_ip: signerIp,
+          signer_user_agent: signerUa,
         };
       });
       const { error: consentError } = await supabase.from('consent_documents').insert(consentRows);

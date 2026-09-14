@@ -276,8 +276,9 @@ const ConsentTab = ({ customer }) => {
                       <span className="text-xs text-slate-400">{formatDate(doc.created_at)}</span>
                     </div>
                     {doc.status === 'signed' && (
-                      <p className="text-xs text-slate-500 mt-1">
+                      <p className="text-xs text-slate-500 mt-1" title={doc.signer_user_agent || undefined}>
                         Firmado por {doc.signer_name || '-'} — {formatDateTime(doc.signed_at)}
+                        {doc.signer_ip && ` · IP ${doc.signer_ip}`}
                       </p>
                     )}
                   </div>

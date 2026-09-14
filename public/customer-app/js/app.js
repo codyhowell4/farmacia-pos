@@ -7547,73 +7547,76 @@ function getGuideContent(guideId) {
 // ============================================
 
 function renderConsulta() {
-  const chatHistory = Store.getChatHistory();
-  const hasActiveChat = chatHistory.length > 0;
-  
-  mainContent.innerHTML = `
-    <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #46AC78); color: white;">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">👨‍⚕️ Consulta Médica</h2>
-          <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">Atención cuando la necesites</p>
-        </div>
-        <div style="font-size: 2.5rem;">🏥</div>
-      </div>
-    </div>
+  const ICON_VIDEO = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1E2A8A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>';
+  const ICON_HOSPITAL = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1E2A8A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6v4"/><path d="M14 10h-4"/><path d="M14 14h-4"/><path d="M14 18h-4"/><path d="M18 12h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2h2"/><path d="M18 22V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v18"/></svg>';
+  const ICON_ARROW = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E2A8A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>';
+  const ICON_PHONE = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+  const ICON_CHAT = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+  const ICON_STETHO = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6 6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6 6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg>';
 
-    <!-- Main Options - Large Cards -->
-    <div style="padding: 1rem;">
-      <div style="font-weight: 600; margin-bottom: 1rem; color: var(--text-secondary);">Elige cómo quieres consultar:</div>
-      
+  mainContent.innerHTML = `
+    <div style="background: linear-gradient(180deg, #EDF1F8 0%, #E3E9F5 100%); min-height: calc(100dvh - 230px); padding: 16px 16px 24px 22px;">
+
+      <!-- Hero -->
+      <div style="position: relative; overflow: hidden; border-radius: 20px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); box-shadow: 0 12px 28px rgba(20,27,94,0.30); margin-bottom: 20px;">
+        <img src="/brand/home-statue-hero.png" alt="" aria-hidden="true" style="position: absolute; right: -14px; bottom: 0; height: 132%; width: auto; pointer-events: none; -webkit-mask-image: linear-gradient(180deg, black 70%, transparent 98%); mask-image: linear-gradient(180deg, black 70%, transparent 98%);">
+        <div style="position: relative; padding: 24px 22px; max-width: 64%;">
+          <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; margin-bottom: 14px;">${ICON_STETHO}</div>
+          <div style="font-size: 1.55rem; font-weight: 800; color: white; line-height: 1.15;">Consulta Médica</div>
+          <div style="color: rgba(255,255,255,0.85); font-size: 0.9rem; margin-top: 4px;">Atención cuando la necesites</div>
+          <div style="width: 42px; height: 3px; background: rgba(255,255,255,0.85); border-radius: 2px; margin-top: 14px;"></div>
+        </div>
+      </div>
+
+      <div style="font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em; color: #1E2A8A; margin: 0 4px 12px;">ELIGE CÓMO QUIERES CONSULTAR:</div>
+
       <!-- Oculto por ahora — restaurar cuando se habilite Chat Médico: tarjeta "💬 Chat Médico" (showChatConsulta) -->
 
-      <!-- Video Consultation Option -->
-      <div onclick="showVideoConsulta()" style="background: linear-gradient(135deg, #f5f3ff, #ede9fe); border-radius: 20px; padding: 1.5rem; margin-bottom: 1rem; cursor: pointer; border: 2px solid #ddd6fe; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 24px rgba(139, 92, 246, 0.2)'" onmouseout="this.style.transform=''; this.style.boxShadow=''">
-        <div style="display: flex; align-items: center; gap: 1rem;">
-          <div style="font-size: 3rem;">📹</div>
-          <div style="flex: 1;">
-            <div style="font-weight: 700; font-size: 1.2rem; color: #5b21b6; margin-bottom: 0.25rem;">Video Consulta</div>
-            <div style="font-size: 0.85rem; color: #8b5cf6; line-height: 1.4;">Consulta con un médico por videollamada desde tu casa</div>
-            <div style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--text-muted);">Pago por consulta • Incluida con tu membresía</div>
-          </div>
-          <div style="font-size: 1.5rem; color: #8b5cf6;">→</div>
+      <!-- Video Consulta -->
+      <div onclick="showVideoConsulta()" style="background: linear-gradient(135deg, #ffffff, #f3f5fd); border-radius: 18px; padding: 18px 16px; margin-bottom: 14px; cursor: pointer; box-shadow: 0 6px 20px rgba(20,27,94,0.08); display: flex; align-items: center; gap: 14px;">
+        <div style="width: 56px; height: 56px; border-radius: 50%; background: #EDF1FB; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">${ICON_VIDEO}</div>
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-weight: 800; font-size: 1.15rem; color: #1E2A8A; margin-bottom: 3px;">Video Consulta</div>
+          <div style="font-size: 0.85rem; color: #64748b; line-height: 1.45;">Consulta con un médico por videollamada desde tu casa.</div>
+          <div style="margin-top: 6px; font-size: 0.75rem; color: #94a3b8;">Pago por consulta • Incluida con tu membresía</div>
         </div>
+        <div style="flex-shrink: 0;">${ICON_ARROW}</div>
       </div>
-      
-      <!-- In-Person Option -->
-      <div onclick="showInPersonConsulta()" style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-radius: 20px; padding: 1.5rem; margin-bottom: 1rem; cursor: pointer; border: 2px solid #bbf7d0; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 24px rgba(34, 197, 94, 0.2)'" onmouseout="this.style.transform=''; this.style.boxShadow=''">
-        <div style="display: flex; align-items: center; gap: 1rem;">
-          <div style="font-size: 3rem;">🏥</div>
-          <div style="flex: 1;">
-            <div style="font-weight: 700; font-size: 1.2rem; color: #15803d; margin-bottom: 0.25rem;">Agendar Cita en Persona</div>
-            <div style="font-size: 0.85rem; color: #22c55e; line-height: 1.4;">Visita nuestra sucursal y consulta con un médico</div>
-            <div style="margin-top: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
-              <span style="font-size: 0.75rem; background: #46AC78; color: white; padding: 0.25rem 0.5rem; border-radius: 20px;">Tiempo real</span>
-              <span style="font-size: 0.75rem; color: var(--text-muted);">Ver tiempos de espera</span>
-            </div>
-          </div>
-          <div style="font-size: 1.5rem; color: #22c55e;">→</div>
-        </div>
-      </div>
-    </div>
 
-    <!-- Quick Info -->
-    <div style="padding: 0 1rem 2rem;">
-      <div class="medicine-card" style="flex-direction: column; padding: 1.25rem; background: #f8fafc;">
-        <div style="font-weight: 600; margin-bottom: 0.75rem; color: var(--text-secondary);">📞 ¿Necesitas ayuda urgente?</div>
-        <div style="display: flex; gap: 0.75rem;">
-          <a href="tel:+5214425488893" style="flex: 1; padding: 0.75rem; background: #1E2A8A; color: white; text-decoration: none; border-radius: 12px; text-align: center; font-size: 0.9rem;">
-            <div style="font-size: 1.25rem; margin-bottom: 0.25rem;">📞</div>
-            <div style="font-weight: 600;">Llamar</div>
-            <div style="font-size: 0.7rem; opacity: 0.9;">+52 1 442 548 8893</div>
+      <!-- Cita en Persona -->
+      <div onclick="showInPersonConsulta()" style="background: linear-gradient(135deg, #ffffff, #f2fbf6); border-radius: 18px; padding: 18px 16px; margin-bottom: 18px; cursor: pointer; box-shadow: 0 6px 20px rgba(20,27,94,0.08); display: flex; align-items: center; gap: 14px;">
+        <div style="width: 56px; height: 56px; border-radius: 50%; background: #EDF1FB; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">${ICON_HOSPITAL}</div>
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-weight: 800; font-size: 1.15rem; color: #1E2A8A; margin-bottom: 3px;">Agendar Cita en Persona</div>
+          <div style="font-size: 0.85rem; color: #64748b; line-height: 1.45;">Visita nuestra sucursal y consulta con un médico.</div>
+          <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 0.7rem; font-weight: 600; background: #46AC78; color: white; padding: 3px 10px; border-radius: 20px;">Tiempo real</span>
+            <span style="width: 1px; height: 14px; background: #dbe3ef;"></span>
+            <span style="font-size: 0.75rem; color: #64748b;">Ver tiempos de espera</span>
+          </div>
+        </div>
+        <div style="flex-shrink: 0;">${ICON_ARROW}</div>
+      </div>
+
+      <!-- Ayuda urgente -->
+      <div style="background: white; border-radius: 18px; padding: 18px 16px; box-shadow: 0 6px 20px rgba(20,27,94,0.08);">
+        <div style="display: flex; align-items: center; gap: 10px; color: #1E2A8A; font-weight: 800; font-size: 1.05rem;">
+          <span style="display: flex; transform: rotate(-8deg);">${ICON_PHONE}</span>
+          ¿Necesitas ayuda urgente?
+        </div>
+        <div style="display: flex; gap: 12px; margin-top: 14px;">
+          <a href="tel:+5214425488893" style="flex: 1; padding: 14px 8px; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; text-decoration: none; border-radius: 14px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+            ${ICON_PHONE}
+            <span style="font-weight: 700; font-size: 0.95rem;">Llamar</span>
+            <span style="font-size: 0.72rem; opacity: 0.85;">+52 1 442 548 8893</span>
           </a>
-          <button onclick="showEmergencyInfo()" style="flex: 1; padding: 0.75rem; background: #dc2626; color: white; border: none; border-radius: 12px; font-size: 0.9rem; cursor: pointer;">
-            <div style="font-size: 1.25rem; margin-bottom: 0.25rem;">🚨</div>
-            <div style="font-weight: 600;">Emergencia</div>
+          <button onclick="showEmergencyInfo()" style="flex: 1; padding: 14px 8px; background: white; color: #1E2A8A; border: 1.5px solid #1E2A8A; border-radius: 14px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: inherit;">
+            ${ICON_CHAT}
+            <span style="font-weight: 700; font-size: 0.95rem;">Emergencia</span>
           </button>
         </div>
       </div>
+
     </div>
   `;
 }

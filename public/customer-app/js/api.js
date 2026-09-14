@@ -1577,7 +1577,8 @@ window.FarmaciaAPI = (function () {
           content:     doc.content,
           status:      'signed',
           signer_name: signerName,
-          signed_at:   new Date().toISOString()
+          signed_at:   new Date().toISOString(),
+          signer_user_agent: (typeof navigator !== 'undefined' && navigator.userAgent) || null
         }));
         if (rows.length === 0) throw new Error('No consent documents provided');
 
