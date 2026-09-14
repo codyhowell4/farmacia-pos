@@ -19,7 +19,7 @@
     .card { background: white; border-radius: 20px; padding: 1.25rem; margin-bottom: 1rem; }
     .card h2 { font-size: 1.05rem; color: #1E2A8A; margin-bottom: 0.875rem; }
     label { display: block; font-size: 0.85rem; font-weight: 600; color: #334155; margin-bottom: 0.3rem; }
-    input[type=text], input[type=email], input[type=tel], textarea {
+    input[type=text], input[type=email], input[type=tel], input[type=password], textarea {
       width: 100%; padding: 0.8rem; border: 1.5px solid #E3E8F2; border-radius: 12px;
       font-size: 1rem; margin-bottom: 0.875rem; outline: none;
     }
@@ -88,7 +88,7 @@
 
         <div id="password-block" style="display: none;">
           <label for="password">Crea una contraseña para la app *</label>
-          <input type="password" id="password" minlength="6" autocomplete="new-password">
+          <input type="password" id="password" minlength="6" autocomplete="new-password" placeholder="Mínimo 6 caracteres">
           <p class="hint">Sin correo, entrarás a la app con tu teléfono y esta contraseña.</p>
         </div>
       </div>
