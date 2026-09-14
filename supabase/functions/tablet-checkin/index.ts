@@ -21,7 +21,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const REQUIRED_CONSENT_TYPES = ['privacidad', 'general', 'teleconsulta'];
+const REQUIRED_CONSENT_TYPES = ['privacidad', 'general', 'teleconsulta', 'firma_electronica'];
 const APP_RESET_URL = 'https://app.apolofarmacia.com.mx/customer-app/';
 const CLINIC_TZ = 'America/Mexico_City';
 
@@ -387,7 +387,7 @@ Deno.serve(async (req) => {
         '[Auto-reporte del cliente — tableta en tienda]',
         reasonLine,
         minorLine,
-        'Documentos de consentimiento firmados en tableta: aviso de privacidad, consentimiento general y teleconsulta.',
+        'Documentos de consentimiento firmados en tableta: aviso de privacidad, consentimiento general, teleconsulta y firma electrónica.',
       ].filter(Boolean) as string[];
     }
 

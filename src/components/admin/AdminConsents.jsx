@@ -25,11 +25,12 @@ const formatDate = (iso) => {
   return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-// The 3 standard documents every customer signs via the customer-app gate
+// The standard documents every customer signs via the customer-app gate
 const REQUIRED_DOCS = [
   { type: 'privacidad', title: 'Aviso de Privacidad' },
   { type: 'general', title: 'Consentimiento Informado General' },
   { type: 'teleconsulta', title: 'Consentimiento para Teleconsulta' },
+  { type: 'firma_electronica', title: 'Consentimiento de Firma Electrónica y Documentos Digitales' },
 ];
 
 // wa.me needs digits with country code; Mexican mobile numbers are 10 digits

@@ -1,7 +1,7 @@
 // ============================================================
 // js/consentDocs.js - Standard consent documents (content module)
 // ============================================================
-// The three documents every signed-in user must accept before
+// The four documents every signed-in user must accept before
 // using the app (consent-onboarding gate in app.js). Loaded as a
 // plain script before app.js; exposes window.APOLO_CONSENT_DOCS.
 //
@@ -93,5 +93,34 @@ Entiendo que durante la teleconsulta se transmiten y tratan mis datos de identif
 Puedo revocar este consentimiento en cualquier momento manifestándolo a la Farmacia, sin efectos retroactivos, entendiendo que ello impedirá seguir recibiendo atención por teleconsulta.
 
 Al firmar este documento otorgo mi consentimiento informado para recibir atención médica mediante teleconsulta.`
+  },
+  {
+    type: 'firma_electronica',
+    title: 'Consentimiento de Firma Electrónica y Documentos Digitales',
+    summary: 'Validez de tu firma electrónica y del envío y resguardo de tus documentos en formato digital (Código de Comercio y NOM-151-SCFI-2016).',
+    content: `CONSENTIMIENTO PARA USO DE FIRMA ELECTRÓNICA Y DOCUMENTOS DIGITALES
+
+1. ACEPTACIÓN DE LA FIRMA ELECTRÓNICA
+Acepto que, al marcar la casilla de aceptación y registrar mi nombre en la aplicación o en la tableta de la Farmacia, esa acción constituye mi firma electrónica, la cual tiene la misma validez y efectos jurídicos que mi firma autógrafa, conforme a los artículos 89, 89 Bis y 1205 del Código de Comercio y a la Ley de Firma Electrónica Avanzada.
+
+2. MEDIOS DE IDENTIFICACIÓN
+Mi firma electrónica queda vinculada a mi cuenta (correo electrónico o teléfono y contraseña), a mi nombre completo y a la fecha y hora exactas de cada firma, junto con el contenido íntegro del documento que firmo. Estos elementos permiten atribuirme la firma y acreditar mi voluntad, conforme al artículo 1205 del Código de Comercio.
+
+3. DOCUMENTOS EN FORMATO DIGITAL
+Acepto que los avisos de privacidad, consentimientos informados, términos y condiciones, contratos de membresía, recetas, recibos y demás documentos relacionados con los servicios de la Farmacia sean expedidos, enviados, firmados y conservados en formato digital, con la misma validez que su equivalente en papel, conforme a la NOM-004-SSA3-2012 del Expediente Clínico (numeral 5.10) y a la NOM-024-SSA3-2012 del sistema de expediente clínico electrónico.
+
+4. CONSERVACIÓN E INTEGRIDAD
+Los documentos firmados se conservan íntegros e inalterables en el expediente clínico electrónico durante al menos 5 años a partir de mi último acto médico, conforme a la NOM-004-SSA3-2012 (numeral 5.4), y bajo los criterios de conservación de mensajes de datos de la NOM-151-SCFI-2016. Cualquier corrección se asienta como un documento nuevo que referencia al original, preservando el historial.
+
+5. ACCESO Y COPIAS
+Puedo consultar mis documentos firmados y solicitar copia de ellos en cualquier momento a través de la aplicación, al correo citas@apolofarmacia.com.mx o directamente en el domicilio de la Farmacia, conforme a la NOM-024-SSA3-2012 y a mis derechos ARCO descritos en el Aviso de Privacidad.
+
+6. DATOS PERSONALES
+Los datos asociados a mi firma electrónica (mi nombre, mi cuenta y la fecha y hora de cada firma) se tratan conforme al Aviso de Privacidad de la Farmacia y a la Ley Federal de Protección de Datos Personales en Posesión de los Particulares.
+
+7. REVOCACIÓN
+Puedo revocar este consentimiento para documentos futuros manifestándolo al correo citas@apolofarmacia.com.mx o en el domicilio de la Farmacia. La revocación no afecta la validez de los documentos firmados con anterioridad y puede implicar que algunos servicios que requieren firma electrónica dejen de estar disponibles.
+
+Al firmar este documento consiento el uso de mi firma electrónica y la generación, envío y conservación de mis documentos en formato digital.`
   }
 ];

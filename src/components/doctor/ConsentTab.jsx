@@ -23,6 +23,7 @@ const TYPE_LABELS = {
   general: 'General',
   teleconsulta: 'Teleconsulta',
   procedimiento: 'Procedimiento',
+  firma_electronica: 'Firma electrónica',
   otro: 'Otro',
 };
 
@@ -30,6 +31,7 @@ const DEFAULT_TITLES = {
   general: 'Consentimiento informado general',
   teleconsulta: 'Consentimiento informado para teleconsulta',
   procedimiento: 'Consentimiento informado para procedimiento',
+  firma_electronica: 'Consentimiento de firma electrónica y documentos digitales',
   otro: 'Consentimiento informado',
 };
 

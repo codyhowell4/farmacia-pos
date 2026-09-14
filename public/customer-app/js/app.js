@@ -68,7 +68,7 @@ let isPasswordRecovery = false;
 // signed before using the app (texts live in js/consentDocs.js).
 // While consentGateActive is true, renderPage() is locked to the
 // full-screen consent-onboarding view.
-const REQUIRED_CONSENT_TYPES = ['privacidad', 'general', 'teleconsulta'];
+const REQUIRED_CONSENT_TYPES = ['privacidad', 'general', 'teleconsulta', 'firma_electronica'];
 let consentGateActive = false;
 
 // Check-in mode (?checkin=1): after login, route to the pre-visit

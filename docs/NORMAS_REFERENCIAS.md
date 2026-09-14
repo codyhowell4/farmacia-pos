@@ -25,3 +25,22 @@ Revisión existente del portal: `docs/DOCTOR_PORTAL_NOM024_REVIEW.md`.
 https://dof.gob.mx/nota_detalle_popup.php?codigo=5277740
 
 Respuestas del Comité Consultivo a los comentarios del proyecto de modificación de NOM-024 (contexto/interpretación de la NOM-024-SSA3-2012).
+
+## Firma electrónica y mensajes de datos (base legal del consentimiento digital)
+
+Referencias usadas en el documento "Consentimiento de Firma Electrónica y Documentos Digitales"
+(`public/customer-app/js/consentDocs.js`, tipo `firma_electronica`):
+
+- **Código de Comercio, arts. 89, 89 Bis y 1205:** los mensajes de datos tienen la misma validez
+  que los documentos escritos; requisitos de originalidad/integridad (89 Bis) y de atribución de
+  la firma electrónica al firmante (1205).
+- **Ley de Firma Electrónica Avanzada (art. 3):** requisitos de la firma electrónica avanzada
+  (vinculación única al firmante, detección de alteraciones).
+- **NOM-151-SCFI-2016:** requisitos para la conservación de mensajes de datos y digitalización
+  de documentos (integridad y cadena de custodia).
+- **NOM-004-SSA3-2012, numeral 5.10:** la firma del expediente puede ser autógrafa, electrónica
+  o digital; 5.4: conservación mínima de 5 años desde el último acto médico.
+
+Evidencia que captura el sistema por cada firma: `signer_name` (nombre completo), `signed_at`
+(fecha y hora exactas) y el contenido íntegro del documento firmado, vinculados a la cuenta del
+paciente (tabla `consent_documents`).
