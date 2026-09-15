@@ -160,7 +160,7 @@ const PatientMedicalHistory = ({ customer, onSaved }) => {
       toast.success(successMessage);
       onSaved?.();
     } catch (err) {
-      toast.error('Error guardando el historial');
+      toast.error(err?.message || 'Error guardando el historial');
       console.error(err);
     } finally {
       setSaving(false);
@@ -172,26 +172,40 @@ const PatientMedicalHistory = ({ customer, onSaved }) => {
       toast.error('La etiqueta es requerida');
       return;
     }
-    if (entryForm.status === 'positive' && !entryForm.value.trim()) {
+    // Alergias: the label carries the allergen, so detalle stays optional there
+    const sectionCfg = SECTIONS.find((s) => s.key === activeSection);
+    if (entryForm.status === 'positive' && !sectionCfg?.isAllergy && !entryForm.value.trim()) {
       toast.error('El detalle es requerido');
       return;
     }
     const entries = [...getEntries(activeSection)];
-    const entry = {
-      label: entryForm.label.trim(),
-      value: entryForm.value.trim(),
-      status: entryForm.status,
-    };
+    const nowIso = new Date().toISOString();
+    const authorName = user?.name || user?.email || 'Personal';
     if (editIndex !== null) {
-      entries[editIndex] = entry;
+      entries[editIndex] = {
+        ...entries[editIndex],
+        label: entryForm.label.trim(),
+        value: entryForm.value.trim(),
+        status: entryForm.status,
+        updated_by_name: authorName,
+        updated_at: nowIso,
+      };
     } else {
-      entries.push(entry);
+      entries.push({
+        label: entryForm.label.trim(),
+        value: entryForm.value.trim(),
+        status: entryForm.status,
+        added_by_name: authorName,
+        added_by_role: user?.role || 'staff',
+        added_at: nowIso,
+      });
     }
+    const entryLabel = entryForm.label.trim();
     const newHistory = { ...history, [activeSection]: entries };
-    const sectionTitle = SECTIONS.find((s) => s.key === activeSection)?.title || activeSection;
+    const sectionTitle = sectionCfg?.title || activeSection;
     const changeSummary = editIndex !== null
-      ? `${sectionTitle}: edited "${entry.label}"`
-      : `${sectionTitle}: added "${entry.label}"`;
+      ? `${sectionTitle}: edited "${entryLabel}"`
+      : `${sectionTitle}: added "${entryLabel}"`;
     setDialogOpen(false);
     await saveHistory(newHistory, editIndex !== null ? 'Entrada actualizada' : 'Entrada agregada', changeSummary);
   };
@@ -247,6 +261,15 @@ const PatientMedicalHistory = ({ customer, onSaved }) => {
                           </span>
                           {entry.value && (
                             <span className="text-slate-600"> — {entry.value}</span>
+                          )}
+                          {(entry.added_by_name || entry.added_by_role) && (
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {entry.added_by_role === 'patient'
+                                ? `Agregada por el paciente${entry.added_by_name ? ` (${entry.added_by_name})` : ''}`
+                                : (entry.added_by_name || 'Personal')}
+                              {entry.added_at && ` · ${new Date(entry.added_at).toLocaleDateString('es-MX')}`}
+                              {entry.updated_by_name && ` · editada por ${entry.updated_by_name}`}
+                            </p>
                           )}
                         </div>
                       </div>
@@ -376,7 +399,7 @@ const PatientMedicalHistory = ({ customer, onSaved }) => {
             </div>
 
             <div className="space-y-2">
-              <Label>Detalle {entryForm.status === 'positive' ? '*' : '(opcional)'}</Label>
+              <Label>Detalle {entryForm.status === 'positive' && !activeSectionConfig?.isAllergy ? '*' : '(opcional)'}</Label>
               <Textarea
                 placeholder={
                   entryForm.status === 'denied'

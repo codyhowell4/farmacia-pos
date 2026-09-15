@@ -14,6 +14,8 @@ const TYPE_CONFIG = {
   laboratorio: { label: 'Laboratorio', className: 'bg-blue-100 text-blue-800' },
   imagen: { label: 'Imagen', className: 'bg-purple-100 text-purple-800' },
   consentimiento: { label: 'Consentimiento', className: 'bg-amber-100 text-amber-800' },
+  justificante: { label: 'Justificante', className: 'bg-teal-100 text-teal-800' },
+  receta: { label: 'Receta', className: 'bg-indigo-100 text-indigo-800' },
   otro: { label: 'Otro', className: 'bg-slate-100 text-slate-700' },
 };
 

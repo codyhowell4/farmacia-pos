@@ -1636,7 +1636,7 @@ window.FarmaciaAPI = (function () {
         if (!user) return { data: null, error: new Error('Not authenticated') };
         const { data, error } = await sb
           .from('customers')
-          .select('full_name, email, phone, curp, sexo, date_of_birth, birth_state, height, weight, created_at')
+          .select('full_name, email, phone, curp, sexo, date_of_birth, birth_state, height, weight, medical_history, created_at')
           .eq('profile_id', user.id)
           .single();
         if (error) throw error;
@@ -1670,6 +1670,25 @@ window.FarmaciaAPI = (function () {
         return { data: true, error: null };
       } catch (err) {
         console.error('[FarmaciaAPI] updateMyProfile failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
+     * Patient self-reported allergy: appended to medical_history.alergias
+     * with "agregada por el paciente" attribution via security-definer RPC.
+     */
+    async addMyAllergy(label, value) {
+      if (!sb) return { data: null, error: new Error('Supabase not available') };
+      try {
+        const { error } = await sb.rpc('add_my_allergy', {
+          p_label: label,
+          p_value: value || null,
+        });
+        if (error) throw error;
+        return { data: true, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] addMyAllergy failed:', err.message);
         return { data: null, error: err };
       }
     }

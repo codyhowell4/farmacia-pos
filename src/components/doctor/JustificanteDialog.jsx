@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/contexts/AuthContext';
-import { getDoctorProfile } from '@/lib/db';
+import { getDoctorProfile, uploadPatientDocument } from '@/lib/db';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { toast } from 'sonner';
 
@@ -46,17 +46,12 @@ const JustificanteDialog = ({ open, onOpenChange, customer }) => {
     setGenerating(true);
     try {
       const profile = await getDoctorProfile(user?.id).catch(() => null);
-      const doctorName = user?.name || '';
+      const doctorName = profile?.profiles?.full_name || user?.name || '';
       const cedula = profile?.license_number || '';
       const specialty = profile?.specialty || '';
       const patientName = customer?.full_name || '';
 
-      const win = window.open('', '_blank');
-      if (!win) {
-        toast.error('El navegador bloqueó la ventana de impresión');
-        return;
-      }
-      win.document.write(`<!DOCTYPE html>
+      const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
@@ -97,8 +92,30 @@ const JustificanteDialog = ({ open, onOpenChange, customer }) => {
   </div>
   <script>window.onload = () => window.print();</script>
 </body>
-</html>`);
+</html>`;
+
+      const win = window.open('', '_blank');
+      if (!win) {
+        toast.error('El navegador bloqueó la ventana de impresión');
+        return;
+      }
+      win.document.write(html);
       win.document.close();
+
+      // Save a copy to the expediente (Adjuntos) — the justificante is part of
+      // the clinical record and must be retained.
+      if (customer?.id) {
+        try {
+          const copy = new File([html], `justificante_${fecha}.html`, { type: 'text/html' });
+          await uploadPatientDocument(customer.id, copy, {
+            documentType: 'justificante',
+            notes: `Reposo ${diasNum} día${diasNum !== 1 ? 's' : ''} a partir del ${formatLongDate(fecha)} — ${doctorName}`,
+          });
+        } catch (copyErr) {
+          console.error('Justificante copy save failed:', copyErr);
+          toast.error('Se generó el justificante, pero la copia no se pudo guardar en el expediente');
+        }
+      }
 
       logAudit({
         action: AUDIT_ACTIONS.RECORD_EXPORT,

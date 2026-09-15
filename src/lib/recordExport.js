@@ -63,6 +63,7 @@ export const buildPatientRecordPdf = ({
   consultaNotes = [],
   prescriptions = [],
   consents = [],
+  justificantes = [],
 }) => {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
 
@@ -210,6 +211,17 @@ export const buildPatientRecordPdf = ({
         line(`Firmado por: ${c.signer_name || '-'} — ${formatDateTime(c.signed_at)}`, { indent: 4, size: 9 });
       }
       y += 2;
+    });
+  }
+
+  // ── Justificantes médicos ─────────────────────────────────────────────
+  heading('Justificantes médicos');
+  if (!justificantes.length) {
+    line('Sin justificantes registrados.', { indent: 2 });
+  } else {
+    justificantes.forEach((j) => {
+      checkPage(8);
+      line(`• ${formatDate(j.created_at)}${j.notes ? ` — ${j.notes}` : ''}`, { indent: 2 });
     });
   }
 

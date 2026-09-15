@@ -23,6 +23,7 @@ import {
   getInventoryForDoctor, updateCustomer,
   cancelDoctorPrescription, getDoctorProfile, getConsultaNotesByCustomer, getConsentDocuments,
   confirmVideoAppointment, startConsulta, clockInDoctor, getActiveDoctorShift,
+  getCustomerDocuments,
 } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { dayKeyInTz, timeInTz, dateInTz, DEFAULT_TZ } from '@/lib/timezone';
@@ -321,7 +322,7 @@ const PatientWorkspace = () => {
     if (!customer) return;
     setExporting(true);
     try {
-      const [consultaNotes, consents] = await Promise.all([
+      const [consultaNotes, consents, documents] = await Promise.all([
         getConsultaNotesByCustomer(customerId).catch(e => {
           console.error('getConsultaNotesByCustomer failed:', e);
           return [];
@@ -330,13 +331,20 @@ const PatientWorkspace = () => {
           console.error('getConsentDocuments failed:', e);
           return [];
         }),
+        getCustomerDocuments(customerId).catch(e => {
+          console.error('getCustomerDocuments failed:', e);
+          return [];
+        }),
       ]);
+      const justificantes = (Array.isArray(documents) ? documents : [])
+        .filter(d => d.document_type === 'justificante');
       const doc = buildPatientRecordPdf({
         customer,
         history: customer.medical_history || {},
         consultaNotes: Array.isArray(consultaNotes) ? consultaNotes : [],
         prescriptions,
         consents: Array.isArray(consents) ? consents : [],
+        justificantes,
       });
       const safeName = (customer.full_name || 'paciente').replace(/\s+/g, '_');
       triggerDownload(doc, `Expediente_${safeName}.pdf`);

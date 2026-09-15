@@ -4290,6 +4290,14 @@ window.showMyDataModal = async function() {
   const labelStyle = 'display: block; font-size: 0.8rem; font-weight: 600; color: #334155; margin-bottom: 0.3rem; text-align: left;';
 
   body.style.textAlign = 'initial';
+  const myAllergies = Array.isArray(data.medical_history?.alergias) ? data.medical_history.alergias : [];
+  const allergiesHtml = myAllergies.length === 0
+    ? '<div style="font-size: 0.85rem; color: #94a3b8; text-align: left;">Sin alergias registradas.</div>'
+    : myAllergies.map((a) => `
+      <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid #F1F5F9; text-align: left;">
+        <span style="font-size: 0.85rem; color: #1a1a2e; font-weight: 600;">${escapeHtml(a.label)}${a.value ? ` <span style="color: #64748b; font-weight: 400;">— ${escapeHtml(a.value)}</span>` : ''}</span>
+        <span style="font-size: 0.68rem; color: #94a3b8; white-space: nowrap;">${a.added_by_role === 'patient' ? 'Agregada por ti' : escapeHtml(a.added_by_name || 'Consultorio')}</span>
+      </div>`).join('');
   body.innerHTML = `
     <div style="margin-bottom: 0.875rem;">
       <label style="${labelStyle}">Nombre completo</label>
@@ -4336,6 +4344,15 @@ window.showMyDataModal = async function() {
         <input type="number" id="mydata-weight" value="${data.weight || ''}" min="1" max="400" step="0.1" style="${inputStyle}">
       </div>
     </div>
+    <div style="margin: 0.25rem 0 1rem; padding-top: 1rem; border-top: 1px solid #EEF2F7;">
+      <label style="${labelStyle}">Mis alergias</label>
+      <div id="mydata-allergies" style="margin-bottom: 0.625rem;">${allergiesHtml}</div>
+      <div style="display: flex; gap: 0.5rem;">
+        <input type="text" id="mydata-allergy-label" placeholder="Ej. Penicilina, látex, mariscos..." style="${inputStyle}">
+        <button type="button" onclick="addMyAllergy(this)" style="padding: 0.75rem 1rem; background: #1E2A8A; color: white; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; white-space: nowrap;">Agregar</button>
+      </div>
+      <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 0.35rem; text-align: left;">Las alergias que agregues aparecen en tu expediente con la nota de que las reportaste tú.</div>
+    </div>
     <div style="display: flex; gap: 0.75rem;">
       <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.875rem; border: 1.5px solid #E3E8F2; background: white; color: #475569; border-radius: 12px; font-weight: 600; cursor: pointer;">Cancelar</button>
       <button id="mydata-save" onclick="saveMyData(this.closest('.modal-overlay'))" style="flex: 1; padding: 0.875rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar</button>
@@ -4374,6 +4391,28 @@ window.saveMyData = async function(modal) {
   }
   modal.remove();
   showToast('Datos actualizados ✓', 'success');
+};
+
+window.addMyAllergy = async function(btn) {
+  const modal = btn.closest('.modal-overlay');
+  const input = modal?.querySelector('#mydata-allergy-label');
+  const label = input?.value.trim() || '';
+  if (!label) {
+    showToast('Escribe la alergia primero', 'error');
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '…';
+  const { error } = await FarmaciaAPI.addMyAllergy(label);
+  if (error) {
+    showToast('No pudimos guardar la alergia: ' + (error.message || 'intenta de nuevo'), 'error');
+    btn.disabled = false;
+    btn.textContent = 'Agregar';
+    return;
+  }
+  showToast('Alergia agregada a tu expediente ✓', 'success');
+  modal.remove();
+  showMyDataModal(); // reopen with fresh data so the entry shows its attribution
 };
 
 window.showHeightModal = function(callback = null) {
