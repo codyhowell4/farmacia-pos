@@ -17,6 +17,7 @@ const PrescriptionModal = ({
   finalTotal,
   paymentMethod,
   selectedCustomer = null,
+  initialData = null,
 }) => {
   const { toast } = useToast();
   const rxItems = cart.filter(item => item.requires_prescription);
@@ -24,6 +25,8 @@ const PrescriptionModal = ({
   const [formData, setFormData] = useState({
     patientName: '',
     patientCurp: '',
+    patientPhone: '',
+    patientEmail: '',
     doctorName: '',
     doctorLicense: '',
     doctorAddress: '',
@@ -45,9 +48,29 @@ const PrescriptionModal = ({
         ...prev,
         patientName: selectedCustomer.full_name || prev.patientName,
         patientCurp: selectedCustomer.curp || prev.patientCurp,
+        patientPhone: selectedCustomer.phone || prev.patientPhone,
+        patientEmail: selectedCustomer.email || prev.patientEmail,
       }));
     }
   }, [selectedCustomer]);
+
+  // Pre-fill when editing an already-captured receta
+  useEffect(() => {
+    if (open && initialData) {
+      setFormData({
+        patientName: initialData.patient_name || '',
+        patientCurp: initialData.patient_curp || '',
+        patientPhone: initialData.patient_phone || '',
+        patientEmail: initialData.patient_email || '',
+        doctorName: initialData.doctor_name || '',
+        doctorLicense: initialData.doctor_license_number || '',
+        doctorAddress: initialData.doctor_office_address || '',
+        doctorPhone: initialData.doctor_phone || '',
+        prescriptionNumber: initialData.prescription_number || '',
+        prescriptionDate: initialData.prescription_date || new Date().toISOString().split('T')[0],
+      });
+    }
+  }, [open, initialData]);
 
   const handleSearchPrescriptions = async () => {
     if (!searchQuery.trim()) return;
@@ -93,17 +116,20 @@ const PrescriptionModal = ({
   };
 
   const handleSubmit = () => {
-    // Only patient name is required
-    if (!formData.patientName?.trim()) {
-      toast({ 
-        title: 'Campo requerido', 
-        description: 'El nombre del paciente es obligatorio', 
-        variant: 'destructive' 
+    const missing = [];
+    if (!formData.patientName?.trim()) missing.push('nombre del paciente');
+    if (!formData.doctorName?.trim()) missing.push('nombre del médico');
+    if (!formData.prescriptionNumber?.trim()) missing.push('número de receta');
+    if (missing.length > 0) {
+      toast({
+        title: 'Campos requeridos',
+        description: `Completa: ${missing.join(', ')}`,
+        variant: 'destructive'
       });
       return;
     }
 
-    const globalRx = formData.prescriptionNumber?.trim() || `MANUAL-${Date.now()}`;
+    const globalRx = formData.prescriptionNumber.trim();
     const itemRxNumbers = {};
     for (const item of rxItems) {
       itemRxNumbers[item.id] = globalRx;
@@ -112,7 +138,9 @@ const PrescriptionModal = ({
     const prescriptionData = {
       patient_name: formData.patientName.trim(),
       patient_curp: formData.patientCurp.trim() || null,
-      doctor_name: formData.doctorName.trim() || null,
+      patient_phone: formData.patientPhone.trim() || null,
+      patient_email: formData.patientEmail.trim() || null,
+      doctor_name: formData.doctorName.trim(),
       doctor_license_number: formData.doctorLicense.trim() || null,
       doctor_office_address: formData.doctorAddress.trim() || null,
       doctor_phone: formData.doctorPhone.trim() || null,
@@ -129,6 +157,8 @@ const PrescriptionModal = ({
     setFormData({
       patientName: selectedCustomer?.full_name || '',
       patientCurp: selectedCustomer?.curp || '',
+      patientPhone: selectedCustomer?.phone || '',
+      patientEmail: selectedCustomer?.email || '',
       doctorName: '',
       doctorLicense: '',
       doctorAddress: '',
@@ -161,7 +191,7 @@ const PrescriptionModal = ({
               <p className="font-semibold text-blue-800">Medicamentos controlados detectados</p>
               <p className="text-sm text-blue-600">
                 Esta venta incluye {rxItems.length} medicamento(s) que requieren receta médica. 
-                Solo el nombre del paciente es obligatorio.
+                Nombre del paciente, nombre del médico y número de receta son obligatorios.
               </p>
             </div>
           </div>
@@ -246,6 +276,25 @@ const PrescriptionModal = ({
                   maxLength={18}
                 />
               </div>
+              <div className="space-y-2">
+                <Label htmlFor="patientPhone">Teléfono</Label>
+                <Input
+                  id="patientPhone"
+                  value={formData.patientPhone}
+                  onChange={(e) => setFormData({ ...formData, patientPhone: e.target.value })}
+                  placeholder="Opcional — registra al paciente como cliente"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="patientEmail">Email</Label>
+                <Input
+                  id="patientEmail"
+                  type="email"
+                  value={formData.patientEmail}
+                  onChange={(e) => setFormData({ ...formData, patientEmail: e.target.value })}
+                  placeholder="Opcional"
+                />
+              </div>
             </div>
           </div>
 
@@ -257,7 +306,7 @@ const PrescriptionModal = ({
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="doctorName">Nombre completo</Label>
+                <Label htmlFor="doctorName">Nombre completo *</Label>
                 <Input
                   id="doctorName"
                   value={formData.doctorName}
@@ -309,7 +358,7 @@ const PrescriptionModal = ({
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="prescriptionNumber">Número de receta</Label>
+                <Label htmlFor="prescriptionNumber">Número de receta *</Label>
                 <Input
                   id="prescriptionNumber"
                   value={formData.prescriptionNumber}
@@ -335,13 +384,13 @@ const PrescriptionModal = ({
 
         <div className="flex gap-3 mt-6">
           <Button variant="outline" className="flex-1" onClick={handleClose}>
-            Cancelar venta
+            Cerrar
           </Button>
           <Button 
             className="flex-1 bg-gradient-to-r from-apolo-green to-apolo-green-dark" 
             onClick={handleSubmit}
           >
-            Continuar al pago
+            Guardar receta
           </Button>
         </div>
 

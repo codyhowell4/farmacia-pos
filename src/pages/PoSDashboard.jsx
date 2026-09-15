@@ -563,25 +563,48 @@ const PoSDashboard = () => {
   };
 
   const proceedToCheckout = () => {
-    const hasRx = cart.some(item => item.requires_prescription);
-    if (hasRx) {
-      // Show prescription modal FIRST (before going to checkout)
-      setPrescriptionModalOpen(true);
-    } else {
-      // No prescription needed, proceed directly to checkout
-      setView('checkout');
-    }
+    // Always go straight to checkout; receta info is captured there.
+    setView('checkout');
   };
 
-  const handlePrescriptionConfirm = (prescription) => {
+  const handlePrescriptionConfirm = async (prescription) => {
     setPrescriptionData(prescription);
     // Also update Rx numbers from the prescription form
     if (prescription.rx_item_numbers) {
-      setRxNumbers(prescription.rx_item_numbers);
+      setRxNumbers(prev => ({ ...prev, ...prescription.rx_item_numbers }));
     }
     setPrescriptionModalOpen(false);
-    // Now proceed to checkout screen
-    setView('checkout');
+
+    // Auto-register the patient as a customer when contact info was captured
+    if ((prescription.patient_phone || prescription.patient_email) && !selectedCustomer) {
+      try {
+        const existing = await searchCustomers(prescription.patient_phone || prescription.patient_email);
+        const duplicate = existing.find(c =>
+          (prescription.patient_phone && c.phone === prescription.patient_phone) ||
+          (prescription.patient_email && c.email === prescription.patient_email)
+        );
+        if (duplicate) {
+          selectCustomer(duplicate);
+          toast({ title: 'Cliente existente seleccionado', description: duplicate.full_name });
+        } else {
+          const created = await createCustomer({
+            full_name: prescription.patient_name,
+            phone: prescription.patient_phone || null,
+            email: prescription.patient_email || null,
+            curp: prescription.patient_curp || null,
+          });
+          selectCustomer(created);
+          toast({ title: 'Cliente guardado', description: created.full_name });
+        }
+      } catch (custErr) {
+        console.error('Auto-create customer failed:', custErr);
+        toast({
+          title: 'No se pudo registrar al cliente',
+          description: 'La receta se guardó; registra al cliente manualmente si es necesario.',
+          variant: 'destructive',
+        });
+      }
+    }
   };
 
   const handlePatientConfirm = (patient) => {
@@ -715,6 +738,11 @@ const PoSDashboard = () => {
           reference_number: reference || null,
           bank_account_id: bankAccountId,
         }];
+      }
+
+      if (cart.some(item => item.requires_prescription) && !prescriptionData) {
+        toast({ title: 'Información de receta requerida', description: 'Completa la información de receta antes de finalizar la venta', variant: 'destructive' });
+        return;
       }
 
       const missingRx = cart.filter(item => item.requires_prescription && !rxNumbers[item.id]?.trim());
@@ -973,6 +1001,7 @@ const PoSDashboard = () => {
               // Create new COFEPRIS prescription record
               const prescriptionRecord = {
                 sale_id: sale.id,
+                customer_id: selectedCustomer?.id || null,
                 patient_name: prescription.patient_name,
                 patient_curp: prescription.patient_curp,
                 doctor_name: prescription.doctor_name,
@@ -1067,7 +1096,7 @@ const PoSDashboard = () => {
         // Reset cart after a delay
         setTimeout(() => {
           setCart([]); setDiscount(null); setDiscountCode(''); setAmountGiven(''); setChange(0);
-          setPaymentMethod('cash'); setView('main'); setRxNumbers({});
+          setPaymentMethod('cash'); setView('main'); setRxNumbers({}); setPrescriptionData(null);
           setSplitPayments([]); setIsSplitPayment(false);
           setTransferenciaReference(''); setCardReference('');
           setSelectedCustomer(null); setSelectedMembership(null); setSelectedMember(null);
@@ -1186,6 +1215,9 @@ const PoSDashboard = () => {
   }, [amountGiven, finalTotal]);
 
   if (view === 'checkout') {
+    const rxItemsInCart = cart.filter(item => item.requires_prescription);
+    const rxInfoMissing = rxItemsInCart.length > 0 &&
+      (!prescriptionData || rxItemsInCart.some(item => !rxNumbers[item.id]?.trim()));
     const isCash = paymentMethod === 'cash';
     const remainingForSplit = finalTotal - splitPayments.reduce((sum, p) => sum + p.amount, 0);
     
@@ -1378,6 +1410,43 @@ const PoSDashboard = () => {
                 )}
               </div>
 
+              {/* Receta (controlled meds) — captured here so checkout isn't blocked up front */}
+              {cart.some(item => item.requires_prescription) && (
+                <div className="mt-4 bg-slate-50 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-sm">Receta médica</h3>
+                    {prescriptionData ? (
+                      <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded">Completa</span>
+                    ) : (
+                      <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Pendiente</span>
+                    )}
+                  </div>
+                  {prescriptionData ? (
+                    <div className="text-sm bg-white border rounded-md p-2 space-y-1">
+                      <p className="font-medium text-slate-900">{prescriptionData.patient_name}</p>
+                      {prescriptionData.doctor_name && <p className="text-slate-500 text-xs">Dr. {prescriptionData.doctor_name}</p>}
+                      <p className="text-slate-500 text-xs font-mono">Rx # {prescriptionData.prescription_number}</p>
+                      <div className="flex gap-2 pt-1">
+                        <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={() => setPrescriptionModalOpen(true)}>Editar</Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => {
+                          setPrescriptionData(null);
+                          setRxNumbers(prev => {
+                            const next = { ...prev };
+                            cart.filter(i => i.requires_prescription).forEach(i => delete next[i.id]);
+                            return next;
+                          });
+                        }}>Quitar</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button variant="outline" className="w-full border-blue-300 text-blue-700 hover:bg-blue-50" onClick={() => setPrescriptionModalOpen(true)}>
+                      <Stethoscope className="w-4 h-4 mr-2" />
+                      Agregar información de receta
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {/* Split Payments List */}
               {isSplitPayment && splitPayments.length > 0 && (
                 <div className="mt-4 bg-slate-50 rounded-lg p-3">
@@ -1561,7 +1630,12 @@ const PoSDashboard = () => {
                   </div>
                 )}
 
-                <Button onClick={handleCheckoutClick} disabled={isCompletingSale} className="w-full bg-gradient-to-r from-apolo-green to-apolo-green-dark text-lg py-6">
+                {rxInfoMissing && (
+                  <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 text-center">
+                    Falta información de receta — usa "Agregar información de receta"
+                  </p>
+                )}
+                <Button onClick={handleCheckoutClick} disabled={isCompletingSale || rxInfoMissing} className="w-full bg-gradient-to-r from-apolo-green to-apolo-green-dark text-lg py-6">
                   {isCompletingSale ? 'Procesando...' : 'Finalizar venta'}
                 </Button>
                 <Button onClick={() => setView('main')} variant="outline" className="w-full">Volver al carrito</Button>
@@ -1817,6 +1891,7 @@ const PoSDashboard = () => {
         finalTotal={finalTotal}
         paymentMethod={paymentMethod}
         selectedCustomer={selectedCustomer}
+        initialData={prescriptionData}
       />
       <ReturnModal open={returnOpen} onOpenChange={setReturnOpen} onReturnComplete={async () => {
         const updatedInventory = await getInventory(user?.locationId);
