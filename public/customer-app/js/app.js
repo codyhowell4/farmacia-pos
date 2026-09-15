@@ -1178,6 +1178,18 @@ function renderCheckinForm() {
       history.replaceState(null, '', url.toString());
     }
   } catch (e) { /* non-fatal */ }
+
+  // Prefill known allergies from the patient's historia clínica (best-effort)
+  (async () => {
+    try {
+      const { data } = await FarmaciaAPI.getMyCustomerDetails();
+      const entries = data?.medical_history?.alergias;
+      if (!Array.isArray(entries) || entries.length === 0) return;
+      const labels = entries.filter((x) => x.status !== 'denied').map((x) => x.label).filter(Boolean);
+      const input = document.getElementById('checkin-allergies');
+      if (input && labels.length && !input.value) input.value = labels.join(', ');
+    } catch (err) { /* prefill is best-effort */ }
+  })();
 }
 
 async function handleCheckinSubmit(e) {
@@ -3184,6 +3196,14 @@ function renderSettings() {
           </div>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="showHistoryModal()">
+          <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #0ea5e9, #0369a1); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🩺</div>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Mi historia clínica</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Alergias, enfermedades, hábitos, familia y vacunas — prellena tu expediente</div>
+          </div>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
         <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="showProfileModal()">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #46AC78, #359268); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">👤</div>
           <div style="flex: 1;">
@@ -4413,6 +4433,173 @@ window.addMyAllergy = async function(btn) {
   showToast('Alergia agregada a tu expediente ✓', 'success');
   modal.remove();
   showMyDataModal(); // reopen with fresh data so the entry shows its attribution
+};
+
+// ---- Mi historia clínica (patient self-reported medical_history) ----
+// Section keys must match the doctor portal's PatientMedicalHistory sections —
+// entries land in the same customers.medical_history jsonb with
+// added_by_role='patient' attribution, prefilling the expediente.
+const HISTORY_SECTIONS_APP = [
+  {
+    key: 'alergias', icon: '⚠️', title: 'Alergias',
+    placeholder: 'Ej. Penicilina, látex, mariscos...',
+    suggestions: ['Alergias a Medicamentos', 'Alergias a Alimentos', 'Alergias Ambientales', 'Otras Alergias'],
+  },
+  {
+    key: 'patologicos', icon: '🏥', title: 'Enfermedades, cirugías y hospitalizaciones',
+    placeholder: 'Ej. Diabetes, Apendicectomía 2019...',
+    suggestions: [
+      'Antecedentes Negados', 'Hospitalización Previa', 'Cirugías Previas', 'Diabetes',
+      'Enfermedades Tiroideas', 'Hipertensión Arterial', 'Cardiopatías', 'Traumatismos',
+      'Cáncer', 'Tuberculosis', 'Transfusiones', 'Patologías Respiratorias',
+      'Patologías Gastrointestinales', 'Enfermedades de Transmisión Sexual',
+      'Enfermedad Renal Crónica', 'Otros',
+    ],
+  },
+  {
+    key: 'no_patologicos', icon: '🏃', title: 'Hábitos y estilo de vida',
+    placeholder: 'Ej. Tabaquismo, ejercicio 3 veces por semana...',
+    suggestions: [
+      'Antecedentes Negados', 'Actividad Física', 'Tabaquismo', 'Alcoholismo',
+      'Uso de otras sustancias (Drogas)', 'Vacuna o Inmunización reciente', 'Otros',
+    ],
+  },
+  {
+    key: 'heredofamiliares', icon: '👨‍👩‍👧', title: 'Enfermedades en tu familia',
+    placeholder: 'Ej. Diabetes — mamá y abuela...',
+    suggestions: [
+      'Antecedentes Negados', 'Diabetes', 'Hipertensión Arterial', 'Cardiopatías',
+      'Enfermedades Tiroideas', 'Enfermedad Renal Crónica', 'Cáncer', 'Otros',
+    ],
+  },
+  {
+    key: 'gineco_obstetricos', icon: '🌸', title: 'Salud de la mujer', femaleOnly: true,
+    placeholder: 'Ej. Embarazos, último Papanicolau...',
+    suggestions: [
+      'Antecedentes Negados', 'Embarazos', 'Último Papanicolau', 'Última Mastografía',
+      'Menarca', 'Ciclos Menstruales', 'Método Anticonceptivo', 'Otros',
+    ],
+  },
+  {
+    key: 'vacunacion', icon: '💉', title: 'Vacunas',
+    placeholder: 'Ej. COVID-19 2024, esquema completo...',
+    suggestions: [
+      'Esquema Completo', 'COVID-19', 'Influenza', 'Tétanos', 'Hepatitis B',
+      'SRP (Sarampión/Rubéola/Paperas)', 'Neumococo', 'Otra',
+    ],
+  },
+  {
+    key: 'perinatales', icon: '👶', title: 'Nacimiento y primeros años',
+    placeholder: 'Ej. Parto normal, prematuro...',
+    suggestions: [
+      'Antecedentes Negados', 'Tipo de Nacimiento', 'Peso al Nacer', 'Semanas de Gestación',
+      'Complicaciones Neonatales', 'Lactancia', 'Otros',
+    ],
+  },
+];
+
+const HIST_INPUT_STYLE = 'width: 100%; padding: 0.625rem; border: 1.5px solid #E3E8F2; border-radius: 10px; font-size: 0.88rem; color: #1a1a2e; box-sizing: border-box; background: #F8FAFC;';
+
+const histEntriesHtml = (entries) => entries.length === 0
+  ? '<div style="font-size: 0.82rem; color: #94a3b8;">Sin entradas.</div>'
+  : entries.map((e) => `
+    <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; padding: 0.35rem 0; border-bottom: 1px solid #F1F5F9;">
+      <span style="font-size: 0.85rem; color: #1a1a2e;">
+        ${e.status === 'denied' ? '<span style="color:#B91C1C;">✖</span>' : '<span style="color:#047857;">✓</span>'}
+        <strong>${escapeHtml(e.label)}</strong>${e.value ? ` <span style="color: #64748b;">— ${escapeHtml(e.value)}</span>` : ''}
+      </span>
+      <span style="font-size: 0.65rem; color: #94a3b8; white-space: nowrap;">${e.added_by_role === 'patient' ? 'Por ti' : escapeHtml(e.added_by_name || 'Consultorio')}</span>
+    </div>`).join('');
+
+const histSectionCardHtml = (s, entries) => `
+  <div data-hsection="${s.key}" data-status="positive" style="background: white; border: 1px solid #E3E8F2; border-radius: 14px; padding: 0.875rem 1rem; margin-bottom: 0.75rem;">
+    <div style="font-weight: 700; color: #141B5E; font-size: 0.9rem; margin-bottom: 0.35rem;">${s.icon} ${s.title}</div>
+    <div>${histEntriesHtml(entries)}</div>
+    <div style="margin-top: 0.625rem;">
+      <input type="text" class="hlabel" list="dl-${s.key}" placeholder="${s.placeholder}" style="${HIST_INPUT_STYLE} margin-bottom: 0.4rem;">
+      <datalist id="dl-${s.key}">${s.suggestions.map((x) => `<option value="${x}"></option>`).join('')}</datalist>
+      <input type="text" class="hvalue" placeholder="Detalle (opcional)" style="${HIST_INPUT_STYLE} margin-bottom: 0.5rem;">
+      <div style="display: flex; gap: 0.4rem; align-items: center;">
+        <button type="button" data-hstatus="positive" onclick="setHistStatus(this, 'positive')"
+          style="padding: 0.4rem 0.625rem; border-radius: 8px; border: 1.5px solid #6EE7B7; background: #D1FAE5; color: #047857; font-size: 0.75rem; font-weight: 700; cursor: pointer;">✓ Presente</button>
+        <button type="button" data-hstatus="denied" onclick="setHistStatus(this, 'denied')"
+          style="padding: 0.4rem 0.625rem; border-radius: 8px; border: 1.5px solid #E3E8F2; background: white; color: #64748b; font-size: 0.75rem; font-weight: 700; cursor: pointer;">✖ Negado</button>
+        <button type="button" onclick="addMyHistoryEntry(this)"
+          style="margin-left: auto; padding: 0.45rem 0.875rem; background: #1E2A8A; color: white; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 700; cursor: pointer;">Agregar</button>
+      </div>
+    </div>
+  </div>`;
+
+window.setHistStatus = function(el, status) {
+  const card = el.closest('[data-hsection]');
+  if (!card) return;
+  card.dataset.status = status;
+  card.querySelectorAll('[data-hstatus]').forEach((b) => {
+    const on = b.dataset.hstatus === status;
+    b.style.background = on ? (status === 'denied' ? '#FEE2E2' : '#D1FAE5') : 'white';
+    b.style.color = on ? (status === 'denied' ? '#B91C1C' : '#047857') : '#64748b';
+    b.style.borderColor = on ? (status === 'denied' ? '#FCA5A5' : '#6EE7B7') : '#E3E8F2';
+  });
+};
+
+window.showHistoryModal = async function() {
+  const existing = document.querySelector('.modal-overlay.history');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay history';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(20,27,94,0.45); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
+  modal.innerHTML = `
+    <div style="background: #F8FAFC; border-radius: 20px; width: 100%; max-width: 400px; max-height: 90dvh; overflow-y: auto; box-shadow: 0 20px 50px rgba(20,27,94,0.3);">
+      <div style="padding: 1.25rem; border-bottom: 1px solid #EEF2F7; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); border-radius: 20px 20px 0 0;">
+        <h3 style="margin: 0; font-size: 1.1rem; color: white;">Mi historia clínica</h3>
+        <p style="margin: 0.25rem 0 0; font-size: 0.8rem; color: rgba(255,255,255,0.85);">Lo que llenes aquí prellena tu expediente y lo verá tu médico en consulta</p>
+      </div>
+      <div id="history-body" style="padding: 1rem; text-align: center; color: #64748b;">Cargando…</div>
+      <div style="padding: 0 1rem 1rem;">
+        <button onclick="this.closest('.modal-overlay').remove()" style="width: 100%; padding: 0.875rem; border: 1.5px solid #E3E8F2; background: white; color: #475569; border-radius: 12px; font-weight: 600; cursor: pointer;">Cerrar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const body = modal.querySelector('#history-body');
+  const { data, error } = await FarmaciaAPI.getMyCustomerDetails();
+  if (error || !data) {
+    body.innerHTML = 'No pudimos cargar tu historia. Intenta de nuevo.';
+    return;
+  }
+
+  body.style.textAlign = 'initial';
+  const hist = data.medical_history || {};
+  const sections = HISTORY_SECTIONS_APP.filter((s) => !s.femaleOnly || data.sexo === 'M');
+  body.innerHTML = sections
+    .map((s) => histSectionCardHtml(s, Array.isArray(hist[s.key]) ? hist[s.key] : []))
+    .join('');
+};
+
+window.addMyHistoryEntry = async function(btn) {
+  const card = btn.closest('[data-hsection]');
+  if (!card) return;
+  const section = card.dataset.hsection;
+  const label = card.querySelector('.hlabel')?.value.trim() || '';
+  const value = card.querySelector('.hvalue')?.value.trim() || '';
+  const status = card.dataset.status || 'positive';
+  if (!label) {
+    showToast('Escribe la entrada primero', 'error');
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = '…';
+  const { error } = await FarmaciaAPI.addMyHistoryEntry(section, label, value, status);
+  if (error) {
+    showToast('No pudimos guardar: ' + (error.message || 'intenta de nuevo'), 'error');
+    btn.disabled = false;
+    btn.textContent = 'Agregar';
+    return;
+  }
+  showToast('Guardado en tu historia clínica ✓', 'success');
+  showHistoryModal(); // refresh in place with fresh data
 };
 
 window.showHeightModal = function(callback = null) {

@@ -1691,6 +1691,29 @@ window.FarmaciaAPI = (function () {
         console.error('[FarmaciaAPI] addMyAllergy failed:', err.message);
         return { data: null, error: err };
       }
+    },
+
+    /**
+     * Patient self-reported medical history entry (any whitelisted section:
+     * alergias, patologicos, no_patologicos, heredofamiliares,
+     * gineco_obstetricos, vacunacion, perinatales). Appended with
+     * "agregada por el paciente" attribution via security-definer RPC.
+     */
+    async addMyHistoryEntry(section, label, value, status) {
+      if (!sb) return { data: null, error: new Error('Supabase not available') };
+      try {
+        const { error } = await sb.rpc('add_my_history_entry', {
+          p_section: section,
+          p_label: label,
+          p_value: value || null,
+          p_status: status || 'positive',
+        });
+        if (error) throw error;
+        return { data: true, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] addMyHistoryEntry failed:', err.message);
+        return { data: null, error: err };
+      }
     }
   };
 })();
