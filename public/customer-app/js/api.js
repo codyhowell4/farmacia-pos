@@ -1582,10 +1582,21 @@ window.FarmaciaAPI = (function () {
         }));
         if (rows.length === 0) throw new Error('No consent documents provided');
 
-        const { data, error } = await sb
+        let { data, error } = await sb
           .from('consent_documents')
           .insert(rows)
           .select();
+        // Fallback: if the attribution columns don't exist yet (migration
+        // 20260912140000 pending), retry without them — the signature itself
+        // must never be blocked by the extra evidence fields.
+        if (error && /signer_ip|signer_user_agent/.test(error.message || '')) {
+          console.warn('[FarmaciaAPI] consent attribution columns missing; retrying without them');
+          const fallbackRows = rows.map(({ signer_user_agent, ...rest }) => rest);
+          ({ data, error } = await sb
+            .from('consent_documents')
+            .insert(fallbackRows)
+            .select());
+        }
         if (error) throw error;
         console.log('[FarmaciaAPI] Consent documents accepted:', (data || []).length);
         return { data, error: null };

@@ -948,8 +948,8 @@ async function handleConsentOnboardingSubmit() {
   const { error } = await FarmaciaAPI.acceptConsentDocuments(docs, signerName);
 
   if (error) {
-    // Stay on the gate so the user can retry
-    showToast('No pudimos registrar tu consentimiento. Intenta de nuevo.', 'error');
+    // Stay on the gate so the user can retry; include the real reason for support
+    showToast('No pudimos registrar tu consentimiento. Intenta de nuevo.' + (error.message ? ` (${error.message})` : ''), 'error');
     if (btn) { btn.disabled = false; btn.textContent = 'Firmar y continuar'; }
     return;
   }

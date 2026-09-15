@@ -354,7 +354,19 @@ Deno.serve(async (req) => {
         };
       });
       const { error: consentError } = await supabase.from('consent_documents').insert(consentRows);
-      if (consentError) throw consentError;
+      if (consentError) {
+        // Fallback: if the attribution columns don't exist yet (migration
+        // 20260912140000 pending), retry without them — never block a
+        // signature on the extra evidence fields.
+        if ((consentError.message || '').includes('signer_ip') || (consentError.message || '').includes('signer_user_agent')) {
+          console.warn('consent attribution columns missing; retrying without them');
+          const fallbackRows = consentRows.map(({ signer_ip, signer_user_agent, ...rest }) => rest);
+          const { error: retryError } = await supabase.from('consent_documents').insert(fallbackRows);
+          if (retryError) throw retryError;
+        } else {
+          throw consentError;
+        }
+      }
     }
 
     // 4. Walk-in cita + 5. medical note, assigned to the doctor on shift.
