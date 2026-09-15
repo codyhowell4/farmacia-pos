@@ -1408,7 +1408,7 @@ export const getAppointments = async () => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('appointments')
-    .select('*, customers(id, full_name, phone, profile_id), profiles(full_name)')
+    .select('*, customers(id, full_name, phone, profile_id), profiles!appointments_doctor_id_fkey(full_name)')
     .eq('org_id', orgId)
     .order('appointment_date', { ascending: true });
   if (error) throw error;
@@ -2296,7 +2296,7 @@ export const getCustomerAppointments = async (customerId) => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('appointments')
-    .select('*, profiles(full_name)')
+    .select('*, profiles!appointments_doctor_id_fkey(full_name)')
     .eq('customer_id', customerId)
     .eq('org_id', orgId)
     .order('appointment_date', { ascending: false });
