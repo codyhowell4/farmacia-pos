@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  FileText, Plus, Search, ChevronDown, ChevronUp, Edit2, Trash2,
+  FileText, Plus, Search, ChevronDown, ChevronUp,
   User
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/select';
 import {
   getMedicalNotesByDoctor,
-  createMedicalNote, updateMedicalNote, deleteMedicalNote,
+  createMedicalNote,
   getCustomersForDoctor
 } from '@/lib/db';
 import { toast } from 'sonner';
@@ -38,7 +38,6 @@ const DoctorMedicalNotes = () => {
   const [search, setSearch] = useState('');
   const [customerFilter, setCustomerFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingNote, setEditingNote] = useState(null);
   const [expandedNote, setExpandedNote] = useState(null);
   const [form, setForm] = useState({
     customer_id: '',
@@ -81,22 +80,13 @@ const DoctorMedicalNotes = () => {
   });
 
   const openCreate = () => {
-    setEditingNote(null);
     setForm({ customer_id: '', walkin_name: '', note: '' });
     setDialogOpen(true);
   };
 
-  const openEdit = (note) => {
-    if (!note) return;
-    setEditingNote(note);
-    setForm({
-      customer_id: note.customer_id || '',
-      walkin_name: note.walkin_name || '',
-      note: note.note || '',
-    });
-    setDialogOpen(true);
-  };
-
+  // NOM-004/NOM-024: las notas del expediente son append-only — no se
+  // editan ni se eliminan desde el portal; las correcciones se asientan
+  // como notas nuevas.
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!user?.id) return;
@@ -106,29 +96,12 @@ const DoctorMedicalNotes = () => {
         doctor_id: user.id,
         customer_id: form.customer_id || null,
       };
-      if (editingNote) {
-        await updateMedicalNote(editingNote.id, payload);
-        toast.success('Nota actualizada');
-      } else {
-        await createMedicalNote(payload);
-        toast.success('Nota creada');
-      }
+      await createMedicalNote(payload);
+      toast.success('Nota creada');
       setDialogOpen(false);
       loadData();
     } catch (err) {
       toast.error(err.message || 'Error guardando nota');
-      console.error(err);
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (!confirm('¿Eliminar esta nota permanentemente?')) return;
-    try {
-      await deleteMedicalNote(id);
-      toast.success('Nota eliminada');
-      loadData();
-    } catch (err) {
-      toast.error('Error eliminando nota');
       console.error(err);
     }
   };
@@ -216,38 +189,17 @@ const DoctorMedicalNotes = () => {
                     </button>
                   )}
                 </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="text-slate-500 hover:text-slate-700"
-                    title="Editar"
-                    onClick={() => openEdit(note)}
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                    title="Eliminar"
-                    onClick={() => handleDelete(note?.id)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Create/Edit Dialog */}
+      {/* Create Dialog (append-only — sin edición ni borrado) */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingNote ? 'Editar nota médica' : 'Nueva nota médica'}</DialogTitle>
+            <DialogTitle>Nueva nota médica</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -291,7 +243,7 @@ const DoctorMedicalNotes = () => {
                 Cancelar
               </Button>
               <Button type="submit" className="bg-teal-600 hover:bg-teal-700">
-                {editingNote ? 'Guardar cambios' : 'Crear nota'}
+                Crear nota
               </Button>
             </div>
           </form>

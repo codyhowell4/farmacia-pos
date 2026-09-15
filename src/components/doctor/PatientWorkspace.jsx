@@ -19,7 +19,7 @@ import {
   getCustomerById, getDoctorPrescriptions, createDoctorPrescription,
   getAppointmentsByDoctor, createAppointment, updateAppointment, deleteAppointment,
   getCustomerPurchaseHistory, getMedicalNotesByCustomer, createMedicalNote,
-  updateMedicalNote, deleteMedicalNote, getInventoryForDoctor, updateCustomer,
+  getInventoryForDoctor, updateCustomer,
   cancelDoctorPrescription, getDoctorProfile, getConsultaNotesByCustomer, getConsentDocuments,
 } from '@/lib/db';
 import PrintablePrescription from './PrintablePrescription';
@@ -74,7 +74,6 @@ const PatientWorkspace = () => {
   const [rxDialogOpen, setRxDialogOpen] = useState(false);
   const [apptDialogOpen, setApptDialogOpen] = useState(false);
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
-  const [editingNote, setEditingNote] = useState(null);
   const [patientEditOpen, setPatientEditOpen] = useState(false);
   const [patientForm, setPatientForm] = useState({ height: '', weight: '', notes: '', curp: '', sexo: '', birth_state: '' });
   const [curpError, setCurpError] = useState('');
@@ -413,47 +412,26 @@ const PatientWorkspace = () => {
   };
 
   // ── NOTE HANDLERS ──
+  // NOM-004/NOM-024: las notas del expediente son append-only — no se
+  // editan ni se eliminan; las correcciones se asientan como notas nuevas.
   const handleSaveNote = async () => {
     if (!noteForm.note.trim()) {
       toast.error('La nota no puede estar vacía');
       return;
     }
     try {
-      if (editingNote) {
-        await updateMedicalNote(editingNote.id, { note: noteForm.note.trim() });
-        toast.success('Nota actualizada');
-      } else {
-        await createMedicalNote({
-          customer_id: customerId,
-          doctor_id: user?.id,
-          note: noteForm.note.trim(),
-        });
-        toast.success('Nota creada');
-      }
+      await createMedicalNote({
+        customer_id: customerId,
+        doctor_id: user?.id,
+        note: noteForm.note.trim(),
+      });
+      toast.success('Nota creada');
       setNoteDialogOpen(false);
-      setEditingNote(null);
       setNoteForm({ note: '' });
       loadAll();
     } catch (err) {
       toast.error('Error guardando nota');
     }
-  };
-
-  const handleDeleteNote = async (id) => {
-    if (!confirm('¿Eliminar esta nota?')) return;
-    try {
-      await deleteMedicalNote(id);
-      toast.success('Nota eliminada');
-      loadAll();
-    } catch (err) {
-      toast.error('Error eliminando nota');
-    }
-  };
-
-  const openEditNote = (note) => {
-    setEditingNote(note);
-    setNoteForm({ note: note.note });
-    setNoteDialogOpen(true);
   };
 
   // Secretaries manage the agenda only — the clinical record is off-limits
@@ -820,22 +798,8 @@ const PatientWorkspace = () => {
             <div className="space-y-3">
               {notes.map(note => (
                 <div key={note.id} className="bg-white rounded-xl border border-slate-200 p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.note}</p>
-                      <p className="text-xs text-slate-400 mt-2">{formatDateTime(note.created_at)}</p>
-                    </div>
-                    {!isNurse && (
-                      <div className="flex gap-1 ml-4">
-                        <Button size="sm" variant="ghost" onClick={() => openEditNote(note)}>
-                          <Edit2 className="w-3 h-3" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="text-red-600" onClick={() => handleDeleteNote(note.id)}>
-                          <Trash2 className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.note}</p>
+                  <p className="text-xs text-slate-400 mt-2">{formatDateTime(note.created_at)}</p>
                 </div>
               ))}
             </div>
@@ -1069,7 +1033,7 @@ const PatientWorkspace = () => {
       <Dialog open={noteDialogOpen} onOpenChange={setNoteDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingNote ? 'Editar Nota' : 'Nueva Nota Médica'}</DialogTitle>
+            <DialogTitle>Nueva Nota Médica</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">

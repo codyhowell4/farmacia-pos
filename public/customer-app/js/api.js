@@ -1624,6 +1624,54 @@ window.FarmaciaAPI = (function () {
       } catch (err) {
         console.warn('[FarmaciaAPI] updateMyCustomerPhone failed (best-effort):', err.message);
       }
+    },
+
+    /**
+     * Full customer row for the "Mis datos" editor (expediente fields).
+     */
+    async getMyCustomerDetails() {
+      if (!sb) return { data: null, error: new Error('Supabase not available') };
+      try {
+        const user = await getAuthUser();
+        if (!user) return { data: null, error: new Error('Not authenticated') };
+        const { data, error } = await sb
+          .from('customers')
+          .select('full_name, email, phone, curp, sexo, date_of_birth, birth_state, height, weight, created_at')
+          .eq('profile_id', user.id)
+          .single();
+        if (error) throw error;
+        return { data, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] getMyCustomerDetails failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
+     * Patient self-service profile update. Goes through the
+     * update_my_customer_profile RPC (security definer, column whitelist)
+     * so patients can only touch their own expediente fields.
+     */
+    async updateMyProfile(fields) {
+      if (!sb) return { data: null, error: new Error('Supabase not available') };
+      try {
+        const f = fields || {};
+        const { error } = await sb.rpc('update_my_customer_profile', {
+          p_full_name: f.full_name || null,
+          p_phone: f.phone || null,
+          p_curp: f.curp || null,
+          p_sexo: f.sexo || null,
+          p_date_of_birth: f.date_of_birth || null,
+          p_birth_state: f.birth_state || null,
+          p_height: f.height || null,
+          p_weight: f.weight || null,
+        });
+        if (error) throw error;
+        return { data: true, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] updateMyProfile failed:', err.message);
+        return { data: null, error: err };
+      }
     }
   };
 })();

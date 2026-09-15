@@ -211,19 +211,17 @@ const PrintablePrescription = ({ prescription, customer }) => {
           flex-shrink: 0;
           border-right: 1px solid ${NAVY};
           padding-right: 0.08in;
-          letter-spacing: 0.5px;
         }
         .rx-vitals label {
           font-weight: 700;
           display: inline-block;
-          width: 0.55in;
-          font-size: 7pt;
+          width: 0.5in;
+          font-size: 6.5pt;
         }
         .rx-vitals .vline {
           display: inline-block;
-          width: 0.4in;
+          width: 0.38in;
           border-bottom: 1px solid ${NAVY};
-          margin-left: 2px;
           text-align: center;
           font-size: 8pt;
           white-space: normal;
@@ -299,6 +297,35 @@ const PrintablePrescription = ({ prescription, customer }) => {
           width: 0.35in;
           border-bottom: 1px solid ${NAVY};
           text-align: center;
+        }
+        .rx-bottom-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-end;
+          flex-shrink: 0;
+          position: relative;
+        }
+        .rx-signature {
+          text-align: center;
+          font-size: 7pt;
+          letter-spacing: 1px;
+          padding-right: 0.35in;
+        }
+        .rx-signature .sig-line {
+          width: 1.7in;
+          height: 0.3in;
+          border-bottom: 1px solid ${NAVY};
+          display: flex;
+          align-items: flex-end;
+          justify-content: center;
+          font-size: 7pt;
+          padding-bottom: 2px;
+          letter-spacing: 0.3px;
+        }
+        .rx-signature label {
+          font-weight: 700;
+          display: block;
+          margin-top: 2px;
         }
         .rx-footer {
           display: flex;
@@ -427,20 +454,26 @@ const PrintablePrescription = ({ prescription, customer }) => {
                 ))}
               </div>
 
-              <div className="rx-next-appointment">
-                <label>PRÓXIMA CITA:</label>
-                <span className="date-box">{nextDate.day}</span>
-                <span>/</span>
-                <span className="date-box">{nextDate.month}</span>
-                <span>/</span>
-                <span className="date-box">{nextDate.year}</span>
+              <div className="rx-bottom-row">
+                <div className="rx-next-appointment">
+                  <label>PRÓXIMA CITA:</label>
+                  <span className="date-box">{nextDate.day}</span>
+                  <span>/</span>
+                  <span className="date-box">{nextDate.month}</span>
+                  <span>/</span>
+                  <span className="date-box">{nextDate.year}</span>
+                </div>
+                <div className="rx-signature">
+                  <div className="sig-line">{prescription.signature ? 'Firmada electrónicamente' : ''}</div>
+                  <label>FIRMA DEL MÉDICO</label>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Footer */}
           <div className="rx-footer">
-            <div className="rx-footer-col">
+            <div className="rx-footer-col" style={{ paddingLeft: '0.12in' }}>
               <svg className="rx-footer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
               <div>
                 <strong>AV. CENTENARIO 169, ESQ. COMETA 4,</strong>

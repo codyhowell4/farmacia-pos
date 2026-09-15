@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import { createConsentDocument, getConsentDocuments, updateConsentStatus } from '@/lib/db';
+import { STANDARD_CONSENT_CONTENT } from '@/lib/consentTexts';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { toast } from 'sonner';
 
@@ -23,6 +24,7 @@ const TYPE_LABELS = {
   general: 'General',
   teleconsulta: 'Teleconsulta',
   procedimiento: 'Procedimiento',
+  privacidad: 'Aviso de privacidad',
   firma_electronica: 'Firma electrónica',
   otro: 'Otro',
 };
@@ -31,7 +33,8 @@ const DEFAULT_TITLES = {
   general: 'Consentimiento informado general',
   teleconsulta: 'Consentimiento informado para teleconsulta',
   procedimiento: 'Consentimiento informado para procedimiento',
-  firma_electronica: 'Consentimiento de firma electrónica y documentos digitales',
+  privacidad: 'Aviso de Privacidad',
+  firma_electronica: 'Consentimiento de Firma Electrónica y Documentos Digitales',
   otro: 'Consentimiento informado',
 };
 
@@ -114,6 +117,8 @@ const ConsentTab = ({ customer }) => {
       type,
       // Keep a user-edited title; refresh only if it was one of the defaults
       title: Object.values(DEFAULT_TITLES).includes(prev.title) ? DEFAULT_TITLES[type] : prev.title,
+      // Standard documents load their canonical text; clinical consents use the template
+      content: STANDARD_CONSENT_CONTENT[type] || buildTemplate(customer?.full_name),
     }));
   };
 
@@ -320,6 +325,8 @@ const ConsentTab = ({ customer }) => {
                     <SelectItem value="general">General</SelectItem>
                     <SelectItem value="teleconsulta">Teleconsulta</SelectItem>
                     <SelectItem value="procedimiento">Procedimiento</SelectItem>
+                    <SelectItem value="privacidad">Aviso de privacidad</SelectItem>
+                    <SelectItem value="firma_electronica">Firma electrónica y documentos digitales</SelectItem>
                     <SelectItem value="otro">Otro</SelectItem>
                   </SelectContent>
                 </Select>

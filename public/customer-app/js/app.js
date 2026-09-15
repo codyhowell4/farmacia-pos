@@ -3174,60 +3174,68 @@ function renderSettings() {
     
     <!-- Profile Section -->
     <div style="padding: 0 16px 12px;">
-      <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,255,255,0.6); margin-bottom: 8px; padding-left: 4px;">Perfil</div>
-      <div style="background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04)); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15); border-radius: 20px; overflow: hidden;">
-        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1);" onclick="showProfileModal()">
+      <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 8px; padding-left: 4px;">Perfil</div>
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 20px; box-shadow: 0 6px 20px rgba(20,27,94,0.08); overflow: hidden;">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="showMyDataModal()">
+          <div style="width: 40px; height: 40px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">📋</div>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Mis datos del expediente</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Nombre, teléfono, CURP, sexo, nacimiento, talla y peso</div>
+          </div>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="showProfileModal()">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #46AC78, #359268); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">👤</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: white; font-size: 0.95rem;">${profile.name || 'María García'}</div>
-            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">Editar información personal</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">${profile.name || 'María García'}</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Editar información personal</div>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
-        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1);" onclick="showHeightModal()">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="showHeightModal()">
           <div style="width: 40px; height: 40px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">📏</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: white; font-size: 0.95rem;">Altura</div>
-            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${profile.height ? profile.height + ' cm' : 'No configurada - Toca para agregar'}</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Altura</div>
+            <div style="font-size: 0.8rem; color: #64748b;">${profile.height ? profile.height + ' cm' : 'No configurada - Toca para agregar'}</div>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
         <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer;" onclick="alert('Cambiar foto')">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #2B37A5, #1E2A8A); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">📷</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: white; font-size: 0.95rem;">Foto de perfil</div>
-            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">Cambiar imagen</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Foto de perfil</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Cambiar imagen</div>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
       </div>
     </div>
 
     <!-- Health Goals Section -->
     <div style="padding: 0 16px 12px;">
-      <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,255,255,0.6); margin-bottom: 8px; padding-left: 4px;">Metas de Salud</div>
-      <div style="background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04)); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15); border-radius: 20px; overflow: hidden;">
-        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1);" onclick="showActivityLevelModal()">
+      <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 8px; padding-left: 4px;">Metas de Salud</div>
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 20px; box-shadow: 0 6px 20px rgba(20,27,94,0.08); overflow: hidden;">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="showActivityLevelModal()">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #3b82f6, #2563eb); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🏃</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: white; font-size: 0.95rem;">Nivel de Actividad</div>
-            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);" id="activity-level-display">${Store.getActivityLevel() === 'sedentary' ? 'Sedentario' : Store.getActivityLevel() === 'light' ? 'Ligero' : Store.getActivityLevel() === 'moderate' ? 'Moderado' : Store.getActivityLevel() === 'active' ? 'Activo' : 'Muy Activo'}</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Nivel de Actividad</div>
+            <div style="font-size: 0.8rem; color: #64748b;" id="activity-level-display">${Store.getActivityLevel() === 'sedentary' ? 'Sedentario' : Store.getActivityLevel() === 'light' ? 'Ligero' : Store.getActivityLevel() === 'moderate' ? 'Moderado' : Store.getActivityLevel() === 'active' ? 'Activo' : 'Muy Activo'}</div>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
         <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer;" onclick="showHealthGoalModal()">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #ec4899, #db2777); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🎯</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: white; font-size: 0.95rem;">Objetivo</div>
-            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);" id="health-goal-display">${Store.getHealthGoal() === 'lose' ? 'Perder Peso' : Store.getHealthGoal() === 'gain' ? 'Ganar Masa' : 'Mantener Peso'}${Store.getGoalWeight() ? ` → ${Store.getGoalWeight()}kg` : ''}</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Objetivo</div>
+            <div style="font-size: 0.8rem; color: #64748b;" id="health-goal-display">${Store.getHealthGoal() === 'lose' ? 'Perder Peso' : Store.getHealthGoal() === 'gain' ? 'Ganar Masa' : 'Mantener Peso'}${Store.getGoalWeight() ? ` → ${Store.getGoalWeight()}kg` : ''}</div>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
         ${Store.getGoalWeight() && Store.getGoalTimeline() ? `
         <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; background: rgba(70,172,120,0.1);">
           <div style="width: 40px; height: 40px; background: rgba(70,172,120,0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">📊</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: white; font-size: 0.95rem;">Plazo</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Plazo</div>
             <div style="font-size: 0.8rem; color: #46AC78;">${Store.getGoalTimeline()} semanas</div>
           </div>
         </div>
@@ -3237,60 +3245,60 @@ function renderSettings() {
 
     <!-- Preferences Section -->
     <div style="padding: 0 16px 12px;">
-      <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,255,255,0.6); margin-bottom: 8px; padding-left: 4px;">Preferencias</div>
-      <div style="background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04)); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15); border-radius: 20px; overflow: hidden;">
-        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1);" onclick="showNotificationSettings()">
+      <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 8px; padding-left: 4px;">Preferencias</div>
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 20px; box-shadow: 0 6px 20px rgba(20,27,94,0.08); overflow: hidden;">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="showNotificationSettings()">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #f97316, #ea580c); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🔔</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: white; font-size: 0.95rem;">Notificaciones</div>
-            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);" id="notification-status">${NotificationManager.getStatus().permission === 'granted' ? '✅ Activadas' : NotificationManager.getStatus().permission === 'denied' ? '❌ Bloqueadas' : '⚠️ No configuradas'}</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Notificaciones</div>
+            <div style="font-size: 0.8rem; color: #64748b;" id="notification-status">${NotificationManager.getStatus().permission === 'granted' ? '✅ Activadas' : NotificationManager.getStatus().permission === 'denied' ? '❌ Bloqueadas' : '⚠️ No configuradas'}</div>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
-        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1);" onclick="navigateTo('emergency-id')">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="navigateTo('emergency-id')">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #ef4444, #dc2626); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🆔</div>
           <div style="flex: 1;">
             <div style="font-weight: 600; color: #fca5a5; font-size: 0.95rem;">ID Médico de Emergencia</div>
-            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">Información crítica para emergencias</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Información crítica para emergencias</div>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
-        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1);" onclick="alert('Privacidad')">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="alert('Privacidad')">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #6366f1, #4f46e5); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🔒</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: white; font-size: 0.95rem;">Privacidad y Seguridad</div>
-            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">Contraseña, datos biométricos</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Privacidad y Seguridad</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Contraseña, datos biométricos</div>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
         <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer;" onclick="alert('Tema')">
           <div style="width: 40px; height: 40px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🎨</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: white; font-size: 0.95rem;">Apariencia</div>
-            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">Modo claro / oscuro</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Apariencia</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Modo claro / oscuro</div>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
       </div>
     </div>
 
     <!-- Support Section -->
     <div style="padding: 0 16px 100px;">
-      <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: rgba(255,255,255,0.6); margin-bottom: 8px; padding-left: 4px;">Soporte</div>
-      <div style="background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04)); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15); border-radius: 20px; overflow: hidden;">
-        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1);" onclick="alert('Acerca de')">
+      <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 8px; padding-left: 4px;">Soporte</div>
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 20px; box-shadow: 0 6px 20px rgba(20,27,94,0.08); overflow: hidden;">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="alert('Acerca de')">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #64748b, #475569); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">ℹ️</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: white; font-size: 0.95rem;">Acerca de</div>
-            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">Versión 1.0.0</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Acerca de</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Versión 1.0.0</div>
           </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
         <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer;" onclick="alert('Cerrar sesión')">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #ef4444, #dc2626); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🚪</div>
           <div style="flex: 1;">
             <div style="font-weight: 600; color: #fca5a5; font-size: 0.95rem;">Cerrar Sesión</div>
-            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">Salir de la cuenta</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Salir de la cuenta</div>
           </div>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fca5a5" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
@@ -4244,12 +4252,128 @@ window.saveProfile = function(modal) {
   const name = modal.querySelector('#profile-name')?.value;
   const birthdate = modal.querySelector('#profile-birthdate')?.value;
   const gender = modal.querySelector('#profile-gender')?.value;
-  
+
   Store.updateProfile({ name, birthdate, gender });
-  
+
   modal.remove();
   if (currentPage === 'settings') renderSettings();
   showToast('Perfil actualizado', 'success');
+};
+
+// ---- Mis datos del expediente (customers row, via RPC) ----
+window.showMyDataModal = async function() {
+  const existing = document.querySelector('.modal-overlay.mydata');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay mydata';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(20,27,94,0.45); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
+  modal.innerHTML = `
+    <div style="background: white; border-radius: 20px; width: 100%; max-width: 400px; max-height: 90dvh; overflow-y: auto; box-shadow: 0 20px 50px rgba(20,27,94,0.3);">
+      <div style="padding: 1.25rem; border-bottom: 1px solid #EEF2F7; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); border-radius: 20px 20px 0 0;">
+        <h3 style="margin: 0; font-size: 1.1rem; color: white;">Mis datos del expediente</h3>
+        <p style="margin: 0.25rem 0 0; font-size: 0.8rem; color: rgba(255,255,255,0.85);">Estos datos aparecen en tu expediente clínico y recetas</p>
+      </div>
+      <div id="mydata-body" style="padding: 1.25rem; text-align: center; color: #64748b;">Cargando…</div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const body = modal.querySelector('#mydata-body');
+  const { data, error } = await FarmaciaAPI.getMyCustomerDetails();
+  if (error || !data) {
+    body.innerHTML = 'No pudimos cargar tus datos. Intenta de nuevo.<br><br><button onclick="this.closest(\'.modal-overlay\').remove()" style="padding: 0.625rem 1.5rem; background: #1E2A8A; color: white; border: none; border-radius: 10px; font-weight: 600; cursor: pointer;">Cerrar</button>';
+    return;
+  }
+
+  const inputStyle = 'width: 100%; padding: 0.75rem; border: 1.5px solid #E3E8F2; border-radius: 10px; font-size: 0.95rem; color: #1a1a2e; box-sizing: border-box; background: #F8FAFC;';
+  const labelStyle = 'display: block; font-size: 0.8rem; font-weight: 600; color: #334155; margin-bottom: 0.3rem; text-align: left;';
+
+  body.style.textAlign = 'initial';
+  body.innerHTML = `
+    <div style="margin-bottom: 0.875rem;">
+      <label style="${labelStyle}">Nombre completo</label>
+      <input type="text" id="mydata-name" value="${data.full_name || ''}" style="${inputStyle}">
+    </div>
+    <div style="margin-bottom: 0.875rem;">
+      <label style="${labelStyle}">Correo electrónico</label>
+      <input type="email" value="${data.email || ''}" disabled style="${inputStyle} opacity: 0.6;">
+      <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 0.25rem; text-align: left;">Tu correo es tu acceso a la app; para cambiarlo contáctanos.</div>
+    </div>
+    <div style="margin-bottom: 0.875rem;">
+      <label style="${labelStyle}">Teléfono</label>
+      <input type="tel" id="mydata-phone" value="${data.phone || ''}" style="${inputStyle}">
+    </div>
+    <div style="margin-bottom: 0.875rem;">
+      <label style="${labelStyle}">CURP</label>
+      <input type="text" id="mydata-curp" value="${data.curp || ''}" maxlength="18" placeholder="18 caracteres" style="${inputStyle} text-transform: uppercase;">
+    </div>
+    <div style="display: flex; gap: 0.75rem; margin-bottom: 0.875rem;">
+      <div style="flex: 1;">
+        <label style="${labelStyle}">Sexo</label>
+        <select id="mydata-sexo" style="${inputStyle}">
+          <option value="">—</option>
+          <option value="M" ${data.sexo === 'M' ? 'selected' : ''}>Mujer</option>
+          <option value="H" ${data.sexo === 'H' ? 'selected' : ''}>Hombre</option>
+        </select>
+      </div>
+      <div style="flex: 1;">
+        <label style="${labelStyle}">Fecha de nacimiento</label>
+        <input type="date" id="mydata-dob" value="${data.date_of_birth || ''}" style="${inputStyle}">
+      </div>
+    </div>
+    <div style="margin-bottom: 0.875rem;">
+      <label style="${labelStyle}">Entidad de nacimiento</label>
+      <input type="text" id="mydata-birthstate" value="${data.birth_state || ''}" placeholder="Ej. Estado de México" style="${inputStyle}">
+    </div>
+    <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem;">
+      <div style="flex: 1;">
+        <label style="${labelStyle}">Talla (cm)</label>
+        <input type="number" id="mydata-height" value="${data.height || ''}" min="30" max="260" step="0.1" style="${inputStyle}">
+      </div>
+      <div style="flex: 1;">
+        <label style="${labelStyle}">Peso (kg)</label>
+        <input type="number" id="mydata-weight" value="${data.weight || ''}" min="1" max="400" step="0.1" style="${inputStyle}">
+      </div>
+    </div>
+    <div style="display: flex; gap: 0.75rem;">
+      <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.875rem; border: 1.5px solid #E3E8F2; background: white; color: #475569; border-radius: 12px; font-weight: 600; cursor: pointer;">Cancelar</button>
+      <button id="mydata-save" onclick="saveMyData(this.closest('.modal-overlay'))" style="flex: 1; padding: 0.875rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar</button>
+    </div>
+  `;
+};
+
+window.saveMyData = async function(modal) {
+  const val = (id) => modal.querySelector(id)?.value.trim() || '';
+  const curp = val('#mydata-curp').toUpperCase();
+  if (curp && curp.length !== 18) {
+    showToast('El CURP debe tener 18 caracteres', 'error');
+    return;
+  }
+  const fields = {
+    full_name: val('#mydata-name'),
+    phone: val('#mydata-phone'),
+    curp,
+    sexo: val('#mydata-sexo'),
+    date_of_birth: val('#mydata-dob'),
+    birth_state: val('#mydata-birthstate'),
+    height: val('#mydata-height') ? Number(val('#mydata-height')) : null,
+    weight: val('#mydata-weight') ? Number(val('#mydata-weight')) : null,
+  };
+  if (!fields.full_name) {
+    showToast('El nombre es obligatorio', 'error');
+    return;
+  }
+  const btn = modal.querySelector('#mydata-save');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+  const { error } = await FarmaciaAPI.updateMyProfile(fields);
+  if (error) {
+    showToast('No pudimos guardar: ' + (error.message || 'intenta de nuevo'), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    return;
+  }
+  modal.remove();
+  showToast('Datos actualizados ✓', 'success');
 };
 
 window.showHeightModal = function(callback = null) {
@@ -4414,7 +4538,7 @@ function renderIntegrations() {
 
     <!-- Disabled Notice -->
     <div style="padding: 0 16px 16px;">
-      <div style="background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04)); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15); border-radius: 20px; padding: 32px 24px; text-align: center; color: white;">
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 20px; box-shadow: 0 6px 20px rgba(20,27,94,0.08); padding: 32px 24px; text-align: center; color: white;">
         <div style="font-size: 3rem; margin-bottom: 16px;">🔒</div>
         <div style="font-weight: 700; font-size: 1.1rem; margin-bottom: 8px;">Integraciones próximamente</div>
         <div style="font-size: 0.85rem; color: rgba(255,255,255,0.6); line-height: 1.5; margin-bottom: 20px;">
@@ -7389,7 +7513,7 @@ window.showHealthGuide = function(guideId) {
       </div>
       
       <div style="padding: 1rem; border-top: 1px solid var(--border);">
-        <button onclick="this.closest('.modal-overlay').remove()" style="width: 100%; padding: 1rem; background: ${guide.color}; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Entendido</button>
+        <button onclick="this.closest('.modal-overlay').remove()" style="width: 100%; padding: 1rem; background: ${guide.color}; color: #1a1a2e; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Entendido</button>
       </div>
     </div>
   `;
@@ -9401,6 +9525,11 @@ window.cancelAppointment = async function(appointmentId) {
   }
 };
 
+// Opens the branded receta sheet (same layout as the doctor portal prints)
+window.openRecetaView = function(prescriptionId) {
+  location.href = '/receta-view/?rx=' + encodeURIComponent(prescriptionId);
+};
+
 async function renderPrescripciones() {
   const allProfiles = Store.getAllProfiles();
   const activeProfileId = Store.getActiveProfileId();
@@ -9417,7 +9546,7 @@ async function renderPrescripciones() {
             ${activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas de ${activeProfile?.name}`}
           </p>
         </div>
-        <button onclick="showUploadPrescriptionModal()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Subir</button>
+        <button onclick="showUploadPrescriptionModal()" style="background: rgba(255,255,255,0.2); color: #1a1a2e; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Subir</button>
       </div>
     </div>
     <div style="padding: 2rem 1rem; text-align: center;">
@@ -9475,7 +9604,7 @@ async function renderPrescripciones() {
             ${activeCount > 0 ? `• ${activeCount} activas` : ''}
           </p>
         </div>
-        <button onclick="showUploadPrescriptionModal()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Subir</button>
+        <button onclick="showUploadPrescriptionModal()" style="background: rgba(255,255,255,0.2); color: #1a1a2e; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Subir</button>
       </div>
     </div>
 
@@ -9486,23 +9615,23 @@ async function renderPrescripciones() {
           <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
             <span style="font-size: 1.5rem;">✍️</span>
             <div>
-              <div style="font-weight: 600; color: white;">Tienes documentos por firmar</div>
-              <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${pendingConsents.length} documento(s) de consentimiento pendientes</div>
+              <div style="font-weight: 600; color: #1a1a2e;">Tienes documentos por firmar</div>
+              <div style="font-size: 0.8rem; color: #64748b;">${pendingConsents.length} documento(s) de consentimiento pendientes</div>
             </div>
           </div>
           ${pendingConsents.map(doc => `
-            <div style="background: rgba(255,255,255,0.08); border-radius: 10px; padding: 0.75rem; margin-top: 0.5rem;">
+            <div style="background: #F1F5FB; border-radius: 10px; padding: 0.75rem; margin-top: 0.5rem;">
               <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
                 <div style="flex: 1; min-width: 0;">
-                  <div style="font-weight: 600; font-size: 0.9rem; color: white;">${escapeHtml(doc.title)}</div>
-                  <div style="font-size: 0.75rem; color: rgba(255,255,255,0.5);">${doc.type ? escapeHtml(doc.type) + ' · ' : ''}${new Date(doc.createdAt).toLocaleDateString('es-MX')}</div>
+                  <div style="font-weight: 600; font-size: 0.9rem; color: #1a1a2e;">${escapeHtml(doc.title)}</div>
+                  <div style="font-size: 0.75rem; color: #94a3b8;">${doc.type ? escapeHtml(doc.type) + ' · ' : ''}${new Date(doc.createdAt).toLocaleDateString('es-MX')}</div>
                 </div>
                 <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
-                  <button onclick="toggleConsentDoc(this)" style="padding: 0.4rem 0.75rem; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; font-size: 0.8rem; cursor: pointer;">Ver</button>
+                  <button onclick="toggleConsentDoc(this)" style="padding: 0.4rem 0.75rem; background: #EDF1F8; color: #1a1a2e; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; font-size: 0.8rem; cursor: pointer;">Ver</button>
                   <button onclick="signConsentDoc('${doc.id}')" style="padding: 0.4rem 0.75rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">Firmar</button>
                 </div>
               </div>
-              <div style="display: none; margin-top: 0.5rem; font-size: 0.8rem; color: rgba(255,255,255,0.8); line-height: 1.5; white-space: pre-wrap;">${escapeHtml(doc.content)}</div>
+              <div style="display: none; margin-top: 0.5rem; font-size: 0.8rem; color: #475569; line-height: 1.5; white-space: pre-wrap;">${escapeHtml(doc.content)}</div>
             </div>
           `).join('')}
         </div>
@@ -9513,8 +9642,8 @@ async function renderPrescripciones() {
     ${consultaNotes.length > 0 ? `
       <div style="padding: 1rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-          <span style="font-weight: 600; color: white;">🩺 Notas de consulta</span>
-          <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.1); padding: 0.25rem 0.5rem; border-radius: 12px;">${consultaNotes.length} notas</span>
+          <span style="font-weight: 600; color: #1a1a2e;">🩺 Notas de consulta</span>
+          <span style="font-size: 0.75rem; color: #475569; background: #EDF1F8; padding: 0.25rem 0.5rem; border-radius: 12px;">${consultaNotes.length} notas</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
           ${consultaNotes.map(n => `
@@ -9522,13 +9651,13 @@ async function renderPrescripciones() {
               <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
                 <span style="font-size: 1.5rem;">🩺</span>
                 <div style="flex: 1;">
-                  <div style="font-weight: 600; color: white;">${new Date(n.createdAt).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                  <div style="font-weight: 600; color: #1a1a2e;">${new Date(n.createdAt).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
                   ${n.padecimientoActual ? `<div style="font-size: 0.85rem; color: rgba(255,255,255,0.75);">${escapeHtml(n.padecimientoActual)}</div>` : ''}
                 </div>
               </div>
               ${n.diagnostico ? `
-                <div style="font-size: 0.85rem; color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.08); padding: 0.5rem 0.75rem; border-radius: 8px; margin-bottom: 0.5rem;">
-                  <span style="font-weight: 600; color: white;">Diagnóstico:</span> ${escapeHtml(n.diagnostico)}
+                <div style="font-size: 0.85rem; color: #334155; background: #F1F5FB; padding: 0.5rem 0.75rem; border-radius: 8px; margin-bottom: 0.5rem;">
+                  <span style="font-weight: 600; color: #1a1a2e;">Diagnóstico:</span> ${escapeHtml(n.diagnostico)}
                 </div>
               ` : ''}
               ${n.cie10Codes.length > 0 ? `
@@ -9536,12 +9665,12 @@ async function renderPrescripciones() {
                   ${n.cie10Codes.map(c => `<span title="${escapeHtml(c.description || '').replace(/"/g, '&quot;')}" style="background: rgba(244,114,182,0.15); color: #f9a8d4; border: 1px solid rgba(244,114,182,0.3); padding: 0.2rem 0.5rem; border-radius: 12px; font-size: 0.7rem; font-weight: 600;">CIE-10 ${escapeHtml(c.code || '')}</span>`).join('')}
                 </div>
               ` : ''}
-              <button onclick="toggleConsultaNote(this)" style="align-self: flex-start; padding: 0.4rem 0.75rem; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; font-size: 0.8rem; cursor: pointer;">Ver nota</button>
-              <div style="display: none; margin-top: 0.5rem; background: rgba(255,255,255,0.06); border-radius: 8px; padding: 0.75rem;">
-                ${n.exploracionFisica ? `<div style="font-size: 0.8rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;"><strong style="color: white;">Exploración física:</strong> ${escapeHtml(n.exploracionFisica)}</div>` : ''}
-                ${n.pronostico ? `<div style="font-size: 0.8rem; color: rgba(255,255,255,0.8); margin-bottom: 0.5rem;"><strong style="color: white;">Pronóstico:</strong> ${escapeHtml(n.pronostico)}</div>` : ''}
-                ${n.plan ? `<div style="font-size: 0.8rem; color: rgba(255,255,255,0.8);"><strong style="color: white;">Plan:</strong> ${escapeHtml(n.plan)}</div>` : ''}
-                ${!n.exploracionFisica && !n.pronostico && !n.plan ? `<div style="font-size: 0.8rem; color: rgba(255,255,255,0.5); font-style: italic;">Sin detalles adicionales.</div>` : ''}
+              <button onclick="toggleConsultaNote(this)" style="align-self: flex-start; padding: 0.4rem 0.75rem; background: #EDF1F8; color: #1a1a2e; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; font-size: 0.8rem; cursor: pointer;">Ver nota</button>
+              <div style="display: none; margin-top: 0.5rem; background: #F1F5FB; border-radius: 8px; padding: 0.75rem;">
+                ${n.exploracionFisica ? `<div style="font-size: 0.8rem; color: #475569; margin-bottom: 0.5rem;"><strong style="color: #1a1a2e;">Exploración física:</strong> ${escapeHtml(n.exploracionFisica)}</div>` : ''}
+                ${n.pronostico ? `<div style="font-size: 0.8rem; color: #475569; margin-bottom: 0.5rem;"><strong style="color: #1a1a2e;">Pronóstico:</strong> ${escapeHtml(n.pronostico)}</div>` : ''}
+                ${n.plan ? `<div style="font-size: 0.8rem; color: #475569;"><strong style="color: #1a1a2e;">Plan:</strong> ${escapeHtml(n.plan)}</div>` : ''}
+                ${!n.exploracionFisica && !n.pronostico && !n.plan ? `<div style="font-size: 0.8rem; color: #94a3b8; font-style: italic;">Sin detalles adicionales.</div>` : ''}
               </div>
             </div>
           `).join('')}
@@ -9553,35 +9682,38 @@ async function renderPrescripciones() {
     ${systemPrescriptions.length > 0 ? `
       <div style="padding: 1rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-          <span style="font-weight: 600; color: white;">🏥 Recetas del Sistema</span>
-          <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.1); padding: 0.25rem 0.5rem; border-radius: 12px;">${systemPrescriptions.length} recetas</span>
+          <span style="font-weight: 600; color: #1a1a2e;">🏥 Recetas del Sistema</span>
+          <span style="font-size: 0.75rem; color: #475569; background: #EDF1F8; padding: 0.25rem 0.5rem; border-radius: 12px;">${systemPrescriptions.length} recetas</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
           ${systemPrescriptions.map(p => `
-            <div class="glass-card" style="padding: 1rem; border-left: 4px solid ${p.type === 'document' ? '#46AC78' : p.type === 'receta' ? '#5B68C4' : '#60a5fa'};">
+            <div class="glass-card" style="padding: 1rem; border-left: 4px solid ${p.type === 'document' ? '#46AC78' : p.type === 'receta' ? '#5B68C4' : '#2B37A5'};">
               <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
                 <span style="font-size: 1.5rem;">${p.type === 'document' ? '📷' : p.type === 'receta' ? '💊' : '👨‍⚕️'}</span>
                 <div>
-                  <div style="font-weight: 600; color: white;">${p.type === 'document' ? 'Receta digital' : p.type === 'receta' ? 'Receta médica' : 'Nota médica'}</div>
-                  <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${new Date(p.createdAt).toLocaleDateString('es-MX')}${p.doctorName ? ` · ${p.doctorName}` : ''}</div>
+                  <div style="font-weight: 600; color: #1a1a2e;">${p.type === 'document' ? 'Receta digital' : p.type === 'receta' ? 'Receta médica' : 'Nota médica'}</div>
+                  <div style="font-size: 0.8rem; color: #64748b;">${new Date(p.createdAt).toLocaleDateString('es-MX')}${p.doctorName ? ` · ${p.doctorName}` : ''}</div>
                 </div>
               </div>
               ${p.type === 'document' && p.fileUrl ? `
                 <a href="${p.fileUrl}" target="_blank" style="display: block; margin-bottom: 0.5rem; padding: 0.5rem; background: rgba(70,172,120,0.1); border-radius: 8px; color: #46AC78; font-size: 0.85rem; text-decoration: none;">🔗 Ver archivo</a>
               ` : ''}
               ${p.type === 'receta' && (p.medications || []).length > 0 ? `
-                <div style="background: rgba(255,255,255,0.08); padding: 0.5rem 0.75rem; border-radius: 8px; display: flex; flex-direction: column; gap: 0.4rem;">
+                <div style="background: #F1F5FB; padding: 0.5rem 0.75rem; border-radius: 8px; display: flex; flex-direction: column; gap: 0.4rem;">
                   ${p.medications.map(m => `
-                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.85);">
-                      <span style="font-weight: 600; color: white;">${m.medication}</span>
-                      <span style="color: rgba(255,255,255,0.6);">${[m.dosage, m.frequency, m.duration].filter(Boolean).map(x => ` · ${x}`).join('')}</span>
-                      ${m.notes ? `<div style="font-size: 0.75rem; color: rgba(255,255,255,0.5); font-style: italic;">${m.notes}</div>` : ''}
+                    <div style="font-size: 0.85rem; color: #334155;">
+                      <span style="font-weight: 600; color: #1a1a2e;">${m.medication}</span>
+                      <span style="color: #64748b;">${[m.dosage, m.frequency, m.duration].filter(Boolean).map(x => ` · ${x}`).join('')}</span>
+                      ${m.notes ? `<div style="font-size: 0.75rem; color: #94a3b8; font-style: italic;">${m.notes}</div>` : ''}
                     </div>
                   `).join('')}
                 </div>
               ` : ''}
               ${p.content || p.notes ? `
-                <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.08); padding: 0.5rem; border-radius: 8px; margin-top: 0.25rem;">${p.content || p.notes}</div>
+                <div style="font-size: 0.85rem; color: #475569; background: #F1F5FB; padding: 0.5rem; border-radius: 8px; margin-top: 0.25rem;">${p.content || p.notes}</div>
+              ` : ''}
+              ${p.type === 'receta' ? `
+                <button onclick="openRecetaView('${p.id}')" style="margin-top: 0.625rem; width: 100%; padding: 0.625rem; background: #1E2A8A; color: white; border: none; border-radius: 10px; font-weight: 600; font-size: 0.85rem; cursor: pointer;">Ver receta completa</button>
               ` : ''}
             </div>
           `).join('')}
@@ -9591,11 +9723,11 @@ async function renderPrescripciones() {
 
     <!-- Profile Switcher (if multiple profiles) -->
     ${allProfiles.length > 1 ? `
-      <div style="padding: 1rem; background: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.1);">
-        <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">Ver recetas de:</div>
+      <div style="padding: 1rem; background: #F6F8FC; border-bottom: 1px solid #EEF2F7;">
+        <div style="font-size: 0.8rem; color: #64748b; margin-bottom: 0.5rem;">Ver recetas de:</div>
         <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.25rem;">
           ${allProfiles.map(profile => `
-            <button onclick="switchProfileForPrescripciones('${profile.id}')" style="flex-shrink: 0; padding: 0.5rem 1rem; background: ${profile.id === activeProfileId ? 'rgba(0,168,232,0.3)' : 'rgba(255,255,255,0.08)'}; color: white; border: 1px solid ${profile.id === activeProfileId ? 'rgba(0,168,232,0.5)' : 'rgba(255,255,255,0.15)'}; border-radius: 20px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+            <button onclick="switchProfileForPrescripciones('${profile.id}')" style="flex-shrink: 0; padding: 0.5rem 1rem; background: ${profile.id === activeProfileId ? 'rgba(43,55,165,0.3)' : 'rgba(255,255,255,0.08)'}; color: #1a1a2e; border: 1px solid ${profile.id === activeProfileId ? 'rgba(43,55,165,0.5)' : 'rgba(255,255,255,0.15)'}; border-radius: 20px; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
               <span>${profile.avatar || '👤'}</span>
               <span>${profile.name}</span>
             </button>
@@ -9608,7 +9740,7 @@ async function renderPrescripciones() {
     <div style="padding: 1rem;">
       <div onclick="showUploadPrescriptionModal()" class="glass-card" style="border: 2px dashed rgba(43,55,165,0.5); border-radius: 16px; padding: 1.5rem; text-align: center; cursor: pointer; background: linear-gradient(135deg, rgba(43,55,165,0.1), rgba(43,55,165,0.05));">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📷</div>
-        <div style="font-weight: 600; color: #7dd3fc; margin-bottom: 0.25rem;">Subir Nueva Receta</div>
+        <div style="font-weight: 600; color: #1E2A8A; margin-bottom: 0.25rem;">Subir Nueva Receta</div>
         <div style="font-size: 0.8rem; color: rgba(125,211,252,0.8);">Escanea o fotografía tu receta médica</div>
       </div>
     </div>
@@ -9616,41 +9748,41 @@ async function renderPrescripciones() {
     <!-- Active Prescriptions - Glass Cards -->
     <div style="padding: 0 1rem 1rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-        <span style="font-weight: 600; color: white;">💊 Recetas Activas</span>
-        <span style="font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.1); padding: 0.25rem 0.5rem; border-radius: 12px;">${activePrescriptions.filter(p => !p.status || p.status === 'active').length} recetas</span>
+        <span style="font-weight: 600; color: #1a1a2e;">💊 Recetas Activas</span>
+        <span style="font-size: 0.75rem; color: #475569; background: #EDF1F8; padding: 0.25rem 0.5rem; border-radius: 12px;">${activePrescriptions.filter(p => !p.status || p.status === 'active').length} recetas</span>
       </div>
       
       ${activePrescriptions.filter(p => !p.status || p.status === 'active').length === 0 ? `
         <div class="glass-card" style="text-align: center; padding: 2rem;">
           <div style="font-size: 3rem; margin-bottom: 0.5rem;">📋</div>
-          <div style="color: white; font-size: 0.95rem; margin-bottom: 0.25rem;">No hay recetas activas</div>
-          <div style="color: rgba(255,255,255,0.6); font-size: 0.8rem;">Las recetas aparecerán aquí</div>
+          <div style="color: #1a1a2e; font-size: 0.95rem; margin-bottom: 0.25rem;">No hay recetas activas</div>
+          <div style="color: #64748b; font-size: 0.8rem;">Las recetas aparecerán aquí</div>
         </div>
       ` : `
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
           ${activePrescriptions.filter(p => !p.status || p.status === 'active').map(p => `
-            <div class="glass-card" style="flex-direction: column; align-items: flex-start; padding: 1rem; border-left: 4px solid #00a8e8;">
+            <div class="glass-card" style="flex-direction: column; align-items: flex-start; padding: 1rem; border-left: 4px solid #2B37A5;">
               <div style="display: flex; justify-content: space-between; width: 100%; margin-bottom: 0.5rem;">
                 <div style="display: flex; align-items: center; gap: 0.5rem;">
                   <span style="font-size: 1.5rem;">💊</span>
                   <div>
-                    <div style="font-weight: 600; color: white;">${p.medicine}</div>
-                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${p.dose} • ${p.frequency}</div>
+                    <div style="font-weight: 600; color: #1a1a2e;">${p.medicine}</div>
+                    <div style="font-size: 0.8rem; color: #64748b;">${p.dose} • ${p.frequency}</div>
                   </div>
                 </div>
                 <div style="display: flex; gap: 0.5rem;">
-                  ${p.source === 'doctor' ? '<span style="background: rgba(59,130,246,0.2); color: #60a5fa; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.7rem;">👨‍⚕️ Dr.</span>' : ''}
+                  ${p.source === 'doctor' ? '<span style="background: rgba(43,55,165,0.12); color: #2B37A5; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.7rem;">👨‍⚕️ Dr.</span>' : ''}
                   ${p.source === 'scan' ? '<span style="background: rgba(70,172,120,0.2); color: #46AC78; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.7rem;">📷 Scan</span>' : ''}
                 </div>
               </div>
               
-              ${p.instructions ? `<div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); margin-bottom: 0.75rem; background: rgba(255,255,255,0.08); padding: 0.5rem; border-radius: 8px; width: 100%;">${p.instructions}</div>` : ''}
+              ${p.instructions ? `<div style="font-size: 0.85rem; color: #475569; margin-bottom: 0.75rem; background: #F1F5FB; padding: 0.5rem; border-radius: 8px; width: 100%;">${p.instructions}</div>` : ''}
               
-              ${p.doctorName ? `<div style="font-size: 0.8rem; color: rgba(255,255,255,0.5); margin-bottom: 0.75rem;">👨‍⚕️ Dr. ${p.doctorName} • ${new Date(p.createdAt).toLocaleDateString('es-MX')}</div>` : ''}
+              ${p.doctorName ? `<div style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.75rem;">👨‍⚕️ Dr. ${p.doctorName} • ${new Date(p.createdAt).toLocaleDateString('es-MX')}</div>` : ''}
               
               <div style="display: flex; gap: 0.5rem; width: 100%;">
                 <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea: botón "🛒 Ordenar" (orderPrescription) -->
-                <button onclick="setReminderForPrescription(${p.id})" style="padding: 0.625rem; background: rgba(43,55,165,0.2); color: #7dd3fc; border: 1px solid rgba(43,55,165,0.3); border-radius: 10px; font-size: 0.85rem; cursor: pointer;">⏰</button>
+                <button onclick="setReminderForPrescription(${p.id})" style="padding: 0.625rem; background: rgba(43,55,165,0.2); color: #1E2A8A; border: 1px solid rgba(43,55,165,0.3); border-radius: 10px; font-size: 0.85rem; cursor: pointer;">⏰</button>
                 <button onclick="markPrescriptionUsed(${p.id})" style="padding: 0.625rem; background: rgba(70,172,120,0.2); color: #46AC78; border: 1px solid rgba(70,172,120,0.3); border-radius: 10px; font-size: 0.85rem; cursor: pointer;">✓</button>
               </div>
             </div>
@@ -9670,13 +9802,13 @@ async function renderPrescripciones() {
     <!-- Past Prescriptions - Glass -->
     ${activePrescriptions.filter(p => p.status === 'used').length > 0 ? `
       <div style="padding: 0 1rem 2rem;">
-        <div style="font-weight: 600; margin-bottom: 0.75rem; color: rgba(255,255,255,0.7);">📁 Historial de Recetas</div>
+        <div style="font-weight: 600; margin-bottom: 0.75rem; color: #475569;">📁 Historial de Recetas</div>
         <div class="glass-card" style="overflow: hidden; padding: 0;">
           ${activePrescriptions.filter(p => p.status === 'used').slice(0, 5).map(p => `
-            <div style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+            <div style="padding: 1rem; border-bottom: 1px solid #EEF2F7; display: flex; justify-content: space-between; align-items: center;">
               <div>
-                <div style="font-weight: 600; font-size: 0.95rem; color: white;">${p.medicine}</div>
-                <div style="font-size: 0.8rem; color: rgba(255,255,255,0.5);">Usada el ${new Date(p.usedAt).toLocaleDateString('es-MX')}</div>
+                <div style="font-weight: 600; font-size: 0.95rem; color: #1a1a2e;">${p.medicine}</div>
+                <div style="font-size: 0.8rem; color: #94a3b8;">Usada el ${new Date(p.usedAt).toLocaleDateString('es-MX')}</div>
               </div>
               <span style="font-size: 0.75rem; color: #46AC78;">✓ Completada</span>
             </div>
@@ -9692,22 +9824,22 @@ async function renderPrescripciones() {
       
       return `
         <div style="padding: 0 1rem 2rem;">
-          <div style="font-weight: 600; margin-bottom: 0.75rem; color: rgba(255,255,255,0.7);">🔄 Historial de Recargas</div>
+          <div style="font-weight: 600; margin-bottom: 0.75rem; color: #475569;">🔄 Historial de Recargas</div>
           <div class="glass-card" style="overflow: hidden; padding: 0;">
             ${refillRequests.slice(0, 5).map(r => {
               const statusColors = {
                 pending: { bg: 'rgba(245,158,11,0.2)', color: '#fbbf24', text: 'Pendiente' },
-                confirmed: { bg: 'rgba(59,130,246,0.2)', color: '#60a5fa', text: 'Confirmada' },
+                confirmed: { bg: 'rgba(43,55,165,0.12)', color: '#2B37A5', text: 'Confirmada' },
                 ready: { bg: 'rgba(70,172,120,0.2)', color: '#46AC78', text: 'Lista' },
                 completed: { bg: 'rgba(148,163,184,0.2)', color: '#94a3b8', text: 'Completada' },
                 cancelled: { bg: 'rgba(255,107,107,0.2)', color: '#ff6b6b', text: 'Cancelada' }
               };
               const status = statusColors[r.status] || statusColors.pending;
               return `
-                <div style="padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+                <div style="padding: 1rem; border-bottom: 1px solid #EEF2F7; display: flex; justify-content: space-between; align-items: center;">
                   <div>
-                    <div style="font-weight: 600; font-size: 0.95rem; color: white;">${r.medicine}</div>
-                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.5);">${r.quantity} caja(s) • ${new Date(r.createdAt).toLocaleDateString('es-MX')}</div>
+                    <div style="font-weight: 600; font-size: 0.95rem; color: #1a1a2e;">${r.medicine}</div>
+                    <div style="font-size: 0.8rem; color: #94a3b8;">${r.quantity} caja(s) • ${new Date(r.createdAt).toLocaleDateString('es-MX')}</div>
                   </div>
                   <span style="background: ${status.bg}; color: ${status.color}; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">${status.text}</span>
                 </div>
@@ -9715,7 +9847,7 @@ async function renderPrescripciones() {
             }).join('')}
           </div>
           ${refillRequests.length > 5 ? `
-            <div style="text-align: center; padding: 0.75rem; color: rgba(255,255,255,0.5); font-size: 0.85rem;">Ver ${refillRequests.length - 5} más...</div>
+            <div style="text-align: center; padding: 0.75rem; color: #94a3b8; font-size: 0.85rem;">Ver ${refillRequests.length - 5} más...</div>
           ` : ''}
         </div>
       `;
@@ -10872,7 +11004,7 @@ async function renderOrders() {
   // Status colors
   const statusColors = {
     'Entregado': { bg: 'rgba(70,172,120,0.2)', color: '#46AC78', icon: '✓' },
-    'Procesando': { bg: 'rgba(59,130,246,0.2)', color: '#60a5fa', icon: '⏳' },
+    'Procesando': { bg: 'rgba(43,55,165,0.12)', color: '#2B37A5', icon: '⏳' },
     'Enviado': { bg: 'rgba(139,92,246,0.2)', color: '#5B68C4', icon: '🚚' },
     'Cancelado': { bg: 'rgba(255,107,107,0.2)', color: '#ff6b6b', icon: '✕' }
   };
@@ -10889,28 +11021,28 @@ async function renderOrders() {
       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem;">
         <div class="glass-card" style="padding: 1rem; text-align: center;">
           <div style="font-size: 1.5rem; font-weight: 700; color: #c0c0c0;">${totalOrders}</div>
-          <div style="font-size: 0.7rem; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.03em;">Pedidos</div>
+          <div style="font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em;">Pedidos</div>
         </div>
         <div class="glass-card" style="padding: 1rem; text-align: center;">
           <div style="font-size: 1.5rem; font-weight: 700; color: #46AC78;">${deliveredOrders}</div>
-          <div style="font-size: 0.7rem; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.03em;">Entregados</div>
+          <div style="font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em;">Entregados</div>
         </div>
         <div class="glass-card" style="padding: 1rem; text-align: center;">
           <div style="font-size: 1.25rem; font-weight: 700; color: #c0c0c0;">$${totalSpent.toFixed(0)}</div>
-          <div style="font-size: 0.7rem; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.03em;">Total</div>
+          <div style="font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em;">Total</div>
         </div>
       </div>
     </div>
     
     <!-- Orders List -->
     <div style="padding: 0 1rem 2rem;">
-      <div style="font-weight: 600; color: white; margin-bottom: 0.75rem; font-size: 1rem;">📋 Historial de Compras</div>
+      <div style="font-weight: 600; color: #1a1a2e; margin-bottom: 0.75rem; font-size: 1rem;">📋 Historial de Compras</div>
       
       ${orders.length === 0 ? `
         <div class="glass-card" style="text-align: center; padding: 2rem 1rem;">
           <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📦</div>
-          <div style="color: white; font-size: 1rem; margin-bottom: 0.25rem;">No tienes pedidos aún</div>
-          <div style="color: rgba(255,255,255,0.6); font-size: 0.85rem;">Tus compras aparecerán aquí</div>
+          <div style="color: #1a1a2e; font-size: 1rem; margin-bottom: 0.25rem;">No tienes pedidos aún</div>
+          <div style="color: #64748b; font-size: 0.85rem;">Tus compras aparecerán aquí</div>
           <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea: botón "Ir a la tienda" -->
         </div>
       ` : `
@@ -10922,8 +11054,8 @@ async function renderOrders() {
               <div class="glass-card" style="padding: 1rem; cursor: pointer;" onclick="showOrderDetail('${order.id}')">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
                   <div>
-                    <div style="font-weight: 600; color: white; font-size: 1rem;">Pedido #${order.id}</div>
-                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6); margin-top: 0.15rem;">${new Date(order.date).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+                    <div style="font-weight: 600; color: #1a1a2e; font-size: 1rem;">Pedido #${order.id}</div>
+                    <div style="font-size: 0.8rem; color: #64748b; margin-top: 0.15rem;">${new Date(order.date).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
                   </div>
                   <span style="background: ${status.bg}; color: ${status.color}; padding: 0.35rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; display: flex; align-items: center; gap: 0.35rem;">
                     <span>${status.icon}</span>
@@ -10934,18 +11066,18 @@ async function renderOrders() {
                 <!-- Items Preview -->
                 <div style="margin-bottom: 0.75rem;">
                   ${order.items ? order.items.slice(0, 2).map(item => `
-                    <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8); margin-bottom: 0.15rem;">
+                    <div style="font-size: 0.85rem; color: #475569; margin-bottom: 0.15rem;">
                       ${item.quantity}x ${item.name}
                     </div>
                   `).join('') : ''}
                   ${order.items && order.items.length > 2 ? `
-                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.5);">+${order.items.length - 2} productos más</div>
+                    <div style="font-size: 0.8rem; color: #94a3b8;">+${order.items.length - 2} productos más</div>
                   ` : ''}
                 </div>
                 
                 <!-- Delivery & Total -->
                 <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.1);">
-                  <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">
+                  <div style="font-size: 0.8rem; color: #64748b;">
                     🚚 ${order.delivery || 'Envío estándar'}
                   </div>
                   <div style="font-size: 1.1rem; font-weight: 700; color: #c0c0c0;">
@@ -10965,7 +11097,7 @@ async function renderOrders() {
       <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem;">
         <button onclick="renderPrescripciones()" class="glass-card" style="padding: 1rem; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 0.5rem;">
           <div style="font-size: 1.75rem;">📄</div>
-          <div style="font-size: 0.85rem; font-weight: 600; color: white;">Mis Recetas</div>
+          <div style="font-size: 0.85rem; font-weight: 600; color: #1a1a2e;">Mis Recetas</div>
         </button>
       </div>
     </div>
