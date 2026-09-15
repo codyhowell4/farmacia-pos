@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Users, ArrowLeft, Phone, Mail, Calendar, FileText, ShoppingCart,
   Pill, Clock, Plus, Edit2, Trash2, ChevronDown, ChevronUp,
-  CheckCircle, XCircle, AlertCircle, Printer, FileDown, Search, Ban, ShieldAlert
+  CheckCircle, XCircle, AlertCircle, Printer, FileDown, Search, Ban, ShieldAlert,
+  Play, Video, StickyNote
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,7 +22,10 @@ import {
   getCustomerPurchaseHistory, getMedicalNotesByCustomer, createMedicalNote,
   getInventoryForDoctor, updateCustomer,
   cancelDoctorPrescription, getDoctorProfile, getConsultaNotesByCustomer, getConsentDocuments,
+  confirmVideoAppointment, startConsulta, clockInDoctor, getActiveDoctorShift,
 } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
+import { dayKeyInTz, timeInTz, dateInTz, DEFAULT_TZ } from '@/lib/timezone';
 import PrintablePrescription from './PrintablePrescription';
 import PatientMedicalHistory from './PatientMedicalHistory';
 import PostVisitDialog from './PostVisitDialog';
@@ -82,6 +86,10 @@ const PatientWorkspace = () => {
   const [medSearchOpen, setMedSearchOpen] = useState({}); // { [idx]: boolean }
   const [postVisitAppt, setPostVisitAppt] = useState(null);
   const [postVisitOpen, setPostVisitOpen] = useState(false);
+  const [activeShift, setActiveShift] = useState(null);
+  const [busyConsult, setBusyConsult] = useState(false);
+  const [timezone, setTimezone] = useState(DEFAULT_TZ);
+  const tz = timezone || DEFAULT_TZ;
   const [justificanteOpen, setJustificanteOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -103,6 +111,25 @@ const PatientWorkspace = () => {
     .filter((e) => e.status !== 'denied')
     .map((e) => (e.value ? `${e.label}: ${e.value}` : e.label))
     .join('; ');
+
+  // Resumen fallbacks: when the customers row lacks antropometría, pull it
+  // from the most recent receta that captured it (prescriptions are ordered
+  // newest first). The app's "Mis datos" editor writes to customers directly.
+  const latestRxWith = (field) => (Array.isArray(prescriptions) ? prescriptions.find(rx => rx?.[field]) : null);
+  const effHeight = customer?.height || latestRxWith('height_cm')?.height_cm || null;
+  const effWeight = customer?.weight || latestRxWith('weight_kg')?.weight_kg || null;
+  const heightSrc = !customer?.height && effHeight ? ' (última receta)' : '';
+  const weightSrc = !customer?.weight && effWeight ? ' (última receta)' : '';
+  const patientAge = customer?.date_of_birth
+    ? (() => {
+        const b = new Date(customer.date_of_birth);
+        const t = new Date();
+        let a = t.getFullYear() - b.getFullYear();
+        const m = t.getMonth() - b.getMonth();
+        if (m < 0 || (m === 0 && t.getDate() < b.getDate())) a--;
+        return a >= 0 && a < 130 ? a : null;
+      })()
+    : null;
 
   // Open the Nueva Receta dialog, pre-filling allergies from the history (if empty)
   const openRxDialog = () => {
@@ -155,6 +182,11 @@ const PatientWorkspace = () => {
           return null;
         });
         setDoctorProfile(docProfile);
+
+        getActiveDoctorShift(user.id).then(setActiveShift).catch(() => {});
+        supabase.from('profiles').select('timezone').eq('id', user.id).single()
+          .then(({ data }) => { if (data?.timezone) setTimezone(data.timezone); })
+          .catch(() => {});
       }
 
       const hist = await getCustomerPurchaseHistory(customerId).catch(e => {
@@ -196,8 +228,7 @@ const PatientWorkspace = () => {
 
   const formatDateTime = (ts) => {
     if (!ts) return '-';
-    const d = new Date(ts);
-    return `${d.toLocaleDateString('es-MX')} ${d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`;
+    return `${dateInTz(ts, tz)} ${timeInTz(ts, tz)}`;
   };
 
   // ── PRESCRIPTION HANDLERS ──
@@ -321,15 +352,27 @@ const PatientWorkspace = () => {
       return;
     }
     try {
-      await createAppointment({
+      const created = await createAppointment({
         customer_id: customerId,
         doctor_id: user?.id,
         appointment_date: new Date(apptForm.appointment_date).toISOString(),
         status: apptForm.status,
         notes: apptForm.notes,
         type: apptForm.type,
+        // Staff-created teleconsultas are courtesy — no patient charge
+        ...(apptForm.type === 'video' ? { payment_status: 'waived' } : {}),
       });
-      toast.success('Cita creada exitosamente');
+      // Teleconsulta: run the telehealth flow — create the meeting room now
+      if (apptForm.type === 'video' && created?.id) {
+        try {
+          await confirmVideoAppointment(created.id);
+          toast.success('Cita creada — sala de video lista para el paciente');
+        } catch (videoErr) {
+          toast.error(videoErr.message || 'Cita creada, pero no se pudo crear la sala de video');
+        }
+      } else {
+        toast.success('Cita creada exitosamente');
+      }
       setApptDialogOpen(false);
       setApptForm({ appointment_date: '', status: 'pending', notes: '', type: 'in_person' });
       loadAll();
@@ -350,11 +393,47 @@ const PatientWorkspace = () => {
       return;
     }
     try {
-      await updateAppointment(id, { status });
+      // Video citas confirm through the video-room edge function (creates
+      // the Daily.co room and sets status confirmed itself).
+      const appt = appointments.find(a => a.id === id);
+      if (status === 'confirmed' && appt?.type === 'video') {
+        try {
+          await confirmVideoAppointment(id);
+        } catch (videoErr) {
+          toast.error(videoErr.message || 'No se pudo crear la sala de video');
+          return;
+        }
+      } else {
+        await updateAppointment(id, { status });
+      }
       toast.success('Cita actualizada');
       loadAll();
     } catch (err) {
       toast.error('Error actualizando cita');
+    }
+  };
+
+  // Start a consulta from the expediente: clock in if needed, mark
+  // in_consulta and open the structured note (same flow as the Citas page).
+  const handleStartConsulta = async (appt) => {
+    if (!appt?.id || !user?.id) return;
+    setBusyConsult(true);
+    try {
+      if (!activeShift) {
+        const shift = await clockInDoctor(user.id);
+        setActiveShift(shift);
+        toast.success('Turno iniciado');
+      }
+      const updated = await startConsulta(appt.id);
+      toast.success('Consulta iniciada');
+      setPostVisitAppt({ ...appt, ...updated });
+      setPostVisitOpen(true);
+      loadAll();
+    } catch (err) {
+      console.error(err);
+      toast.error(`No se pudo iniciar la consulta: ${err?.message || 'error desconocido'}`);
+    } finally {
+      setBusyConsult(false);
     }
   };
 
@@ -566,11 +645,11 @@ const PatientWorkspace = () => {
               <div><span className="text-slate-500">Teléfono:</span> {customer.phone || '-'}</div>
               <div><span className="text-slate-500">CURP:</span> {customer.curp || '-'}</div>
               <div><span className="text-slate-500">Sexo:</span> {customer.sexo === 'M' ? 'Mujer' : customer.sexo === 'H' ? 'Hombre' : '-'}</div>
-              <div><span className="text-slate-500">Nacimiento:</span> {formatDate(customer.date_of_birth)}</div>
+              <div><span className="text-slate-500">Nacimiento:</span> {formatDate(customer.date_of_birth)}{patientAge !== null ? ` (${patientAge} años)` : ''}</div>
               <div><span className="text-slate-500">Entidad de nacimiento:</span> {customer.birth_state || '-'}</div>
               <div><span className="text-slate-500">Registro:</span> {formatDate(customer.created_at)}</div>
-              <div><span className="text-slate-500">Talla:</span> {customer.height ? `${customer.height} cm` : '-'}</div>
-              <div><span className="text-slate-500">Peso:</span> {customer.weight ? `${customer.weight} kg` : '-'}</div>
+              <div><span className="text-slate-500">Talla:</span> {effHeight ? `${effHeight} cm` : '-'}<span className="text-slate-400 text-xs">{heightSrc}</span></div>
+              <div><span className="text-slate-500">Peso:</span> {effWeight ? `${effWeight} kg` : '-'}<span className="text-slate-400 text-xs">{weightSrc}</span></div>
               {customer.notes && <div className="col-span-full"><span className="text-slate-500">Notas:</span> {customer.notes}</div>}
             </div>
           </div>
@@ -686,26 +765,53 @@ const PatientWorkspace = () => {
                   <h4 className="text-sm font-medium text-slate-500 mb-3">Próximas citas</h4>
                   <div className="space-y-2">
                     {upcomingAppts.map(ap => (
-                      <div key={ap.id} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
+                      <div key={ap.id} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between gap-3 flex-wrap">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <Clock className="w-4 h-4 text-slate-400" />
                             <span className="font-medium">{formatDateTime(ap.appointment_date)}</span>
                             <Badge className={apptStatusConfig[ap.status]?.className}>
                               {apptStatusConfig[ap.status]?.label}
                             </Badge>
+                            <Badge className={ap.type === 'video'
+                              ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                              : 'bg-slate-100 text-slate-600 border-slate-200'}>
+                              {ap.type === 'video' ? '📹 Teleconsulta' : '🏥 Presencial'}
+                            </Badge>
                           </div>
                           {ap.notes && <p className="text-sm text-slate-500 mt-1">{ap.notes}</p>}
+                          {ap.type === 'video' && ap.meeting_url && (
+                            <button
+                              onClick={() => window.open(ap.meeting_url, '_blank', 'noopener,noreferrer')}
+                              className="text-xs text-indigo-600 hover:text-indigo-800 font-medium mt-1 flex items-center gap-1"
+                            >
+                              <Video className="w-3 h-3" /> Sala de video lista — unirse
+                            </button>
+                          )}
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 shrink-0 flex-wrap">
                           {ap.status === 'pending' && (
                             <Button size="sm" variant="outline" onClick={() => handleApptStatus(ap.id, 'confirmed')}>
                               <CheckCircle className="w-3 h-3 mr-1" /> Confirmar
                             </Button>
                           )}
                           {ap.status === 'confirmed' && !isNurse && (
-                            <Button size="sm" variant="outline" onClick={() => handleApptStatus(ap.id, 'completed')}>
-                              <CheckCircle className="w-3 h-3 mr-1" /> Completar
+                            <Button
+                              size="sm"
+                              className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white"
+                              disabled={busyConsult}
+                              onClick={() => handleStartConsulta(ap)}
+                            >
+                              <Play className="w-3 h-3 mr-1" /> Empezar Consulta
+                            </Button>
+                          )}
+                          {ap.status === 'in_consulta' && !isNurse && (
+                            <Button
+                              size="sm"
+                              className="bg-cyan-600 hover:bg-cyan-700 text-white"
+                              onClick={() => { setPostVisitAppt(ap); setPostVisitOpen(true); }}
+                            >
+                              <Play className="w-3 h-3 mr-1" /> Continuar consulta
                             </Button>
                           )}
                           <Button size="sm" variant="ghost" className="text-red-600" onClick={() => handleDeleteAppt(ap.id)}>
@@ -724,14 +830,26 @@ const PatientWorkspace = () => {
                     {pastAppts.map(ap => (
                       <div key={ap.id} className="bg-slate-50 rounded-xl border border-slate-100 p-4 flex items-center justify-between">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <Clock className="w-4 h-4 text-slate-400" />
                             <span className="text-sm">{formatDateTime(ap.appointment_date)}</span>
                             <Badge className={apptStatusConfig[ap.status]?.className}>
                               {apptStatusConfig[ap.status]?.label}
                             </Badge>
+                            {ap.type === 'video' && (
+                              <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200">📹 Teleconsulta</Badge>
+                            )}
                           </div>
                         </div>
+                        {ap.status === 'completed' && !isNurse && (
+                          <Button
+                            size="sm" variant="ghost" className="text-teal-600"
+                            title="Nota de evolución"
+                            onClick={() => { setPostVisitAppt(ap); setPostVisitOpen(true); }}
+                          >
+                            <FileText className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -799,7 +917,10 @@ const PatientWorkspace = () => {
               {notes.map(note => (
                 <div key={note.id} className="bg-white rounded-xl border border-slate-200 p-4">
                   <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.note}</p>
-                  <p className="text-xs text-slate-400 mt-2">{formatDateTime(note.created_at)}</p>
+                  <p className="text-xs text-slate-400 mt-2">
+                    {formatDateTime(note.created_at)}
+                    {note.profiles?.full_name ? ` · registrada por ${note.profiles.full_name}` : ''}
+                  </p>
                 </div>
               ))}
             </div>

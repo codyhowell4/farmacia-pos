@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -27,6 +27,8 @@ import {
   getOrgAppointmentsForDate, startConsulta, claimAppointment,
   takeoverAppointment, cancelAppointmentStaff, clockInDoctor
 } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
+import { dayKeyInTz, dateInTz, timeInTz, DEFAULT_TZ } from '@/lib/timezone';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import PostVisitDialog from './PostVisitDialog';
 import NurseVitalsDialog from './NurseVitalsDialog';
@@ -71,16 +73,14 @@ const formatDateTimeLocal = (iso) => {
   return d.toISOString().slice(0, 16);
 };
 
-const formatDisplayDate = (iso) => {
+const formatDisplayDate = (iso, tz) => {
   if (!iso) return '-';
-  const d = new Date(iso);
-  return d.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' });
+  return dateInTz(iso, tz, { weekday: 'short', day: 'numeric', month: 'short' });
 };
 
-const formatDisplayTime = (iso) => {
+const formatDisplayTime = (iso, tz) => {
   if (!iso) return '-';
-  const d = new Date(iso);
-  return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  return timeInTz(iso, tz);
 };
 
 const DoctorAppointments = () => {
@@ -119,12 +119,16 @@ const DoctorAppointments = () => {
   const [busyAction, setBusyAction] = useState(false);
   const [form, setForm] = useState({
     customer_id: '',
-    walkin_name: '',
-    walkin_phone: '',
+    type: 'in_person',
     appointment_date: '',
     status: 'pending',
     notes: '',
   });
+  // The doctor's local timezone (profiles.timezone) — drives every time
+  // shown on this page and the Hoy/semana grouping.
+  const [timezone, setTimezone] = useState(DEFAULT_TZ);
+  const [scopeFilter, setScopeFilter] = useState('hoy');
+  const tz = timezone || DEFAULT_TZ;
 
   const canConsult = ['doctor', 'admin'].includes(user?.role);
 
@@ -153,6 +157,10 @@ const DoctorAppointments = () => {
       setClockedInIds(clocked);
       setDoctorNames(names);
       setOrgToday(today);
+      // Doctor's local timezone for all times on this page
+      supabase.from('profiles').select('timezone').eq('id', user.id).single()
+        .then(({ data }) => { if (data?.timezone) setTimezone(data.timezone); })
+        .catch(() => {});
     } catch (err) {
       toast.error('Error cargando citas');
       console.error(err);
@@ -177,6 +185,26 @@ const DoctorAppointments = () => {
     return matchesSearch && matchesStatus;
   });
 
+  // Scope filter (hoy / próximos 7 días / todas) in the doctor's timezone,
+  // then group by local day for calendar-style sections.
+  const todayKey = dayKeyInTz(new Date().toISOString(), tz);
+  const tomorrowKey = dayKeyInTz(new Date(Date.now() + 86400000).toISOString(), tz);
+  const scoped = filtered.filter(a => {
+    if (scopeFilter === 'todas') return true;
+    const k = dayKeyInTz(a?.appointment_date, tz);
+    if (scopeFilter === 'hoy') return k === todayKey;
+    if (scopeFilter === 'semana') {
+      const diffDays = Math.round((new Date(k + 'T12:00:00') - new Date(todayKey + 'T12:00:00')) / 86400000);
+      return diffDays >= 0 && diffDays <= 7;
+    }
+    return true;
+  });
+  const dayLabel = (k) => {
+    if (k === todayKey) return 'Hoy';
+    if (k === tomorrowKey) return 'Mañana';
+    return new Date(k + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'short', timeZone: tz });
+  };
+
   // Coverage view (salon-style): only relevant when I'm clocked in.
   // - queueAppts: unassigned in-person citas — free to grab
   // - coverableAppts: citas whose doctor is NOT clocked in — takeover with
@@ -196,8 +224,7 @@ const DoctorAppointments = () => {
     setEditing(null);
     setForm({
       customer_id: '',
-      walkin_name: '',
-      walkin_phone: '',
+      type: 'in_person',
       appointment_date: formatDateTimeLocal(new Date()),
       status: 'pending',
       notes: '',
@@ -210,8 +237,7 @@ const DoctorAppointments = () => {
     setEditing(appt);
     setForm({
       customer_id: appt.customer_id || '',
-      walkin_name: appt.walkin_name || '',
-      walkin_phone: appt.walkin_phone || '',
+      type: appt.type || 'in_person',
       appointment_date: formatDateTimeLocal(appt.appointment_date),
       status: appt.status || 'pending',
       notes: appt.notes || '',
@@ -222,18 +248,44 @@ const DoctorAppointments = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!user?.id) return;
+    // Recetas digitales requieren expediente: la cita debe ser de un
+    // paciente registrado (sin walk-ins).
+    if (!form.customer_id) {
+      toast.error('Selecciona un paciente registrado — las citas requieren expediente');
+      return;
+    }
     try {
+      const switchingToVideo = form.type === 'video' && (!editing || editing.type !== 'video');
       const payload = {
-        ...form,
+        customer_id: form.customer_id,
+        type: form.type,
+        appointment_date: form.appointment_date,
+        status: form.status,
+        notes: form.notes,
         doctor_id: user.id,
-        customer_id: form.customer_id || null,
+        // Staff-created teleconsultas are courtesy — no patient charge here
+        ...(form.type === 'video' && switchingToVideo ? { payment_status: 'waived' } : {}),
+        // Switching back to presencial drops the meeting room
+        ...(form.type !== 'video' ? { meeting_url: null } : {}),
       };
+      let savedId = editing?.id;
       if (editing) {
         await updateAppointment(editing.id, payload);
         toast.success('Cita actualizada');
       } else {
-        await createAppointment(payload);
+        const created = await createAppointment(payload);
+        savedId = created?.id;
         toast.success('Cita creada');
+      }
+      // Teleconsulta: run the telehealth flow — create the Daily.co room now
+      // (validates payment/membership, sets meeting_url + status confirmed).
+      if (form.type === 'video' && savedId && (!editing || switchingToVideo || !editing.meeting_url)) {
+        try {
+          await confirmVideoAppointment(savedId);
+          toast.success('Sala de video creada — el paciente ya puede unirse desde su app');
+        } catch (videoErr) {
+          toast.error(videoErr.message || 'Cita guardada, pero no se pudo crear la sala de video');
+        }
       }
       setDialogOpen(false);
       loadData();
@@ -518,6 +570,21 @@ const DoctorAppointments = () => {
         </Select>
       </div>
 
+      {/* Date scope chips (hora local del médico) */}
+      <div className="flex gap-2">
+        {[['hoy', 'Hoy'], ['semana', 'Próximos 7 días'], ['todas', 'Todas']].map(([v, l]) => (
+          <button
+            key={v}
+            onClick={() => setScopeFilter(v)}
+            className={scopeFilter === v
+              ? 'px-3 py-1.5 rounded-full text-sm font-semibold bg-teal-600 text-white'
+              : 'px-3 py-1.5 rounded-full text-sm font-medium bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
       {/* Coverage: cola sin asignar + citas de médicos no disponibles */}
       {(queueAppts.length > 0 || coverableAppts.length > 0) && (
         <div className="space-y-3">
@@ -535,7 +602,7 @@ const DoctorAppointments = () => {
                         {a?.customers?.full_name || a?.walkin_name || 'Paciente'}
                       </p>
                       <p className="text-xs text-slate-500">
-                        {formatDisplayTime(a?.appointment_date)}
+                        {formatDisplayTime(a?.appointment_date, tz)}
                         {(a?.customers?.phone || a?.walkin_phone) ? ` · ${a?.customers?.phone || a?.walkin_phone}` : ''}
                         {' · '}{statusLabels[a?.status] || a?.status}
                       </p>
@@ -563,7 +630,7 @@ const DoctorAppointments = () => {
                           {a?.customers?.full_name || a?.walkin_name || 'Paciente'}
                         </p>
                         <p className="text-xs text-slate-500">
-                          {formatDisplayTime(a?.appointment_date)} · {a?.type === 'video' ? '📹 Video' : '🏥 Presencial'} · Cita con: <span className="font-medium">{doctorNames[a?.doctor_id] || 'Otro médico'}</span>
+                          {formatDisplayTime(a?.appointment_date, tz)} · {a?.type === 'video' ? '📹 Video' : '🏥 Presencial'} · Cita con: <span className="font-medium">{doctorNames[a?.doctor_id] || 'Otro médico'}</span>
                         </p>
                       </div>
                       <div className="flex gap-2 shrink-0">
@@ -590,18 +657,33 @@ const DoctorAppointments = () => {
         <div className="space-y-3">
           {[1,2,3,4].map(i => <Skeleton key={i} className="h-20 rounded-lg" />)}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : scoped.length === 0 ? (
         <div className="bg-white rounded-xl shadow-lg p-8 text-center">
           <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-4" />
           <p className="text-slate-500">
-            {search || statusFilter !== 'all' ? 'No se encontraron citas' : 'No hay citas programadas'}
+            {search || statusFilter !== 'all'
+              ? 'No se encontraron citas'
+              : scopeFilter === 'hoy'
+                ? 'No hay citas para hoy'
+                : scopeFilter === 'semana'
+                  ? 'No hay citas en los próximos 7 días'
+                  : 'No hay citas programadas'}
           </p>
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">
           <div className="divide-y">
-            {filtered.map(appt => (
-              <div key={appt?.id || Math.random()} className="p-4 hover:bg-slate-50 transition-colors">
+            {scoped.map((appt, apptIdx) => {
+              const dayKey = dayKeyInTz(appt?.appointment_date, tz);
+              const prevDayKey = apptIdx > 0 ? dayKeyInTz(scoped[apptIdx - 1]?.appointment_date, tz) : null;
+              return (
+              <Fragment key={appt?.id || Math.random()}>
+              {dayKey !== prevDayKey && (
+                <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  {dayLabel(dayKey)} · {scoped.filter(x => dayKeyInTz(x?.appointment_date, tz) === dayKey).length} cita{scoped.filter(x => dayKeyInTz(x?.appointment_date, tz) === dayKey).length !== 1 ? 's' : ''}
+                </div>
+              )}
+              <div className="p-4 hover:bg-slate-50 transition-colors">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -630,11 +712,11 @@ const DoctorAppointments = () => {
                     <div className="flex items-center gap-4 mt-1 text-sm text-slate-500 flex-wrap">
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3.5 h-3.5" />
-                        {formatDisplayDate(appt?.appointment_date)}
+                        {formatDisplayDate(appt?.appointment_date, tz)}
                       </span>
                       <span className="flex items-center gap-1">
                         <Clock className="w-3.5 h-3.5" />
-                        {formatDisplayTime(appt?.appointment_date)}
+                        {formatDisplayTime(appt?.appointment_date, tz)}
                       </span>
                       {(appt?.customers?.phone || appt?.walkin_phone) && (
                         <span className="flex items-center gap-1">
@@ -810,7 +892,9 @@ const DoctorAppointments = () => {
                   </div>
                 </div>
               </div>
-            ))}
+              </Fragment>
+              );
+            })}
           </div>
         </div>
       )}
@@ -828,7 +912,7 @@ const DoctorAppointments = () => {
             </p>
             <p className="text-sm text-slate-500">
               Paciente: <span className="font-medium text-slate-700">{coverAppt?.customers?.full_name || coverAppt?.walkin_name || 'Paciente'}</span>
-              {coverAppt ? ` · ${formatDisplayTime(coverAppt.appointment_date)}` : ''}
+              {coverAppt ? ` · ${formatDisplayTime(coverAppt.appointment_date, tz)}` : ''}
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setCoverOpen(false)} disabled={busyAction}>
@@ -961,39 +1045,39 @@ const DoctorAppointments = () => {
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <Label>Paciente registrado</Label>
+              <Label>Paciente registrado *</Label>
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 value={form.customer_id}
                 onChange={e => setForm({ ...form, customer_id: e.target.value })}
+                required
               >
-                <option value="">Sin paciente registrado</option>
+                <option value="">Seleccionar paciente...</option>
                 {safeCustomers.map(c => (
                   <option key={c?.id || Math.random()} value={c?.id || ''}>{c?.full_name || 'Sin nombre'}</option>
                 ))}
               </select>
+              <p className="text-xs text-slate-400 mt-1">
+                Las recetas son digitales: toda cita requiere un paciente con expediente.
+              </p>
             </div>
 
-            {!form.customer_id && (
-              <>
-                <div>
-                  <Label>Nombre (sin registro)</Label>
-                  <Input
-                    value={form.walkin_name}
-                    onChange={e => setForm({ ...form, walkin_name: e.target.value })}
-                    placeholder="Nombre del paciente"
-                  />
-                </div>
-                <div>
-                  <Label>Teléfono</Label>
-                  <Input
-                    value={form.walkin_phone}
-                    onChange={e => setForm({ ...form, walkin_phone: e.target.value })}
-                    placeholder="Teléfono"
-                  />
-                </div>
-              </>
-            )}
+            <div>
+              <Label>Tipo de consulta</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={form.type}
+                onChange={e => setForm({ ...form, type: e.target.value })}
+              >
+                <option value="in_person">🏥 Presencial (consultorio)</option>
+                <option value="video">📹 Teleconsulta (videollamada)</option>
+              </select>
+              {form.type === 'video' && (
+                <p className="text-xs text-slate-400 mt-1">
+                  Se creará la sala de videollamada automáticamente y el paciente podrá unirse desde su app. Cortesía del consultorio — sin cobro al paciente.
+                </p>
+              )}
+            </div>
 
             <div>
               <Label>Fecha y hora</Label>

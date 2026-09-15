@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Pill, Activity, FileText } from 'lucide-react';
+import { Plus, Trash2, Pill, Activity, FileText, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,7 +10,8 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import {
   updateAppointment, createDoctorPrescription,
-  createConsultaNote, getConsultaNotesByAppointment, getDoctorProfile
+  createConsultaNote, getConsultaNotesByAppointment, getDoctorProfile,
+  getInventoryForDoctor
 } from '@/lib/db';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import Cie10Search from './Cie10Search';
@@ -53,6 +54,8 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
   const [doctorProfile, setDoctorProfile] = useState(null);
   const [showRx, setShowRx] = useState(false);
   const [medications, setMedications] = useState([emptyMed()]);
+  const [inventory, setInventory] = useState([]);
+  const [medSearchOpen, setMedSearchOpen] = useState({});
 
   const patientName = appointment?.customers?.full_name || appointment?.walkin_name || 'Paciente';
   const hasCustomer = !!appointment?.customer_id;
@@ -79,6 +82,10 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
         .then(setDoctorProfile)
         .catch(err => console.error('getDoctorProfile failed:', err));
     }
+    // Inventory for the medication autocomplete (stock badges included)
+    getInventoryForDoctor()
+      .then(rows => setInventory(Array.isArray(rows) ? rows : []))
+      .catch(err => console.error('getInventoryForDoctor failed:', err));
     // Re-opening a completed consulta: preload the latest note version so the
     // doctor can correct it — saving inserts a new version (append-only).
     if (appointment.status === 'completed') {
@@ -334,8 +341,63 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
                         )}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <Input placeholder="Nombre del medicamento *" value={med.medication}
-                          onChange={(e) => updateMed(idx, 'medication', e.target.value)} />
+                        {/* Medication search with inventory autocomplete */}
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                          <Input placeholder="Nombre del medicamento *" value={med.medication}
+                            className="pl-8"
+                            onChange={(e) => {
+                              updateMed(idx, 'medication', e.target.value);
+                              setMedSearchOpen({ ...medSearchOpen, [idx]: true });
+                            }}
+                            onFocus={() => setMedSearchOpen({ ...medSearchOpen, [idx]: true })}
+                            onBlur={() => setTimeout(() => setMedSearchOpen(prev => ({ ...prev, [idx]: false })), 150)}
+                          />
+                          {medSearchOpen[idx] && med.medication.trim().length >= 1 && (
+                            <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                              {(() => {
+                                const q = med.medication.toLowerCase();
+                                const matches = inventory.filter(item => item.name.toLowerCase().includes(q)).slice(0, 5);
+                                if (matches.length === 0) {
+                                  return (
+                                    <div className="px-3 py-2 text-xs text-slate-500">
+                                      No encontrado en inventario. Puede escribir un medicamento manualmente.
+                                    </div>
+                                  );
+                                }
+                                return matches.map(item => {
+                                  const stockColor = item.quantity > 10 ? 'bg-green-500' : item.quantity > 0 ? 'bg-yellow-500' : 'bg-red-500';
+                                  const stockText = item.quantity === 0
+                                    ? 'Agotado (0 unidades)'
+                                    : `Stock: ${item.quantity} unidad${item.quantity !== 1 ? 'es' : ''}`;
+                                  return (
+                                    <button
+                                      key={item.id}
+                                      type="button"
+                                      className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        updateMed(idx, 'medication', item.name);
+                                        setMedSearchOpen(prev => ({ ...prev, [idx]: false }));
+                                      }}
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-medium">{item.name}</span>
+                                        {item.requires_prescription && (
+                                          <span className="text-[10px] bg-amber-100 text-amber-700 px-1 rounded">Rx</span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-1.5 mt-0.5">
+                                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${stockColor}`} />
+                                        <span className={`text-xs ${item.quantity === 0 ? 'text-red-600 font-medium' : 'text-slate-500'}`}>{stockText}</span>
+                                      </div>
+                                    </button>
+                                  );
+                                });
+                              })()}
+                            </div>
+                          )}
+                        </div>
                         <Input placeholder="Dosis" value={med.dosage}
                           onChange={(e) => updateMed(idx, 'dosage', e.target.value)} />
                         <Input placeholder="Vía (oral, tópica, IM...)" value={med.via}

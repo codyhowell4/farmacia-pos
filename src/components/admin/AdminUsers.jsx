@@ -15,7 +15,7 @@ const AdminUsers = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [formData, setFormData] = useState({
-    username: '', password: '', name: '', role: '', pharmacyLocation: '', pin: ''
+    username: '', password: '', name: '', role: '', pharmacyLocation: '', pin: '', timezone: 'America/Mexico_City'
   });
   const { toast } = useToast();
 
@@ -46,6 +46,7 @@ const AdminUsers = () => {
           role: formData.role,
           location_id: formData.pharmacyLocation,
           pin: formData.pin || null,
+          timezone: formData.timezone || 'America/Mexico_City',
         });
         toast({ title: 'Usuario actualizado', description: 'La información del usuario ha sido actualizada' });
       } else {
@@ -86,6 +87,7 @@ const AdminUsers = () => {
       role: user.role || '',
       pharmacyLocation: user.location_id || (locations?.length > 0 ? locations[0].id : ''),
       pin: user.pin || '',
+      timezone: user.timezone || 'America/Mexico_City',
     });
     setIsDialogOpen(true);
   };
@@ -97,7 +99,8 @@ const AdminUsers = () => {
       name: '',
       role: '',
       pharmacyLocation: locations?.length > 0 ? locations[0].id : '',
-      pin: ''
+      pin: '',
+      timezone: 'America/Mexico_City'
     });
     setEditingUser(null);
   };
@@ -193,6 +196,24 @@ const AdminUsers = () => {
                       <Input id="pin" type="password" value={formData.pin} onChange={(e) => setFormData({ ...formData, pin: e.target.value })} placeholder="PIN de 4 dígitos" />
                     </div>
                   )}
+                  <div className="space-y-2">
+                    <Label htmlFor="timezone">Zona horaria</Label>
+                    <select
+                      id="timezone"
+                      value={formData.timezone}
+                      onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    >
+                      <option value="America/Mexico_City">Centro — CDMX, Naucalpan, Guadalajara</option>
+                      <option value="America/Monterrey">Noreste — Monterrey</option>
+                      <option value="America/Cancun">Sureste — Cancún, Quintana Roo</option>
+                      <option value="America/Merida">Yucatán — Mérida</option>
+                      <option value="America/Mazatlan">Pacífico — Mazatlán, Sinaloa</option>
+                      <option value="America/Chihuahua">Chihuahua</option>
+                      <option value="America/Hermosillo">Sonora — Hermosillo</option>
+                      <option value="America/Tijuana">Noroeste — Tijuana</option>
+                    </select>
+                  </div>
                 </div>
                 <Button type="submit" className="w-full">
                   {editingUser ? 'Actualizar usuario' : 'Agregar usuario'}

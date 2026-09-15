@@ -1644,7 +1644,7 @@ export const getMedicalNotesByCustomer = async (customerId) => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('medical_notes')
-    .select('*')
+    .select('*, profiles(full_name)')
     .eq('org_id', orgId)
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false });
@@ -1958,10 +1958,10 @@ export const getPatientDocumentUrl = async (path) => {
 
 // ── NURSE PRE-CONSULTA VITALS ───────────────────────────────
 
-export const saveNurseVitals = async (appointmentId, vitals) => {
+export const saveNurseVitals = async (appointmentId, vitals, recordedBy = null) => {
   const { data, error } = await supabase
     .from('appointments')
-    .update({ nurse_vitals: vitals })
+    .update({ nurse_vitals: vitals, nurse_vitals_by: recordedBy })
     .eq('id', appointmentId)
     .select()
     .single();

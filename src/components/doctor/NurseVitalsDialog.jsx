@@ -43,7 +43,7 @@ const NurseVitalsDialog = ({ open, onOpenChange, appointment, onSaved }) => {
       const cleaned = Object.fromEntries(
         Object.entries(vitals).map(([k, v]) => [k, (v ?? '').toString().trim() || null])
       );
-      await saveNurseVitals(appointment.id, cleaned);
+      await saveNurseVitals(appointment.id, cleaned, user?.id);
       await logAudit({
         action: AUDIT_ACTIONS.NURSE_VITALS,
         user,

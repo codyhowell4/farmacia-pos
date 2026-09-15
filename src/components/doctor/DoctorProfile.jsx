@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getDoctorProfile, upsertDoctorProfile } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
+import { MX_TIMEZONES, DEFAULT_TZ } from '@/lib/timezone';
 import DoctorAvailabilityEditor from '@/components/DoctorAvailabilityEditor';
 import { toast } from 'sonner';
 
@@ -36,6 +37,28 @@ const DoctorProfile = () => {
   const [savingAvailability, setSavingAvailability] = useState(false);
   const [doctorName, setDoctorName] = useState('');
   const [savingName, setSavingName] = useState(false);
+  const [timezone, setTimezone] = useState(DEFAULT_TZ);
+  const [savingTz, setSavingTz] = useState(false);
+
+  useEffect(() => {
+    if (user?.timezone) setTimezone(user.timezone);
+  }, [user?.timezone]);
+
+  // The doctor's local timezone drives every time shown in the portal.
+  const handleSaveTimezone = async () => {
+    if (!user?.id) return;
+    setSavingTz(true);
+    try {
+      const { error } = await supabase.from('profiles').update({ timezone }).eq('id', user.id);
+      if (error) throw error;
+      toast.success('Ubicación guardada — los horarios se mostrarán en tu hora local');
+    } catch (err) {
+      toast.error(err.message || 'Error guardando la ubicación');
+      console.error('[DoctorProfile] save timezone error:', err);
+    } finally {
+      setSavingTz(false);
+    }
+  };
 
   useEffect(() => {
     if (user?.name) setDoctorName(user.name);
@@ -171,6 +194,35 @@ const DoctorProfile = () => {
                 </Button>
               </div>
               <p className="text-xs text-slate-400 mt-1">Así te verán los pacientes al agendar y en sus citas.</p>
+            </div>
+          </div>
+
+          {/* Location / timezone */}
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h4 className="text-sm font-semibold text-slate-900 mb-1 flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-teal-600" />
+              Mi ubicación (zona horaria)
+            </h4>
+            <p className="text-xs text-slate-500 mb-4">
+              Las citas y horarios del portal se muestran en la hora local de tu ubicación.
+            </p>
+            <div className="flex gap-2">
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              >
+                {MX_TIMEZONES.map(tz => (
+                  <option key={tz.value} value={tz.value}>{tz.label}</option>
+                ))}
+              </select>
+              <Button
+                onClick={handleSaveTimezone}
+                disabled={savingTz}
+                className="bg-[#46AC78] hover:bg-[#3b9566] shrink-0"
+              >
+                {savingTz ? 'Guardando…' : 'Guardar'}
+              </Button>
             </div>
           </div>
 

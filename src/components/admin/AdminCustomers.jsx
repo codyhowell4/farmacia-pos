@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 
 const AdminCustomers = () => {
@@ -48,6 +49,28 @@ const AdminCustomers = () => {
   };
 
   const handleDelete = async (id) => {
+    // NOM-004-SSA3-2012 (5.4): los expedientes clínicos se conservan mínimo
+    // 5 años — un paciente con registros clínicos no se puede eliminar.
+    try {
+      const checks = await Promise.all([
+        supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('customer_id', id),
+        supabase.from('prescriptions').select('id', { count: 'exact', head: true }).eq('customer_id', id),
+        supabase.from('medical_notes').select('id', { count: 'exact', head: true }).eq('customer_id', id),
+        supabase.from('consulta_notes').select('id', { count: 'exact', head: true }).eq('customer_id', id),
+        supabase.from('consent_documents').select('id', { count: 'exact', head: true }).eq('customer_id', id),
+      ]);
+      const total = checks.reduce((sum, c) => sum + (c.count || 0), 0);
+      if (total > 0) {
+        toast({
+          title: 'No se puede eliminar',
+          description: 'Este paciente tiene expediente clínico (citas, recetas, notas o consentimientos). La NOM-004 exige conservarlo mínimo 5 años.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    } catch (e) {
+      console.error('delete guard check failed:', e);
+    }
     if (!window.confirm('¿Eliminar este cliente? Esto también desvinculará sus ventas y citas.')) return;
     try {
       await deleteCustomer(id);
