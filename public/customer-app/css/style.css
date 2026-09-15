@@ -47,10 +47,9 @@
 
 /* --- GLASS CARD UTILITY --- */
 .glass-card {
-  background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255,255,255,0.15);
+  background: #ffffff;
+  border: 1px solid #E3E8F2;
+  box-shadow: 0 6px 20px rgba(20,27,94,0.08);
   border-radius: 24px;
 }
 
@@ -85,6 +84,9 @@ body {
 
 #main-content {
   padding-bottom: 100px;
+  background: linear-gradient(180deg, #EDF1F8 0%, #E3E9F5 100%);
+  background-attachment: fixed;
+  min-height: 100dvh;
 }
 
 /* --- HEADER --- */
@@ -110,11 +112,12 @@ body {
 }
 
 .brand-tagline {
-  font-size: 0.45rem;
+  font-size: 0.42rem;
   font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.13em;
   color: var(--text-muted);
   margin-top: 3px;
+  white-space: nowrap;
 }
 
 /* Vertical Greek key (meander) strip down the left edge of the app */

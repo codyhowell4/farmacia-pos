@@ -247,8 +247,8 @@ function renderLogin() {
   closeMenu();
   setAppChromeVisible(true); // in case the public firma view hid it
   mainContent.innerHTML = `
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
-      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🔑 Iniciar Sesión</h1>
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
+      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">Iniciar Sesión</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Accede a tu cuenta de Farmacia Apolo</p>
     </div>
     
@@ -344,7 +344,7 @@ function renderFamilyActivation() {
   closeMenu();
   setAppChromeVisible(true);
   mainContent.innerHTML = `
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">👨‍👩‍👧‍👦 Activa tu cuenta</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Para integrantes de un Plan Familiar (sin ser titular)</p>
     </div>
@@ -458,7 +458,7 @@ window.handleFamilyActivation = handleFamilyActivation;
 function renderSignup() {
   closeMenu();
   mainContent.innerHTML = `
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">✨ Crear Cuenta</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Únete a Farmacia Apolo</p>
     </div>
@@ -587,7 +587,7 @@ async function handleSignup() {
 function renderForgotPassword() {
   closeMenu();
   mainContent.innerHTML = `
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📧 Recuperar Contraseña</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Te enviaremos un enlace para restablecerla</p>
     </div>
@@ -627,7 +627,7 @@ async function handleForgotPassword() {
 function renderResetPassword() {
   closeMenu();
   mainContent.innerHTML = `
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🔒 Restablecer Contraseña</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Elige una nueva contraseña para tu cuenta</p>
     </div>
@@ -710,7 +710,7 @@ function renderPrivacidad() {
 
   mainContent.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📄 Aviso de Privacidad</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Farmacia Apolo · Última actualización: septiembre 2026</p>
     </div>
@@ -900,7 +900,7 @@ function renderConsentOnboarding() {
   const cardsHtml = consentDocCardsHtml(docs, 'consent-check-', 'updateConsentSubmitButton');
 
   mainContent.innerHTML = `
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📋 Documentos de consentimiento</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Para usar la app, lee y acepta los siguientes documentos. Solo es necesario una vez.</p>
     </div>
@@ -996,7 +996,7 @@ function renderFirmaRegistro() {
   const labelStyle = 'display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;';
 
   mainContent.innerHTML = `
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🖊️ Firma tus documentos</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Lee y acepta los documentos y tu cuenta de Farmacia Apolo se crea en el mismo paso. Solo es necesario una vez.</p>
     </div>
@@ -1136,7 +1136,7 @@ function renderCheckinForm() {
   const displayName = currentCustomerProfile?.name || currentAuthUser?.user_metadata?.full_name || currentAuthUser?.email || '';
 
   mainContent.innerHTML = `
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🩺 Check-in</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Hola${displayName ? `, ${escapeHtml(displayName)}` : ''} — cuéntanos cómo te sientes para preparar tu visita.</p>
     </div>
@@ -1278,8 +1278,7 @@ async function renderMembresias() {
 
   mainContent.innerHTML = `
     <!-- Hero -->
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; text-align: center;">
-      <div style="font-size: 2rem; margin-bottom: 0.5rem;">⭐</div>
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white; text-align: center;">
       <h2 style="margin: 0; font-size: 1.4rem; font-weight: 800;">Membresía Apolo</h2>
       <p style="margin: 0.5rem auto 0; font-size: 0.9rem; opacity: 0.9; max-width: 320px; line-height: 1.5;">Visitas incluidas cada mes, descuentos en medicamentos, toma de presión gratis y revisiones periódicas.</p>
     </div>
@@ -1381,7 +1380,7 @@ async function renderMembresias() {
           <span style="color: #64748b;">Estado</span>
           ${pendingCancel
             ? '<span style="font-weight: 600; color: #b45309;">Cancelación programada</span>'
-            : '<span style="font-weight: 600; color: #15803d;">✓ Activa</span>'}
+            : '<span style="font-weight: 600; color: #359268;">✓ Activa</span>'}
         </div>
         <div style="display: flex; justify-content: space-between; padding: 0.375rem 0;">
           <span style="color: #64748b;">Consultas adicionales</span>
@@ -1397,9 +1396,9 @@ async function renderMembresias() {
       </div>
 
       ${revisions.length > 0 ? `
-        <div style="background: #dcfce7; border: 1px solid #86efac; border-radius: 16px; padding: 1rem 1.25rem; margin-top: 1rem;">
+        <div style="background: #E2F5EB; border: 1px solid #86efac; border-radius: 16px; padding: 1rem 1.25rem; margin-top: 1rem;">
           <div style="font-weight: 700; font-size: 0.9rem; color: #166534; margin-bottom: 0.5rem;">🩺 Tienes revisiones disponibles</div>
-          <div style="display: flex; flex-direction: column; gap: 0.375rem; font-size: 0.85rem; color: #15803d;">
+          <div style="display: flex; flex-direction: column; gap: 0.375rem; font-size: 0.85rem; color: #359268;">
             ${revisions.map(r => {
               const label = r.package_type === 'bh_ego'
                 ? 'Biometría Hemática + Examen General de Orina + Consulta'
@@ -1529,7 +1528,7 @@ async function renderMembresias() {
       <div style="background: rgba(255,255,255,0.95); border-radius: 16px; padding: 1rem; border: 1px solid #E3E8F2;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
           <div style="font-weight: 700; color: #1a1a2e; font-size: 0.95rem;">${escapeHtml(p.name)}</div>
-          ${p.category ? `<span style="font-size: 0.65rem; background: #eef2ff; color: #1E2A8A; padding: 0.2rem 0.5rem; border-radius: 12px; font-weight: 600; white-space: nowrap;">${escapeHtml(p.category)}</span>` : ''}
+          ${p.category ? `<span style="font-size: 0.65rem; background: #EDF1FB; color: #1E2A8A; padding: 0.2rem 0.5rem; border-radius: 12px; font-weight: 600; white-space: nowrap;">${escapeHtml(p.category)}</span>` : ''}
         </div>
         <div style="color: #359268; font-weight: 600; font-size: 0.85rem; margin-top: 0.3rem;">🤝 ${escapeHtml(p.offer)}</div>
         ${p.description ? `<div style="color: #64748b; font-size: 0.8rem; margin-top: 0.3rem; line-height: 1.4;">${escapeHtml(p.description)}</div>` : ''}
@@ -2236,7 +2235,7 @@ function renderHome() {
       <div class="segmented-progress" style="margin-bottom: 12px;">
         ${waterSegmentsHTML}
       </div>
-      <button onclick="addWaterFromTracker()" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+      <button onclick="addWaterFromTracker()" style="width: 100%; padding: 12px; background: linear-gradient(135deg, #2B37A5, #1E2A8A); color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
         <span>💧</span> Agregar vaso de agua
       </button>
     </div>
@@ -2374,7 +2373,7 @@ function renderHealth() {
     
     metricsHTML = `
     <!-- Metabolism Card (BMR & TDEE) -->
-    <div class="medicine-card" style="flex-direction: column; padding: 1rem; margin-bottom: 1rem; background: linear-gradient(135deg, #f0fdf4, #dcfce7);">
+    <div class="medicine-card" style="flex-direction: column; padding: 1rem; margin-bottom: 1rem; background: linear-gradient(135deg, #F2FBF6, #E2F5EB);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
         <span style="font-weight: 600;">🔥 Metabolismo</span>
         <button onclick="showActivityModal()" style="font-size: 0.7rem; background: var(--primary); color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer;">Editar Actividad</button>
@@ -2391,7 +2390,7 @@ function renderHealth() {
           <div style="font-size: 0.65rem; color: var(--text-muted);">kcal/día • ${getActivityLabel(activityLevel)}</div>
         </div>
       </div>
-      <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #bbf7d0;">
+      <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #CDEBDC;">
         <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Distribución recomendada:</div>
         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
           <span style="background: white; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem;">🥩 ${macros.protein}g proteína</span>
@@ -2670,7 +2669,7 @@ function renderGoals() {
             <span style="font-size: 0.7rem; color: ${goal.progress >= 100 ? '#46AC78' : '#1E2A8A'};">${goal.progress}% completado</span>
             <div style="display: flex; gap: 0.5rem;">
               <button style="font-size: 0.7rem; background: var(--primary-light); color: var(--primary); border: none; padding: 2px 8px; border-radius: 4px; cursor: pointer;" onclick="updateGoalProgress(${index})">Actualizar</button>
-              ${goal.progress >= 100 ? `<button style="font-size: 0.7rem; background: #dcfce7; color: #166534; border: none; padding: 2px 8px; border-radius: 4px; cursor: pointer;" onclick="completeGoal(${index})">✓ Completar</button>` : ''}
+              ${goal.progress >= 100 ? `<button style="font-size: 0.7rem; background: #E2F5EB; color: #166534; border: none; padding: 2px 8px; border-radius: 4px; cursor: pointer;" onclick="completeGoal(${index})">✓ Completar</button>` : ''}
               <button style="font-size: 0.7rem; background: #f3f4f6; color: #6b7280; border: none; padding: 2px 8px; border-radius: 4px; cursor: pointer;" onclick="expireGoal(${index})">Archivar</button>
             </div>
           </div>
@@ -2735,7 +2734,7 @@ function renderGoals() {
             <span style="font-size: 0.8rem; color: var(--text-secondary);">
               ${goal.current} / ${goal.target} ${goal.unit}
             </span>
-            <span style="font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; background: ${goal.status === 'completed' ? '#dcfce7' : '#f3f4f6'}; color: ${goal.status === 'completed' ? '#166534' : '#6b7280'};">
+            <span style="font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; background: ${goal.status === 'completed' ? '#E2F5EB' : '#f3f4f6'}; color: ${goal.status === 'completed' ? '#166534' : '#6b7280'};">
               ${goal.status === 'completed' ? 'Completada' : 'Expirada'}
             </span>
           </div>
@@ -2917,7 +2916,7 @@ function renderStore() {
   
   mainContent.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🛒 Catálogo Completo</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Medicamentos, suplementos y más</p>
       <button onclick="alert('Subir receta')" style="margin-top: 1rem; padding: 0.625rem 1.25rem; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; font-size: 0.85rem; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem;">
@@ -2955,7 +2954,7 @@ function renderStore() {
                 <div style="font-size: 2.5rem;">${med.category === 'prescription' ? '💊' : med.category === 'vitamins' ? '💪' : '💊'}</div>
               </div>
               <div style="flex: 1;">
-                <div style="font-size: 0.65rem; color: ${med.category === 'prescription' ? '#a78bfa' : med.category === 'vitamins' ? '#46AC78' : 'rgba(255,255,255,0.6)'}; margin-bottom: 0.25rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">${med.category === 'prescription' ? 'Con receta' : med.category === 'vitamins' ? 'Vitamina' : 'Sin receta'}</div>
+                <div style="font-size: 0.65rem; color: ${med.category === 'prescription' ? '#5B68C4' : med.category === 'vitamins' ? '#46AC78' : 'rgba(255,255,255,0.6)'}; margin-bottom: 0.25rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">${med.category === 'prescription' ? 'Con receta' : med.category === 'vitamins' ? 'Vitamina' : 'Sin receta'}</div>
                 <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; line-height: 1.3; color: white;">${med.name}</div>
                 <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">${med.brand}</div>
                 <div style="font-size: 1.1rem; font-weight: 700; color: #c0c0c0;">$${med.price.toFixed(2)}</div>
@@ -3025,7 +3024,7 @@ function renderStoreSearch(query = '') {
 // Render Education Module
 function renderEducation() {
   mainContent.innerHTML = `
-    <div class="hero" style="background: linear-gradient(135deg, #1E2A8A, #141B5E);">
+    <div class="hero" style="background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%);">
       <h1>📚 Educación en Salud</h1>
       <p>Aprende sobre medicamentos, enfermedades y hábitos saludables.</p>
     </div>
@@ -3092,7 +3091,7 @@ function renderEducation() {
 // Render Preventive Care Module
 function renderPreventive() {
   mainContent.innerHTML = `
-    <div class="hero" style="background: linear-gradient(135deg, #1E2A8A, #46AC78);">
+    <div class="hero" style="background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%);">
       <h1>🛡️ Cuidado Preventivo</h1>
       <p>Previene enfermedades con chequeos, vacunas y hábitos saludables.</p>
     </div>
@@ -3186,7 +3185,7 @@ function renderSettings() {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
         <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.1);" onclick="showHeightModal()">
-          <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #1E2A8A, #141B5E); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">📏</div>
+          <div style="width: 40px; height: 40px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">📏</div>
           <div style="flex: 1;">
             <div style="font-weight: 600; color: white; font-size: 0.95rem;">Altura</div>
             <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">${profile.height ? profile.height + ' cm' : 'No configurada - Toca para agregar'}</div>
@@ -3194,7 +3193,7 @@ function renderSettings() {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
         <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer;" onclick="alert('Cambiar foto')">
-          <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">📷</div>
+          <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #2B37A5, #1E2A8A); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">📷</div>
           <div style="flex: 1;">
             <div style="font-weight: 600; color: white; font-size: 0.95rem;">Foto de perfil</div>
             <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">Cambiar imagen</div>
@@ -3265,7 +3264,7 @@ function renderSettings() {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
         <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer;" onclick="alert('Tema')">
-          <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #1E2A8A, #141B5E); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🎨</div>
+          <div style="width: 40px; height: 40px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🎨</div>
           <div style="flex: 1;">
             <div style="font-weight: 600; color: white; font-size: 0.95rem;">Apariencia</div>
             <div style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">Modo claro / oscuro</div>
@@ -3499,7 +3498,7 @@ function renderEmergencyID() {
           🖨️ Imprimir / Guardar PDF
         </button>
         
-        <button onclick="shareEmergencyID()" style="padding: 1rem; background: #f0fdf4; color: #15803d; border: 2px solid #15803d; border-radius: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+        <button onclick="shareEmergencyID()" style="padding: 1rem; background: #F2FBF6; color: #359268; border: 2px solid #359268; border-radius: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
           📤 Compartir
         </button>
       </div>
@@ -3808,7 +3807,7 @@ window.printAdherenceReport = function() {
         .header h1 { color: #1E2A8A; margin: 0 0 10px; }
         .header p { color: #6b7280; margin: 0; }
         .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 30px; }
-        .stat-box { background: #f0fdf4; padding: 20px; border-radius: 10px; text-align: center; border: 2px solid #46AC78; }
+        .stat-box { background: #F2FBF6; padding: 20px; border-radius: 10px; text-align: center; border: 2px solid #46AC78; }
         .stat-value { font-size: 36px; font-weight: bold; color: #46AC78; }
         .stat-label { font-size: 12px; color: #166534; text-transform: uppercase; margin-top: 5px; }
         .medications { margin-top: 30px; }
@@ -4261,7 +4260,7 @@ window.showHeightModal = function(callback = null) {
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
   modal.innerHTML = `
     <div style="background: #1a1a2e; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden; color: white;">
-      <div style="padding: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.1); background: linear-gradient(135deg, #1E2A8A, #141B5E);">
+      <div style="padding: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.1); background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%);">
         <h3 style="margin: 0; font-size: 1.2rem;">📏 Configurar Altura</h3>
       </div>
       <div style="padding: 1.25rem;">
@@ -4580,9 +4579,9 @@ function handleVoiceResult(transcript, parsed) {
 const voiceBtnStyles = document.createElement('style');
 voiceBtnStyles.textContent = `
   @keyframes pulse {
-    0% { transform: scale(1); box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4); }
-    50% { transform: scale(1.05); box-shadow: 0 6px 20px rgba(139, 92, 246, 0.6); }
-    100% { transform: scale(1); box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4); }
+    0% { transform: scale(1); box-shadow: 0 4px 12px rgba(20,27,94,0.25); }
+    50% { transform: scale(1.05); box-shadow: 0 6px 20px rgba(43, 55, 165, 0.6); }
+    100% { transform: scale(1); box-shadow: 0 4px 12px rgba(20,27,94,0.25); }
   }
   #voice-btn:hover {
     transform: scale(1.05);
@@ -4819,7 +4818,7 @@ function renderSleep() {
         </div>
         <div style="display: flex; justify-content: space-around;">
           <div style="text-align: center;">
-            <div style="font-size: 2rem; font-weight: 800; color: #a78bfa;">${lastSleep.duration.toFixed(1)}h</div>
+            <div style="font-size: 2rem; font-weight: 800; color: #5B68C4;">${lastSleep.duration.toFixed(1)}h</div>
             <div style="font-size: 0.7rem; color: rgba(255,255,255,0.6); margin-top: 4px;">Duración</div>
           </div>
           <div style="text-align: center;">
@@ -4843,7 +4842,7 @@ function renderSleep() {
         <div style="font-weight: 600; color: white; margin-bottom: 16px; font-size: 1.05rem;">📊 Últimos 7 días</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
           <div style="text-align: center; padding: 16px; background: rgba(255,255,255,0.08); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
-            <div style="font-size: 1.75rem; font-weight: 800; color: #8b5cf6;">${stats.averageDuration}h</div>
+            <div style="font-size: 1.75rem; font-weight: 800; color: #2B37A5;">${stats.averageDuration}h</div>
             <div style="font-size: 0.7rem; color: rgba(255,255,255,0.6); margin-top: 4px;">Promedio</div>
           </div>
           <div style="text-align: center; padding: 16px; background: rgba(255,255,255,0.08); border-radius: 16px; border: 1px solid rgba(255,255,255,0.1);">
@@ -5198,7 +5197,7 @@ function renderBody() {
   
   mainContent.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <div style="font-size: 1.3rem; font-weight: 700;">⚖️ Tu Cuerpo</div>
       <div style="font-size: 0.85rem; opacity: 0.9;">Métricas y salud</div>
     </div>
@@ -5380,7 +5379,7 @@ function renderProgress() {
     <div style="padding: 0 1rem 1rem;">
       <div style="font-weight: 600; margin-bottom: 0.75rem;">🏅 Logros Recientes</div>
       <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.5rem;">
-        <div style="flex-shrink: 0; padding: 1rem; background: #f0fdf4; border-radius: 12px; text-align: center; min-width: 100px;">
+        <div style="flex-shrink: 0; padding: 1rem; background: #F2FBF6; border-radius: 12px; text-align: center; min-width: 100px;">
           <div style="font-size: 2rem;">🏃</div>
           <div style="font-size: 0.7rem; color: #166534; margin-top: 0.25rem;">10k Pasos</div>
         </div>
@@ -5452,7 +5451,7 @@ window.showFoodLogModal = function() {
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden; max-height: 90vh; display: flex; flex-direction: column;">
-      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); text-align: center; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); text-align: center; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
         <div style="font-size: 2.5rem; margin-bottom: 0.25rem;">🍽️</div>
         <h3 style="margin: 0; font-size: 1.2rem;">¿Qué comiste?</h3>
         <p style="font-size: 0.8rem; opacity: 0.9; margin: 0.25rem 0 0;">Escribe y te ayudamos a calcular</p>
@@ -5492,7 +5491,7 @@ window.showFoodLogModal = function() {
           <div style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.5rem;">Comunes:</div>
           <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
             <button onclick="quickAddFood('huevo', 2)" style="padding: 0.5rem 0.75rem; background: #fef3c7; border: none; border-radius: 20px; font-size: 0.75rem; cursor: pointer;">🥚 2 huevos</button>
-            <button onclick="quickAddFood('pollo', 1)" style="padding: 0.5rem 0.75rem; background: #dcfce7; border: none; border-radius: 20px; font-size: 0.75rem; cursor: pointer;">🍗 Pollo 100g</button>
+            <button onclick="quickAddFood('pollo', 1)" style="padding: 0.5rem 0.75rem; background: #E2F5EB; border: none; border-radius: 20px; font-size: 0.75rem; cursor: pointer;">🍗 Pollo 100g</button>
             <button onclick="quickAddFood('arroz', 1)" style="padding: 0.5rem 0.75rem; background: #fef3c7; border: none; border-radius: 20px; font-size: 0.75rem; cursor: pointer;">🍚 Arroz</button>
             <button onclick="quickAddFood('tortilla', 2)" style="padding: 0.5rem 0.75rem; background: #f3f4f6; border: none; border-radius: 20px; font-size: 0.75rem; cursor: pointer;">🌮 2 tortillas</button>
             <button onclick="quickAddFood('frijoles', 1)" style="padding: 0.5rem 0.75rem; background: #fef3c7; border: none; border-radius: 20px; font-size: 0.75rem; cursor: pointer;">🫘 Frijoles</button>
@@ -5682,7 +5681,7 @@ window.showHealthGoalModal = function() {
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden; text-align: center;">
-      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
         <div style="font-size: 3rem; margin-bottom: 0.5rem;">🎯</div>
         <h3 style="margin: 0; font-size: 1.2rem;">Objetivo Principal</h3>
         <p style="font-size: 0.85rem; opacity: 0.9; margin: 0.5rem 0 0;">¿Qué quieres lograr?</p>
@@ -5864,7 +5863,7 @@ window.showGoalRecommendations = function(goal, goalWeight, timeline) {
   const modal = document.querySelector('.modal-overlay');
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden; max-height: 90vh; overflow-y: auto;">
-      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #1E2A8A, #46AC78); color: white; text-align: center;">
+      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white; text-align: center;">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📊</div>
         <h3 style="margin: 0; font-size: 1.2rem;">Tu Plan Personalizado</h3>
       </div>
@@ -5889,11 +5888,11 @@ window.showGoalRecommendations = function(goal, goalWeight, timeline) {
         
         <!-- Timeline & Rate -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.5rem;">
-          <div style="background: ${plan.isSafe ? '#f0fdf4' : '#fef3c7'}; border-radius: 12px; padding: 1rem; text-align: center;">
+          <div style="background: ${plan.isSafe ? '#F2FBF6' : '#fef3c7'}; border-radius: 12px; padding: 1rem; text-align: center;">
             <div style="font-size: 1.5rem; font-weight: 700; ${plan.isSafe ? 'color: #46AC78;' : 'color: #b45309;'}">${timeline}</div>
             <div style="font-size: 0.75rem; color: var(--text-muted);">semanas</div>
           </div>
-          <div style="background: ${plan.isSafe ? '#f0fdf4' : '#fef3c7'}; border-radius: 12px; padding: 1rem; text-align: center;">
+          <div style="background: ${plan.isSafe ? '#F2FBF6' : '#fef3c7'}; border-radius: 12px; padding: 1rem; text-align: center;">
             <div style="font-size: 1.5rem; font-weight: 700; ${plan.isSafe ? 'color: #46AC78;' : 'color: #b45309;'}">${Math.abs(plan.requiredWeeklyChange).toFixed(1)}</div>
             <div style="font-size: 0.75rem; color: var(--text-muted);">kg/semana</div>
           </div>
@@ -5905,7 +5904,7 @@ window.showGoalRecommendations = function(goal, goalWeight, timeline) {
             <div style="font-size: 0.85rem; color: #a16207;">${plan.recommendation}</div>
           </div>
         ` : `
-          <div style="background: #f0fdf4; border-left: 4px solid #46AC78; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
+          <div style="background: #F2FBF6; border-left: 4px solid #46AC78; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
             <div style="font-weight: 600; color: #065f46; margin-bottom: 0.25rem;">✅ Ritmo adecuado</div>
             <div style="font-size: 0.85rem; color: #047857;">${plan.recommendation}</div>
           </div>
@@ -5913,7 +5912,7 @@ window.showGoalRecommendations = function(goal, goalWeight, timeline) {
         
         <!-- Calorie Recommendation -->
         ${adjustedCalories ? `
-          <div style="background: linear-gradient(135deg, #1E2A8A, #141B5E); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; color: white;">
+          <div style="background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; color: white;">
             <div style="font-size: 0.85rem; opacity: 0.9; margin-bottom: 0.25rem;">Calorías diarias recomendadas</div>
             <div style="font-size: 2rem; font-weight: 700;">${Math.round(adjustedCalories)} kcal</div>
             <div style="font-size: 0.8rem; opacity: 0.8; margin-top: 0.5rem;">
@@ -5938,7 +5937,7 @@ window.showGoalRecommendations = function(goal, goalWeight, timeline) {
         
         <!-- Protein Goal -->
         ${profile ? `
-          <div style="background: #f0fdf4; border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;">
+          <div style="background: #F2FBF6; border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <span style="font-weight: 600; color: #065f46;">🥩 Proteína diaria</span>
               <span style="font-size: 1.25rem; font-weight: 700; color: #46AC78;">${calculateProteinGoal(currentWeight, activityLevel, goal)}g</span>
@@ -6006,7 +6005,7 @@ function renderSalud() {
   
   mainContent.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; text-align: center;">
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white; text-align: center;">
       <div style="font-size: 1.3rem; font-weight: 700;">🏥 Tu Salud</div>
       <div style="font-size: 0.85rem; opacity: 0.9; margin-top: 0.25rem;">Historial, recetas y vacunas</div>
     </div>
@@ -6139,7 +6138,7 @@ function renderSalud() {
                   </div>
                 </div>
               </div>
-              <button onclick="showVaccineModal('${v.id}')" style="background: ${isOverdue ? 'rgba(255,107,107,0.3)' : 'rgba(139,92,246,0.3)'}; color: ${isOverdue ? '#ff6b6b' : '#a78bfa'}; border: 1px solid ${isOverdue ? 'rgba(255,107,107,0.4)' : 'rgba(139,92,246,0.4)'}; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.8rem; font-weight: 500; cursor: pointer;">
+              <button onclick="showVaccineModal('${v.id}')" style="background: ${isOverdue ? 'rgba(255,107,107,0.3)' : 'rgba(139,92,246,0.3)'}; color: ${isOverdue ? '#ff6b6b' : '#5B68C4'}; border: 1px solid ${isOverdue ? 'rgba(255,107,107,0.4)' : 'rgba(139,92,246,0.4)'}; padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.8rem; font-weight: 500; cursor: pointer;">
                 ${isOverdue ? '¡Vencida!' : v.nextDose ? 'Registrar' : 'Aplicar'}
               </button>
             </div>
@@ -6178,7 +6177,7 @@ function renderSalud() {
         <div style="display: flex; flex-direction: column; gap: 0.6rem;">
           <div style="font-size: 0.85rem; color: rgba(255,255,255,0.7); font-weight: 500;">Resultados recientes:</div>
           ${userExams.slice(-3).reverse().map(e => `
-            <div class="glass-card" style="padding: 1rem;">
+            <div style="background: #F8FAFC; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem;">
               <div style="display: flex; justify-content: space-between; align-items: flex-start;">
                 <div style="flex: 1;">
                   <div style="font-weight: 600; font-size: 0.95rem; color: white;">${e.examName}</div>
@@ -6278,8 +6277,8 @@ function getHealthGuides(profile) {
       title: 'Hidratación',
       description: 'Descubre por qué el agua es crucial y cómo mantenerte hidratado.',
       tag: 'General',
-      color: '#0ea5e9',
-      colorDark: '#0284c7'
+      color: '#2B37A5',
+      colorDark: '#1E2A8A'
     },
     {
       id: 'stress',
@@ -6287,8 +6286,8 @@ function getHealthGuides(profile) {
       title: 'Manejo del Estrés',
       description: 'Técnicas de respiración y mindfulness para reducir la ansiedad.',
       tag: 'Mental',
-      color: '#8b5cf6',
-      colorDark: '#7c3aed'
+      color: '#2B37A5',
+      colorDark: '#1E2A8A'
     }
   ];
   
@@ -6349,7 +6348,7 @@ function getHealthGuides(profile) {
     title: 'Recuperación Muscular',
     description: 'Descansa adecuadamente y evita lesiones con estos consejos.',
     tag: 'Actividad',
-    color: '#22c55e',
+    color: '#46AC78',
     colorDark: '#16a34a'
   });
   
@@ -6416,7 +6415,7 @@ window.showDetectedPrescriptions = function(medicines) {
   const modal = document.querySelector('.modal-overlay');
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px 20px 0 0; width: 100%; max-width: 400px; margin-top: auto; max-height: 90vh; overflow-y: auto;">
-      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #1E2A8A, #46AC78); color: white;">
+      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">✅</div>
         <h3 style="margin: 0;">Medicamentos Detectados</h3>
         <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.85rem;">Revisa y confirma la información</p>
@@ -6489,7 +6488,7 @@ window.showManualPrescriptionModal = function() {
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden; max-height: 90vh; overflow-y: auto;">
-      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">💊</div>
         <h3 style="margin: 0;">Agregar Medicamento</h3>
       </div>
@@ -6840,7 +6839,7 @@ window.showNotificationSettings = function() {
             </button>
             
             ${status.permission === 'granted' ? `
-              <button onclick="testNotification()" style="width: 100%; padding: 1rem; background: #f0fdf4; color: #46AC78; border: 2px solid #46AC78; border-radius: 12px; font-weight: 600; cursor: pointer;">
+              <button onclick="testNotification()" style="width: 100%; padding: 1rem; background: #F2FBF6; color: #46AC78; border: 2px solid #46AC78; border-radius: 12px; font-weight: 600; cursor: pointer;">
                 🔔 Probar notificación
               </button>
             ` : ''}
@@ -6915,7 +6914,7 @@ window.showRefillRequestModal = function(prescriptionId) {
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden;">
-      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🔄</div>
         <h3 style="margin: 0;">Solicitar Recarga</h3>
         <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.9rem;">${prescription.medicine}</p>
@@ -7043,7 +7042,7 @@ window.showRefillStatus = function(requestId) {
   const statusColors = {
     pending: { bg: '#fef3c7', color: '#92400e', text: 'Pendiente' },
     confirmed: { bg: '#dbeafe', color: '#1e40af', text: 'Confirmada' },
-    ready: { bg: '#d1fae5', color: '#15803d', text: 'Lista para recoger' },
+    ready: { bg: '#d1fae5', color: '#359268', text: 'Lista para recoger' },
     completed: { bg: '#f3f4f6', color: '#6b7280', text: 'Completada' },
     cancelled: { bg: '#fee2e2', color: '#dc2626', text: 'Cancelada' }
   };
@@ -7055,7 +7054,7 @@ window.showRefillStatus = function(requestId) {
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden;">
-      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📋</div>
         <h3 style="margin: 0;">Estado de Solicitud</h3>
         <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.9rem;">${request.id}</p>
@@ -7252,7 +7251,7 @@ window.showExamModal = function(examId) {
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden; max-height: 90vh; overflow-y: auto;">
-      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🔬</div>
         <h3 style="margin: 0;">${template ? template.name : 'Agregar Estudio'}</h3>
         ${template ? `<p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">${template.description}</p>` : ''}
@@ -7337,7 +7336,7 @@ window.showAllExams = function() {
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px; width: 100%; max-width: 400px; max-height: 90vh; overflow-y: auto;">
-      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
         <h3 style="margin: 0;">🔬 Historial de Estudios</h3>
       </div>
       
@@ -7412,7 +7411,7 @@ function getGuideContent(guideId) {
         <li>Hidrátate: 8 vasos de agua al día mínimo</li>
       </ul>
       
-      <div style="background: #f0fdf4; padding: 1rem; border-radius: 12px; margin-top: 1rem;">
+      <div style="background: #F2FBF6; padding: 1rem; border-radius: 12px; margin-top: 1rem;">
         <strong>💡 Tip:</strong> Usa el 80/20 - come saludable 80% del tiempo y disfruta moderadamente el 20%.
       </div>
     `,
@@ -7429,12 +7428,12 @@ function getGuideContent(guideId) {
         <li>Establece una rutina de relajación antes de dormir</li>
       </ul>
       
-      <div style="background: #eef2ff; padding: 1rem; border-radius: 12px; margin-top: 1rem;">
+      <div style="background: #EDF1FB; padding: 1rem; border-radius: 12px; margin-top: 1rem;">
         <strong>💡 Meta:</strong> Intenta dormir 7-9 horas cada noche para una recuperación óptima.
       </div>
     `,
     hydration: `
-      <h3 style="color: #0ea5e9; margin-bottom: 1rem;">💧 Hidratación</h3>
+      <h3 style="color: #2B37A5; margin-bottom: 1rem;">💧 Hidratación</h3>
       <p>El agua es esencial para casi todas las funciones de tu cuerpo.</p>
       
       <h4 style="margin: 1.5rem 0 0.5rem;">Beneficios de estar hidratado:</h4>
@@ -7451,7 +7450,7 @@ function getGuideContent(guideId) {
       </div>
     `,
     stress: `
-      <h3 style="color: #8b5cf6; margin-bottom: 1rem;">🧘 Manejo del Estrés</h3>
+      <h3 style="color: #2B37A5; margin-bottom: 1rem;">🧘 Manejo del Estrés</h3>
       <p>El estrés crónico puede afectar tu salud física y mental.</p>
       
       <h4 style="margin: 1.5rem 0 0.5rem;">Técnicas para reducir el estrés:</h4>
@@ -7463,7 +7462,7 @@ function getGuideContent(guideId) {
         <li><strong>Tiempo en naturaleza:</strong> Camina al aire libre</li>
       </ul>
       
-      <div style="background: #f5f3ff; padding: 1rem; border-radius: 12px; margin-top: 1rem;">
+      <div style="background: #F0F3FC; padding: 1rem; border-radius: 12px; margin-top: 1rem;">
         <strong>💡 Recuerda:</strong> Está bien pedir ayuda profesional si el estrés se vuelve abrumador.
       </div>
     `,
@@ -7494,7 +7493,7 @@ function getGuideContent(guideId) {
       </ul>
     `,
     exercise_recovery: `
-      <h3 style="color: #22c55e; margin-bottom: 1rem;">💪 Recuperación Muscular</h3>
+      <h3 style="color: #46AC78; margin-bottom: 1rem;">💪 Recuperación Muscular</h3>
       <p>Los músculos crecen durante el descanso, no durante el ejercicio.</p>
       
       <h4 style="margin: 1.5rem 0 0.5rem;">Para una buena recuperación:</h4>
@@ -7506,7 +7505,7 @@ function getGuideContent(guideId) {
         <li>Escucha a tu cuerpo - el dolor agudo no es normal</li>
       </ul>
       
-      <div style="background: #f0fdf4; padding: 1rem; border-radius: 12px; margin-top: 1rem;">
+      <div style="background: #F2FBF6; padding: 1rem; border-radius: 12px; margin-top: 1rem;">
         <strong>💡 Importante:</strong> El dolor persistente puede indicar lesión. Consulta a un profesional si necesitas.
       </div>
     `,
@@ -7605,7 +7604,7 @@ function renderConsulta() {
           ¿Necesitas ayuda urgente?
         </div>
         <div style="display: flex; gap: 12px; margin-top: 14px;">
-          <a href="tel:+5214425488893" style="flex: 1; padding: 14px 8px; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; text-decoration: none; border-radius: 14px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+          <a href="tel:+5214425488893" style="flex: 1; padding: 14px 8px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white; text-decoration: none; border-radius: 14px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px;">
             ${ICON_PHONE}
             <span style="font-weight: 700; font-size: 0.95rem;">Llamar</span>
             <span style="font-size: 0.72rem; opacity: 0.85;">+52 1 442 548 8893</span>
@@ -7747,7 +7746,7 @@ window.showChatConsulta = function() {
   modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100dvh; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
   modal.innerHTML = `
     <!-- Chat Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
+    <div style="padding: 1rem; background: linear-gradient(135deg, #2B37A5, #1E2A8A); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
       <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
       <div>
         <div style="font-weight: 600;">Asistente Médico</div>
@@ -7774,11 +7773,11 @@ window.showChatConsulta = function() {
         <!-- Quick Symptom Buttons -->
         <div style="align-self: flex-start; display: flex; flex-wrap: wrap; gap: 0.5rem; max-width: 100%;">
           ${Object.values(SYMPTOM_MEDICINES).slice(0, 6).map(s => `
-            <button onclick="sendSymptomMessage('${s.name}')" style="padding: 0.5rem 0.75rem; background: white; border: 1px solid #bae6fd; border-radius: 20px; font-size: 0.8rem; color: #0369a1; cursor: pointer;">${s.name}</button>
+            <button onclick="sendSymptomMessage('${s.name}')" style="padding: 0.5rem 0.75rem; background: white; border: 1px solid #C9D2F2; border-radius: 20px; font-size: 0.8rem; color: #1E2A8A; cursor: pointer;">${s.name}</button>
           `).join('')}
         </div>
       ` : chatHistory.map(msg => `
-        <div style="align-self: ${msg.sender === 'user' ? 'flex-end' : 'flex-start'}; max-width: 90%; background: ${msg.sender === 'user' ? '#0ea5e9' : 'white'}; color: ${msg.sender === 'user' ? 'white' : 'inherit'}; padding: 0.875rem; border-radius: ${msg.sender === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px'}; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+        <div style="align-self: ${msg.sender === 'user' ? 'flex-end' : 'flex-start'}; max-width: 90%; background: ${msg.sender === 'user' ? '#2B37A5' : 'white'}; color: ${msg.sender === 'user' ? 'white' : 'inherit'}; padding: 0.875rem; border-radius: ${msg.sender === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px'}; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
           ${msg.type === 'medicine_recommendation' ? `
             <div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.95rem;">💊 Medicamentos recomendados:</div>
             <div style="display: flex; flex-direction: column; gap: 0.5rem;">
@@ -7813,7 +7812,7 @@ window.showChatConsulta = function() {
     <!-- Chat Input -->
     <div style="padding: 0.75rem 1rem; background: white; border-top: 1px solid var(--border-color); display: flex; gap: 0.5rem; flex-shrink: 0;">
       <input type="text" id="chat-input" placeholder="Describe tus síntomas..." style="flex: 1; padding: 0.75rem 1rem; border: 2px solid var(--border-color); border-radius: 24px; font-size: 0.95rem;" onkeypress="if(event.key==='Enter') sendChatMessage()">
-      <button onclick="sendChatMessage()" style="width: 44px; height: 44px; background: #0ea5e9; color: white; border: none; border-radius: 50%; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">➤</button>
+      <button onclick="sendChatMessage()" style="width: 44px; height: 44px; background: #2B37A5; color: white; border: none; border-radius: 50%; font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">➤</button>
     </div>
   `;
   document.body.appendChild(modal);
@@ -7860,7 +7859,7 @@ window.refreshChatMessages = function() {
   if (!container) return;
   
   container.innerHTML = chatHistory.map(msg => `
-    <div style="align-self: ${msg.sender === 'user' ? 'flex-end' : 'flex-start'}; max-width: 90%; background: ${msg.sender === 'user' ? '#0ea5e9' : 'white'}; color: ${msg.sender === 'user' ? 'white' : 'inherit'}; padding: 0.875rem; border-radius: ${msg.sender === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px'}; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+    <div style="align-self: ${msg.sender === 'user' ? 'flex-end' : 'flex-start'}; max-width: 90%; background: ${msg.sender === 'user' ? '#2B37A5' : 'white'}; color: ${msg.sender === 'user' ? 'white' : 'inherit'}; padding: 0.875rem; border-radius: ${msg.sender === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px'}; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
       ${msg.type === 'medicine_recommendation' ? `
         <div style="font-weight: 600; margin-bottom: 0.5rem; font-size: 0.95rem;">💊 Medicamentos recomendados:</div>
         <div style="display: flex; flex-direction: column; gap: 0.5rem;">
@@ -8101,7 +8100,7 @@ window.showVideoConsulta = function() {
   modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100dvh; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
   modal.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
+    <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
       <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
       <div>
         <div style="font-weight: 600;">Video Consulta</div>
@@ -8111,7 +8110,7 @@ window.showVideoConsulta = function() {
 
     <div style="flex: 1; overflow-y: auto; padding: 1rem; min-height: 0;">
       <!-- Info Card -->
-      <div style="background: linear-gradient(135deg, #eef2ff, #e0e7ff); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem;">
+      <div style="background: linear-gradient(135deg, #EDF1FB, #DCE4F7); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem;">
         <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
           <div style="font-size: 2.5rem;">📹</div>
           <div>
@@ -8169,7 +8168,7 @@ window.loadVideoDoctors = async function() {
 
   list.innerHTML = window.__videoDoctors.map(doc => `
     <div style="background: white; border-radius: 16px; padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: flex; align-items: center; gap: 1rem;">
-      <div style="width: 56px; height: 56px; background: #eef2ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.75rem; flex-shrink: 0;">🩺</div>
+      <div style="width: 56px; height: 56px; background: #EDF1FB; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.75rem; flex-shrink: 0;">🩺</div>
       <div style="flex: 1;">
         <div style="font-weight: 600; font-size: 1.05rem;">${escapeHtml(doc.full_name)}</div>
         <div style="font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(doc.specialty || 'Medicina General')}</div>
@@ -8193,7 +8192,7 @@ window.showVideoBooking = function(doctorId) {
   modal.innerHTML = `
     <div style="background: white; height: 100%; display: flex; flex-direction: column;">
       <!-- Header -->
-      <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
+      <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
         <button onclick="showVideoConsulta()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
         <div>
           <div style="font-weight: 600;">Agendar Video Consulta</div>
@@ -8202,7 +8201,7 @@ window.showVideoBooking = function(doctorId) {
 
       <div style="flex: 1; overflow-y: auto; padding: 1.5rem; min-height: 0;">
         <div style="text-align: center; margin-bottom: 1.5rem;">
-          <div style="width: 72px; height: 72px; margin: 0 auto 0.5rem; background: #eef2ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.25rem;">🩺</div>
+          <div style="width: 72px; height: 72px; margin: 0 auto 0.5rem; background: #EDF1FB; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.25rem;">🩺</div>
           <div style="font-weight: 600; font-size: 1.2rem;">${escapeHtml(doctor.full_name)}</div>
           <div style="color: var(--text-muted);">${escapeHtml(doctor.specialty || 'Medicina General')}</div>
         </div>
@@ -8277,8 +8276,8 @@ async function resolveVideoBookingPrice() {
       <div style="display: flex; align-items: center; gap: 0.75rem;">
         <div style="font-size: 1.5rem;">🎟️</div>
         <div>
-          <div style="font-weight: 600; color: #15803d;">Incluido en tu membresía — te quedan ${visits} visita${visits === 1 ? '' : 's'}</div>
-          <div style="font-size: 0.85rem; color: #22c55e;">El doctor confirmará tu cita sin cargo</div>
+          <div style="font-weight: 600; color: #359268;">Incluido en tu membresía — te quedan ${visits} visita${visits === 1 ? '' : 's'}</div>
+          <div style="font-size: 0.85rem; color: #46AC78;">El doctor confirmará tu cita sin cargo</div>
         </div>
       </div>
     `;
@@ -8305,8 +8304,8 @@ async function resolveVideoBookingPrice() {
 
   window.__videoBookingPricing = { paymentStatus, amount, price };
   if (panel) {
-    panel.style.background = green ? '#f0fdf4' : '#f8fafc';
-    if (green) panel.style.border = '1px solid #bbf7d0';
+    panel.style.background = green ? '#F2FBF6' : '#f8fafc';
+    if (green) panel.style.border = '1px solid #CDEBDC';
     panel.innerHTML = html;
   }
 }
@@ -8496,7 +8495,7 @@ function renderVideoRequestSent(doctor, date, time) {
       <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
       <h2 style="color: #1E2A8A; margin: 0 0 0.5rem;">¡Solicitud enviada!</h2>
       <p style="color: var(--text-muted); margin-bottom: 0.5rem;">${escapeHtml(doctor?.full_name || 'Médico')}<br>${formatVideoDate(date)} a las ${time}</p>
-      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 1rem; margin: 1rem 0 1.5rem; font-size: 0.9rem; color: #15803d;">
+      <div style="background: #F2FBF6; border: 1px solid #CDEBDC; border-radius: 12px; padding: 1rem; margin: 1rem 0 1.5rem; font-size: 0.9rem; color: #359268;">
         Tu solicitud fue enviada; te notificaremos cuando el doctor confirme con el enlace.
       </div>
       <div style="display: flex; gap: 0.75rem;">
@@ -8515,7 +8514,7 @@ function renderVideoPaymentScreen() {
   modal.innerHTML = `
     <div style="background: white; height: 100%; display: flex; flex-direction: column;">
       <!-- Header -->
-      <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
+      <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
         <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
         <div>
           <div style="font-weight: 600;">Pagar consulta</div>
@@ -8527,7 +8526,7 @@ function renderVideoPaymentScreen() {
         <!-- Summary -->
         <div style="background: #f8fafc; border-radius: 16px; padding: 1.25rem; margin-bottom: 1.25rem;">
           <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
-            <div style="width: 48px; height: 48px; background: #eef2ff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0;">🩺</div>
+            <div style="width: 48px; height: 48px; background: #EDF1FB; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0;">🩺</div>
             <div>
               <div style="font-weight: 600;">${escapeHtml(ctx.doctor?.full_name || 'Médico')}</div>
               <div style="font-size: 0.85rem; color: var(--text-muted);">${escapeHtml(ctx.doctor?.specialty || 'Medicina General')}</div>
@@ -8639,7 +8638,7 @@ function renderVideoPaymentSuccess(result) {
       <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
       <h2 style="color: #1E2A8A; margin: 0 0 0.5rem;">¡Pago confirmado!</h2>
       <p style="color: var(--text-muted); margin-bottom: 0.5rem;">${escapeHtml(ctx?.doctor?.full_name || 'Médico')}<br>${formatVideoDate(ctx?.date)} a las ${ctx?.time || ''}</p>
-      <div style="background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 1rem; margin: 1rem 0 1.5rem; font-size: 0.9rem; color: #1E2A8A;">
+      <div style="background: #EDF1FB; border: 1px solid #c7d2fe; border-radius: 12px; padding: 1rem; margin: 1rem 0 1.5rem; font-size: 0.9rem; color: #1E2A8A;">
         Ya puedes unirte desde Mis Citas cuando sea la hora.
       </div>
       <div style="display: flex; gap: 0.75rem;">
@@ -8673,7 +8672,7 @@ window.showInPersonConsulta = function() {
   modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100dvh; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
   modal.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
+    <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
       <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
       <div>
         <div style="font-weight: 600;">Cita en Persona</div>
@@ -8683,12 +8682,12 @@ window.showInPersonConsulta = function() {
     
     <div style="flex: 1; overflow-y: auto; padding: 1rem; min-height: 0;">
       <!-- Info Card -->
-      <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem;">
+      <div style="background: linear-gradient(135deg, #F2FBF6, #E2F5EB); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem;">
         <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem;">
           <div style="font-size: 2.5rem;">⏱️</div>
           <div>
-            <div style="font-weight: 600; color: #15803d;">Tiempos de espera en tiempo real</div>
-            <div style="font-size: 0.85rem; color: #22c55e;">Únete a la lista desde donde estés</div>
+            <div style="font-weight: 600; color: #359268;">Tiempos de espera en tiempo real</div>
+            <div style="font-size: 0.85rem; color: #46AC78;">Únete a la lista desde donde estés</div>
           </div>
         </div>
         <div style="font-size: 0.8rem; color: var(--text-secondary);">
@@ -8704,7 +8703,7 @@ window.showInPersonConsulta = function() {
           const isShortWait = loc.currentWait <= 10;
           const isMediumWait = loc.currentWait > 10 && loc.currentWait <= 20;
           const waitColor = isShortWait ? '#46AC78' : isMediumWait ? '#f59e0b' : '#dc2626';
-          const waitBg = isShortWait ? '#f0fdf4' : isMediumWait ? '#fef3c7' : '#fee2e2';
+          const waitBg = isShortWait ? '#F2FBF6' : isMediumWait ? '#fef3c7' : '#fee2e2';
           
           return `
             <div style="background: white; border-radius: 16px; padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); ${!loc.isOpen ? 'opacity: 0.6;' : ''}">
@@ -8793,7 +8792,7 @@ window.showLocationBooking = async function(locationId) {
   modal.innerHTML = `
     <div style="background: white; height: 100%; display: flex; flex-direction: column;">
       <!-- Header -->
-      <div style="padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
+      <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
         <button onclick="const m=document.querySelector('.modal-overlay');if(m)m.remove();showInPersonConsulta();" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
         <div>
           <div style="font-weight: 600;">Agendar Cita</div>
@@ -8809,12 +8808,12 @@ window.showLocationBooking = async function(locationId) {
         </div>
         
         <!-- Wait Time Display -->
-        <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: center;">
+        <div style="background: linear-gradient(135deg, #F2FBF6, #E2F5EB); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: center;">
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div>
               <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Tiempo de espera</div>
               <div style="font-size: 2.5rem; font-weight: 700; color: #46AC78;">${waitMinutes}</div>
-              <div style="font-size: 0.85rem; color: #22c55e;">minutos</div>
+              <div style="font-size: 0.85rem; color: #46AC78;">minutos</div>
             </div>
             <div>
               <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 0.25rem;">Te toca aprox.</div>
@@ -8870,12 +8869,12 @@ window.showLocationBooking = async function(locationId) {
         </div>
         
         <!-- Price -->
-        <div style="background: #f0fdf4; border-radius: 12px; padding: 1rem; margin-bottom: 1.25rem;">
+        <div style="background: #F2FBF6; border-radius: 12px; padding: 1rem; margin-bottom: 1.25rem;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <span style="color: var(--text-secondary);">Consulta general</span>
             <span style="font-size: 1.25rem; font-weight: 700; color: #46AC78;">$200</span>
           </div>
-          <div style="font-size: 0.8rem; color: #22c55e; margin-top: 0.25rem;">Pago en sucursal</div>
+          <div style="font-size: 0.8rem; color: #46AC78; margin-top: 0.25rem;">Pago en sucursal</div>
         </div>
         
         <button onclick="confirmInPersonBooking('${locationId}')" style="width: 100%; padding: 1rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;">Unirme a la lista</button>
@@ -8957,10 +8956,10 @@ window.confirmInPersonBooking = async function(locationId) {
       <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
       <h2 style="color: #46AC78; margin: 0 0 0.5rem;">¡Estás en la lista!</h2>
       
-      <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-radius: 16px; padding: 1.25rem; margin: 1rem 0; width: 100%; max-width: 300px;">
+      <div style="background: linear-gradient(135deg, #F2FBF6, #E2F5EB); border-radius: 16px; padding: 1.25rem; margin: 1rem 0; width: 100%; max-width: 300px;">
         <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Tu posición en la fila:</div>
         <div style="font-size: 3rem; font-weight: 700; color: #46AC78;">#${queuePosition}</div>
-        <div style="font-size: 0.9rem; color: #22c55e; margin-top: 0.5rem;">
+        <div style="font-size: 0.9rem; color: #46AC78; margin-top: 0.5rem;">
           Tiempo estimado: ${waitMinutes} min de espera
         </div>
       </div>
@@ -8989,10 +8988,10 @@ async function renderAppointments() {
   // Show loading state
   mainContent.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #46AC78); color: white;">
+    <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">📋 Mis Citas</h2>
+          <h2 style="margin: 0; font-size: 1.3rem;">Mis Citas</h2>
           <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">Gestiona tus consultas</p>
         </div>
         <button onclick="renderConsulta()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Nueva</button>
@@ -9000,7 +8999,7 @@ async function renderAppointments() {
     </div>
     <div style="padding: 2rem 1rem; text-align: center;">
       <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
-      <div style="color: white; font-size: 1rem;">Cargando citas...</div>
+      <div style="color: var(--text-muted); font-size: 1rem;">Cargando citas...</div>
     </div>
   `;
   
@@ -9092,10 +9091,10 @@ async function renderAppointments() {
   
   mainContent.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #46AC78); color: white;">
+    <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">📋 Mis Citas</h2>
+          <h2 style="margin: 0; font-size: 1.3rem;">Mis Citas</h2>
           <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">Gestiona tus consultas</p>
         </div>
         <button onclick="renderConsulta()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Nueva</button>
@@ -9118,7 +9117,7 @@ async function renderAppointments() {
       <!-- Video Consultations -->
       ${upcomingVideos.length > 0 ? `
         <div style="margin-bottom: 1.5rem;">
-          <div style="font-size: 0.85rem; color: #8b5cf6; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+          <div style="font-size: 0.85rem; color: #2B37A5; font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
             <span>📹</span>
             <span>Video Consultas</span>
           </div>
@@ -9155,39 +9154,39 @@ async function renderAppointments() {
                 const pendingMsg = video.paymentStatus === 'unpaid' || video.paymentStatus === 'membership_half'
                   ? 'Pago pendiente — tienes 10 minutos desde la creación de la cita para pagar; después se cancela automáticamente y el horario se libera'
                   : 'El enlace aparecerá aquí cuando el doctor confirme tu cita';
-                actionHtml = `<div style="flex: 1; padding: 0.75rem; background: white; border: 2px dashed #ddd6fe; border-radius: 12px; font-size: 0.8rem; color: #7c3aed; text-align: center; align-self: center;">${pendingMsg}</div>`;
+                actionHtml = `<div style="flex: 1; padding: 0.75rem; background: white; border: 2px dashed #C9D2F2; border-radius: 12px; font-size: 0.8rem; color: #1E2A8A; text-align: center; align-self: center;">${pendingMsg}</div>`;
               }
             } else if (isToday) {
-              actionHtml = `<button onclick="joinVideoCall('${video.id}')" style="flex: 1; padding: 0.875rem; background: #8b5cf6; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">📹 Entrar a la llamada</button>`;
+              actionHtml = `<button onclick="joinVideoCall('${video.id}')" style="flex: 1; padding: 0.875rem; background: #2B37A5; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">📹 Entrar a la llamada</button>`;
             } else {
-              actionHtml = `<button onclick="rescheduleVideo('${video.id}')" style="flex: 1; padding: 0.875rem; background: white; color: #8b5cf6; border: 2px solid #8b5cf6; border-radius: 12px; font-weight: 600; cursor: pointer;">Reagendar</button>`;
+              actionHtml = `<button onclick="rescheduleVideo('${video.id}')" style="flex: 1; padding: 0.875rem; background: white; color: #2B37A5; border: 2px solid #2B37A5; border-radius: 12px; font-weight: 600; cursor: pointer;">Reagendar</button>`;
             }
 
             return `
-              <div style="background: linear-gradient(135deg, #f5f3ff, #ede9fe); border-radius: 16px; padding: 1.25rem; margin-bottom: 0.75rem; border: 2px solid #ddd6fe;">
+              <div style="background: linear-gradient(135deg, #F0F3FC, #E4E9F9); border-radius: 16px; padding: 1.25rem; margin-bottom: 0.75rem; border: 2px solid #C9D2F2;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
                   <div style="display: flex; align-items: center; gap: 0.75rem;">
                     <div style="font-size: 2.5rem;">👨‍⚕️</div>
                     <div>
-                      <div style="font-weight: 600; font-size: 1.1rem; color: #5b21b6;">${video.doctorName}</div>
-                      <div style="font-size: 0.85rem; color: #7c3aed;">${video.specialty}</div>
+                      <div style="font-weight: 600; font-size: 1.1rem; color: #141B5E;">${video.doctorName}</div>
+                      <div style="font-size: 0.85rem; color: #1E2A8A;">${video.specialty}</div>
                     </div>
                   </div>
-                  ${isToday ? `<span style="background: #8b5cf6; color: white; padding: 0.25rem 0.5rem; border-radius: 20px; font-size: 0.7rem; font-weight: 600;">HOY</span>` : ''}
+                  ${isToday ? `<span style="background: #2B37A5; color: white; padding: 0.25rem 0.5rem; border-radius: 20px; font-size: 0.7rem; font-weight: 600;">HOY</span>` : ''}
                 </div>
 
                 <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
                   <div style="flex: 1; background: white; padding: 0.75rem; border-radius: 10px; text-align: center;">
                     <div style="font-size: 0.75rem; color: var(--text-muted);">Fecha</div>
-                    <div style="font-weight: 600; color: #5b21b6;">${date.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
+                    <div style="font-weight: 600; color: #141B5E;">${date.toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'short' })}</div>
                   </div>
                   <div style="flex: 1; background: white; padding: 0.75rem; border-radius: 10px; text-align: center;">
                     <div style="font-size: 0.75rem; color: var(--text-muted);">Hora</div>
-                    <div style="font-weight: 600; color: #5b21b6;">${video.time}</div>
+                    <div style="font-weight: 600; color: #141B5E;">${video.time}</div>
                   </div>
                   <div style="flex: 1; background: white; padding: 0.75rem; border-radius: 10px; text-align: center;">
                     <div style="font-size: 0.75rem; color: var(--text-muted);">${priceLabel}</div>
-                    <div style="font-weight: 600; color: #5b21b6; font-size: 0.85rem;">${priceValue}</div>
+                    <div style="font-weight: 600; color: #141B5E; font-size: 0.85rem;">${priceValue}</div>
                   </div>
                 </div>
 
@@ -9214,13 +9213,13 @@ async function renderAppointments() {
             const estimatedTime = new Date(appt.estimatedTime);
             const isSoon = (estimatedTime - new Date()) < 30 * 60 * 1000; // Less than 30 min
             return `
-              <div style="background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-radius: 16px; padding: 1.25rem; margin-bottom: 0.75rem; border: 2px solid #bbf7d0;">
+              <div style="background: linear-gradient(135deg, #F2FBF6, #E2F5EB); border-radius: 16px; padding: 1.25rem; margin-bottom: 0.75rem; border: 2px solid #CDEBDC;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
                   <div style="display: flex; align-items: center; gap: 0.75rem;">
                     <div style="font-size: 2.5rem;">🏥</div>
                     <div>
-                      <div style="font-weight: 600; font-size: 1.1rem; color: #15803d;">${appt.locationName}</div>
-                      <div style="font-size: 0.85rem; color: #22c55e;">${appt.patientName}</div>
+                      <div style="font-weight: 600; font-size: 1.1rem; color: #359268;">${appt.locationName}</div>
+                      <div style="font-size: 0.85rem; color: #46AC78;">${appt.patientName}</div>
                     </div>
                   </div>
                   ${isSoon ? `<span style="background: #46AC78; color: white; padding: 0.25rem 0.5rem; border-radius: 20px; font-size: 0.7rem; font-weight: 600;">¡PRONTO!</span>` : ''}
@@ -9268,7 +9267,7 @@ async function renderAppointments() {
                     <div style="font-size: 0.8rem; color: var(--text-muted);">${date.toLocaleDateString('es-MX')} • ${isVideo ? 'Video consulta' : 'En persona'}</div>
                   </div>
                 </div>
-                <span style="font-size: 0.75rem; padding: 0.25rem 0.5rem; border-radius: 12px; background: ${item.status === 'completed' ? '#f0fdf4' : '#fee2e2'}; color: ${item.status === 'completed' ? '#46AC78' : '#dc2626'};">${item.status === 'completed' ? 'Completada' : 'Cancelada'}</span>
+                <span style="font-size: 0.75rem; padding: 0.25rem 0.5rem; border-radius: 12px; background: ${item.status === 'completed' ? '#F2FBF6' : '#fee2e2'}; color: ${item.status === 'completed' ? '#46AC78' : '#dc2626'};">${item.status === 'completed' ? 'Completada' : 'Cancelada'}</span>
               </div>
             `;
           }).join('')}
@@ -9410,10 +9409,10 @@ async function renderPrescripciones() {
   // Show loading state
   mainContent.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">📄 Mis Recetas</h2>
+          <h2 style="margin: 0; font-size: 1.3rem;">Mis Recetas</h2>
           <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">
             ${activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas de ${activeProfile?.name}`}
           </p>
@@ -9423,7 +9422,7 @@ async function renderPrescripciones() {
     </div>
     <div style="padding: 2rem 1rem; text-align: center;">
       <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
-      <div style="color: white; font-size: 1rem;">Cargando recetas...</div>
+      <div style="color: var(--text-muted); font-size: 1rem;">Cargando recetas...</div>
     </div>
   `;
   
@@ -9467,10 +9466,10 @@ async function renderPrescripciones() {
   
   mainContent.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">📄 Mis Recetas</h2>
+          <h2 style="margin: 0; font-size: 1.3rem;">Mis Recetas</h2>
           <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">
             ${activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas de ${activeProfile?.name}`}
             ${activeCount > 0 ? `• ${activeCount} activas` : ''}
@@ -9559,7 +9558,7 @@ async function renderPrescripciones() {
         </div>
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
           ${systemPrescriptions.map(p => `
-            <div class="glass-card" style="padding: 1rem; border-left: 4px solid ${p.type === 'document' ? '#46AC78' : p.type === 'receta' ? '#a78bfa' : '#60a5fa'};">
+            <div class="glass-card" style="padding: 1rem; border-left: 4px solid ${p.type === 'document' ? '#46AC78' : p.type === 'receta' ? '#5B68C4' : '#60a5fa'};">
               <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
                 <span style="font-size: 1.5rem;">${p.type === 'document' ? '📷' : p.type === 'receta' ? '💊' : '👨‍⚕️'}</span>
                 <div>
@@ -9607,7 +9606,7 @@ async function renderPrescripciones() {
 
     <!-- Add Prescription Button - Glass -->
     <div style="padding: 1rem;">
-      <div onclick="showUploadPrescriptionModal()" class="glass-card" style="border: 2px dashed rgba(14,165,233,0.5); border-radius: 16px; padding: 1.5rem; text-align: center; cursor: pointer; background: linear-gradient(135deg, rgba(14,165,233,0.1), rgba(14,165,233,0.05));">
+      <div onclick="showUploadPrescriptionModal()" class="glass-card" style="border: 2px dashed rgba(43,55,165,0.5); border-radius: 16px; padding: 1.5rem; text-align: center; cursor: pointer; background: linear-gradient(135deg, rgba(43,55,165,0.1), rgba(43,55,165,0.05));">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📷</div>
         <div style="font-weight: 600; color: #7dd3fc; margin-bottom: 0.25rem;">Subir Nueva Receta</div>
         <div style="font-size: 0.8rem; color: rgba(125,211,252,0.8);">Escanea o fotografía tu receta médica</div>
@@ -9651,7 +9650,7 @@ async function renderPrescripciones() {
               
               <div style="display: flex; gap: 0.5rem; width: 100%;">
                 <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea: botón "🛒 Ordenar" (orderPrescription) -->
-                <button onclick="setReminderForPrescription(${p.id})" style="padding: 0.625rem; background: rgba(14,165,233,0.2); color: #7dd3fc; border: 1px solid rgba(14,165,233,0.3); border-radius: 10px; font-size: 0.85rem; cursor: pointer;">⏰</button>
+                <button onclick="setReminderForPrescription(${p.id})" style="padding: 0.625rem; background: rgba(43,55,165,0.2); color: #7dd3fc; border: 1px solid rgba(43,55,165,0.3); border-radius: 10px; font-size: 0.85rem; cursor: pointer;">⏰</button>
                 <button onclick="markPrescriptionUsed(${p.id})" style="padding: 0.625rem; background: rgba(70,172,120,0.2); color: #46AC78; border: 1px solid rgba(70,172,120,0.3); border-radius: 10px; font-size: 0.85rem; cursor: pointer;">✓</button>
               </div>
             </div>
@@ -9777,7 +9776,7 @@ window.showUploadPrescriptionModal = function() {
   modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100dvh; background: #f8fafc; display: flex; flex-direction: column; z-index: 1000;';
   modal.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
+    <div style="padding: 1rem; background: linear-gradient(135deg, #2B37A5, #1E2A8A); color: white; display: flex; align-items: center; gap: 1rem; flex-shrink: 0;">
       <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
       <div>
         <div style="font-weight: 600;">Subir Receta</div>
@@ -9790,16 +9789,16 @@ window.showUploadPrescriptionModal = function() {
         <span style="font-size: 1.5rem;">${activeProfile?.avatar || '👤'}</span>
         <div>
           <div style="font-size: 0.8rem; color: #64748b;">Receta para:</div>
-          <div style="font-weight: 600; color: #0369a1;">${activeProfile?.name || 'Yo'}</div>
+          <div style="font-weight: 600; color: #1E2A8A;">${activeProfile?.name || 'Yo'}</div>
         </div>
       </div>
       
       <!-- Upload Options -->
       <div style="display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem;">
-        <div onclick="showPrescriptionCamera()" style="background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 2px dashed #0ea5e9; border-radius: 16px; padding: 1.5rem; text-align: center; cursor: pointer;">
+        <div onclick="showPrescriptionCamera()" style="background: linear-gradient(135deg, #F0F3FC, #E4E9F9); border: 2px dashed #2B37A5; border-radius: 16px; padding: 1.5rem; text-align: center; cursor: pointer;">
           <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📷</div>
-          <div style="font-weight: 600; color: #0369a1; margin-bottom: 0.25rem;">Tomar Foto</div>
-          <div style="font-size: 0.8rem; color: #0ea5e9;">Usa la cámara de tu teléfono</div>
+          <div style="font-weight: 600; color: #1E2A8A; margin-bottom: 0.25rem;">Tomar Foto</div>
+          <div style="font-size: 0.8rem; color: #2B37A5;">Usa la cámara de tu teléfono</div>
         </div>
         
         <div onclick="document.getElementById('prescription-file').click()" style="background: white; border: 2px solid var(--border-color); border-radius: 16px; padding: 1.5rem; text-align: center; cursor: pointer;">
@@ -9840,7 +9839,7 @@ window.showUploadPrescriptionModal = function() {
           <input type="text" id="manual-med-doctor" placeholder="Nombre del doctor" style="width: 100%; padding: 0.75rem; border: 2px solid var(--border-color); border-radius: 10px;">
         </div>
         
-        <button onclick="saveManualPrescriptionForPrescripciones()" style="width: 100%; padding: 0.875rem; background: #0ea5e9; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar Receta</button>
+        <button onclick="saveManualPrescriptionForPrescripciones()" style="width: 100%; padding: 0.875rem; background: #2B37A5; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar Receta</button>
       </div>
     </div>
   `;
@@ -9854,15 +9853,15 @@ window.showPrescriptionCamera = function() {
     <div style="background: black; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white; overflow-y: auto; padding: 1rem;">
       <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">📷</div>
       <div style="margin-bottom: 1.25rem;">Enfoca la receta en el cuadro</div>
-      <div style="width: min(280px, 80vw); height: min(380px, 45dvh); border: 3px solid #0ea5e9; border-radius: 20px; position: relative; margin-bottom: 1.25rem; flex-shrink: 0;">
-        <div style="position: absolute; top: 20px; left: 20px; width: 30px; height: 30px; border-top: 4px solid #0ea5e9; border-left: 4px solid #0ea5e9;"></div>
-        <div style="position: absolute; top: 20px; right: 20px; width: 30px; height: 30px; border-top: 4px solid #0ea5e9; border-right: 4px solid #0ea5e9;"></div>
-        <div style="position: absolute; bottom: 20px; left: 20px; width: 30px; height: 30px; border-bottom: 4px solid #0ea5e9; border-left: 4px solid #0ea5e9;"></div>
-        <div style="position: absolute; bottom: 20px; right: 20px; width: 30px; height: 30px; border-bottom: 4px solid #0ea5e9; border-right: 4px solid #0ea5e9;"></div>
+      <div style="width: min(280px, 80vw); height: min(380px, 45dvh); border: 3px solid #2B37A5; border-radius: 20px; position: relative; margin-bottom: 1.25rem; flex-shrink: 0;">
+        <div style="position: absolute; top: 20px; left: 20px; width: 30px; height: 30px; border-top: 4px solid #2B37A5; border-left: 4px solid #2B37A5;"></div>
+        <div style="position: absolute; top: 20px; right: 20px; width: 30px; height: 30px; border-top: 4px solid #2B37A5; border-right: 4px solid #2B37A5;"></div>
+        <div style="position: absolute; bottom: 20px; left: 20px; width: 30px; height: 30px; border-bottom: 4px solid #2B37A5; border-left: 4px solid #2B37A5;"></div>
+        <div style="position: absolute; bottom: 20px; right: 20px; width: 30px; height: 30px; border-bottom: 4px solid #2B37A5; border-right: 4px solid #2B37A5;"></div>
       </div>
       <div style="display: flex; gap: 1rem;">
         <button onclick="showUploadPrescriptionModal()" style="padding: 1rem 2rem; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 12px; cursor: pointer;">Cancelar</button>
-        <button onclick="simulatePrescriptionCapture()" style="width: 70px; height: 70px; background: #0ea5e9; border: 4px solid white; border-radius: 50%; cursor: pointer;"></button>
+        <button onclick="simulatePrescriptionCapture()" style="width: 70px; height: 70px; background: #2B37A5; border: 4px solid white; border-radius: 50%; cursor: pointer;"></button>
       </div>
     </div>
   `;
@@ -9917,7 +9916,7 @@ window.simulatePrescriptionCapture = async function() {
       <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">¡Receta guardada!</div>
       <div style="color: var(--text-muted); margin-bottom: 1.5rem;">Amoxicilina 500mg detectada</div>
       ${useSupabase ? `<div style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Guardada en el sistema</div>` : ''}
-      <button onclick="this.closest('.modal-overlay').remove(); renderPrescripciones();" style="padding: 1rem 2rem; background: #0ea5e9; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Ver mis recetas</button>
+      <button onclick="this.closest('.modal-overlay').remove(); renderPrescripciones();" style="padding: 1rem 2rem; background: #2B37A5; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Ver mis recetas</button>
     </div>
   `;
 };
@@ -10075,7 +10074,7 @@ function renderCaregiver() {
   
   mainContent.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white;">
+    <div style="padding: 1rem; background: linear-gradient(135deg, #2B37A5, #1E2A8A); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
           <h2 style="margin: 0; font-size: 1.3rem;">👨‍👩‍👧‍👦 Cuidado Familiar</h2>
@@ -10087,13 +10086,13 @@ function renderCaregiver() {
 
     <!-- Active Profile Card -->
     <div style="padding: 1rem;">
-      <div style="background: linear-gradient(135deg, #ede9fe, #f5f3ff); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem;">
-        <div style="font-size: 0.8rem; color: #7c3aed; margin-bottom: 0.5rem;">Perfil activo:</div>
+      <div style="background: linear-gradient(135deg, #E4E9F9, #F0F3FC); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem;">
+        <div style="font-size: 0.8rem; color: #1E2A8A; margin-bottom: 0.5rem;">Perfil activo:</div>
         <div style="display: flex; align-items: center; gap: 1rem;">
           <div style="font-size: 3rem;">${activeProfile?.avatar || '👤'}</div>
           <div>
-            <div style="font-weight: 600; font-size: 1.2rem; color: #5b21b6;">${activeProfile?.name || 'Yo'}</div>
-            <div style="font-size: 0.85rem; color: #8b5cf6;">${activeProfile?.isMain ? 'Cuenta principal' : 'Miembro de familia'}</div>
+            <div style="font-weight: 600; font-size: 1.2rem; color: #141B5E;">${activeProfile?.name || 'Yo'}</div>
+            <div style="font-size: 0.85rem; color: #2B37A5;">${activeProfile?.isMain ? 'Cuenta principal' : 'Miembro de familia'}</div>
           </div>
         </div>
       </div>
@@ -10108,13 +10107,13 @@ function renderCaregiver() {
       
       <div style="display: flex; flex-direction: column; gap: 0.75rem;">
         ${allProfiles.map(profile => `
-          <div class="medicine-card" style="padding: 1rem; ${profile.id === activeProfileId ? 'background: #f5f3ff; border: 2px solid #8b5cf6;' : 'background: white;'} cursor: pointer;" onclick="switchToProfile('${profile.id}')">
+          <div class="medicine-card" style="padding: 1rem; ${profile.id === activeProfileId ? 'background: #F0F3FC; border: 2px solid #2B37A5;' : 'background: white;'} cursor: pointer;" onclick="switchToProfile('${profile.id}')">
             <div style="display: flex; align-items: center; gap: 1rem; flex: 1;">
               <div style="font-size: 2.5rem;">${profile.avatar || '👤'}</div>
               <div style="flex: 1;">
                 <div style="font-weight: 600; font-size: 1.05rem;">
                   ${profile.name}
-                  ${profile.id === activeProfileId ? '<span style="font-size: 0.7rem; background: #8b5cf6; color: white; padding: 0.125rem 0.5rem; border-radius: 10px; margin-left: 0.5rem;">Activo</span>' : ''}
+                  ${profile.id === activeProfileId ? '<span style="font-size: 0.7rem; background: #2B37A5; color: white; padding: 0.125rem 0.5rem; border-radius: 10px; margin-left: 0.5rem;">Activo</span>' : ''}
                 </div>
                 <div style="font-size: 0.8rem; color: var(--text-muted);">
                   ${profile.isMain ? 'Cuenta principal' : 'Miembro de familia'}
@@ -10133,7 +10132,7 @@ function renderCaregiver() {
 
     <!-- Add Family Member -->
     <div style="padding: 0 1rem 1rem;">
-      <button onclick="showAddFamilyMemberModal()" style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #ede9fe, #f5f3ff); border: 2px dashed #8b5cf6; border-radius: 16px; color: #5b21b6; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+      <button onclick="showAddFamilyMemberModal()" style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #E4E9F9, #F0F3FC); border: 2px dashed #2B37A5; border-radius: 16px; color: #141B5E; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
         <span style="font-size: 1.5rem;">+</span>
         <span>Agregar familiar</span>
       </button>
@@ -10202,7 +10201,7 @@ window.showAddFamilyMemberModal = async function() {
   modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: flex-end; z-index: 1000;';
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px 20px 0 0; width: 100%; max-height: 90vh; overflow-y: auto;">
-      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; text-align: center;">
+      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #2B37A5, #1E2A8A); color: white; text-align: center;">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">👨‍👩‍👧‍👦</div>
         <h3 style="margin: 0; font-size: 1.2rem;">Agregar Familiar</h3>
         <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.85rem;">Crea un perfil para cuidar a alguien más</p>
@@ -10249,7 +10248,7 @@ window.showAddFamilyMemberModal = async function() {
         
         <div style="display: flex; gap: 0.5rem;">
           <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.875rem; background: #f3f4f6; border: none; border-radius: 12px; cursor: pointer; font-weight: 500;">Cancelar</button>
-          <button onclick="saveNewFamilyMember()" style="flex: 1; padding: 0.875rem; background: #8b5cf6; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Crear Perfil</button>
+          <button onclick="saveNewFamilyMember()" style="flex: 1; padding: 0.875rem; background: #2B37A5; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Crear Perfil</button>
         </div>
       </div>
     </div>
@@ -10264,7 +10263,7 @@ window.showFamilyUpgradeModal = function() {
   modal.style.cssText = 'position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: flex-end; z-index: 1000;';
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px 20px 0 0; width: 100%; max-height: 90vh; overflow-y: auto;">
-      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; text-align: center;">
+      <div style="padding: 1.5rem; border-bottom: 1px solid var(--border); background: linear-gradient(135deg, #2B37A5, #1E2A8A); color: white; text-align: center;">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">👨‍👩‍👧‍👦</div>
         <h3 style="margin: 0; font-size: 1.2rem;">Pásate al Plan Familiar</h3>
         <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.85rem;">Los perfiles familiares son un beneficio del Plan Familiar</p>
@@ -10297,8 +10296,8 @@ window.selectAvatar = function(btn, emoji) {
     b.style.background = '#f8fafc';
     b.style.borderColor = 'var(--border-color)';
   });
-  btn.style.background = '#ede9fe';
-  btn.style.borderColor = '#8b5cf6';
+  btn.style.background = '#E4E9F9';
+  btn.style.borderColor = '#2B37A5';
 };
 
 window.saveNewFamilyMember = function() {
@@ -10350,7 +10349,7 @@ async function renderShop() {
   // Show loading state with shell layout
   mainContent.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
           <h2 style="margin: 0; font-size: 1.3rem;">🛒 Farmacia Apolo</h2>
@@ -10388,7 +10387,7 @@ async function renderShop() {
       <div id="products-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem;">
         <div class="glass-card" style="grid-column: 1 / -1; text-align: center; padding: 2rem 1rem;">
           <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
-          <div style="color: white; font-size: 1rem;">Cargando productos...</div>
+          <div style="color: var(--text-muted); font-size: 1rem;">Cargando productos...</div>
         </div>
       </div>
     </div>
@@ -10451,7 +10450,7 @@ async function renderShop() {
           <div style="font-size: 2.5rem;">${med.category === 'prescription' ? '💊' : med.category === 'vitamins' ? '💪' : '💊'}</div>
         </div>
         <div style="flex: 1;">
-          <div style="font-size: 0.65rem; color: ${med.category === 'prescription' ? '#a78bfa' : med.category === 'vitamins' ? '#46AC78' : 'rgba(255,255,255,0.6)'}; margin-bottom: 0.25rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">${med.category === 'prescription' ? 'Con receta' : med.category === 'vitamins' ? 'Vitamina' : 'Sin receta'}</div>
+          <div style="font-size: 0.65rem; color: ${med.category === 'prescription' ? '#5B68C4' : med.category === 'vitamins' ? '#46AC78' : 'rgba(255,255,255,0.6)'}; margin-bottom: 0.25rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">${med.category === 'prescription' ? 'Con receta' : med.category === 'vitamins' ? 'Vitamina' : 'Sin receta'}</div>
           <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; line-height: 1.3; color: white;">${med.name}</div>
           <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">${med.brand}</div>
           <div style="font-size: 1.1rem; font-weight: 700; color: #c0c0c0;">$${med.price.toFixed(2)}</div>
@@ -10521,12 +10520,12 @@ window.showProductDetail = function(medicineId) {
       <div style="padding: 1.25rem;">
         <button onclick="this.closest('.modal-overlay').remove()" style="position: absolute; top: 1rem; right: 1rem; background: #f3f4f6; border: none; width: 36px; height: 36px; border-radius: 50%; font-size: 1.25rem; cursor: pointer;">×</button>
         
-        <div style="background: ${med.category === 'prescription' ? '#dbeafe' : med.category === 'vitamins' ? '#f0fdf4' : '#f8fafc'}; border-radius: 16px; padding: 1.25rem; text-align: center; margin-bottom: 1rem;">
+        <div style="background: ${med.category === 'prescription' ? '#dbeafe' : med.category === 'vitamins' ? '#F2FBF6' : '#f8fafc'}; border-radius: 16px; padding: 1.25rem; text-align: center; margin-bottom: 1rem;">
           <div style="font-size: 2.5rem;">${med.category === 'prescription' ? '💊' : med.category === 'vitamins' ? '💪' : '💊'}</div>
         </div>
         
         <div style="margin-bottom: 0.5rem;">
-          <span style="background: ${med.category === 'prescription' ? '#dbeafe' : med.category === 'vitamins' ? '#d1fae5' : '#f3f4f6'}; color: ${med.category === 'prescription' ? '#1e40af' : med.category === 'vitamins' ? '#15803d' : 'var(--text-muted)'}; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600;">${med.category === 'prescription' ? 'Requiere receta' : med.category === 'vitamins' ? 'Suplemento' : 'Sin receta'}</span>
+          <span style="background: ${med.category === 'prescription' ? '#dbeafe' : med.category === 'vitamins' ? '#d1fae5' : '#f3f4f6'}; color: ${med.category === 'prescription' ? '#1e40af' : med.category === 'vitamins' ? '#359268' : 'var(--text-muted)'}; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600;">${med.category === 'prescription' ? 'Requiere receta' : med.category === 'vitamins' ? 'Suplemento' : 'Sin receta'}</span>
         </div>
         
         <h2 style="margin: 0 0 0.5rem; font-size: 1.25rem;">${med.name}</h2>
@@ -10814,10 +10813,10 @@ window.processOrder = async function() {
       <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Pedido #${order.id}</p>
       ${useSupabase ? `<p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Guardado en tu historial</p>` : ''}
       
-      <div style="background: #f0fdf4; border-radius: 16px; padding: 1.5rem; margin-bottom: 1.5rem; width: 100%; max-width: 300px;">
+      <div style="background: #F2FBF6; border-radius: 16px; padding: 1.5rem; margin-bottom: 1.5rem; width: 100%; max-width: 300px;">
         <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Estado</div>
         <div style="font-weight: 600; color: #46AC78;">Procesando</div>
-        <div style="font-size: 0.8rem; color: #22c55e; margin-top: 0.5rem;">✓ Listo para recoger en ~30 min</div>
+        <div style="font-size: 0.8rem; color: #46AC78; margin-top: 0.5rem;">✓ Listo para recoger en ~30 min</div>
       </div>
       
       <button onclick="this.closest('.modal-overlay').remove(); renderShop();" class="btn-modal-primary">Seguir comprando</button>
@@ -10833,7 +10832,7 @@ async function renderOrders() {
   // Show loading state
   mainContent.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📦 Mis Pedidos</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Historial de compras</p>
     </div>
@@ -10841,7 +10840,7 @@ async function renderOrders() {
     <div style="padding: 2rem 1rem; text-align: center;">
       <div class="glass-card" style="padding: 1.5rem;">
         <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
-        <div style="color: white; font-size: 1rem;">Cargando pedidos...</div>
+        <div style="color: var(--text-muted); font-size: 1rem;">Cargando pedidos...</div>
       </div>
     </div>
   `;
@@ -10874,13 +10873,13 @@ async function renderOrders() {
   const statusColors = {
     'Entregado': { bg: 'rgba(70,172,120,0.2)', color: '#46AC78', icon: '✓' },
     'Procesando': { bg: 'rgba(59,130,246,0.2)', color: '#60a5fa', icon: '⏳' },
-    'Enviado': { bg: 'rgba(139,92,246,0.2)', color: '#a78bfa', icon: '🚚' },
+    'Enviado': { bg: 'rgba(139,92,246,0.2)', color: '#5B68C4', icon: '🚚' },
     'Cancelado': { bg: 'rgba(255,107,107,0.2)', color: '#ff6b6b', icon: '✕' }
   };
   
   mainContent.innerHTML = `
     <!-- Header -->
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📦 Mis Pedidos</h1>
       <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Historial de compras</p>
     </div>
@@ -10981,8 +10980,8 @@ window.showOrderDetail = function(orderId) {
   
   const statusColors = {
     'Entregado': { bg: 'rgba(70,172,120,0.2)', color: '#46AC78' },
-    'Procesando': { bg: 'rgba(59,130,246,0.2)', color: '#60a5fa' },
-    'Enviado': { bg: 'rgba(139,92,246,0.2)', color: '#a78bfa' },
+    'Procesando': { bg: 'rgba(43,55,165,0.12)', color: '#2B37A5' },
+    'Enviado': { bg: 'rgba(43,55,165,0.12)', color: '#1E2A8A' },
     'Cancelado': { bg: 'rgba(255,107,107,0.2)', color: '#ff6b6b' }
   };
   const status = statusColors[order.status] || statusColors['Procesando'];
@@ -10991,9 +10990,9 @@ window.showOrderDetail = function(orderId) {
   modal.className = 'modal-overlay';
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: flex-end; z-index: 1000;';
   modal.innerHTML = `
-    <div style="background: linear-gradient(135deg, #0f172a, #1e293b); width: 100%; max-width: 430px; max-height: 85dvh; overflow-y: auto; border-radius: 24px 24px 0 0; animation: slideUp 0.3s ease;">
+    <div style="background: #ffffff; width: 100%; max-width: 430px; max-height: 85dvh; overflow-y: auto; border-radius: 24px 24px 0 0; animation: slideUp 0.3s ease;">
       <!-- Header -->
-      <div style="padding: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #1E2A8A, #141B5E);">
+      <div style="padding: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%);">
         <div>
           <div style="font-weight: 700; color: white; font-size: 1.1rem;">Pedido #${order.id}</div>
           <div style="font-size: 0.8rem; color: rgba(255,255,255,0.7);">${new Date(order.date).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
@@ -11011,45 +11010,45 @@ window.showOrderDetail = function(orderId) {
         
         <!-- Items -->
         <div style="margin-bottom: 1.5rem;">
-          <div style="font-weight: 600; color: white; margin-bottom: 0.75rem; font-size: 0.95rem;">📦 Productos</div>
-          <div class="glass-card" style="padding: 0; overflow: hidden;">
+          <div style="font-weight: 600; color: #1E2A8A; margin-bottom: 0.75rem; font-size: 0.95rem;">📦 Productos</div>
+          <div style="background: #F8FAFC; border: 1px solid #E3E8F2; border-radius: 14px; padding: 0; overflow: hidden;">
             ${order.items ? order.items.map((item, idx) => `
-              <div style="padding: 1rem; ${idx !== order.items.length - 1 ? 'border-bottom: 1px solid rgba(255,255,255,0.1);' : ''} display: flex; justify-content: space-between; align-items: center;">
+              <div style="padding: 1rem; ${idx !== order.items.length - 1 ? 'border-bottom: 1px solid #EEF2F7;' : ''} display: flex; justify-content: space-between; align-items: center;">
                 <div style="display: flex; align-items: center; gap: 0.75rem;">
                   <div style="width: 40px; height: 40px; background: rgba(70,172,120,0.15); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">💊</div>
                   <div>
-                    <div style="font-weight: 500; color: white; font-size: 0.9rem;">${item.name}</div>
-                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">${item.quantity} x $${item.price.toFixed(2)}</div>
+                    <div style="font-weight: 500; color: #1a1a2e; font-size: 0.9rem;">${item.name}</div>
+                    <div style="font-size: 0.75rem; color: #64748b;">${item.quantity} x $${item.price.toFixed(2)}</div>
                   </div>
                 </div>
-                <div style="font-weight: 600; color: #c0c0c0;">$${(item.quantity * item.price).toFixed(2)}</div>
+                <div style="font-weight: 600; color: #1E2A8A;">$${(item.quantity * item.price).toFixed(2)}</div>
               </div>
-            `).join('') : '<div style="padding: 1rem; color: rgba(255,255,255,0.6);">Sin productos</div>'}
+            `).join('') : '<div style="padding: 1rem; color: #64748b;">Sin productos</div>'}
           </div>
         </div>
         
         <!-- Delivery Info -->
         <div style="margin-bottom: 1.5rem;">
-          <div style="font-weight: 600; color: white; margin-bottom: 0.75rem; font-size: 0.95rem;">🚚 Entrega</div>
-          <div class="glass-card" style="padding: 1rem;">
-            <div style="color: white; font-size: 0.9rem; margin-bottom: 0.25rem;">${order.delivery || 'Envío estándar'}</div>
-            <div style="color: rgba(255,255,255,0.6); font-size: 0.8rem;">Dirección registrada en perfil</div>
+          <div style="font-weight: 600; color: #1E2A8A; margin-bottom: 0.75rem; font-size: 0.95rem;">🚚 Entrega</div>
+          <div style="background: #F8FAFC; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem;">
+            <div style="color: #1a1a2e; font-size: 0.9rem; margin-bottom: 0.25rem;">${order.delivery || 'Envío estándar'}</div>
+            <div style="color: #64748b; font-size: 0.8rem;">Dirección registrada en perfil</div>
           </div>
         </div>
         
         <!-- Payment Info -->
         <div style="margin-bottom: 1.5rem;">
-          <div style="font-weight: 600; color: white; margin-bottom: 0.75rem; font-size: 0.95rem;">💳 Pago</div>
-          <div class="glass-card" style="padding: 1rem;">
-            <div style="color: white; font-size: 0.9rem;">${order.payment || 'Tarjeta'}</div>
+          <div style="font-weight: 600; color: #1E2A8A; margin-bottom: 0.75rem; font-size: 0.95rem;">💳 Pago</div>
+          <div style="background: #F8FAFC; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem;">
+            <div style="color: #1a1a2e; font-size: 0.9rem;">${order.payment || 'Tarjeta'}</div>
           </div>
         </div>
         
         <!-- Total -->
-        <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1rem;">
+        <div style="border-top: 1px solid #E3E8F2; padding-top: 1rem;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div style="color: rgba(255,255,255,0.8); font-size: 0.95rem;">Total</div>
-            <div style="font-size: 1.5rem; font-weight: 700; color: #c0c0c0;">$${order.total.toFixed(2)}</div>
+            <div style="color: #64748b; font-size: 0.95rem;">Total</div>
+            <div style="font-size: 1.5rem; font-weight: 700; color: #1E2A8A;">$${order.total.toFixed(2)}</div>
           </div>
         </div>
         
@@ -11131,7 +11130,7 @@ window.showWellnessReminders = function() {
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px; width: 100%; max-width: 400px; max-height: 90vh; overflow-y: auto;">
-      <div style="padding: 1.25rem; border-bottom: 1px solid #e5e7eb; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white;">
+      <div style="padding: 1.25rem; border-bottom: 1px solid #e5e7eb; background: linear-gradient(135deg, #2B37A5, #1E2A8A); color: white;">
         <h3 style="margin: 0; font-size: 1.2rem;">🩺 Recordatorios de Salud</h3>
         <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.9rem;">Mantén al día tus revisiones</p>
       </div>
@@ -11155,7 +11154,7 @@ window.showWellnessReminders = function() {
                 </div>
               ` : ''}
               <div style="display: flex; gap: 0.5rem;">
-                <button onclick="markWellnessDone('${r.id}')" style="flex: 1; padding: 0.5rem; background: #dcfce7; color: #166534; border: none; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">✓ Lo hice hoy</button>
+                <button onclick="markWellnessDone('${r.id}')" style="flex: 1; padding: 0.5rem; background: #E2F5EB; color: #166534; border: none; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">✓ Lo hice hoy</button>
                 <button onclick="scheduleWellness('${r.id}')" style="flex: 1; padding: 0.5rem; background: #f3f4f6; color: #374151; border: none; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">📅 Programar</button>
               </div>
             </div>
@@ -11254,7 +11253,7 @@ window.renderHealthGuides = function(categoryId = null, articleId = null) {
     }
     
     mainContent.innerHTML = `
-      <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
         <button onclick="renderHealthGuides('${categoryId}')" style="background: none; border: none; color: white; font-size: 1.2rem; cursor: pointer; margin-bottom: 0.5rem;">← Volver</button>
         <h1 style="margin: 0; font-size: 1.3rem;">${category.icon} ${article.title}</h1>
         <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.85rem;">${category.title} • ${article.readTime} min de lectura</p>
@@ -11277,7 +11276,7 @@ window.renderHealthGuides = function(categoryId = null, articleId = null) {
     const articles = getGuideArticles(categoryId);
     
     mainContent.innerHTML = `
-      <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+      <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
         <button onclick="renderHealthGuides()" style="background: none; border: none; color: white; font-size: 1.2rem; cursor: pointer; margin-bottom: 0.5rem;">← Volver</button>
         <h1 style="margin: 0; font-size: 1.5rem;">${category.icon} ${category.title}</h1>
         <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.9rem;">${articles.length} artículos</p>
@@ -11299,7 +11298,7 @@ window.renderHealthGuides = function(categoryId = null, articleId = null) {
   const categories = getGuideCategories();
   
   mainContent.innerHTML = `
-    <div style="padding: 1rem; background: linear-gradient(135deg, #1E2A8A, #141B5E); color: white;">
+    <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.5rem;">📚 Guías de Salud</h1>
       <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.9rem;">Información confiable para tu bienestar</p>
     </div>
@@ -11385,15 +11384,15 @@ window.renderVaccineTracker = async function() {
     : 'Edad no configurada';
   
   mainContent.innerHTML = `
-    <div style="padding: 1rem; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white;">
-      <h1 style="margin: 0; font-size: 1.3rem;">💉 Esquema de Vacunación</h1>
+    <div style="padding: 1rem; background: linear-gradient(135deg, #2B37A5, #1E2A8A); color: white;">
+      <h1 style="margin: 0; font-size: 1.3rem;">Esquema de Vacunación</h1>
       <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.85rem;">
         ${profile.name || 'Paciente'} • ${ageDisplay}
       </p>
     </div>
     
     <!-- Progress Summary with Silver Ring -->
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(135deg, #1e293b, #0f172a);">
+    <div style="margin: 0 1rem; padding: 1.25rem; background: white; border-radius: 18px; box-shadow: 0 6px 20px rgba(20,27,94,0.08);">
       ${(() => {
         const totalVaccines = categories.reduce((sum, cat) => sum + cat.vaccineCount, 0);
         const completedVaccines = records.filter(r => r.administeredDate).length;
@@ -11409,7 +11408,7 @@ window.renderVaccineTracker = async function() {
                 <!-- Background ring (silver) -->
                 <circle cx="50" cy="50" r="45" fill="none" stroke="#94a3b8" stroke-width="8" opacity="0.3"/>
                 <!-- Progress ring (bright silver) -->
-                <circle cx="50" cy="50" r="45" fill="none" stroke="#c0c0c0" stroke-width="8" 
+                <circle cx="50" cy="50" r="45" fill="none" stroke="#1E2A8A" stroke-width="8" 
                   stroke-linecap="round" 
                   stroke-dasharray="${circumference}"
                   stroke-dashoffset="${strokeDashoffset}"
@@ -11417,14 +11416,14 @@ window.renderVaccineTracker = async function() {
                 />
               </svg>
               <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                <span style="font-size: 1.5rem; font-weight: 700; color: #f8fafc;">${progressPercent}%</span>
+                <span style="font-size: 1.5rem; font-weight: 700; color: #1E2A8A;">${progressPercent}%</span>
               </div>
             </div>
             
             <div style="flex: 1;">
-              <div style="font-weight: 600; font-size: 1.1rem; color: #f8fafc; margin-bottom: 0.25rem;">Progreso de Vacunación</div>
+              <div style="font-weight: 600; font-size: 1.1rem; color: #1a1a2e; margin-bottom: 0.25rem;">Progreso de Vacunación</div>
               <div style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 0.75rem;">${completedVaccines} de ${totalVaccines} vacunas</div>
-              <button onclick="showRecordVaccineModal()" style="padding: 0.5rem 1rem; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 500; cursor: pointer; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);">+ Registrar Vacuna</button>
+              <button onclick="showRecordVaccineModal()" style="padding: 0.5rem 1rem; background: linear-gradient(135deg, #2B37A5, #1E2A8A); color: white; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 500; cursor: pointer; box-shadow: 0 4px 12px rgba(20,27,94,0.25);">+ Registrar Vacuna</button>
             </div>
           </div>
         `;
@@ -11465,7 +11464,7 @@ window.renderVaccineTracker = async function() {
                     </div>
                     ${isCompleted 
                       ? `<span style="font-size: 0.75rem; color: #46AC78;">✓ ${new Date(record.administeredDate).toLocaleDateString('es-MX')}</span>`
-                      : `<button onclick="showRecordVaccineModal('${v.id}', '${v.name}')" style="padding: 0.25rem 0.5rem; background: #8b5cf6; color: white; border: none; border-radius: 6px; font-size: 0.7rem; cursor: pointer;">Registrar</button>`
+                      : `<button onclick="showRecordVaccineModal('${v.id}', '${v.name}')" style="padding: 0.25rem 0.5rem; background: #2B37A5; color: white; border: none; border-radius: 6px; font-size: 0.7rem; cursor: pointer;">Registrar</button>`
                     }
                   </div>
                 `;
@@ -11479,10 +11478,10 @@ window.renderVaccineTracker = async function() {
     <!-- Vaccination Card Upload -->
     <div style="padding: 0 1rem 1rem;">
       <div style="font-weight: 600; margin-bottom: 0.75rem;">📷 Tarjeta de Vacunación</div>
-      <div onclick="alert('Función de subida de foto - en implementación')" style="padding: 1.5rem; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 2px dashed #0ea5e9; border-radius: 12px; text-align: center; cursor: pointer;">
+      <div onclick="alert('Función de subida de foto - en implementación')" style="padding: 1.5rem; background: linear-gradient(135deg, #F0F3FC, #E4E9F9); border: 2px dashed #2B37A5; border-radius: 12px; text-align: center; cursor: pointer;">
         <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📷</div>
-        <div style="font-weight: 600; color: #0369a1;">Subir foto de tarjeta</div>
-        <div style="font-size: 0.8rem; color: #0ea5e9;">Guarda tu cartilla de vacunación</div>
+        <div style="font-weight: 600; color: #1E2A8A;">Subir foto de tarjeta</div>
+        <div style="font-size: 0.8rem; color: #2B37A5;">Guarda tu cartilla de vacunación</div>
       </div>
     </div>
   `;
@@ -11506,7 +11505,7 @@ window.showRecordVaccineModal = function(vaccineId = null, vaccineName = null) {
   modal.style.cssText = 'position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem;';
   modal.innerHTML = `
     <div style="background: white; border-radius: 20px; width: 100%; max-width: 360px; overflow: hidden;">
-      <div style="padding: 1.25rem; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: white;">
+      <div style="padding: 1.25rem; background: linear-gradient(135deg, #2B37A5, #1E2A8A); color: white;">
         <h3 style="margin: 0; font-size: 1.2rem;">💉 Registrar Vacuna</h3>
         <p style="margin: 0.25rem 0 0; opacity: 0.9; font-size: 0.9rem;">${vaccineName || 'Nueva vacuna'}</p>
       </div>
@@ -11535,7 +11534,7 @@ window.showRecordVaccineModal = function(vaccineId = null, vaccineName = null) {
       
       <div style="padding: 1rem; border-top: 1px solid #e5e7eb; display: flex; gap: 0.5rem;">
         <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.75rem; background: #f3f4f6; border: none; border-radius: 12px; font-weight: 500; cursor: pointer;">Cancelar</button>
-        <button onclick="saveVaccineRecord('${vaccineId}')" style="flex: 1; padding: 0.75rem; background: #8b5cf6; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar</button>
+        <button onclick="saveVaccineRecord('${vaccineId}')" style="flex: 1; padding: 0.75rem; background: #2B37A5; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Guardar</button>
       </div>
     </div>
   `;
