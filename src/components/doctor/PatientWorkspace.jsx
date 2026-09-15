@@ -27,6 +27,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { dayKeyInTz, timeInTz, dateInTz, DEFAULT_TZ } from '@/lib/timezone';
 import PrintablePrescription from './PrintablePrescription';
+import { tryAutoSignReceta } from '@/lib/efirma';
 import PatientMedicalHistory from './PatientMedicalHistory';
 import PostVisitDialog from './PostVisitDialog';
 import SignRecetaButton from './SignRecetaButton';
@@ -244,7 +245,7 @@ const PatientWorkspace = () => {
         customer_id: customerId,
         patient_name: customer?.full_name || '',
         patient_curp: customer?.curp || null,
-        doctor_name: user?.name || user?.email || '',
+        doctor_name: doctorProfile?.profiles?.full_name || user?.name || user?.email || '',
         doctor_license_number: doctorProfile?.license_number || '',
         medication: first.medication.trim(),
         dosage: first.dosage.trim() || null,
@@ -271,7 +272,14 @@ const PatientWorkspace = () => {
         alergias: rxForm.alergias.trim() || null,
         next_appointment: rxForm.next_appointment || null,
       };
-      await createDoctorPrescription(payload);
+      const createdRx = await createDoctorPrescription(payload);
+      // Auto-sign with the doctor's stored e.firma when the session is unlocked
+      try {
+        const signedRx = await tryAutoSignReceta(createdRx, customer, doctorProfile, user?.id);
+        if (signedRx) toast.success('Receta firmada electrónicamente con tu e.firma');
+      } catch (signErr) {
+        toast.error(`Receta creada, pero no se pudo firmar: ${signErr.message}`);
+      }
       logAudit({
         action: AUDIT_ACTIONS.RECETA_CREATE,
         user,

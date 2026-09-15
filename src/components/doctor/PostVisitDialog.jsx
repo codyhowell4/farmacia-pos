@@ -15,6 +15,7 @@ import {
 } from '@/lib/db';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import Cie10Search from './Cie10Search';
+import { tryAutoSignReceta } from '@/lib/efirma';
 import { toast } from 'sonner';
 
 const emptyMed = () => ({ medication: '', dosage: '', via: '', frequency: '', duration: '', notes: '' });
@@ -168,11 +169,11 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
       const validMeds = medications.filter(m => m.medication.trim());
       if (validMeds.length > 0 && hasCustomer) {
         const first = validMeds[0];
-        await createDoctorPrescription({
+        const createdRx = await createDoctorPrescription({
           customer_id: appointment.customer_id,
           patient_name: patientName,
           patient_curp: null,
-          doctor_name: user?.name || user?.email || '',
+          doctor_name: doctorProfile?.profiles?.full_name || user?.name || user?.email || '',
           doctor_license_number: doctorProfile?.license_number || '',
           medication: first.medication.trim(),
           dosage: first.dosage.trim() || null,
@@ -200,6 +201,13 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
           alergias: vitals.alergias.trim() || null,
           next_appointment: null,
         });
+        // Auto-sign with the doctor's stored e.firma when the session is unlocked
+        try {
+          const signedRx = await tryAutoSignReceta(createdRx, appointment?.customers, doctorProfile, user.id);
+          if (signedRx) toast.success('Receta firmada electrónicamente con tu e.firma');
+        } catch (signErr) {
+          toast.error(`Receta creada, pero no se pudo firmar: ${signErr.message}`);
+        }
       }
 
       toast.success(alreadyCompleted ? 'Nota guardada (nueva versión)' : 'Consulta terminada');
@@ -221,6 +229,14 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
             {alreadyCompleted ? 'Nota de evolución' : inConsulta ? 'Consulta en curso' : 'Completar consulta'} — {patientName}
           </DialogTitle>
         </DialogHeader>
+
+        {alreadyCompleted && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <strong>Nota ya firmada.</strong> Según la NOM-004 la nota original no puede
+            modificarse ni eliminarse: al guardar se creará una <strong>nueva versión</strong> (nota
+            de evolución) con tu nombre y fecha, y el historial completo se conserva en el expediente.
+          </div>
+        )}
 
         <div className="space-y-4">
           {/* Nota de evolución (NOM-004) */}

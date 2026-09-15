@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -6,40 +6,39 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { PenLine } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
-import { signPrescription } from '@/lib/db';
+import { getDoctorProfile } from '@/lib/db';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
-import { buildRecetaCadena } from '@/lib/cda';
+import {
+  hasStoredEfirma, signRecetaWithPassword, readFileAsBase64,
+  setEfirmaSessionPassword,
+} from '@/lib/efirma';
 import { useAuth } from '@/contexts/AuthContext';
-
-// Reads a File as a base64 string (without the data: URL prefix).
-const readFileAsBase64 = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = String(reader.result || '');
-      const comma = result.indexOf(',');
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
-    reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
-    reader.readAsDataURL(file);
-  });
 
 /**
  * Electronic signature (e.firma/FIEL) flow for a receta.
- * FLOW A: doctor has SAT e.firma files (.cer/.key + password) — the
- * receta is cryptographically signed via the sign-document edge
- * function and the signature is stored on the prescription.
- * FLOW B: doctor without e.firma — the printed receta keeps the
- * wet-ink signature line with the cédula profesional.
+ * STORED FILES: doctor saved their .cer/.key in Mi perfil — only the
+ * password is needed here; optionally keep it unlocked for the session
+ * so new recetas are auto-signed.
+ * ONE-OFF FILES: upload .cer/.key just for this signature (never stored).
+ * WET INK: doctor without e.firma — the printed receta keeps the
+ * signature line with the cédula profesional.
  */
 const SignRecetaButton = ({ prescription, customer, onSigned }) => {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  const [doctorProfile, setDoctorProfile] = useState(null);
   const [cerFile, setCerFile] = useState(null);
   const [keyFile, setKeyFile] = useState(null);
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
   const [signing, setSigning] = useState(false);
+
+  useEffect(() => {
+    if (!open || !user?.id) return;
+    getDoctorProfile(user.id)
+      .then(setDoctorProfile)
+      .catch(() => setDoctorProfile(null));
+  }, [open, user?.id]);
 
   if (!prescription) return null;
 
@@ -56,41 +55,31 @@ const SignRecetaButton = ({ prescription, customer, onSigned }) => {
     );
   }
 
+  const stored = hasStoredEfirma(doctorProfile);
+
   const handleSign = async () => {
-    if (!cerFile || !keyFile || !password) {
+    if (!password) {
+      toast.error('Ingresa la contraseña de tu llave privada');
+      return;
+    }
+    if (!stored && (!cerFile || !keyFile)) {
       toast.error('Selecciona los archivos .cer y .key e ingresa la contraseña');
       return;
     }
 
     setSigning(true);
     try {
-      const [cer_base64, key_base64] = await Promise.all([
-        readFileAsBase64(cerFile),
-        readFileAsBase64(keyFile),
-      ]);
-
-      const cadena = buildRecetaCadena(prescription, customer);
-
-      const { data, error } = await supabase.functions.invoke('sign-document', {
-        body: { cer_base64, key_base64, password, payload: cadena },
-      });
-
-      if (error) {
-        let message = 'No se pudo firmar la receta';
-        try {
-          const body = await error?.context?.json();
-          message = body?.error || body?.message || message;
-        } catch { /* keep default message */ }
-        throw new Error(message);
+      let files = doctorProfile;
+      if (!stored) {
+        const [cer_base64, key_base64] = await Promise.all([
+          readFileAsBase64(cerFile),
+          readFileAsBase64(keyFile),
+        ]);
+        files = { efirma_cer_base64: cer_base64, efirma_key_base64: key_base64 };
       }
-      if (data?.error) throw new Error(data.error);
 
-      await signPrescription(prescription.id, {
-        signed_payload: cadena,
-        signature: data.signature_base64,
-        signer_cert_serial: data.cert_serial,
-        signed_at: new Date().toISOString(),
-      });
+      const data = await signRecetaWithPassword(prescription, customer, files, password);
+      if (remember && user?.id) setEfirmaSessionPassword(user.id, password);
 
       await logAudit({
         action: AUDIT_ACTIONS.RECETA_SIGN,
@@ -100,6 +89,7 @@ const SignRecetaButton = ({ prescription, customer, onSigned }) => {
 
       toast.success('Receta firmada electrónicamente');
       setOpen(false);
+      setPassword('');
       onSigned?.();
     } catch (err) {
       toast.error(err?.message || 'No se pudo firmar la receta');
@@ -122,62 +112,103 @@ const SignRecetaButton = ({ prescription, customer, onSigned }) => {
           </DialogHeader>
 
           <div className="space-y-5">
-            <p className="text-sm text-muted-foreground">
-              Hay dos formas de firmar una receta: con tu e.firma del SAT (firma
-              electrónica avanzada) o con firma autógrafa sobre la receta impresa.
-            </p>
-
-            {/* FLOW A — e.firma */}
-            <div className="space-y-3 rounded-md border p-3">
-              <h4 className="text-sm font-semibold">Opción A — Firmar con e.firma (FIEL)</h4>
-              <p className="text-xs text-muted-foreground">
-                Sube tus archivos .cer y .key del SAT y escribe la contraseña de tu
-                llave privada. Los archivos solo se usan para generar la firma y no
-                se guardan en el sistema.
-              </p>
-              <div className="space-y-2">
+            {/* STORED e.firma — password only */}
+            {stored ? (
+              <div className="space-y-3 rounded-md border p-3">
+                <h4 className="text-sm font-semibold">Firmar con tu e.firma guardada</h4>
+                <p className="text-xs text-muted-foreground">
+                  Usando los archivos .cer/.key de tu perfil
+                  {doctorProfile?.efirma_cert_serial ? ` (cert ${doctorProfile.efirma_cert_serial})` : ''}.
+                </p>
                 <div>
-                  <Label htmlFor="sign-cer">Certificado (.cer)</Label>
+                  <Label htmlFor="sign-password-stored">Contraseña de la llave privada</Label>
                   <Input
-                    id="sign-cer"
-                    type="file"
-                    accept=".cer"
-                    onChange={(e) => setCerFile(e.target.files?.[0] || null)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="sign-key">Llave privada (.key)</Label>
-                  <Input
-                    id="sign-key"
-                    type="file"
-                    accept=".key"
-                    onChange={(e) => setKeyFile(e.target.files?.[0] || null)}
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="sign-password">Contraseña de la llave privada</Label>
-                  <Input
-                    id="sign-password"
+                    id="sign-password-stored"
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     autoComplete="off"
                   />
                 </div>
+                <label className="flex items-center gap-2 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(e) => setRemember(e.target.checked)}
+                  />
+                  Mantener desbloqueada durante esta sesión (las recetas nuevas se firman solas)
+                </label>
+                <div className="flex gap-2">
+                  <Button onClick={handleSign} disabled={signing} className="flex-1">
+                    {signing ? 'Firmando…' : 'Firmar electrónicamente'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setOpen(false)} disabled={signing}>
+                    Cancelar
+                  </Button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <Button onClick={handleSign} disabled={signing} className="flex-1">
-                  {signing ? 'Firmando…' : 'Firmar electrónicamente'}
-                </Button>
-                <Button variant="outline" onClick={() => setOpen(false)} disabled={signing}>
-                  Cancelar
-                </Button>
+            ) : (
+              /* ONE-OFF FILES */
+              <div className="space-y-3 rounded-md border p-3">
+                <h4 className="text-sm font-semibold">Firmar con e.firma (FIEL)</h4>
+                <p className="text-xs text-muted-foreground">
+                  Sube tus archivos .cer y .key del SAT y escribe la contraseña de tu
+                  llave privada. Los archivos solo se usan para generar la firma y no
+                  se guardan. Para no subirlos cada vez, guárdalos una vez en
+                  <strong> Mi perfil → Firma electrónica</strong>.
+                </p>
+                <div className="space-y-2">
+                  <div>
+                    <Label htmlFor="sign-cer">Certificado (.cer)</Label>
+                    <Input
+                      id="sign-cer"
+                      type="file"
+                      accept=".cer"
+                      onChange={(e) => setCerFile(e.target.files?.[0] || null)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="sign-key">Llave privada (.key)</Label>
+                    <Input
+                      id="sign-key"
+                      type="file"
+                      accept=".key"
+                      onChange={(e) => setKeyFile(e.target.files?.[0] || null)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="sign-password">Contraseña de la llave privada</Label>
+                    <Input
+                      id="sign-password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={remember}
+                      onChange={(e) => setRemember(e.target.checked)}
+                    />
+                    Mantener desbloqueada durante esta sesión (requiere archivos guardados en Mi perfil)
+                  </label>
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={handleSign} disabled={signing} className="flex-1">
+                    {signing ? 'Firmando…' : 'Firmar electrónicamente'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setOpen(false)} disabled={signing}>
+                    Cancelar
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* FLOW B — wet ink */}
+            {/* WET INK */}
             <div className="space-y-1 rounded-md border border-dashed p-3">
-              <h4 className="text-sm font-semibold">Opción B — Sin e.firma</h4>
+              <h4 className="text-sm font-semibold">Sin e.firma</h4>
               <p className="text-xs text-muted-foreground">
                 Si no cuentas con e.firma, imprime la receta y fírmala de puño y
                 letra. La receta impresa incluye la línea de firma y tu cédula

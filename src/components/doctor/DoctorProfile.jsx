@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   UserCircle, Stethoscope, Phone, Mail, Award, Activity,
-  Calendar, MapPin, Clock
+  Calendar, MapPin, Clock, KeyRound, ShieldCheck
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,10 @@ import { Label } from '@/components/ui/label';
 import { getDoctorProfile, upsertDoctorProfile } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { MX_TIMEZONES, DEFAULT_TZ } from '@/lib/timezone';
+import {
+  hasStoredEfirma, validateEfirma, readFileAsBase64,
+  setEfirmaSessionPassword, getEfirmaSessionPassword, clearEfirmaSessionPassword,
+} from '@/lib/efirma';
 import DoctorAvailabilityEditor from '@/components/DoctorAvailabilityEditor';
 import { toast } from 'sonner';
 
@@ -39,10 +43,20 @@ const DoctorProfile = () => {
   const [savingName, setSavingName] = useState(false);
   const [timezone, setTimezone] = useState(DEFAULT_TZ);
   const [savingTz, setSavingTz] = useState(false);
+  const [cerFile, setCerFile] = useState(null);
+  const [keyFile, setKeyFile] = useState(null);
+  const [efirmaPw, setEfirmaPw] = useState('');
+  const [savingEfirma, setSavingEfirma] = useState(false);
+  const [showEfirmaForm, setShowEfirmaForm] = useState(false);
+  const [efirmaUnlocked, setEfirmaUnlocked] = useState(false);
 
   useEffect(() => {
     if (user?.timezone) setTimezone(user.timezone);
   }, [user?.timezone]);
+
+  useEffect(() => {
+    if (user?.id) setEfirmaUnlocked(!!getEfirmaSessionPassword(user.id));
+  }, [user?.id]);
 
   // The doctor's local timezone drives every time shown in the portal.
   const handleSaveTimezone = async () => {
@@ -57,6 +71,81 @@ const DoctorProfile = () => {
       console.error('[DoctorProfile] save timezone error:', err);
     } finally {
       setSavingTz(false);
+    }
+  };
+
+  // e.firma: validate the .cer/.key + password against the SAT key before
+  // storing anything; the password itself is only kept in this browser session.
+  const handleSaveEfirma = async () => {
+    if (!cerFile || !keyFile || !efirmaPw || !user?.id) {
+      toast.error('Selecciona los archivos .cer y .key e ingresa la contraseña');
+      return;
+    }
+    setSavingEfirma(true);
+    try {
+      const [cer_base64, key_base64] = await Promise.all([
+        readFileAsBase64(cerFile),
+        readFileAsBase64(keyFile),
+      ]);
+      const certSerial = await validateEfirma({ cer_base64, key_base64, password: efirmaPw });
+      await upsertDoctorProfile(user.id, {
+        efirma_cer_base64: cer_base64,
+        efirma_key_base64: key_base64,
+        efirma_cert_serial: certSerial || null,
+      });
+      setEfirmaSessionPassword(user.id, efirmaPw);
+      setEfirmaUnlocked(true);
+      setShowEfirmaForm(false);
+      setCerFile(null);
+      setKeyFile(null);
+      setEfirmaPw('');
+      toast.success('e.firma guardada — tus recetas nuevas se firmarán automáticamente');
+      loadProfile();
+    } catch (err) {
+      toast.error(err.message || 'No se pudo validar la e.firma — revisa archivos y contraseña');
+    } finally {
+      setSavingEfirma(false);
+    }
+  };
+
+  const handleUnlockEfirma = async () => {
+    if (!efirmaPw || !user?.id || !profile) return;
+    setSavingEfirma(true);
+    try {
+      await validateEfirma({
+        cer_base64: profile.efirma_cer_base64,
+        key_base64: profile.efirma_key_base64,
+        password: efirmaPw,
+      });
+      setEfirmaSessionPassword(user.id, efirmaPw);
+      setEfirmaUnlocked(true);
+      setEfirmaPw('');
+      toast.success('e.firma desbloqueada — las recetas nuevas se firmarán automáticamente');
+    } catch (err) {
+      toast.error(err.message || 'Contraseña incorrecta o archivos inválidos');
+    } finally {
+      setSavingEfirma(false);
+    }
+  };
+
+  const handleRemoveEfirma = async () => {
+    if (!user?.id) return;
+    if (!confirm('¿Eliminar tu e.firma? Las recetas nuevas ya no se firmarán automáticamente.')) return;
+    setSavingEfirma(true);
+    try {
+      await upsertDoctorProfile(user.id, {
+        efirma_cer_base64: null,
+        efirma_key_base64: null,
+        efirma_cert_serial: null,
+      });
+      clearEfirmaSessionPassword(user.id);
+      setEfirmaUnlocked(false);
+      toast.success('e.firma eliminada');
+      loadProfile();
+    } catch (err) {
+      toast.error(err.message || 'Error eliminando la e.firma');
+    } finally {
+      setSavingEfirma(false);
     }
   };
 
@@ -260,6 +349,115 @@ const DoctorProfile = () => {
                   label="Estado"
                   value={profile.is_active ? 'Activo en el sistema' : 'Inactivo'}
                 />
+              </div>
+            )}
+          </div>
+
+          {/* e.firma (FIEL) */}
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <h4 className="text-sm font-semibold text-slate-900 mb-1 flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-teal-600" />
+              Firma electrónica (e.firma / FIEL)
+            </h4>
+            <p className="text-xs text-slate-500 mb-4">
+              Sube tus archivos .cer y .key del SAT una sola vez y tus recetas se firmarán
+              electrónicamente al crearlas. Los archivos se guardan cifrados en tu perfil y
+              tu contraseña <strong>nunca se almacena</strong> — solo vive en esta sesión del navegador.
+            </p>
+
+            {hasStoredEfirma(profile) && !showEfirmaForm ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span className="font-medium text-slate-800">e.firma configurada</span>
+                  {profile?.efirma_cert_serial && (
+                    <span className="text-xs text-slate-400">cert {profile.efirma_cert_serial}</span>
+                  )}
+                </div>
+                {efirmaUnlocked ? (
+                  <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                    <p className="text-xs text-emerald-800">
+                      Desbloqueada — las recetas nuevas se firmarán automáticamente.
+                    </p>
+                    <Button
+                      size="sm" variant="ghost" className="text-emerald-700 shrink-0"
+                      onClick={() => { clearEfirmaSessionPassword(user.id); setEfirmaUnlocked(false); }}
+                    >
+                      Bloquear
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      placeholder="Contraseña de tu llave privada"
+                      value={efirmaPw}
+                      onChange={(e) => setEfirmaPw(e.target.value)}
+                      autoComplete="off"
+                    />
+                    <Button
+                      onClick={handleUnlockEfirma}
+                      disabled={savingEfirma || !efirmaPw}
+                      className="bg-[#46AC78] hover:bg-[#3b9566] shrink-0"
+                    >
+                      {savingEfirma ? 'Validando…' : 'Desbloquear'}
+                    </Button>
+                  </div>
+                )}
+                <div className="flex gap-4 pt-1">
+                  <button
+                    type="button"
+                    className="text-xs text-slate-500 hover:text-slate-700 underline"
+                    onClick={() => setShowEfirmaForm(true)}
+                  >
+                    Reemplazar archivos
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-red-500 hover:text-red-700 underline"
+                    onClick={handleRemoveEfirma}
+                    disabled={savingEfirma}
+                  >
+                    Eliminar e.firma
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label>Certificado (.cer)</Label>
+                    <Input type="file" accept=".cer" onChange={(e) => setCerFile(e.target.files?.[0] || null)} />
+                  </div>
+                  <div>
+                    <Label>Llave privada (.key)</Label>
+                    <Input type="file" accept=".key" onChange={(e) => setKeyFile(e.target.files?.[0] || null)} />
+                  </div>
+                </div>
+                <div>
+                  <Label>Contraseña de la llave privada</Label>
+                  <Input
+                    type="password"
+                    value={efirmaPw}
+                    onChange={(e) => setEfirmaPw(e.target.value)}
+                    autoComplete="off"
+                    placeholder="Solo se usa para validar — no se guarda"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleSaveEfirma}
+                    disabled={savingEfirma}
+                    className="bg-[#46AC78] hover:bg-[#3b9566] text-white"
+                  >
+                    {savingEfirma ? 'Validando…' : 'Validar y guardar'}
+                  </Button>
+                  {showEfirmaForm && (
+                    <Button variant="outline" onClick={() => setShowEfirmaForm(false)} disabled={savingEfirma}>
+                      Cancelar
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
           </div>

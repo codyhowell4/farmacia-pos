@@ -163,7 +163,7 @@
                 '</div>' +
                 '<div class="rx-header-right">' +
                   '<div class="rx-doctor-info">' +
-                    '<div><label>NOMBRE DE DOCTOR:</label><span class="underline">' + esc(rx.doctor_name || '') + '</span></div>' +
+                    '<div><label>NOMBRE DE DOCTOR:</label><span class="underline">' + esc(rx.doctor_name || (rx.profiles && rx.profiles.full_name) || '') + '</span></div>' +
                     '<div><label>CÉDULA:</label><span class="underline">' + esc(rx.doctor_license_number || '') + '</span></div>' +
                   '</div>' +
                   '<svg class="rx-caduceus" viewBox="0 0 48 64" fill="none" stroke="#1E2A8A" stroke-width="2" stroke-linecap="round">' +
@@ -232,7 +232,7 @@
         var user = (await sb.auth.getUser()).data.user;
         if (!user) return fail('Inicia sesión en la app para ver tu receta.<br><br><a href="/customer-app/" style="color:#1E2A8A; font-weight:700;">Ir a la app</a>');
 
-        var rxRes = await sb.from('prescriptions').select('*').eq('id', id).single();
+        var rxRes = await sb.from('prescriptions').select('*, profiles:doctor_id(full_name)').eq('id', id).single();
         if (rxRes.error || !rxRes.data) {
           return fail('No encontramos esta receta en tu cuenta.<br><br><a href="/customer-app/" style="color:#1E2A8A; font-weight:700;">Volver a la app</a>');
         }

@@ -385,7 +385,7 @@ const PrintablePrescription = ({ prescription, customer }) => {
             </div>
             <div className="rx-header-right">
               <div className="rx-doctor-info">
-                <div><label>NOMBRE DE DOCTOR:</label><span className="underline">{prescription.doctor_name || ''}</span></div>
+                <div><label>NOMBRE DE DOCTOR:</label><span className="underline">{prescription.doctor_name || prescription.profiles?.full_name || ''}</span></div>
                 <div><label>CÉDULA:</label><span className="underline">{prescription.doctor_license_number || ''}</span></div>
               </div>
               {prescription.signature && qrUrl && (
