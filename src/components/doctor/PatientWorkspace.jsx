@@ -552,15 +552,61 @@ const PatientWorkspace = () => {
     a?.type === 'video' && a?.status === 'pending' &&
     ['unpaid', 'membership_half'].includes(a?.payment_status || 'unpaid');
 
-  const upcomingAppts = appointments.filter(a =>
-    ['pending', 'confirmed'].includes(a.status) &&
-    !isUnpaidPendingVideo(a) &&
-    new Date(a.appointment_date) >= new Date()
-  );
-  const pastAppts = appointments.filter(a =>
-    a.status === 'completed' ||
-    a.status === 'cancelled' ||
-    new Date(a.appointment_date) < new Date()
+  // A cita stays "actionable" all day (the patient may be in the waiting room
+  // after the start time passed), and an open consulta is never buried by
+  // its date. Anything else is history.
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const isActionableAppt = (a) => {
+    if (a.status === 'in_consulta') return true;
+    if (!['pending', 'confirmed'].includes(a.status)) return false;
+    if (isUnpaidPendingVideo(a)) return new Date(a.appointment_date) >= new Date();
+    return new Date(a.appointment_date) >= startOfToday;
+  };
+  const upcomingAppts = appointments.filter(isActionableAppt);
+  const pastAppts = appointments.filter(a => !isActionableAppt(a));
+
+  // Shared action buttons for a cita row, used in both sections so a consulta
+  // can be started/continued/finished from the expediente on any cita.
+  const renderApptActions = (ap) => (
+    <>
+      {ap.status === 'pending' && !isUnpaidPendingVideo(ap) && (
+        <Button size="sm" variant="outline" onClick={() => handleApptStatus(ap.id, 'confirmed')}>
+          <CheckCircle className="w-3 h-3 mr-1" /> Confirmar
+        </Button>
+      )}
+      {ap.status === 'pending' && isUnpaidPendingVideo(ap) && (
+        <Badge className="bg-amber-100 text-amber-800 border-amber-200">Pago pendiente</Badge>
+      )}
+      {ap.status === 'confirmed' && !isNurse && (
+        <Button
+          size="sm"
+          className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white"
+          disabled={busyConsult}
+          onClick={() => handleStartConsulta(ap)}
+        >
+          <Play className="w-3 h-3 mr-1" /> Empezar Consulta
+        </Button>
+      )}
+      {ap.status === 'in_consulta' && !isNurse && (
+        <Button
+          size="sm"
+          className="bg-cyan-600 hover:bg-cyan-700 text-white"
+          onClick={() => { setPostVisitAppt(ap); setPostVisitOpen(true); }}
+        >
+          <Play className="w-3 h-3 mr-1" /> Continuar consulta
+        </Button>
+      )}
+      {ap.status === 'completed' && !isNurse && (
+        <Button
+          size="sm" variant="ghost" className="text-teal-600"
+          title="Nota de evolución"
+          onClick={() => { setPostVisitAppt(ap); setPostVisitOpen(true); }}
+        >
+          <FileText className="w-4 h-4" />
+        </Button>
+      )}
+    </>
   );
 
   return (
@@ -790,30 +836,7 @@ const PatientWorkspace = () => {
                           )}
                         </div>
                         <div className="flex gap-2 shrink-0 flex-wrap">
-                          {ap.status === 'pending' && (
-                            <Button size="sm" variant="outline" onClick={() => handleApptStatus(ap.id, 'confirmed')}>
-                              <CheckCircle className="w-3 h-3 mr-1" /> Confirmar
-                            </Button>
-                          )}
-                          {ap.status === 'confirmed' && !isNurse && (
-                            <Button
-                              size="sm"
-                              className="bg-gradient-to-r from-teal-500 to-emerald-600 text-white"
-                              disabled={busyConsult}
-                              onClick={() => handleStartConsulta(ap)}
-                            >
-                              <Play className="w-3 h-3 mr-1" /> Empezar Consulta
-                            </Button>
-                          )}
-                          {ap.status === 'in_consulta' && !isNurse && (
-                            <Button
-                              size="sm"
-                              className="bg-cyan-600 hover:bg-cyan-700 text-white"
-                              onClick={() => { setPostVisitAppt(ap); setPostVisitOpen(true); }}
-                            >
-                              <Play className="w-3 h-3 mr-1" /> Continuar consulta
-                            </Button>
-                          )}
+                          {renderApptActions(ap)}
                           <Button size="sm" variant="ghost" className="text-red-600" onClick={() => handleDeleteAppt(ap.id)}>
                             <Trash2 className="w-3 h-3" />
                           </Button>
@@ -841,15 +864,7 @@ const PatientWorkspace = () => {
                             )}
                           </div>
                         </div>
-                        {ap.status === 'completed' && !isNurse && (
-                          <Button
-                            size="sm" variant="ghost" className="text-teal-600"
-                            title="Nota de evolución"
-                            onClick={() => { setPostVisitAppt(ap); setPostVisitOpen(true); }}
-                          >
-                            <FileText className="w-4 h-4" />
-                          </Button>
-                        )}
+                        <div className="flex gap-2 shrink-0 flex-wrap">{renderApptActions(ap)}</div>
                       </div>
                     ))}
                   </div>

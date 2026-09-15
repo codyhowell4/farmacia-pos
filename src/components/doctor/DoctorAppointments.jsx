@@ -105,6 +105,7 @@ const DoctorAppointments = () => {
   const [followUpOpen, setFollowUpOpen] = useState(false);
   const [followUpDate, setFollowUpDate] = useState('');
   const [followUpNotes, setFollowUpNotes] = useState('');
+  const [followUpType, setFollowUpType] = useState('in_person');
   const [savingFollowUp, setSavingFollowUp] = useState(false);
   // Doctor shift (clock-in) + coverage state
   const [activeShift, setActiveShift] = useState(null);
@@ -474,6 +475,7 @@ const DoctorAppointments = () => {
 
   const openFollowUp = (appt) => {
     setFollowUpAppt(appt);
+    setFollowUpType(appt?.type === 'video' ? 'video' : 'in_person');
     const next = new Date();
     next.setDate(next.getDate() + 7);
     next.setMinutes(next.getMinutes() - next.getTimezoneOffset());
@@ -486,20 +488,32 @@ const DoctorAppointments = () => {
     if (!followUpAppt || !user?.id || !followUpDate) return;
     setSavingFollowUp(true);
     try {
-      await createAppointment({
+      const created = await createAppointment({
         customer_id: followUpAppt.customer_id || null,
         walkin_name: followUpAppt.walkin_name || '',
         walkin_phone: followUpAppt.walkin_phone || '',
         doctor_id: user.id,
         appointment_date: new Date(followUpDate).toISOString(),
         status: 'pending',
-        type: 'in_person',
+        type: followUpType,
+        // Staff-created teleconsultas are courtesy — no patient charge here
+        ...(followUpType === 'video' ? { payment_status: 'waived' } : {}),
         notes: followUpNotes.trim() || 'Seguimiento',
       });
       toast.success('Siguiente cita agendada');
+      // Teleconsulta: run the telehealth flow — create the Daily.co room now
+      if (followUpType === 'video' && created?.id) {
+        try {
+          await confirmVideoAppointment(created.id);
+          toast.success('Sala de video creada — el paciente ya puede unirse desde su app');
+        } catch (videoErr) {
+          toast.error(videoErr.message || 'Cita agendada, pero no se pudo crear la sala de video');
+        }
+      }
       setFollowUpOpen(false);
       setFollowUpDate('');
       setFollowUpNotes('');
+      setFollowUpType('in_person');
       setFollowUpAppt(null);
       loadData();
     } catch (err) {
@@ -1007,6 +1021,22 @@ const DoctorAppointments = () => {
             <DialogTitle>Agendar siguiente — {followUpAppt?.customers?.full_name || followUpAppt?.walkin_name || 'Paciente'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <div>
+              <Label>Tipo de consulta</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                value={followUpType}
+                onChange={e => setFollowUpType(e.target.value)}
+              >
+                <option value="in_person">🏥 Presencial (consultorio)</option>
+                <option value="video">📹 Teleconsulta (videollamada)</option>
+              </select>
+              {followUpType === 'video' && (
+                <p className="text-xs text-slate-400 mt-1">
+                  Se creará la sala de videollamada automáticamente y el paciente podrá unirse desde su app. Cortesía del consultorio — sin cobro al paciente.
+                </p>
+              )}
+            </div>
             <div>
               <Label>Fecha y hora</Label>
               <Input
