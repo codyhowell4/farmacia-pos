@@ -701,6 +701,64 @@ export const voidSale = async (saleId, voidedByName) => {
   }
 };
 
+// ── LOST SALES (Ventas Perdidas) ────────────────────────────
+// Freeform log of sales lost because a product/service was
+// unavailable. Independent of inventory on purpose — item_name
+// values feed back as suggestions in the POS modal.
+
+export const searchLostSaleItems = async (query = '', limit = 8) => {
+  let q = supabase
+    .from('lost_sales')
+    .select('item_name')
+    .order('created_at', { ascending: false })
+    .limit(300);
+  if (query.trim()) q = q.ilike('item_name', `%${query.trim()}%`);
+  const { data, error } = await q;
+  if (error) throw error;
+  const seen = new Map();
+  for (const row of data || []) {
+    const key = row.item_name.trim().toLowerCase();
+    if (!seen.has(key)) seen.set(key, row.item_name.trim());
+    if (seen.size >= limit) break;
+  }
+  return [...seen.values()];
+};
+
+export const logLostSale = async ({ itemName, note = null, locationId = null }) => {
+  const orgId = await getOrgId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from('lost_sales')
+    .insert({
+      org_id: orgId,
+      location_id: locationId,
+      item_name: itemName.trim(),
+      note: note?.trim() || null,
+      created_by: user?.id || null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const getLostSales = async ({ since, locationId } = {}) => {
+  let q = supabase
+    .from('lost_sales')
+    .select('*, profiles(full_name), locations(name)')
+    .order('created_at', { ascending: false });
+  if (since) q = q.gte('created_at', since);
+  if (locationId) q = q.eq('location_id', locationId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+};
+
+export const deleteLostSale = async (id) => {
+  const { error } = await supabase.from('lost_sales').delete().eq('id', id);
+  if (error) throw error;
+};
+
 // ── RETURNS ─────────────────────────────────────────────────
 
 export const createReturn = async (returnRecord, items) => {

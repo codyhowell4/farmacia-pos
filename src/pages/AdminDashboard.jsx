@@ -4,7 +4,7 @@ import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, Package, ShoppingCart, LogOut, BarChart3, Ticket, Menu, X, Clock, Shield,
-  Settings, Truck, FileText, TrendingUp, BookOpen, UserCircle, Stethoscope, Smartphone,
+  Settings, Truck, FileText, TrendingUp, TrendingDown, BookOpen, UserCircle, Stethoscope, Smartphone,
   ClipboardList, Pill, CalendarDays, AlertTriangle, ChevronDown, ChevronRight, UserPlus,
   Award, FileSignature, HeartHandshake,
 } from 'lucide-react';
@@ -31,6 +31,7 @@ import AdminAppointments from '@/components/admin/AdminAppointments';
 import AdminOrders from '@/components/admin/AdminOrders';
 import AdminCustomerProfile from '@/components/admin/AdminCustomerProfile';
 import AdminReorderReport from '@/components/admin/AdminReorderReport';
+import AdminLostSales from '@/components/admin/AdminLostSales';
 import MembershipRegistration from '@/components/admin/MembershipRegistration';
 import AdminMemberships from '@/components/admin/AdminMemberships';
 import AdminConsents from '@/components/admin/AdminConsents';
@@ -69,6 +70,7 @@ const AdminDashboard = () => {
     if (path.includes('/memberships')) return 'memberships';
     if (path.includes('/partners')) return 'partners';
     if (path.includes('/reorder-report')) return 'reorder-report';
+    if (path.includes('/lost-sales')) return 'lost-sales';
     return 'overview';
   };
   
@@ -215,7 +217,7 @@ const AdminDashboard = () => {
         <button
           onClick={() => setAnalyticsOpen(!analyticsOpen)}
           className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all ${
-            ['reports', 'reorder-report', 'analytics'].includes(activeTab)
+            ['reports', 'reorder-report', 'analytics', 'lost-sales'].includes(activeTab)
               ? 'bg-white/10 text-white'
               : 'text-white/70 hover:bg-white/10 hover:text-white'
           }`}
@@ -241,6 +243,9 @@ const AdminDashboard = () => {
                 </button>
                 <button onClick={() => navigateTo('/admin/reorder-report', 'reorder-report')} className={subNavButtonClass(isActive('reorder-report'))}>
                   <AlertTriangle className="w-4 h-4" /><span>Reporte Reorden</span>
+                </button>
+                <button onClick={() => navigateTo('/admin/lost-sales', 'lost-sales')} className={subNavButtonClass(isActive('lost-sales'))}>
+                  <TrendingDown className="w-4 h-4" /><span>Ventas perdidas</span>
                 </button>
                 <button onClick={() => navigateTo('/admin/analytics', 'analytics')} className={subNavButtonClass(isActive('analytics'))}>
                   <TrendingUp className="w-4 h-4" /><span>Ventas e Inventario</span>
@@ -377,6 +382,7 @@ const AdminDashboard = () => {
                 <Route path="/partners" element={<AdminPartners />} />
                 <Route path="/customers/:customerId" element={<AdminCustomerProfile />} />
                 <Route path="/reorder-report" element={<AdminReorderReport />} />
+                <Route path="/lost-sales" element={<AdminLostSales />} />
                 <Route path="/settings" element={<AdminSettings />} />
               </Routes>
             </main>

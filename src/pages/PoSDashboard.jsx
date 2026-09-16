@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, Trash2 as TrashIcon } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,6 +10,7 @@ import CloseShiftModal from '@/components/CloseShiftModal';
 import ReceiptModal from '@/components/ReceiptModal';
 import PatientModal from '@/components/PatientModal';
 import ReturnModal from '@/components/ReturnModal';
+import LostSaleModal from '@/components/LostSaleModal';
 import PrescriptionModal from '@/components/PrescriptionModal';
 import MembershipPosLookup from '@/components/MembershipPosLookup';
 import ApoloBrand from '@/components/ApoloBrand';
@@ -89,6 +90,7 @@ const PoSDashboard = () => {
   const [patientModalOpen, setPatientModalOpen] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
+  const [lostSaleOpen, setLostSaleOpen] = useState(false);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [prescriptionData, setPrescriptionData] = useState(null);
   const [selectedMembership, setSelectedMembership] = useState(null);
@@ -1828,6 +1830,9 @@ const PoSDashboard = () => {
                 </div>
                 <div className="flex justify-between items-center text-xl sm:text-2xl font-bold"><p>Total:</p><p className="text-green-600">{formatMXN(finalTotal)}</p></div>
                 <Button onClick={proceedToCheckout} disabled={cart.length === 0 || isCompletingSale} className="w-full bg-gradient-to-r from-apolo-green to-apolo-green-dark text-lg py-6"><DollarSign className="w-5 h-5 mr-2" />Ir a cobrar</Button>
+                <Button onClick={() => setLostSaleOpen(true)} variant="outline" className="w-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700">
+                  <TrendingDown className="w-4 h-4 mr-2" />Venta perdida
+                </Button>
               </div>
             </motion.div>
           </div>
@@ -1902,6 +1907,7 @@ const PoSDashboard = () => {
             .slice(0, 10)
         );
       }} />
+      <LostSaleModal open={lostSaleOpen} onOpenChange={setLostSaleOpen} />
     </>
   );
 };

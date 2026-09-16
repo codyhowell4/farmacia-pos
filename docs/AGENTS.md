@@ -232,6 +232,7 @@ The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional m
 - IVA is calculated post-discount.
 - Inventory is decremented via `decrement_inventory` RPC (with manual fallback).
 - Closed-sale receipts can be reprinted from Admin → Ventas: expand the sale row and click "Reimprimir recibo" — it reopens `ReceiptModal` (auto-print) with data mapped from `sales`/`sale_items`/`sale_payments`. Voided sales print with a "VENTA ANULADA" banner.
+- Lost sales ("Venta perdida"): from the POS cart, staff log freeform items customers asked for that were unavailable (`LostSaleModal` → `lost_sales` table, deliberately no inventory FK). Previously logged names come back as searchable suggestions so recurring requests accumulate under one name. Admin → Análisis → Ventas perdidas (`AdminLostSales.jsx`) shows a per-item × per-month velocity grid plus recent entries (deletable).
 
 ### Inventory (`InventoryDashboard.jsx`)
 - Low-stock threshold per item (default 0 — alerts only when out of stock).
