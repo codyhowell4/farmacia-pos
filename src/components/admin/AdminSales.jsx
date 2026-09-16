@@ -1,7 +1,7 @@
 import { formatMXN } from '@/lib/currency';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Calendar, DollarSign, Download, ChevronDown, ChevronUp, CreditCard, Stethoscope, XCircle, Printer, Cloud, CloudOff, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Search, Calendar, DollarSign, Download, ChevronDown, ChevronUp, CreditCard, Stethoscope, XCircle, Printer, Cloud, CloudOff, RotateCcw, AlertTriangle, Receipt } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -39,6 +39,7 @@ const SyncStatusBadge = ({ sale }) => {
 };
 
 import { getSales } from '@/lib/db';
+import ReceiptModal from '@/components/ReceiptModal';
 
 const AdminSales = () => {
   const [sales, setSales] = useState([]);
@@ -46,7 +47,33 @@ const AdminSales = () => {
   const [expandedSale, setExpandedSale] = useState(null);
   const [showVoided, setShowVoided] = useState(false);
   const [retryingId, setRetryingId] = useState(null);
+  const [receiptSale, setReceiptSale] = useState(null);
+  const [receiptOpen, setReceiptOpen] = useState(false);
   const { toast } = useToast();
+
+  // Map a DB sale row to the shape ReceiptModal expects (same as the POS builds on checkout).
+  const handleReprint = (sale) => {
+    setReceiptSale({
+      ...sale,
+      customer_name: sale.customers?.full_name || sale.patient_name,
+      customer_curp: sale.customers?.curp || sale.patient_curp,
+      items: (sale.sale_items || []).map(item => ({
+        ...item,
+        originalPrice: item.original_price,
+        rxNumber: item.rx_number,
+        requiresPrescription: !!item.rx_number,
+      })),
+      payments: sale.sale_payments || [],
+      discount: sale.discount_amount
+        ? { code: sale.discount_code || null, percent: sale.discount_value || null, amount: sale.discount_amount }
+        : null,
+      iva: { rate: sale.iva_rate, amount: sale.iva_amount || 0 },
+      pharmacyLocation: sale.location_id,
+      amountGiven: sale.amount_given,
+      changeDue: sale.change_due,
+    });
+    setReceiptOpen(true);
+  };
 
   const loadSales = async () => {
     try {
@@ -220,7 +247,12 @@ const AdminSales = () => {
                             <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="bg-slate-50 px-8 py-4">
                                <div className="flex items-center justify-between mb-2">
                                  <h4 className="font-bold">Detalle de venta</h4>
-                                 <span className="text-sm font-mono font-semibold text-slate-600 bg-white border px-2 py-0.5 rounded">Folio: #{sale.id.slice(-8).toUpperCase()}</span>
+                                 <div className="flex items-center gap-2">
+                                   <span className="text-sm font-mono font-semibold text-slate-600 bg-white border px-2 py-0.5 rounded">Folio: #{sale.id.slice(-8).toUpperCase()}</span>
+                                   <Button size="sm" variant="outline" title="Reimprimir recibo" onClick={() => handleReprint(sale)}>
+                                     <Receipt className="w-4 h-4 mr-1" />Reimprimir recibo
+                                   </Button>
+                                 </div>
                                </div>
                                {(sale.patient_name || sale.customers?.full_name) && (
                                  <div className="mb-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
@@ -275,6 +307,8 @@ const AdminSales = () => {
           </table>
         </div>
       </motion.div>
+
+      <ReceiptModal open={receiptOpen} onOpenChange={setReceiptOpen} sale={receiptSale} autoPrint={true} />
     </div>
   );
 };

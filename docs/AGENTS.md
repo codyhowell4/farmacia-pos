@@ -231,6 +231,7 @@ The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional m
 - Supports split payments across multiple methods.
 - IVA is calculated post-discount.
 - Inventory is decremented via `decrement_inventory` RPC (with manual fallback).
+- Closed-sale receipts can be reprinted from Admin → Ventas: expand the sale row and click "Reimprimir recibo" — it reopens `ReceiptModal` (auto-print) with data mapped from `sales`/`sale_items`/`sale_payments`. Voided sales print with a "VENTA ANULADA" banner.
 
 ### Inventory (`InventoryDashboard.jsx`)
 - Low-stock threshold per item (default 0 — alerts only when out of stock).

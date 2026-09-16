@@ -31,6 +31,8 @@ const ReceiptContent = ({ sale }) => {
         <p className="text-slate-500">{new Date(sale.timestamp).toLocaleString('es-MX')}</p>
       </div>
 
+      {sale.voided && <p className="text-center font-bold text-red-600 border border-red-400 rounded py-0.5">*** VENTA ANULADA ***</p>}
+
       <div className="border-t border-dashed border-slate-300 pt-2 space-y-0.5">
         <p>Folio: <span className="font-bold">#{sale.id.slice(-8).toUpperCase()}</span></p>
         <p>Cajero: {sale.salesperson_name || sale.salesperson || 'N/A'}</p>
