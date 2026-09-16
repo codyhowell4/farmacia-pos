@@ -1645,6 +1645,16 @@ const PoSDashboard = () => {
             </div>
           </div>
         </motion.div>
+        <PrescriptionModal
+          open={prescriptionModalOpen}
+          onOpenChange={setPrescriptionModalOpen}
+          cart={cart}
+          onConfirm={handlePrescriptionConfirm}
+          finalTotal={finalTotal}
+          paymentMethod={paymentMethod}
+          selectedCustomer={selectedCustomer}
+          initialData={prescriptionData}
+        />
       </div>
     );
   }
