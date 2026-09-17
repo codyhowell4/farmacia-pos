@@ -227,6 +227,7 @@ The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional m
 ### Sales & Checkout (`PoSDashboard.jsx`)
 - Barcode scanner auto-adds on exact match.
 - Prescription-required (Rx) items no longer block entry to checkout: the Cobrar screen opens immediately and the receta modal is launched from there ("Agregar información de receta"). 'Finalizar venta' stays disabled until patient name, doctor name, and folio (Rx #) are captured; patient phone/email optionally auto-registers the customer.
+- Cobrar upsell note: when no membership is applied, an amber "Con membresía ahorraría $X" box shows hypothetical member savings (items named "Consulta" priced free + 10% off the rest — informational only). A Membresía card (`MembershipPosLookup`) sits under Cliente so a just-registered member can be searched and applied to the sale without returning to the cart.
 - Price changes > 10% require admin PIN.
 - Supports split payments across multiple methods.
 - IVA is calculated post-discount.

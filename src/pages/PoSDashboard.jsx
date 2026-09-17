@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon, Award } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
@@ -1211,6 +1211,18 @@ const PoSDashboard = () => {
   const ivaAmount = calcIVA(subtotalAfterDiscount, taxSettings);
   const finalTotal = subtotalAfterDiscount + ivaAmount;
 
+  // Hypothetical member savings for the Cobrar upsell note: anything labeled
+  // "Consulta" would be free, everything else gets the member 10%.
+  // Informational only — real member pricing comes from selectedMembership.
+  const isConsultaNamedItem = (item) => /consulta/i.test(item?.name || '');
+  const upsellConsultaSavings = cart
+    .filter(isConsultaNamedItem)
+    .reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const upsellOtherSavings = cart
+    .filter((item) => !isConsultaNamedItem(item))
+    .reduce((sum, item) => sum + item.price * item.quantity, 0) * 0.1;
+  const membershipUpsellSavings = upsellConsultaSavings + upsellOtherSavings;
+
   useEffect(() => {
     const given = parseFloat(amountGiven);
     if (!isNaN(given)) { setChange(given - finalTotal); } else { setChange(-finalTotal); }
@@ -1298,6 +1310,24 @@ const PoSDashboard = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Membership upsell note — hypothetical savings, non-members only */}
+              {!isMembershipActive && membershipUpsellSavings > 0 && (
+                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                  <Award className="w-5 h-5 text-amber-700 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-900">
+                      Con membresía ahorraría {formatMXN(membershipUpsellSavings)} en esta compra
+                    </p>
+                    <p className="text-xs text-amber-700">
+                      {[
+                        upsellConsultaSavings > 0 && `Consulta gratis: ${formatMXN(upsellConsultaSavings)}`,
+                        upsellOtherSavings > 0 && `10% en el resto: ${formatMXN(upsellOtherSavings)}`,
+                      ].filter(Boolean).join(' · ')}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Customer Selector */}
               <div className="mt-4 bg-slate-50 rounded-lg p-3">
@@ -1410,6 +1440,21 @@ const PoSDashboard = () => {
                     </Button>
                   </div>
                 )}
+              </div>
+
+              {/* Membresía — searchable here so a just-registered member can be
+                  applied to the sale without going back to the cart */}
+              <div className="mt-4 bg-slate-50 rounded-lg p-3">
+                <h3 className="font-semibold text-sm mb-2">Membresía</h3>
+                <MembershipPosLookup
+                  selectedMembership={selectedMembership}
+                  selectedMember={selectedMember}
+                  onSelect={handleSelectMembership}
+                  onSelectMember={handleSelectMember}
+                  onClear={handleClearMembership}
+                  onFulfillTrackers={handleFulfillTracker}
+                  fulfillingTrackers={fulfillingTrackers}
+                />
               </div>
 
               {/* Receta (controlled meds) — captured here so checkout isn't blocked up front */}
