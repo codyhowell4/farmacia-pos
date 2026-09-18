@@ -257,6 +257,7 @@ The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional m
 - **Teleconsulta (NOM-027):** `video-room` requires a registered customer with a signed `teleconsulta` consent before issuing a room (400/409 otherwise); Daily rooms are `private` with per-participant meeting tokens — patient URL in `appointments.meeting_url`, staff URL in `appointments.meeting_url_staff`. Video consulta notes require ubicación del paciente + identidad verificada (`consulta_notes.modality/tele_*`).
 - **Append-only clinical records:** both `consulta_notes` and `medical_notes` have DB triggers blocking UPDATE/DELETE; corrections are new versions/notes.
 - **Audit reliability:** `logAudit` retries once, then queues failures to localStorage `audit_failed_queue` and toasts app-wide (sonner `Toaster` is mounted in `App.jsx` — both toaster systems are live).
+- **Round-2 audit (2026-09-18):** `docs/GOVERNMENT_MOCK_AUDIT.md` — mock government inspection of POS/RLS/patient-app/SGSI. 44 NEW findings (11 críticos, mostly: signup trigger trusts client `role` metadata, org-wide RLS policies readable/writable by self-registered customers, plaintext `profiles.pin`, forgeable prescriptions, `customer-documents` storage open to any authenticated user). Findings are OPEN — not yet remediated.
 
 ---
 
