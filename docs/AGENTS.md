@@ -247,7 +247,7 @@ The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional m
 ### Public kiosk flows (`tablet-checkin` edge function)
 - Public (verify_jwt=false) function powering the in-store tablet (`/registro/`), the customer-app check-in (`?checkin=1`), and the no-account kiosk (`/consentimiento/`). Every flow ends in a confirmed walk-in cita (doctor picked by `doctor_profiles.availability`) + a medical note prefixed for the doctor portal parser.
 - Modes: `register` (tablet: email/phone + account provisioning; `guest:true` for the consentimiento kiosk: name+DOB only, no account, name+DOB record reuse), `lookup` (returning-patient search by name+DOB, reports `consents_signed`), `checkin` (app: by email/phone; kiosk: by `customer_id` re-verified against name+DOB, can insert missing consent docs).
-- Minor handling: DOB (< 18) forces the guardian requirement server-side; the customer row belongs to the guardian and the patient's DOB goes into the cita notes.
+- Minor handling: DOB (< 18) forces the guardian-name requirement server-side on register/check-in (not on `lookup`, which writes nothing). The customer record is the **minor** (own name + DOB, so returning minors match in `lookup`), the guardian signs the consent documents (`signer_name` — parental consent), and the tutor is noted in `customers.notes` and the cita notes.
 - The 4 consent documents live in `public/customer-app/js/consentDocs.js` (canonical) with a synced copy in `src/lib/consentTexts.js`.
 
 ---

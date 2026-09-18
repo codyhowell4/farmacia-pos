@@ -104,7 +104,7 @@
       <button class="back-link" data-back="patient">← Volver</button>
       <div class="card">
         <h2 id="consents-title">2. Documentos de consentimiento</h2>
-        <p class="hint" style="margin-top: -0.25rem;">Lee cada documento y márcalo como aceptado.</p>
+        <p class="hint" id="consents-hint" style="margin-top: -0.25rem;">Lee cada documento y márcalo como aceptado.</p>
         <div id="docs-container"></div>
       </div>
       <button class="btn" id="btn-consents-submit" disabled>Acepto y continuar</button>
@@ -299,6 +299,9 @@
         if (p.minor && !p.guardian) return showError('Escribe el nombre del padre, madre o tutor.');
 
         if (state.flow === 'primera') {
+          document.getElementById('consents-hint').textContent = p.minor
+            ? 'El padre, madre o tutor lee y acepta cada documento a nombre del paciente.'
+            : 'Lee cada documento y márcalo como aceptado.';
           consentsSubmit.textContent = 'Acepto y registro mi visita';
           show('consents');
           return;
@@ -309,7 +312,7 @@
         btn.disabled = true;
         btn.textContent = 'Buscando...';
         try {
-          var result = await post({ mode: 'lookup', patient_name: p.name, date_of_birth: p.dob });
+          var result = await post({ mode: 'lookup', patient_name: p.name, date_of_birth: p.dob, is_minor: p.minor, guardian_name: p.minor ? p.guardian : '' });
           if (result.found) {
             state.customerId = result.customer_id;
             state.consentsSigned = !!result.consents_signed;
@@ -317,6 +320,9 @@
               show('checkin');
             } else {
               document.getElementById('consents-title').textContent = 'Documentos de consentimiento';
+              document.getElementById('consents-hint').textContent = p.minor
+                ? 'El padre, madre o tutor lee y acepta cada documento a nombre del paciente.'
+                : 'Lee cada documento y márcalo como aceptado.';
               consentsSubmit.textContent = 'Acepto y continuar al check-in';
               show('consents');
             }
@@ -366,9 +372,9 @@
             consent_docs: consentDocs,
           });
           var details = [];
-          details.push('<strong>' + (p.minor ? p.guardian : p.name) + '</strong>');
-          if (p.minor) details.push('Paciente: ' + p.name + ' (menor de edad)');
-          details.push('Consentimientos firmados ✓');
+          details.push('<strong>' + p.name + '</strong>');
+          if (p.minor) details.push('Tutor: ' + p.guardian);
+          details.push(p.minor ? 'Consentimientos firmados por el tutor ✓' : 'Consentimientos firmados ✓');
           if (result.doctor_assigned) details.push('🩺 Doctor asignado: <strong>' + result.doctor_assigned + '</strong>');
           showSuccess('¡Registro completo!', details);
         } catch (err) {
@@ -408,7 +414,8 @@
           var result = await post(payload);
           var details = [];
           details.push('<strong>' + p.name + '</strong>');
-          if (state.pendingConsentDocs) details.push('Consentimientos firmados ✓');
+          if (p.minor) details.push('Tutor: ' + p.guardian);
+          if (state.pendingConsentDocs) details.push(p.minor ? 'Consentimientos firmados por el tutor ✓' : 'Consentimientos firmados ✓');
           details.push('Check-in recibido ✓');
           if (result.doctor_assigned) details.push('🩺 Doctor asignado: <strong>' + result.doctor_assigned + '</strong>');
           showSuccess('¡Check-in listo!', details);

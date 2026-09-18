@@ -7,6 +7,8 @@
 //   register + guest (consentimiento. subdomain): first-visit patients with no
 //     email/phone/account — name + DOB + the 4 consents. Reuses a name+DOB
 //     match instead of duplicating the customer; no account provisioning.
+//     Minors are registered under their own name+DOB so they match on return
+//     visits; the guardian signs the consent documents (parental consent).
 //   lookup (consentimiento.): returning-patient search by name + DOB. Returns
 //     whether a matching customer exists and if their 4 consents are on file.
 //   checkin (customer app, registro. subdomain): an existing account holder
@@ -318,7 +320,9 @@ Deno.serve(async (req) => {
     if (mode === 'register' && !guest && !email && password.length < 6) {
       return jsonResponse({ error: 'Sin correo, crea una contraseña de al menos 6 caracteres para la app' }, 400);
     }
-    if (isMinor && !guardianName) {
+    // Lookup writes nothing, so the guardian requirement applies only to
+    // register/check-in (parental consent is captured on the consent docs).
+    if (isMinor && !guardianName && mode !== 'lookup') {
       return jsonResponse({ error: 'El nombre del padre o tutor es obligatorio para menores' }, 400);
     }
 
@@ -333,8 +337,10 @@ Deno.serve(async (req) => {
 
     const supabase = supabaseAdmin(env);
     const orgId = payload.org_id;
-    // For minors the account holder is the guardian; the minor is the patient.
-    const holderName = isMinor ? guardianName : patientName;
+    // The customer record is always the patient (minors included) so returning
+    // minors match by their own name+DOB. For minors the consent documents are
+    // signed by the guardian — parental consent.
+    const signerName = isMinor && guardianName ? guardianName : patientName;
 
     // ── Lookup mode: returning-patient search by name + DOB. Reports whether
     // a match exists and if its 4 consent documents are on file.
@@ -416,7 +422,7 @@ Deno.serve(async (req) => {
         .eq('date_of_birth', dob)
         .limit(50);
       if (error) throw error;
-      const target = normalizeName(holderName);
+      const target = normalizeName(patientName);
       customer = (candidates || []).find((c) => normalizeName(c.full_name) === target) || null;
     }
 
@@ -425,12 +431,11 @@ Deno.serve(async (req) => {
         .from('customers')
         .insert({
           org_id: orgId,
-          full_name: holderName,
+          full_name: patientName,
           email: email || null,
           phone: phone || null,
-          // For minors the row belongs to the guardian — the patient's DOB is
-          // recorded in the cita notes instead.
-          date_of_birth: dob && !isMinor ? dob : null,
+          date_of_birth: dob || null,
+          notes: isMinor ? `Menor de edad · Tutor: ${guardianName}` : null,
         })
         .select('id, full_name, phone, email, profile_id, date_of_birth')
         .single();
@@ -441,7 +446,7 @@ Deno.serve(async (req) => {
         await supabase.from('customers').update({ phone }).eq('id', customer.id);
       }
       // Backfill DOB on matched records that never captured it.
-      if (dob && !customer.date_of_birth && !isMinor) {
+      if (dob && !customer.date_of_birth) {
         await supabase.from('customers').update({ date_of_birth: dob }).eq('id', customer.id);
       }
     }
@@ -487,7 +492,7 @@ Deno.serve(async (req) => {
     //    returning patients whose consents are missing — consentimiento flow).
     if (mode === 'register') {
       await insertConsentDocs(
-        supabase, orgId, customer.id, holderName,
+        supabase, orgId, customer.id, signerName,
         payload.consent_docs || [], REQUIRED_CONSENT_TYPES, signerIp, signerUa
       );
     } else if (mode === 'checkin' && Array.isArray(payload.consent_docs) && payload.consent_docs.length > 0) {
@@ -508,7 +513,7 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: `Faltan documentos de consentimiento: ${missing.join(', ')}` }, 400);
       }
       if (toInsert.length > 0) {
-        await insertConsentDocs(supabase, orgId, customer.id, holderName, docs, toInsert, signerIp, signerUa);
+        await insertConsentDocs(supabase, orgId, customer.id, signerName, docs, toInsert, signerIp, signerUa);
       }
     }
 
