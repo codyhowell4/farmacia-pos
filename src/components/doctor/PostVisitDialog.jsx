@@ -14,6 +14,7 @@ import {
   getInventoryForDoctor
 } from '@/lib/db';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
+import { findControlledMed, controlledMedMessage, CONTROLLED_MED_MESSAGE } from '@/lib/controlledMeds';
 import Cie10Search from './Cie10Search';
 import { tryAutoSignReceta } from '@/lib/efirma';
 import { toast } from 'sonner';
@@ -57,11 +58,15 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
   const [medications, setMedications] = useState([emptyMed()]);
   const [inventory, setInventory] = useState([]);
   const [medSearchOpen, setMedSearchOpen] = useState({});
+  // NOM-027 teleconsulta record-keeping (video citas only)
+  const [teleLocation, setTeleLocation] = useState('');
+  const [teleIdentity, setTeleIdentity] = useState(false);
 
   const patientName = appointment?.customers?.full_name || appointment?.walkin_name || 'Paciente';
   const hasCustomer = !!appointment?.customer_id;
   const alreadyCompleted = appointment?.status === 'completed';
   const inConsulta = appointment?.status === 'in_consulta';
+  const isVideoVisit = appointment?.type === 'video';
 
   useEffect(() => {
     if (!open || !appointment?.id) return;
@@ -77,6 +82,8 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
     setDoctorProfile(null);
     setShowRx(false);
     setMedications([emptyMed()]);
+    setTeleLocation('');
+    setTeleIdentity(false);
     // The receta needs the doctor's cédula profesional from doctor_profiles
     if (user?.id) {
       getDoctorProfile(user.id)
@@ -103,6 +110,8 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
           setPlan(latest.plan || '');
           setCie10(Array.isArray(latest.cie10_codes) ? latest.cie10_codes : []);
           if (latest.vitals) setVitals(mergeVitals(latest.vitals));
+          setTeleLocation(latest.tele_patient_location || '');
+          setTeleIdentity(!!latest.tele_identity_verified);
         })
         .catch(err => console.error('getConsultaNotesByAppointment failed:', err));
     }
@@ -133,6 +142,29 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
       toast.error('El diagnóstico es obligatorio');
       return;
     }
+    // NOM-027: teleconsulta notes must record the patient's stated location
+    // and that identity was verified at the start of the video consulta.
+    if (isVideoVisit && !teleLocation.trim()) {
+      toast.error('Capture la ubicación declarada del paciente durante la teleconsulta');
+      return;
+    }
+    if (isVideoVisit && !teleIdentity) {
+      toast.error('Confirme que verificó la identidad del paciente al inicio de la teleconsulta');
+      return;
+    }
+    const validMeds = medications.filter(m => m.medication.trim());
+    // LGS 42 Bis + LGS 245-255 guards on the receta (before touching the note)
+    if (validMeds.length > 0 && hasCustomer) {
+      if (!doctorProfile?.license_number?.trim()) {
+        toast.error('Capture su cédula profesional en su perfil antes de emitir recetas (LGS 42 Bis).');
+        return;
+      }
+      const controlledHit = findControlledMed(validMeds.map(m => m.medication), inventory);
+      if (controlledHit) {
+        toast.error(controlledMedMessage(controlledHit));
+        return;
+      }
+    }
     if (!appointment?.id || !user?.id) return;
     setSaving(true);
     try {
@@ -157,6 +189,9 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
         cie10_codes: cie10,
         pronostico: pronostico.trim() || null,
         plan: plan.trim() || null,
+        modality: isVideoVisit ? 'video' : 'in_person',
+        tele_patient_location: isVideoVisit ? teleLocation.trim() : null,
+        tele_identity_verified: isVideoVisit ? true : false,
         replaces_id: previousNote?.id || null,
       });
       await logAudit({
@@ -166,7 +201,6 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
           (previousNote?.id ? ` — reemplaza nota ${previousNote.id}` : ''),
       });
 
-      const validMeds = medications.filter(m => m.medication.trim());
       if (validMeds.length > 0 && hasCustomer) {
         const first = validMeds[0];
         const createdRx = await createDoctorPrescription({
@@ -330,6 +364,30 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
             />
           </div>
 
+          {/* Teleconsulta (NOM-027) — required for video citas */}
+          {isVideoVisit && (
+            <div className="space-y-3 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+              <p className="text-sm font-semibold text-indigo-800">Teleconsulta</p>
+              <div className="space-y-2">
+                <Label>Ubicación declarada del paciente durante la consulta *</Label>
+                <Input
+                  placeholder="Ej. Guadalajara, Jalisco (domicilio particular)"
+                  value={teleLocation}
+                  onChange={(e) => setTeleLocation(e.target.value)}
+                />
+              </div>
+              <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={teleIdentity}
+                  onChange={(e) => setTeleIdentity(e.target.checked)}
+                  className="w-4 h-4 mt-0.5 rounded border-slate-300 cursor-pointer"
+                />
+                Verifiqué la identidad del paciente al inicio de la teleconsulta *
+              </label>
+            </div>
+          )}
+
           {/* Receta (optional) */}
           {hasCustomer ? (
             <div className="border border-slate-200 rounded-lg">
@@ -373,15 +431,27 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
                             <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
                               {(() => {
                                 const q = med.medication.toLowerCase();
-                                const matches = inventory.filter(item => item.name.toLowerCase().includes(q)).slice(0, 5);
+                                // Controlled items (Grupo II/III) are never suggested:
+                                // they require a COFEPRIS foliada paper receta
+                                const exactControlled = findControlledMed([med.medication], inventory);
+                                const matches = inventory.filter(item => !item.controlled_group && item.name.toLowerCase().includes(q)).slice(0, 5);
                                 if (matches.length === 0) {
                                   return (
                                     <div className="px-3 py-2 text-xs text-slate-500">
-                                      No encontrado en inventario. Puede escribir un medicamento manualmente.
+                                      {exactControlled
+                                        ? <span className="text-red-600 font-medium">{CONTROLLED_MED_MESSAGE}</span>
+                                        : 'No encontrado en inventario. Puede escribir un medicamento manualmente.'}
                                     </div>
                                   );
                                 }
-                                return matches.map(item => {
+                                return (
+                                  <>
+                                    {exactControlled && (
+                                      <div className="px-3 py-2 text-xs text-red-600 font-medium border-b border-red-100">
+                                        {CONTROLLED_MED_MESSAGE}
+                                      </div>
+                                    )}
+                                    {matches.map(item => {
                                   const stockColor = item.quantity > 10 ? 'bg-green-500' : item.quantity > 0 ? 'bg-yellow-500' : 'bg-red-500';
                                   const stockText = item.quantity === 0
                                     ? 'Agotado (0 unidades)'
@@ -409,7 +479,9 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
                                       </div>
                                     </button>
                                   );
-                                });
+                                    })}
+                                  </>
+                                );
                               })()}
                             </div>
                           )}

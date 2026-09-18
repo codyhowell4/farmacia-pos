@@ -98,10 +98,16 @@ const AdminDoctors = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!editingDoctor?.id) return;
+    // La cédula profesional lands on every receta — enforce its format
+    const licenseNumber = form.license_number.trim();
+    if (!/^\d{6,8}$/.test(licenseNumber)) {
+      toast.error('La cédula profesional debe tener 6 a 8 dígitos');
+      return;
+    }
     setSubmitting(true);
 
     const payload = {
-      license_number: form.license_number.trim(),
+      license_number: licenseNumber,
       specialty: form.specialty.trim() || null,
       phone: form.phone.trim() || null,
       is_active: form.is_active,

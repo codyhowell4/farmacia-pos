@@ -84,6 +84,12 @@ const SECTIONS = [
 
 const EMPTY_ENTRY = { label: '', value: '', status: 'positive' };
 
+// NOM-024 audit trail: keep before/after snippets readable in one line
+const truncateAuditValue = (value) => {
+  const str = (value ?? '').toString();
+  return str.length > 80 ? `${str.slice(0, 80)}…` : str;
+};
+
 const PatientMedicalHistory = ({ customer, onSaved }) => {
   const { user } = useAuth();
   const readOnly = user?.role === 'nurse';
@@ -203,9 +209,17 @@ const PatientMedicalHistory = ({ customer, onSaved }) => {
     const entryLabel = entryForm.label.trim();
     const newHistory = { ...history, [activeSection]: entries };
     const sectionTitle = sectionCfg?.title || activeSection;
-    const changeSummary = editIndex !== null
-      ? `${sectionTitle}: edited "${entryLabel}"`
-      : `${sectionTitle}: added "${entryLabel}"`;
+    let changeSummary;
+    if (editIndex !== null) {
+      // NOM-024 traceability: 'campo: antes → después' for each changed field
+      const prevEntry = getEntries(activeSection)[editIndex] || {};
+      const diffs = ['label', 'value', 'status']
+        .filter(f => (prevEntry[f] || '') !== (entries[editIndex][f] || ''))
+        .map(f => `${f}: ${truncateAuditValue(prevEntry[f])} → ${truncateAuditValue(entries[editIndex][f])}`);
+      changeSummary = `${sectionTitle}: edited "${entryLabel}"${diffs.length > 0 ? ` — ${diffs.join('; ')}` : ''}`;
+    } else {
+      changeSummary = `${sectionTitle}: added "${entryLabel}"`;
+    }
     setDialogOpen(false);
     await saveHistory(newHistory, editIndex !== null ? 'Entrada actualizada' : 'Entrada agregada', changeSummary);
   };

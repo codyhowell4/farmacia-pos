@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { supabase } from '@/lib/supabase';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { verifyAdminPin } from '@/lib/db';
+import { toast } from 'sonner';
 
 const AuthContext = createContext(null);
 
@@ -85,6 +86,13 @@ export const AuthProvider = ({ children }) => {
       }
     }
     return null;
+  }, []);
+
+  // Surface dropped audit-log writes (queued by logAudit after a retry)
+  useEffect(() => {
+    const onAuditFailed = () => toast.error('No se pudo escribir en la bitácora de auditoría. Avise al administrador.');
+    window.addEventListener('apolo:audit-failed', onAuditFailed);
+    return () => window.removeEventListener('apolo:audit-failed', onAuditFailed);
   }, []);
 
   // Main auth state listener

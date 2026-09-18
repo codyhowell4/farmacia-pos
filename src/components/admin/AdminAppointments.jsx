@@ -71,7 +71,12 @@ const AdminAppointments = () => {
       // errors (402) keep the appointment pending.
       if (newStatus === 'confirmed' && appt?.type === 'video') {
         try {
-          await confirmVideoAppointment(id);
+          const videoResult = await confirmVideoAppointment(id);
+          if (videoResult?.meeting_url) {
+            setAppointments(prev => prev.map(a => a.id === id
+              ? { ...a, meeting_url: videoResult.meeting_url, meeting_url_staff: videoResult.staff_url || a.meeting_url_staff }
+              : a));
+          }
         } catch (videoErr) {
           toast({ title: 'No se pudo confirmar', description: videoErr.message, variant: 'destructive' });
           return;
@@ -245,7 +250,7 @@ const AdminAppointments = () => {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => window.open(a.meeting_url, '_blank', 'noopener,noreferrer')}
+                            onClick={() => window.open(a.meeting_url_staff || a.meeting_url, '_blank', 'noopener,noreferrer')}
                             className="text-xs h-7 px-2 border-apolo-navy/30 text-apolo-navy hover:bg-apolo-navy/5"
                           >
                             <Video className="w-3 h-3 mr-0.5" />

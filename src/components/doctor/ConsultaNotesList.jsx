@@ -120,10 +120,20 @@ const ConsultaNotesList = ({ customer }) => {
                   {note.replaces_id && (
                     <Badge className="bg-amber-100 text-amber-800">Versión {versions.get(note.id)}</Badge>
                   )}
+                  {note.modality === 'video' && (
+                    <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200">Teleconsulta</Badge>
+                  )}
                   {note.signed_at && (
                     <Badge className="bg-green-100 text-green-800">Firmada</Badge>
                   )}
                 </div>
+
+                {note.modality === 'video' && (
+                  <div className="space-y-1">
+                    <Section label="Ubicación del paciente">{note.tele_patient_location || '-'}</Section>
+                    <Section label="Identidad verificada">{note.tele_identity_verified ? 'Sí' : 'No'}</Section>
+                  </div>
+                )}
 
                 <Section label="Padecimiento actual">{note.padecimiento_actual}</Section>
                 <Section label="Diagnóstico">{note.diagnostico}</Section>

@@ -902,7 +902,9 @@ export const receivePurchaseOrder = async (poId) => {
 
 export const writeAuditLog = async ({ action, userName, userRole, locationId, details, orgId }) => {
   const { data: { user } } = await supabase.auth.getUser();
-  await supabase.from('audit_log').insert({
+  // The error is returned (not thrown) so fire-and-forget callers like
+  // logAudit can detect and retry a dropped audit write.
+  const { error } = await supabase.from('audit_log').insert({
     org_id: orgId,
     user_id: user?.id || null,
     user_name: userName,
@@ -911,6 +913,11 @@ export const writeAuditLog = async ({ action, userName, userRole, locationId, de
     action,
     details,
   });
+  if (error) {
+    console.error('writeAuditLog failed:', error);
+    return error;
+  }
+  return null;
 };
 
 export const getAuditLog = async () => {
@@ -1745,17 +1752,6 @@ export const createMedicalNote = async (note) => {
   return data;
 };
 
-export const updateMedicalNote = async (id, updates) => {
-  const { data, error } = await supabase
-    .from('medical_notes')
-    .update(updates)
-    .eq('id', id)
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
-};
-
 // ── DOCTOR CUSTOMERS ────────────────────────────────────────
 
 export const getCustomersForDoctor = async () => {
@@ -1830,11 +1826,6 @@ export const getDoctorDashboardStats = async (doctorId) => {
     activePrescriptions: rxCount || 0,
     upcomingAppointments: upcomingCount || 0,
   };
-};
-
-export const deleteMedicalNote = async (id) => {
-  const { error } = await supabase.from('medical_notes').delete().eq('id', id);
-  if (error) throw error;
 };
 
 // ── CONSULTA NOTES (NOM-004 structured, append-only) ────────
@@ -2260,7 +2251,7 @@ export const getInventoryForDoctor = async () => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('inventory')
-    .select('id, name, quantity, price, requires_prescription, barcode')
+    .select('id, name, quantity, price, requires_prescription, controlled_group, barcode')
     .eq('org_id', orgId)
     .order('name');
   if (error) throw error;

@@ -43,12 +43,12 @@ export const buildRecetaCadena = (rx, customer) => {
 };
 
 // ── QR DE VERIFICACIÓN ──────────────────────────────────────
-// Text encoded in the QR printed on electronically signed recetas.
-// It carries the folio, a prefix of the signature and the signing
-// certificate serial so the receta can be verified against the
-// stored record.
+// URL encoded in the QR printed on electronically signed recetas.
+// It points at the public verification page carrying the folio and
+// the first 32 chars of the e.firma signature, so any pharmacist can
+// confirm the receta against the stored signed record.
 export const buildRecetaQrText = (rx) =>
-  `FOLIO:${rx.prescription_number || ''}|FIRMA:${(rx.signature || '').slice(0, 32)}...|CERT:${rx.signer_cert_serial || ''}`;
+  `https://app.apolofarmacia.com.mx/verifica/?f=${encodeURIComponent(rx?.prescription_number || '')}&s=${encodeURIComponent((rx?.signature || '').slice(0, 32))}`;
 
 // ── XML HELPERS ─────────────────────────────────────────────
 
@@ -151,6 +151,9 @@ ${cie10
 ${section('Padecimiento actual', note.padecimiento_actual || '')}
 ${section('Exploración física', note.exploracion_fisica || '')}
 ${section('Signos vitales', vitalsText)}
+${note.modality === 'video'
+  ? section('Teleconsulta (NOM-027)', `Ubicación del paciente: ${note.tele_patient_location || '-'}\nIdentidad verificada: ${note.tele_identity_verified ? 'Sí' : 'No'}`)
+  : ''}
 ${diagnosticosSection}
 ${section('Pronóstico', note.pronostico || '')}
 ${section('Plan', note.plan || '')}

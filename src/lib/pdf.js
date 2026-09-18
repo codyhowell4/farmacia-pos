@@ -179,7 +179,7 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
       const QR_Y = HEAD_Y;
       pdf.addImage(qrDataUrl, 'PNG', QR_X, QR_Y, QR_SIZE, QR_SIZE);
       setFont('normal', 5.5);
-      const caption = pdf.splitTextToSize('Firma electrónica — verifique con el folio', QR_SIZE + 0.4);
+      const caption = pdf.splitTextToSize('Firma electrónica — Verifique la firma escaneando el código o en app.apolofarmacia.com.mx/verifica', QR_SIZE + 0.4);
       pdf.text(caption, QR_X + QR_SIZE / 2, QR_Y + QR_SIZE + 0.10 * scale, { align: 'center' });
     } catch { /* keep the PDF usable without the QR */ }
   }

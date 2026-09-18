@@ -46,7 +46,7 @@ const InventoryDashboard = () => {
     name: '', use: '', cost: '', price: '', quantity: '',
     lowStockThreshold: LOW_STOCK_THRESHOLD.toString(),
     pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '',
-    requiresPrescription: false, batchNumber: '', supplierId: '', department: '', itemType: 'product',
+    requiresPrescription: false, controlledGroup: '', batchNumber: '', supplierId: '', department: '', itemType: 'product',
     notes: '',
   });
   const [suppliers, setSuppliers] = useState([]);
@@ -143,6 +143,7 @@ const InventoryDashboard = () => {
         barcode: formData.barcode || null,
         expiration_date: formData.expirationDate || null,
         requires_prescription: formData.requiresPrescription,
+        controlled_group: formData.controlledGroup || null,
         batch_number: formData.batchNumber || null,
         supplier_id: formData.supplierId || null,
         department: formData.department || null,
@@ -179,6 +180,7 @@ const InventoryDashboard = () => {
       barcode: item.barcode || '',
       expirationDate: item.expiration_date || '',
       requiresPrescription: item.requires_prescription || false,
+      controlledGroup: item.controlled_group || '',
       batchNumber: item.batch_number || '',
       supplierId: item.supplier_id || '',
       department: item.department || '',
@@ -451,7 +453,7 @@ const InventoryDashboard = () => {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false, batchNumber: '', supplierId: '', department: '', itemType: 'product', notes: '' });
+    setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false, controlledGroup: '', batchNumber: '', supplierId: '', department: '', itemType: 'product', notes: '' });
     setEditingItem(null);
     setLinkedProducts([]);
     setLinkSearch('');
@@ -914,6 +916,23 @@ const InventoryDashboard = () => {
                           Requiere receta médica (Rx) — el cajero debe ingresar el número de receta al cobrar
                         </Label>
                       </div>
+                      <div className="space-y-2">
+                        <Label>Sustancia controlada (LGS 245-255)</Label>
+                        <select
+                          value={formData.controlledGroup}
+                          onChange={(e) => setFormData({ ...formData, controlledGroup: e.target.value })}
+                          className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apolo-navy"
+                        >
+                          <option value="">No controlado</option>
+                          <option value="II">Grupo II — estupefaciente</option>
+                          <option value="III">Grupo III — psicotrópico</option>
+                        </select>
+                        {formData.controlledGroup && (
+                          <p className="text-xs text-red-700 bg-red-50 rounded px-2 py-1">
+                            Requiere receta foliada COFEPRIS — no puede emitirse por vía electrónica.
+                          </p>
+                        )}
+                      </div>
                       <div className="md:col-span-2 space-y-2">
                         <Label className="flex items-center gap-1.5"><Link2 className="w-4 h-4" />Productos vinculados</Label>
                         <p className="text-xs text-slate-500">
@@ -1073,10 +1092,17 @@ const InventoryDashboard = () => {
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm">
-                          {item.requires_prescription
-                            ? <span className="px-2 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700">Rx</span>
-                            : <span className="px-2 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">OTC</span>
-                          }
+                          <div className="flex flex-col gap-1 items-start">
+                            {item.requires_prescription
+                              ? <span className="px-2 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700">Rx</span>
+                              : <span className="px-2 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">OTC</span>
+                            }
+                            {item.controlled_group && (
+                              <span className="px-2 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700">
+                                Controlado G-{item.controlled_group}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-sm">
                           {expiryStatus ? <span className={`px-2 py-1 rounded-full text-xs font-semibold ${expiryStatus.color}`}>{expiryStatus.label}</span> : <span className="text-slate-400 text-xs">No establecida</span>}

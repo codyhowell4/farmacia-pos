@@ -251,6 +251,13 @@ The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional m
 - After signing, the kiosk offers a print-copy of the 4 documents with signer data (NOM-004 10.1 patient copy). Customers with clinical records cannot be hard-deleted (trigger `customers_protect_evidence`; NOM-004 5.4) — empty shells still delete.
 - The 4 consent documents live in `public/customer-app/js/consentDocs.js` (canonical) with a synced copy in `src/lib/consentTexts.js`.
 
+### Doctor portal / e-receta hardening (2026-09)
+- **Controlled substances:** `inventory.controlled_group` ('II'/'III', set in Inventario item edit) excludes items from receta autocomplete and hard-blocks them at receta save — controlados must go on COFEPRIS foliada paper, never on our e-receta. Reports tab is "Medicamentos con Receta" (flattened per-item rows; it is NOT a controlled-substances report).
+- **Recetas require cédula:** `doctor_profiles.license_number` (6–8 digits, editable in AdminDoctors and DoctorProfile) is mandatory before creating recetas. Signed recetas carry a QR pointing to the public verification page `public/verifica/index.html` → edge function `verify-receta` (verify_jwt=false, rate-limited, minimal payload).
+- **Teleconsulta (NOM-027):** `video-room` requires a registered customer with a signed `teleconsulta` consent before issuing a room (400/409 otherwise); Daily rooms are `private` with per-participant meeting tokens — patient URL in `appointments.meeting_url`, staff URL in `appointments.meeting_url_staff`. Video consulta notes require ubicación del paciente + identidad verificada (`consulta_notes.modality/tele_*`).
+- **Append-only clinical records:** both `consulta_notes` and `medical_notes` have DB triggers blocking UPDATE/DELETE; corrections are new versions/notes.
+- **Audit reliability:** `logAudit` retries once, then queues failures to localStorage `audit_failed_queue` and toasts app-wide (sonner `Toaster` is mounted in `App.jsx` — both toaster systems are live).
+
 ---
 
 ## Deployment

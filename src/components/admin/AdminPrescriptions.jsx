@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 import { getDoctorPrescriptions, updatePrescriptionStatus, cancelDoctorPrescription, getPrescriptionById } from '@/lib/db';
+import { useAuth } from '@/contexts/AuthContext';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { downloadPrescriptionPDF } from '@/lib/pdf';
 import PrintablePrescription from '@/components/doctor/PrintablePrescription';
 
@@ -24,6 +26,7 @@ const AdminPrescriptions = () => {
   const [updatingId, setUpdatingId] = useState(null);
   const [printRxFull, setPrintRxFull] = useState(null);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const loadPrescriptions = async () => {
     setIsLoading(true);
@@ -44,7 +47,16 @@ const AdminPrescriptions = () => {
     if (!confirm('¿Cancelar esta receta?')) return;
     setUpdatingId(id);
     try {
+      const rx = prescriptions.find(p => p.id === id);
       await cancelDoctorPrescription(id);
+      const rxMeds = (Array.isArray(rx?.medications) && rx.medications.length > 0
+        ? rx.medications.map(m => m.medication)
+        : rx?.medication ? [rx.medication] : []).filter(Boolean).join(', ');
+      logAudit({
+        action: AUDIT_ACTIONS.RECETA_CANCEL,
+        user,
+        details: `Receta ${rx?.prescription_number || id} cancelada — paciente ${rx?.customers?.full_name || rx?.patient_name || ''} — estado anterior: ${rx?.status || 'activa'} — meds: ${rxMeds || '-'}`,
+      });
       toast({ title: 'Receta cancelada', description: 'La receta ha sido marcada como cancelada' });
       await loadPrescriptions();
     } catch (err) {

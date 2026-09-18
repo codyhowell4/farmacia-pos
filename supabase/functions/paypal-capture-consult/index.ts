@@ -6,6 +6,10 @@
 // Exposed without JWT verification (see config.toml): portal customers
 // pay without a staff session, so everything is validated server-side
 // with the service role.
+//
+// Rooms are 'private': joining requires a Daily meeting token. The
+// patient token is embedded in appointments.meeting_url, the staff
+// (owner) token in appointments.meeting_url_staff.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
@@ -77,15 +81,18 @@ const getPayPalAccessToken = async (env: Record<string, string>) => {
   return data.access_token as string;
 };
 
+const startsAtSec = (iso: string) => Math.floor(new Date(iso).getTime() / 1000);
+
 const createDailyRoom = async (
   env: Record<string, string>,
   appointment: AppointmentRow
 ): Promise<DailyRoom> => {
-  const startsAt = Math.floor(new Date(appointment.appointment_date).getTime() / 1000);
+  const startsAt = startsAtSec(appointment.appointment_date);
 
-  // v1 privacy model: the room is 'public' but its name is unguessable
-  // (the appointment UUID) and the nbf/exp window only allows joining
-  // from 15 minutes before until 90 minutes after the scheduled time.
+  // The room is private: nobody joins without a meeting token. Its name
+  // is unguessable (the appointment UUID) and the nbf/exp window only
+  // allows joining from 15 minutes before until 90 minutes after the
+  // scheduled time.
   const res = await fetch('https://api.daily.co/v1/rooms', {
     method: 'POST',
     headers: {
@@ -94,7 +101,7 @@ const createDailyRoom = async (
     },
     body: JSON.stringify({
       name: `consult-${appointment.id}`,
-      privacy: 'public',
+      privacy: 'private',
       properties: {
         nbf: startsAt - 15 * 60,
         exp: startsAt + 90 * 60,
@@ -111,6 +118,42 @@ const createDailyRoom = async (
   }
 
   return (await res.json()) as DailyRoom;
+};
+
+// Mints a Daily meeting token scoped to the room, valid for the same
+// window as the room itself. is_owner is only set on the staff token.
+const createMeetingToken = async (
+  env: Record<string, string>,
+  roomName: string,
+  userName: string,
+  startsAt: number,
+  isOwner = false
+): Promise<string> => {
+  const properties: Record<string, unknown> = {
+    room_name: roomName,
+    user_name: userName,
+    nbf: startsAt - 15 * 60,
+    exp: startsAt + 90 * 60,
+  };
+  if (isOwner) properties.is_owner = true;
+
+  const res = await fetch('https://api.daily.co/v1/meeting-tokens', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.DAILY_API_KEY || ''}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ properties }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error('[paypal-capture-consult] Daily meeting-token creation failed:', res.status, text);
+    throw new DailyApiError(text);
+  }
+
+  const data = await res.json();
+  return data.token as string;
 };
 
 const formatAppointmentDate = (iso: string) =>
@@ -262,37 +305,59 @@ Deno.serve(async (req) => {
     // otherwise create the Daily room now.
     let meetingUrl = appointment.meeting_url as string | null;
     let meetingId = appointment.meeting_id as string | null;
+    let meetingUrlStaff: string | null = null;
+
+    // Customer name: the patient token's user_name and the notification
+    // greeting. Fetched only when the room is created here.
+    let customerName: string | null = null;
+    if (!meetingUrl && appointment.customer_id) {
+      const { data: customer } = await supabase
+        .from('customers')
+        .select('full_name')
+        .eq('id', appointment.customer_id)
+        .maybeSingle();
+      customerName = customer?.full_name ?? null;
+    }
 
     if (!meetingUrl) {
       const room = await createDailyRoom(env, appointment as AppointmentRow);
-      meetingUrl = room.url;
+      const startsAt = startsAtSec(appointment.appointment_date);
+      const patientToken = await createMeetingToken(
+        env,
+        room.name,
+        customerName || 'Paciente',
+        startsAt
+      );
+      const staffToken = await createMeetingToken(env, room.name, 'Equipo Apolo', startsAt, true);
+      meetingUrl = `${room.url}?t=${patientToken}`;
+      meetingUrlStaff = `${room.url}?t=${staffToken}`;
       meetingId = room.name;
     }
 
+    const updateFields: Record<string, unknown> = {
+      payment_ref: payload.order_id,
+      payment_status: appointment.payment_status === 'unpaid' ? 'paid' : appointment.payment_status,
+      status: 'confirmed',
+      meeting_url: meetingUrl,
+      meeting_id: meetingId,
+    };
+    // Only set when the room was created here — a reused room keeps the
+    // staff URL written at confirmation time.
+    if (meetingUrlStaff) updateFields.meeting_url_staff = meetingUrlStaff;
+
     const { error: updateError } = await supabase
       .from('appointments')
-      .update({
-        payment_ref: payload.order_id,
-        payment_status: appointment.payment_status === 'unpaid' ? 'paid' : appointment.payment_status,
-        status: 'confirmed',
-        meeting_url: meetingUrl,
-        meeting_id: meetingId,
-      })
+      .update(updateFields)
       .eq('id', appointment.id);
     if (updateError) throw updateError;
 
     // Notify only when the room was created here — if a meeting_url
     // already existed, the customer was notified at confirmation time.
     if (!appointment.meeting_url && appointment.customer_id) {
-      const { data: customer } = await supabase
-        .from('customers')
-        .select('full_name')
-        .eq('id', appointment.customer_id)
-        .maybeSingle();
       await notifyCustomer(
         supabase,
         appointment as AppointmentRow,
-        customer?.full_name ?? null
+        customerName
       );
     }
 

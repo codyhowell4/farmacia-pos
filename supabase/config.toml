@@ -25,6 +25,11 @@ verify_jwt = false
 [functions.tablet-checkin]
 verify_jwt = false
 
+# Public receta verification for pharmacists (LGS 42 Bis) — no session;
+# response is minimal by design, abuse bounded by per-IP rate limiting
+[functions.verify-receta]
+verify_jwt = false
+
 # Cron-invoked queue processor — auth is via the x-cron-secret header instead
 [functions.send-notifications]
 verify_jwt = false

@@ -1,9 +1,13 @@
 import { supabase } from '../lib/supabase';
 
 /**
- * Get controlled substances sales for a date range
- * Queries actual tables (sales + sale_items + inventory) since the
- * controlled_substances_sales view may not exist yet.
+ * Get prescription-required medications sold in a date range.
+ * Returns one FLATTENED row per sale item whose inventory item requires
+ * a receta (this is not the controlled-substances registry — Grupo II/III
+ * items are flagged in inventory.controlled_group). Receta metadata is
+ * merged from the prescriptions row linked to the sale (sale_id); items
+ * without a linked receta keep their rx fields blank instead of being
+ * dropped.
  */
 export async function getControlledSubstancesSales(startDate, endDate) {
   const { data, error } = await supabase
@@ -15,16 +19,42 @@ export async function getControlledSubstancesSales(startDate, endDate) {
 
   if (error) throw error;
 
-  // Filter to sales that have at least one controlled/prescription item
-  const filtered = (data || []).filter(sale => {
-    const items = sale.sale_items || [];
-    return items.some(item => item.inventory?.requires_prescription);
-  }).map(sale => ({
-    ...sale,
-    controlled_items: (sale.sale_items || []).filter(item => item.inventory?.requires_prescription),
-  }));
+  // Only sales containing at least one Rx-required item contribute rows
+  const rxSales = (data || []).filter(sale =>
+    (sale.sale_items || []).some(item => item.inventory?.requires_prescription)
+  );
 
-  return filtered;
+  // Batch-fetch the receta rows linked to those sales and index by sale_id
+  const saleIds = rxSales.map(sale => sale.id);
+  let rxBySaleId = {};
+  if (saleIds.length > 0) {
+    const { data: prescriptions, error: rxError } = await supabase
+      .from('prescriptions')
+      .select('sale_id, patient_name, patient_curp, doctor_name, doctor_license_number, prescription_number, prescription_date')
+      .in('sale_id', saleIds);
+    if (rxError) throw rxError;
+    rxBySaleId = Object.fromEntries((prescriptions || []).map(p => [p.sale_id, p]));
+  }
+
+  return rxSales.flatMap(sale => {
+    const rx = rxBySaleId[sale.id] || {};
+    return (sale.sale_items || [])
+      .filter(item => item.inventory?.requires_prescription)
+      .map(item => ({
+        sale_id: sale.id,
+        sale_date: sale.timestamp || sale.created_at,
+        patient_name: rx.patient_name || sale.patient_name || '',
+        patient_curp: rx.patient_curp || sale.patient_curp || '',
+        doctor_name: rx.doctor_name || '',
+        doctor_license_number: rx.doctor_license_number || '',
+        prescription_number: rx.prescription_number || '',
+        prescription_date: rx.prescription_date || '',
+        medication_name: item.inventory?.name || item.name || '',
+        quantity: item.quantity,
+        rx_number: item.rx_number || '',
+        total: (item.quantity || 0) * (item.price || 0),
+      }));
+  });
 }
 
 /**

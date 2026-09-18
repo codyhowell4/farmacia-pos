@@ -110,7 +110,7 @@ export default function ReportsPage() {
       { key: 'total', label: 'Total' },
     ];
     const csv = exportToCSV(data.controlled, headers);
-    downloadCSV(csv, `controlados_${startDate}_${endDate}`);
+    downloadCSV(csv, `medicamentos_con_receta_${startDate}_${endDate}`);
     toast.success('Reporte exportado');
   };
 
@@ -201,7 +201,7 @@ export default function ReportsPage() {
           <div className="flex gap-2">
             <Button variant="outline" onClick={loadControlled}>
               <Pill className="h-4 w-4 mr-2" />
-              Cargar Controlados
+              Cargar Medicamentos con Receta
             </Button>
             <Button variant="outline" onClick={loadMovement}>
               <Activity className="h-4 w-4 mr-2" />
@@ -215,7 +215,7 @@ export default function ReportsPage() {
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="controlled" className="flex items-center gap-2">
             <Pill className="h-4 w-4" />
-            Sustancias Controladas
+            Medicamentos con Receta
             {data.controlled.length > 0 && (
               <Badge variant="secondary" className="ml-1">{data.controlled.length}</Badge>
             )}
@@ -240,10 +240,15 @@ export default function ReportsPage() {
         <TabsContent value="controlled">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Pill className="h-5 w-5 text-apolo-navy" />
-                Reporte de Sustancias Controladas
-              </CardTitle>
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Pill className="h-5 w-5 text-apolo-navy" />
+                  Reporte de Medicamentos con Receta
+                </CardTitle>
+                <p className="text-xs text-gray-500 mt-1">
+                  Medicamentos que requirieron receta al venderse. Las sustancias controladas (Grupo II/III) se identifican en Inventario.
+                </p>
+              </div>
               <Button 
                 onClick={handleExportControlled}
                 disabled={data.controlled.length === 0}
@@ -263,7 +268,7 @@ export default function ReportsPage() {
               ) : data.controlled.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <Pill className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>Seleccione un rango de fechas y haga clic en "Cargar Controlados"</p>
+                  <p>Seleccione un rango de fechas y haga clic en "Cargar Medicamentos con Receta"</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">

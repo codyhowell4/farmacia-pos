@@ -1,20 +1,49 @@
 // Audit logger — writes to Supabase audit_log table via db.js
 // Usage: logAudit({ action, user, details })
+// Callers fire-and-forget (no await). A failed write is retried once,
+// then queued in localStorage and surfaced via the 'apolo:audit-failed'
+// window event so a dropped audit entry is never silent.
 
 import { writeAuditLog } from '@/lib/db';
 
-export const logAudit = async ({ action, user, details = '' }) => {
+const FAILED_QUEUE_KEY = 'audit_failed_queue';
+const MAX_QUEUED_ENTRIES = 50;
+
+const queueFailedAudit = (entry) => {
   try {
-    await writeAuditLog({
+    const existing = JSON.parse(localStorage.getItem(FAILED_QUEUE_KEY) || '[]');
+    const queue = Array.isArray(existing) ? existing : [];
+    queue.push(entry);
+    while (queue.length > MAX_QUEUED_ENTRIES) queue.shift(); // drop oldest
+    localStorage.setItem(FAILED_QUEUE_KEY, JSON.stringify(queue));
+  } catch { /* storage unavailable — nothing more we can do */ }
+  window.dispatchEvent(new CustomEvent('apolo:audit-failed'));
+};
+
+export const logAudit = async ({ action, user, details = '' }) => {
+  const payload = {
+    action,
+    userName: user?.name || user || 'System',
+    userRole: user?.role || null,
+    locationId: user?.locationId || null,
+    orgId: user?.orgId || null,
+    details,
+  };
+  // writeAuditLog returns its error instead of throwing; .catch covers throws
+  let error = await writeAuditLog(payload).catch(e => e);
+  if (error) {
+    // One retry after a short pause — transient network blips are common
+    await new Promise(resolve => setTimeout(resolve, 800));
+    error = await writeAuditLog(payload).catch(e => e);
+  }
+  if (error) {
+    console.error('Audit log write failed:', error);
+    queueFailedAudit({
       action,
-      userName: user?.name || user || 'System',
-      userRole: user?.role || null,
-      locationId: user?.locationId || null,
-      orgId: user?.orgId || null,
+      user: payload.userName,
       details,
+      at: new Date().toISOString(),
     });
-  } catch (e) {
-    console.error('Audit log write failed:', e);
   }
 };
 

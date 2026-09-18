@@ -142,3 +142,21 @@ All ten C-items above are **fixed and verified live** (commit `e5379cf`, migrati
 - **C10** — portal "marcar firmado" now stores `recorded_by_name` (staff member) and displays it next to the signature.
 
 Also fixed as a drive-by: the "Nueva Nota" button crash (undeclared `setEditingNote`, `PatientWorkspace.jsx`).
+
+
+---
+
+## Resolution log — doctor portal items (2026-09-15)
+
+All ten D-items above are **fixed** (migration `20260915160000_doctor_portal_hardening.sql` applied to prod; edge functions `video-room` v4, `paypal-capture-consult` v4, `verify-receta` v1 deployed and verified; portal build passes). Live verification: `verify-receta` returns `{found:false}` for unknown folios and the minimal payload for a real folio; the `medical_notes` append-only trigger blocked an UPDATE with its NOM-024 message. *(Not live-tested: signed-receta verification — no signed receta exists in prod yet; re-run the signed-folio check after the first e.firma signing. video-room/paypal flows need staff JWT / a real PayPal order — deploy-verified only.)*
+
+- **D1** — `inventory.controlled_group` ('II'/'III', admin-editable in Inventario with red badge); controlled items are excluded from receta autocomplete and hard-blocked at save in both receta paths ("requiere receta foliada COFEPRIS"). Reports tab renamed "Medicamentos con Receta" and its query fixed to return real flattened rows (it previously rendered blank cells *and* mislabeled every Rx med as controlado).
+- **D2** — cédula format validation (`/^\d{6,8}$/`) in AdminDoctors and in DoctorProfile (now editable there); receta creation blocked without a cédula, both from Nueva Receta and PostVisitDialog. *(SEP registry verification remains manual/periodic — [ORG].)*
+- **D3** — `video-room` now refuses issuance when the appointment has no registered customer (400) or the customer lacks a signed `teleconsulta` consent (409), before any payment/membership charge. Note: customer-app users were already whole-app gated behind all 4 consents, and the kiosk signs all 4 — this closes the server-side hole for POS-created/legacy patients.
+- **D4** — video consultas require "ubicación declarada del paciente" + "identidad verificada" in PostVisitDialog; stored on `consulta_notes` (`modality`, `tele_patient_location`, `tele_identity_verified`), shown in ConsultaNotesList and in the NOM-024 CDA export.
+- **D5** — Daily rooms are now `private` with per-participant meeting tokens (patient token in `meeting_url`, staff owner token in new `appointments.meeting_url_staff`); portal "Unirse" buttons use the staff URL. Same treatment in `paypal-capture-consult`. Legacy public-room citas keep working.
+- **D6** — `medical_notes_no_update` trigger (mirrors consulta_notes) makes free-text clinical notes append-only; dead `updateMedicalNote`/`deleteMedicalNote` removed from db.js; SGSI §6/§7 updated to match.
+- **D7** — public `verify-receta` edge function (rate-limited, minimal payload) + `/verifica/` page (QR lands there; pharmacist sees valid/cancelled/unsigned/not-found + folio, médico, cédula, cert serial, signature-fragment match). Receta QR now encodes the verify URL instead of bare text.
+- **D8** — SGSI new §8 documents the e.firma custody model with an explicit risk-acceptance decision + Anexo A (printable internal custody authorization for the doctor to sign — **[ORG]** collect the signature).
+- **D9** — audit writes are checked, retried once, then queued to `audit_failed_queue` with an app-wide toast (sonner `Toaster` is now actually mounted — it never was, so *all* sonner toasts in the app were previously invisible); RECETA_CANCEL now audits with before-state + meds from both cancel paths (AdminPrescriptions had no audit at all); history edits log campo: antes → después.
+- **D10** — SGSI §4 now states the true status (password-only today; TOTP MFA on the security roadmap) instead of claiming a control that doesn't exist. **Real MFA enrollment is still unbuilt** — schedule it if you want the control, not just the wording.

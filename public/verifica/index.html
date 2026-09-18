@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1E2A8A">
+  <title>Verificación de receta electrónica — Farmacia Apolo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+    html, body { min-height: 100vh; background: linear-gradient(180deg, #141B5E 0%, #1E2A8A 100%); background-attachment: fixed; }
+    body { display: flex; justify-content: center; padding: 16px; }
+    .wrap { width: 100%; max-width: 560px; }
+    .brand { text-align: center; color: white; padding: 1.25rem 0 1rem; }
+    .brand-over { font-size: 0.7rem; letter-spacing: 0.25em; opacity: 0.7; }
+    .brand-name { font-size: 1.9rem; font-weight: 800; letter-spacing: 0.08em; }
+    .brand-sub { font-size: 0.85rem; opacity: 0.85; margin-top: 0.25rem; }
+    .card { background: white; border-radius: 20px; padding: 1.25rem; margin-bottom: 1rem; }
+    .card h2 { font-size: 1.05rem; color: #1E2A8A; margin-bottom: 0.875rem; }
+    label { display: block; font-size: 0.85rem; font-weight: 600; color: #334155; margin-bottom: 0.3rem; }
+    input[type=text] {
+      width: 100%; padding: 0.8rem; border: 1.5px solid #E3E8F2; border-radius: 12px;
+      font-size: 1rem; margin-bottom: 0.875rem; outline: none; background: white;
+    }
+    input:focus { border-color: #1E2A8A; }
+    .hint { font-size: 0.8rem; color: #64748b; margin-top: -0.25rem; margin-bottom: 0.75rem; line-height: 1.5; }
+    .btn { width: 100%; padding: 1rem; border: none; border-radius: 14px; font-size: 1.05rem; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #46AC78, #359268); color: white; }
+    .btn:disabled { background: #CBD5E1; cursor: not-allowed; }
+    .error-box { display: none; background: #FEF2F2; border: 1px solid #FECACA; color: #B91C1C; border-radius: 12px; padding: 0.75rem 1rem; font-size: 0.9rem; margin-bottom: 1rem; }
+    .banner { border-radius: 14px; padding: 0.9rem 1rem; font-weight: 700; font-size: 1rem; margin-bottom: 1rem; line-height: 1.45; }
+    .banner-green { background: #F0FDF4; border: 1.5px solid #86EFAC; color: #166534; }
+    .banner-red { background: #FEF2F2; border: 1.5px solid #FECACA; color: #B91C1C; }
+    .banner-amber { background: #FFFBEB; border: 1.5px solid #FDE68A; color: #92400E; }
+    .detail-card { background: white; border-radius: 20px; padding: 1.25rem; margin-bottom: 1rem; }
+    .detail-card h2 { font-size: 1.05rem; color: #1E2A8A; margin-bottom: 0.5rem; }
+    .drow { display: flex; justify-content: space-between; gap: 1rem; padding: 0.55rem 0; border-bottom: 1px solid #EEF2F7; font-size: 0.9rem; }
+    .drow:last-child { border-bottom: none; }
+    .dlabel { color: #64748b; font-weight: 600; flex-shrink: 0; }
+    .dvalue { color: #0F172A; font-weight: 600; text-align: right; word-break: break-word; }
+    .footnote { text-align: center; color: rgba(255,255,255,0.8); font-size: 0.8rem; line-height: 1.6; padding: 0 1rem 1.5rem; }
+    #view-result { display: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <div class="brand-over">— FARMACIA —</div>
+      <div class="brand-name">APOLO</div>
+      <div class="brand-sub">Verificación de receta electrónica</div>
+    </div>
+
+    <div class="error-box" id="error-box"></div>
+
+    <div class="card">
+      <h2>Verificar una receta</h2>
+      <label for="f-folio">Folio de la receta *</label>
+      <input type="text" id="f-folio" autocomplete="off" placeholder="Ej. RX-2026-000123">
+
+      <label for="f-sig">Fragmento de firma (opcional)</label>
+      <input type="text" id="f-sig" autocomplete="off" placeholder="Primeros caracteres de la firma impresos junto al QR">
+
+      <p class="hint">Portal público para que las farmacias verifiquen recetas electrónicas expedidas por el consultorio (LGS, art. 42 Bis). Si llegó aquí escaneando el código QR de una receta, la verificación se realiza automáticamente.</p>
+      <button class="btn" id="btn-verify">Verificar</button>
+    </div>
+
+    <div id="view-result">
+      <div class="banner" id="result-banner"></div>
+      <div class="banner banner-amber" id="sig-warning" style="display: none;"></div>
+      <div class="detail-card" id="detail-card" style="display: none;">
+        <h2>Datos de la receta</h2>
+        <div id="detail-rows"></div>
+      </div>
+    </div>
+
+    <p class="footnote">
+      Verificación contra el registro electrónico de Farmacia Apolo. Ante duda, contacte a la farmacia.
+    </p>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var VERIFY_URL = 'https://ieinjhonepkudxxpmuly.supabase.co/functions/v1/verify-receta';
+
+      var folioEl = document.getElementById('f-folio');
+      var sigEl = document.getElementById('f-sig');
+      var btn = document.getElementById('btn-verify');
+      var errorBox = document.getElementById('error-box');
+      var resultView = document.getElementById('view-result');
+      var banner = document.getElementById('result-banner');
+      var sigWarning = document.getElementById('sig-warning');
+      var detailCard = document.getElementById('detail-card');
+      var detailRows = document.getElementById('detail-rows');
+
+      // El QR de la receta firmada codifica /verifica/?f=<FOLIO>&s=<SIG32>.
+      var params = new URLSearchParams(window.location.search);
+      var qpFolio = (params.get('f') || '').trim();
+      var qpSig = (params.get('s') || '').trim();
+      if (qpFolio) folioEl.value = qpFolio;
+      if (qpSig) sigEl.value = qpSig;
+
+      function esc(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      }
+      function showError(msg) {
+        errorBox.textContent = msg;
+        errorBox.style.display = 'block';
+        errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      function hideError() { errorBox.style.display = 'none'; }
+
+      // dd/mm/aaaa hh:mm, hora local del dispositivo.
+      function fmtDate(iso) {
+        if (!iso) return '—';
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return '—';
+        function p(n) { return (n < 10 ? '0' : '') + n; }
+        return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+      }
+      function orDash(v) { return v ? String(v) : '—'; }
+
+      function renderDetails(d) {
+        var rows = [
+          ['Folio', orDash(d.folio)],
+          ['Paciente', orDash(d.patient_name)],
+          ['Médico', orDash(d.doctor_name)],
+          ['Cédula profesional', orDash(d.doctor_license_number)],
+          ['Fecha de firma', fmtDate(d.signed_at)],
+          ['Serie del certificado', orDash(d.signer_cert_serial)],
+        ];
+        detailRows.innerHTML = rows.map(function (r) {
+          return '<div class="drow"><span class="dlabel">' + r[0] + '</span><span class="dvalue">' + esc(r[1]) + '</span></div>';
+        }).join('');
+        detailCard.style.display = 'block';
+      }
+
+      function setBanner(kind, text) {
+        banner.className = 'banner banner-' + kind;
+        banner.textContent = text;
+      }
+
+      function renderResult(d, providedSig) {
+        resultView.style.display = 'block';
+        sigWarning.style.display = 'none';
+        detailCard.style.display = 'none';
+
+        if (!d || !d.found) {
+          setBanner('red', 'Receta no encontrada — verifique el folio o no surta esta receta.');
+          return;
+        }
+        if (d.status === 'cancelled') {
+          setBanner('red', 'RECETA CANCELADA — no surtir.');
+          renderDetails(d);
+          return;
+        }
+        if (!d.signed) {
+          setBanner('amber', 'Receta registrada pero SIN firma electrónica.');
+          renderDetails(d);
+          return;
+        }
+        setBanner('green', 'Receta válida — firma electrónica registrada.');
+        if (providedSig) {
+          sigWarning.style.display = 'block';
+          if (providedSig === d.sig_prefix) {
+            sigWarning.className = 'banner banner-green';
+            sigWarning.textContent = 'La firma del código QR coincide con la registrada ✓';
+          } else {
+            sigWarning.className = 'banner banner-amber';
+            sigWarning.textContent = 'El fragmento de firma del QR NO coincide — posible alteración, no surtir.';
+          }
+        }
+        renderDetails(d);
+      }
+
+      async function verify() {
+        hideError();
+        var folio = folioEl.value.trim();
+        var sig = sigEl.value.trim();
+        if (!folio) {
+          showError('Capture el folio de la receta.');
+          folioEl.focus();
+          return;
+        }
+        var payload = { folio: folio };
+        if (sig) payload.sig = sig;
+
+        btn.disabled = true;
+        btn.textContent = 'Verificando...';
+        resultView.style.display = 'none';
+        try {
+          var res = await fetch(VERIFY_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (res.status === 429) {
+            showError('Demasiadas consultas — intente más tarde.');
+            return;
+          }
+          var data = await res.json().catch(function () { return null; });
+          if (!res.ok) {
+            showError((data && data.error) || 'No se pudo completar la verificación (código ' + res.status + ') — intente más tarde.');
+            return;
+          }
+          renderResult(data || { found: false }, sig);
+          resultView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } catch (err) {
+          showError('No se pudo conectar con el servidor de verificación — compruebe su conexión a internet e intente de nuevo.');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Verificar';
+        }
+      }
+
+      btn.addEventListener('click', verify);
+      [folioEl, sigEl].forEach(function (el) {
+        el.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') verify();
+        });
+      });
+
+      // Acceso por QR: verificar de inmediato cuando la URL ya trae folio.
+      if (qpFolio) verify();
+    })();
+  </script>
+</body>
+</html>

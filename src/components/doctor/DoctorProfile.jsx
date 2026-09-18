@@ -49,6 +49,8 @@ const DoctorProfile = () => {
   const [savingEfirma, setSavingEfirma] = useState(false);
   const [showEfirmaForm, setShowEfirmaForm] = useState(false);
   const [efirmaUnlocked, setEfirmaUnlocked] = useState(false);
+  const [licenseNumber, setLicenseNumber] = useState('');
+  const [savingLicense, setSavingLicense] = useState(false);
 
   useEffect(() => {
     if (user?.timezone) setTimezone(user.timezone);
@@ -171,6 +173,27 @@ const DoctorProfile = () => {
     }
   };
 
+  // La cédula profesional lands on every receta; the doctor may capture it
+  // here (admins can also set it from Usuarios → Médicos).
+  const handleSaveLicense = async () => {
+    if (!user?.id) return;
+    const license = licenseNumber.trim();
+    if (license && !/^\d{6,8}$/.test(license)) {
+      toast.error('La cédula profesional debe tener 6 a 8 dígitos');
+      return;
+    }
+    setSavingLicense(true);
+    try {
+      await upsertDoctorProfile(user.id, { license_number: license || null });
+      toast.success('Cédula profesional guardada');
+      loadProfile();
+    } catch (err) {
+      toast.error(err.message || 'Error guardando la cédula');
+    } finally {
+      setSavingLicense(false);
+    }
+  };
+
   const loadProfile = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
@@ -179,6 +202,7 @@ const DoctorProfile = () => {
       const data = await getDoctorProfile(user.id);
       console.log('[DoctorProfile] loaded data:', JSON.stringify(data, null, 2));
       setProfile(data);
+      setLicenseNumber(data?.license_number || '');
       setAvailability(
         data?.availability && typeof data.availability === 'object' && !Array.isArray(data.availability)
           ? data.availability
@@ -329,11 +353,32 @@ const DoctorProfile = () => {
               </div>
             ) : (
               <div className="mt-2">
-                <InfoRow
-                  icon={Award}
-                  label="Cédula profesional"
-                  value={profile.license_number}
-                />
+                <div className="flex items-start gap-3 py-3 border-b border-slate-100">
+                  <div className="mt-0.5 p-2 rounded-lg bg-teal-50 text-teal-600">
+                    <Award className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Cédula profesional</p>
+                    <div className="flex gap-2 mt-1.5">
+                      <Input
+                        value={licenseNumber}
+                        onChange={(e) => setLicenseNumber(e.target.value)}
+                        placeholder="6 a 8 dígitos"
+                        inputMode="numeric"
+                      />
+                      <Button
+                        onClick={handleSaveLicense}
+                        disabled={savingLicense}
+                        className="bg-[#46AC78] hover:bg-[#3b9566] shrink-0"
+                      >
+                        {savingLicense ? 'Guardando…' : 'Guardar'}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Obligatoria para emitir recetas electrónicas (LGS 42 Bis) — se imprime en cada receta.
+                    </p>
+                  </div>
+                </div>
                 <InfoRow
                   icon={Stethoscope}
                   label="Especialidad"

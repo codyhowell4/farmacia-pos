@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
+import { Toaster as SonnerToaster } from 'sonner';
 import LoginPage from '@/pages/LoginPage';
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/ResetPasswordPage';
@@ -66,6 +67,7 @@ function App() {
             />
           </Routes>
           <Toaster />
+          <SonnerToaster richColors closeButton position="top-right" />
         </Router>
       </ShiftProvider>
     </AuthProvider>

@@ -40,6 +40,7 @@ import { downloadPrescriptionPDF } from '@/lib/pdf';
 import { buildPatientRecordPdf, triggerDownload } from '@/lib/recordExport';
 import { isValidCurp } from '@/lib/curp';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
+import { findControlledMed, controlledMedMessage, CONTROLLED_MED_MESSAGE } from '@/lib/controlledMeds';
 import { formatMXN } from '@/lib/currency';
 import { toast } from 'sonner';
 
@@ -240,6 +241,17 @@ const PatientWorkspace = () => {
       toast.error('Agrega al menos un medicamento');
       return;
     }
+    // LGS 42 Bis: la receta electrónica debe identificar al médico con cédula
+    if (!doctorProfile?.license_number?.trim()) {
+      toast.error('Capture su cédula profesional en su perfil antes de emitir recetas (LGS 42 Bis).');
+      return;
+    }
+    // LGS 245-255: los controlados nunca salen en receta electrónica
+    const controlledHit = findControlledMed(validMeds.map(m => m.medication), inventory);
+    if (controlledHit) {
+      toast.error(controlledMedMessage(controlledHit));
+      return;
+    }
     try {
       const first = validMeds[0];
       const payload = {
@@ -304,11 +316,14 @@ const PatientWorkspace = () => {
   const handleCancelRx = async (rx) => {
     if (!confirm(`¿Cancelar la receta ${rx.prescription_number || ''}? Esta acción no se puede deshacer.`)) return;
     try {
+      const rxMeds = (Array.isArray(rx.medications) && rx.medications.length > 0
+        ? rx.medications.map(m => m.medication)
+        : rx.medication ? [rx.medication] : []).filter(Boolean).join(', ');
       await cancelDoctorPrescription(rx.id);
       logAudit({
         action: AUDIT_ACTIONS.RECETA_CANCEL,
         user,
-        details: `Receta ${rx.prescription_number || rx.id} cancelada — paciente ${customer?.full_name || ''}`,
+        details: `Receta ${rx.prescription_number || rx.id} cancelada — paciente ${customer?.full_name || ''} — estado anterior: ${rx.status || 'activa'} — meds: ${rxMeds || '-'}`,
       });
       toast.success('Receta cancelada');
       loadAll();
@@ -381,7 +396,12 @@ const PatientWorkspace = () => {
       // Teleconsulta: run the telehealth flow — create the meeting room now
       if (apptForm.type === 'video' && created?.id) {
         try {
-          await confirmVideoAppointment(created.id);
+          const videoResult = await confirmVideoAppointment(created.id);
+          if (videoResult?.meeting_url) {
+            setAppointments(prev => prev.map(a => a.id === created.id
+              ? { ...a, meeting_url: videoResult.meeting_url, meeting_url_staff: videoResult.staff_url || a.meeting_url_staff }
+              : a));
+          }
           toast.success('Cita creada — sala de video lista para el paciente');
         } catch (videoErr) {
           toast.error(videoErr.message || 'Cita creada, pero no se pudo crear la sala de video');
@@ -414,7 +434,12 @@ const PatientWorkspace = () => {
       const appt = appointments.find(a => a.id === id);
       if (status === 'confirmed' && appt?.type === 'video') {
         try {
-          await confirmVideoAppointment(id);
+          const videoResult = await confirmVideoAppointment(id);
+          if (videoResult?.meeting_url) {
+            setAppointments(prev => prev.map(a => a.id === id
+              ? { ...a, meeting_url: videoResult.meeting_url, meeting_url_staff: videoResult.staff_url || a.meeting_url_staff }
+              : a));
+          }
         } catch (videoErr) {
           toast.error(videoErr.message || 'No se pudo crear la sala de video');
           return;
@@ -854,7 +879,7 @@ const PatientWorkspace = () => {
                           {ap.notes && <p className="text-sm text-slate-500 mt-1">{ap.notes}</p>}
                           {ap.type === 'video' && ap.meeting_url && (
                             <button
-                              onClick={() => window.open(ap.meeting_url, '_blank', 'noopener,noreferrer')}
+                              onClick={() => window.open(ap.meeting_url_staff || ap.meeting_url, '_blank', 'noopener,noreferrer')}
                               className="text-xs text-indigo-600 hover:text-indigo-800 font-medium mt-1 flex items-center gap-1"
                             >
                               <Video className="w-3 h-3" /> Sala de video lista — unirse
@@ -1039,17 +1064,29 @@ const PatientWorkspace = () => {
                         <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
                           {(() => {
                             const q = med.medication.toLowerCase();
+                            // Controlled items (Grupo II/III) are never suggested:
+                            // they require a COFEPRIS foliada paper receta
+                            const exactControlled = findControlledMed([med.medication], inventory);
                             const matches = inventory.filter(item =>
-                              item.name.toLowerCase().includes(q)
+                              !item.controlled_group && item.name.toLowerCase().includes(q)
                             ).slice(0, 5);
                             if (matches.length === 0) {
                               return (
                                 <div className="px-3 py-2 text-xs text-slate-500">
-                                  No encontrado en inventario. Puede escribir un medicamento manualmente.
+                                  {exactControlled
+                                    ? <span className="text-red-600 font-medium">{CONTROLLED_MED_MESSAGE}</span>
+                                    : 'No encontrado en inventario. Puede escribir un medicamento manualmente.'}
                                 </div>
                               );
                             }
-                            return matches.map(item => {
+                            return (
+                              <>
+                                {exactControlled && (
+                                  <div className="px-3 py-2 text-xs text-red-600 font-medium border-b border-red-100">
+                                    {CONTROLLED_MED_MESSAGE}
+                                  </div>
+                                )}
+                                {matches.map(item => {
                               const stockColor = item.quantity > 10 ? 'bg-green-500' : item.quantity > 0 ? 'bg-yellow-500' : 'bg-red-500';
                               const stockText = item.quantity === 0
                                 ? 'Agotado (0 unidades)'
@@ -1080,7 +1117,9 @@ const PatientWorkspace = () => {
                                   </div>
                                 </button>
                               );
-                            });
+                                })}
+                              </>
+                            );
                           })()}
                         </div>
                       )}

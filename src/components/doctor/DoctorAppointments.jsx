@@ -282,7 +282,12 @@ const DoctorAppointments = () => {
       // (validates payment/membership, sets meeting_url + status confirmed).
       if (form.type === 'video' && savedId && (!editing || switchingToVideo || !editing.meeting_url)) {
         try {
-          await confirmVideoAppointment(savedId);
+          const videoResult = await confirmVideoAppointment(savedId);
+          if (videoResult?.meeting_url) {
+            setAppointments(prev => prev.map(a => a.id === savedId
+              ? { ...a, meeting_url: videoResult.meeting_url, meeting_url_staff: videoResult.staff_url || a.meeting_url_staff }
+              : a));
+          }
           toast.success('Sala de video creada — el paciente ya puede unirse desde su app');
         } catch (videoErr) {
           toast.error(videoErr.message || 'Cita guardada, pero no se pudo crear la sala de video');
@@ -316,7 +321,12 @@ const DoctorAppointments = () => {
       // status='confirmed' itself. In-person appointments keep the direct update.
       if (newStatus === 'confirmed' && appt?.type === 'video') {
         try {
-          await confirmVideoAppointment(appt.id);
+          const videoResult = await confirmVideoAppointment(appt.id);
+          if (videoResult?.meeting_url) {
+            setAppointments(prev => prev.map(a => a.id === appt.id
+              ? { ...a, meeting_url: videoResult.meeting_url, meeting_url_staff: videoResult.staff_url || a.meeting_url_staff }
+              : a));
+          }
         } catch (videoErr) {
           toast.error(videoErr.message || 'No se pudo crear la sala de video');
           return; // keep the appointment pending
@@ -773,7 +783,7 @@ const DoctorAppointments = () => {
                         size="sm"
                         variant="outline"
                         className="border-apolo-navy text-apolo-navy hover:bg-apolo-navy/5 h-8"
-                        onClick={() => window.open(appt.meeting_url, '_blank', 'noopener,noreferrer')}
+                        onClick={() => window.open(appt.meeting_url_staff || appt.meeting_url, '_blank', 'noopener,noreferrer')}
                       >
                         <Video className="w-3.5 h-3.5 mr-1" />
                         Unirse

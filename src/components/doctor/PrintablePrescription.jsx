@@ -391,7 +391,7 @@ const PrintablePrescription = ({ prescription, customer }) => {
               {prescription.signature && qrUrl && (
                 <div className="rx-qr-block">
                   <img src={qrUrl} alt="QR de verificación de firma electrónica" />
-                  <div className="rx-qr-caption">Firma electrónica — verifique con el folio</div>
+                  <div className="rx-qr-caption">Firma electrónica — Verifique la firma escaneando el código o en app.apolofarmacia.com.mx/verifica</div>
                 </div>
               )}
               <svg className="rx-caduceus" viewBox="0 0 48 64" fill="none" stroke={NAVY} strokeWidth="2" strokeLinecap="round">

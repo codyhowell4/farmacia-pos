@@ -2,6 +2,15 @@
 // Creates (or reuses) the Daily.co room for a video consultation and
 // confirms the appointment. JWT verification stays ON (default): the
 // caller must be an authenticated admin, pos, or doctor user.
+//
+// NOM-027: a signed teleconsulta consent (consent_documents type
+// 'teleconsulta', status 'signed') is required before any payment or
+// membership visit is charged — walk-in appointments without a
+// registered patient cannot be confirmed as video consults.
+//
+// Rooms are 'private': joining requires a Daily meeting token. The
+// patient token is embedded in appointments.meeting_url, the staff
+// (owner) token in appointments.meeting_url_staff.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
@@ -20,6 +29,7 @@ interface AppointmentRow {
   status: string;
   payment_status: string;
   meeting_url: string | null;
+  meeting_url_staff: string | null;
   meeting_id: string | null;
 }
 
@@ -44,15 +54,18 @@ const jsonResponse = (body: Record<string, unknown>, status: number) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 
+const startsAtSec = (iso: string) => Math.floor(new Date(iso).getTime() / 1000);
+
 const createDailyRoom = async (
   env: Record<string, string>,
   appointment: AppointmentRow
 ): Promise<DailyRoom> => {
-  const startsAt = Math.floor(new Date(appointment.appointment_date).getTime() / 1000);
+  const startsAt = startsAtSec(appointment.appointment_date);
 
-  // v1 privacy model: the room is 'public' but its name is unguessable
-  // (the appointment UUID) and the nbf/exp window only allows joining
-  // from 15 minutes before until 90 minutes after the scheduled time.
+  // The room is private: nobody joins without a meeting token. Its name
+  // is unguessable (the appointment UUID) and the nbf/exp window only
+  // allows joining from 15 minutes before until 90 minutes after the
+  // scheduled time.
   const res = await fetch('https://api.daily.co/v1/rooms', {
     method: 'POST',
     headers: {
@@ -61,7 +74,7 @@ const createDailyRoom = async (
     },
     body: JSON.stringify({
       name: `consult-${appointment.id}`,
-      privacy: 'public',
+      privacy: 'private',
       properties: {
         nbf: startsAt - 15 * 60,
         exp: startsAt + 90 * 60,
@@ -78,6 +91,42 @@ const createDailyRoom = async (
   }
 
   return (await res.json()) as DailyRoom;
+};
+
+// Mints a Daily meeting token scoped to the room, valid for the same
+// window as the room itself. is_owner is only set on the staff token.
+const createMeetingToken = async (
+  env: Record<string, string>,
+  roomName: string,
+  userName: string,
+  startsAt: number,
+  isOwner = false
+): Promise<string> => {
+  const properties: Record<string, unknown> = {
+    room_name: roomName,
+    user_name: userName,
+    nbf: startsAt - 15 * 60,
+    exp: startsAt + 90 * 60,
+  };
+  if (isOwner) properties.is_owner = true;
+
+  const res = await fetch('https://api.daily.co/v1/meeting-tokens', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.DAILY_API_KEY || ''}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ properties }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error('[video-room] Daily meeting-token creation failed:', res.status, text);
+    throw new DailyApiError(text);
+  }
+
+  const data = await res.json();
+  return data.token as string;
 };
 
 const formatAppointmentDate = (iso: string) =>
@@ -172,7 +221,8 @@ Deno.serve(async (req) => {
 
     // Idempotency FIRST: a retry must never decrement a second membership
     // visit or fail on a duplicate room name — it just returns the
-    // existing meeting URL (and still ensures the status is confirmed).
+    // existing meeting URLs (and still ensures the status is confirmed).
+    // Legacy rows have no meeting_url_staff; fall back to meeting_url.
     if (appointment.meeting_url) {
       if (appointment.status !== 'confirmed') {
         const { error: confirmError } = await supabase
@@ -184,10 +234,45 @@ Deno.serve(async (req) => {
       return jsonResponse(
         {
           meeting_url: appointment.meeting_url,
+          staff_url: appointment.meeting_url_staff || appointment.meeting_url,
           status: 'confirmed',
           visits_remaining: null,
         },
         200
+      );
+    }
+
+    // NOM-027 teleconsulta consent gate — before any payment or
+    // membership visit is charged. Video consults require a registered
+    // patient with a signed teleconsulta consent on file.
+    if (!appointment.customer_id) {
+      return jsonResponse(
+        {
+          error:
+            'Las teleconsultas requieren un paciente registrado. Registre al paciente y capture su consentimiento de teleconsulta antes de confirmar.',
+        },
+        400
+      );
+    }
+
+    const { data: teleConsent, error: consentError } = await supabase
+      .from('consent_documents')
+      .select('id')
+      .eq('customer_id', appointment.customer_id)
+      .eq('type', 'teleconsulta')
+      .eq('status', 'signed')
+      .limit(1)
+      .maybeSingle();
+
+    if (consentError) throw consentError;
+
+    if (!teleConsent) {
+      return jsonResponse(
+        {
+          error:
+            'El paciente no tiene firmado el consentimiento de teleconsulta (NOM-027). Puede firmarlo en la app del paciente o en el kiosco de consentimiento, o capturarlo en papel desde la pestaña Consentimientos del expediente.',
+        },
+        409
       );
     }
 
@@ -224,7 +309,8 @@ Deno.serve(async (req) => {
       if (decrementError) throw decrementError;
     }
 
-    // Customer row: used for the notification greeting (null for walk-ins).
+    // Customer row: the patient token's user_name and the notification
+    // greeting (guaranteed to exist by the consent gate above).
     let customerName: string | null = null;
     if (appointment.customer_id) {
       const { data: customer } = await supabase
@@ -236,11 +322,23 @@ Deno.serve(async (req) => {
     }
 
     const room = await createDailyRoom(env, appointment as AppointmentRow);
+    const startsAt = startsAtSec(appointment.appointment_date);
+    const patientToken = await createMeetingToken(
+      env,
+      room.name,
+      customerName || 'Paciente',
+      startsAt
+    );
+    const staffToken = await createMeetingToken(env, room.name, 'Equipo Apolo', startsAt, true);
+
+    const meetingUrl = `${room.url}?t=${patientToken}`;
+    const meetingUrlStaff = `${room.url}?t=${staffToken}`;
 
     const { error: updateError } = await supabase
       .from('appointments')
       .update({
-        meeting_url: room.url,
+        meeting_url: meetingUrl,
+        meeting_url_staff: meetingUrlStaff,
         meeting_id: room.name,
         status: 'confirmed',
       })
@@ -250,7 +348,12 @@ Deno.serve(async (req) => {
     await notifyCustomer(supabase, appointment as AppointmentRow, customerName);
 
     return jsonResponse(
-      { meeting_url: room.url, status: 'confirmed', visits_remaining: visitsRemaining },
+      {
+        meeting_url: meetingUrl,
+        staff_url: meetingUrlStaff,
+        status: 'confirmed',
+        visits_remaining: visitsRemaining,
+      },
       200
     );
   } catch (err) {

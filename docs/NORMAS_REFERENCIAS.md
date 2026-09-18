@@ -21,6 +21,8 @@ Objetivos funcionales para Sistemas de Expediente Clínico Electrónico: interop
 
 Revisión existente del portal: `docs/DOCTOR_PORTAL_NOM024_REVIEW.md`.
 
+Análisis de gaps pre-lanzamiento (portal médico + consentimiento, 2026-09-15): `docs/LAUNCH_COMPLIANCE_GAPS.md`.
+
 ## RESPUESTA a comentarios — PROY-NOM-024-SSA3-2010 → 2012
 https://dof.gob.mx/nota_detalle_popup.php?codigo=5277740
 
