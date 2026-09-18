@@ -87,8 +87,8 @@
         <label for="patient_name">Nombre completo del paciente *</label>
         <input type="text" id="patient_name" autocomplete="name">
 
-        <label for="patient_dob">Fecha de nacimiento *</label>
-        <input type="date" id="patient_dob">
+        <label for="patient_dob">Fecha de nacimiento (dd/mm/aaaa) *</label>
+        <input type="text" id="patient_dob" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" autocomplete="bday">
 
         <div id="guardian-block" style="display: none;">
           <label for="guardian_name">Nombre completo del padre, madre o tutor *</label>
@@ -226,24 +226,45 @@
       var dobEl = document.getElementById('patient_dob');
       var guardianBlock = document.getElementById('guardian-block');
       var guardianEl = document.getElementById('guardian_name');
-      dobEl.max = new Date().toISOString().split('T')[0];
+
+      // DOB is captured as dd/mm/aaaa (Mexican standard) via a masked text
+      // input — the native date picker follows the device locale (mm/dd/yyyy
+      // on US laptops). parseDob converts to ISO AAAA-MM-DD for the server.
+      function parseDob(v) {
+        var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v || '');
+        if (!m) return null;
+        var d = parseInt(m[1], 10), mo = parseInt(m[2], 10), y = parseInt(m[3], 10);
+        if (mo < 1 || mo > 12 || d < 1 || d > 31 || y < 1900) return null;
+        var dt = new Date(Date.UTC(y, mo - 1, d));
+        if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+        if (dt.getTime() > Date.now()) return null;
+        var mm = mo < 10 ? '0' + mo : '' + mo;
+        var dd = d < 10 ? '0' + d : '' + d;
+        return y + '-' + mm + '-' + dd;
+      }
+      dobEl.addEventListener('input', function () {
+        var digits = dobEl.value.replace(/\D/g, '').slice(0, 8);
+        var parts = [];
+        if (digits.length > 0) parts.push(digits.slice(0, 2));
+        if (digits.length >= 3) parts.push(digits.slice(2, 4));
+        if (digits.length >= 5) parts.push(digits.slice(4, 8));
+        dobEl.value = parts.join('/');
+        guardianBlock.style.display = isMinor() ? 'block' : 'none';
+        if (!isMinor()) guardianEl.value = '';
+      });
 
       function ageFromDob(d) {
         return Math.floor((Date.now() - new Date(d).getTime()) / (365.25 * 86400000));
       }
       function isMinor() {
-        var d = dobEl.value;
-        return d && ageFromDob(d) < 18;
+        var iso = parseDob(dobEl.value);
+        return !!iso && ageFromDob(iso) < 18;
       }
-      dobEl.addEventListener('change', function () {
-        guardianBlock.style.display = isMinor() ? 'block' : 'none';
-        if (!isMinor()) guardianEl.value = '';
-      });
 
       function patientInputs() {
         return {
           name: nameEl.value.trim(),
-          dob: dobEl.value,
+          dob: parseDob(dobEl.value) || '',
           minor: isMinor(),
           guardian: guardianEl.value.trim(),
         };
@@ -295,7 +316,7 @@
       document.getElementById('btn-patient-continue').addEventListener('click', async function () {
         var p = patientInputs();
         if (!p.name) return showError('Escribe el nombre del paciente.');
-        if (!p.dob) return showError('Captura la fecha de nacimiento.');
+        if (!p.dob) return showError('Captura la fecha de nacimiento en formato dd/mm/aaaa (ej. 25/12/1990).');
         if (p.minor && !p.guardian) return showError('Escribe el nombre del padre, madre o tutor.');
 
         if (state.flow === 'primera') {
