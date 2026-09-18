@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1E2A8A">
+  <title>Consentimiento — Farmacia Apolo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+    html, body { min-height: 100vh; background: linear-gradient(180deg, #141B5E 0%, #1E2A8A 100%); background-attachment: fixed; }
+    body { display: flex; justify-content: center; padding: 16px; }
+    .wrap { width: 100%; max-width: 560px; }
+    .brand { text-align: center; color: white; padding: 1.25rem 0 1rem; }
+    .brand-over { font-size: 0.7rem; letter-spacing: 0.25em; opacity: 0.7; }
+    .brand-name { font-size: 1.9rem; font-weight: 800; letter-spacing: 0.08em; }
+    .brand-sub { font-size: 0.85rem; opacity: 0.85; margin-top: 0.25rem; }
+    .card { background: white; border-radius: 20px; padding: 1.25rem; margin-bottom: 1rem; }
+    .card h2 { font-size: 1.05rem; color: #1E2A8A; margin-bottom: 0.875rem; }
+    label { display: block; font-size: 0.85rem; font-weight: 600; color: #334155; margin-bottom: 0.3rem; }
+    input[type=text], input[type=date], textarea, select {
+      width: 100%; padding: 0.8rem; border: 1.5px solid #E3E8F2; border-radius: 12px;
+      font-size: 1rem; margin-bottom: 0.875rem; outline: none; background: white;
+    }
+    input:focus, textarea:focus, select:focus { border-color: #1E2A8A; }
+    textarea { min-height: 90px; resize: vertical; }
+    .hint { font-size: 0.8rem; color: #64748b; margin-top: -0.5rem; margin-bottom: 0.75rem; }
+    details { border: 1.5px solid #E3E8F2; border-radius: 14px; margin-bottom: 0.75rem; overflow: hidden; }
+    summary { padding: 0.875rem 1rem; font-weight: 700; color: #1E2A8A; font-size: 0.95rem; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+    summary::after { content: '+'; font-size: 1.2rem; color: #94a3b8; }
+    details[open] summary::after { content: '−'; }
+    .doc-body { padding: 0 1rem 1rem; }
+    .doc-summary { font-size: 0.85rem; color: #475569; margin-bottom: 0.625rem; }
+    .doc-content { max-height: 220px; overflow-y: auto; background: #F8FAFC; border-radius: 10px; padding: 0.875rem; font-size: 0.8rem; color: #334155; white-space: pre-wrap; line-height: 1.55; }
+    .accept-row { display: flex; align-items: flex-start; gap: 0.625rem; padding: 0.75rem 1rem; border-top: 1px solid #EEF2F7; cursor: pointer; background: #F0FDF4; }
+    .accept-row input { width: 1.25rem; height: 1.25rem; margin-top: 0.1rem; accent-color: #359268; cursor: pointer; }
+    .accept-row span { font-size: 0.9rem; color: #166534; font-weight: 600; }
+    .btn { width: 100%; padding: 1rem; border: none; border-radius: 14px; font-size: 1.05rem; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #46AC78, #359268); color: white; }
+    .btn:disabled { background: #CBD5E1; cursor: not-allowed; }
+    .choice-btn { display: block; width: 100%; padding: 1.5rem 1.25rem; border: none; border-radius: 18px; cursor: pointer; text-align: left; margin-bottom: 1rem; background: white; }
+    .choice-btn .choice-title { font-size: 1.25rem; font-weight: 800; color: #1E2A8A; }
+    .choice-btn .choice-sub { font-size: 0.85rem; color: #64748b; margin-top: 0.25rem; }
+    .choice-btn.alt { background: rgba(255,255,255,0.12); border: 1.5px solid rgba(255,255,255,0.35); }
+    .choice-btn.alt .choice-title { color: white; }
+    .choice-btn.alt .choice-sub { color: rgba(255,255,255,0.75); }
+    .back-link { display: inline-block; color: rgba(255,255,255,0.85); font-size: 0.85rem; margin-bottom: 0.75rem; cursor: pointer; background: none; border: none; text-decoration: underline; }
+    .notice { background: #FFFBEB; border: 1px solid #FDE68A; color: #92400E; border-radius: 12px; padding: 0.75rem 1rem; font-size: 0.9rem; margin-bottom: 1rem; }
+    .error-box { display: none; background: #FEF2F2; border: 1px solid #FECACA; color: #B91C1C; border-radius: 12px; padding: 0.75rem 1rem; font-size: 0.9rem; margin-bottom: 1rem; }
+    .success-wrap { text-align: center; color: white; padding: 2rem 0; }
+    .success-icon { font-size: 4rem; margin-bottom: 1rem; }
+    .success-title { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.5rem; }
+    .success-text { font-size: 0.95rem; opacity: 0.9; max-width: 380px; margin: 0 auto 1.5rem; line-height: 1.6; }
+    .success-card { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); border-radius: 16px; padding: 1rem; text-align: left; font-size: 0.85rem; line-height: 1.7; margin-bottom: 1.5rem; }
+    .hp-field { position: absolute; left: -9999px; top: -9999px; height: 0; width: 0; overflow: hidden; }
+    .loading { opacity: 0.7; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand">
+      <div class="brand-over">— FARMACIA —</div>
+      <div class="brand-name">APOLO</div>
+      <div class="brand-sub">Registro y consentimiento de pacientes</div>
+    </div>
+
+    <div class="error-box" id="error-box"></div>
+
+    <!-- Inicio: primera vez o paciente recurrente -->
+    <div id="view-home">
+      <button class="choice-btn" id="btn-primera">
+        <div class="choice-title">🆕 Primera Vez</div>
+        <div class="choice-sub">Nunca me han atendido aquí — llenaré mi registro y los consentimientos.</div>
+      </button>
+      <button class="choice-btn alt" id="btn-returning">
+        <div class="choice-title">🔁 Ya he venido antes</div>
+        <div class="choice-sub">Ya tengo expediente — haré check-in con mi nombre y fecha de nacimiento.</div>
+      </button>
+    </div>
+
+    <!-- Datos del paciente (compartido por ambos flujos) -->
+    <div id="view-patient" style="display: none;">
+      <button class="back-link" data-back="home">← Volver</button>
+      <div class="notice" id="patient-notice" style="display: none;"></div>
+      <div class="card">
+        <h2 id="patient-title">1. Datos del paciente</h2>
+        <label for="patient_name">Nombre completo del paciente *</label>
+        <input type="text" id="patient_name" autocomplete="name">
+
+        <label for="patient_dob">Fecha de nacimiento *</label>
+        <input type="date" id="patient_dob">
+
+        <div id="guardian-block" style="display: none;">
+          <label for="guardian_name">Nombre completo del padre, madre o tutor *</label>
+          <input type="text" id="guardian_name">
+          <p class="hint">El paciente es menor de edad — los consentimientos quedan a nombre del tutor.</p>
+        </div>
+      </div>
+      <button class="btn" id="btn-patient-continue">Continuar</button>
+    </div>
+
+    <!-- Documentos de consentimiento -->
+    <div id="view-consents" style="display: none;">
+      <button class="back-link" data-back="patient">← Volver</button>
+      <div class="card">
+        <h2 id="consents-title">2. Documentos de consentimiento</h2>
+        <p class="hint" style="margin-top: -0.25rem;">Lee cada documento y márcalo como aceptado.</p>
+        <div id="docs-container"></div>
+      </div>
+      <button class="btn" id="btn-consents-submit" disabled>Acepto y continuar</button>
+    </div>
+
+    <!-- Preguntas de check-in (paciente recurrente) -->
+    <div id="view-checkin" style="display: none;">
+      <button class="back-link" data-back="patient">← Volver</button>
+      <div class="card">
+        <h2 id="checkin-title">Check-in</h2>
+        <label>1. ¿Cuál es el motivo de tu visita? *</label>
+        <input type="text" id="checkin-reason" placeholder="Ej. consulta general, seguimiento, receta...">
+
+        <label>2. ¿Qué síntomas tienes? *</label>
+        <textarea id="checkin-symptoms" placeholder="Ej. fiebre, dolor de garganta y tos..."></textarea>
+
+        <label>3. ¿Desde cuándo tienes estos síntomas?</label>
+        <select id="checkin-duration">
+          <option value="Hoy">Hoy</option>
+          <option value="1-3 días">1-3 días</option>
+          <option value="4-7 días">4-7 días</option>
+          <option value="Más de una semana">Más de una semana</option>
+        </select>
+
+        <label>4. ¿Tomas algún medicamento actualmente? (opcional)</label>
+        <input type="text" id="checkin-medications" placeholder="Ej. paracetamol, ninguno...">
+
+        <label>5. ¿Tienes alergias conocidas? (opcional)</label>
+        <input type="text" id="checkin-allergies" placeholder="Ej. penicilina, ninguna...">
+      </div>
+      <button class="btn" id="btn-checkin-submit">Hacer check-in</button>
+    </div>
+
+    <!-- Éxito -->
+    <div class="success-wrap" id="view-success" style="display: none;">
+      <div class="success-icon">✅</div>
+      <div class="success-title" id="success-title">¡Registro completo!</div>
+      <p class="success-text">Avisa al personal que ya terminaste. En breve te llamarán para tu consulta.</p>
+      <div class="success-card" id="success-details"></div>
+      <button class="btn" onclick="location.reload()">Registrar a otra persona</button>
+    </div>
+
+    <!-- Honeypot: no llenar (anti-spam) -->
+    <div class="hp-field" aria-hidden="true">
+      <label>Confirmación <input type="text" id="hp_field_1" tabindex="-1" autocomplete="off"></label>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/customer-app/js/supabase.js?v=1"></script>
+  <script src="/customer-app/js/consentDocs.js?v=3"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      var config = window.farmaciaSupabaseConfig || {};
+      var FUNCTION_URL = (config.URL || '') + '/functions/v1/tablet-checkin';
+      var docs = window.APOLO_CONSENT_DOCS || [];
+
+      var state = {
+        flow: null,          // 'primera' | 'returning'
+        customerId: null,
+        consentsSigned: true,
+      };
+
+      var errorBox = document.getElementById('error-box');
+      var views = {
+        home: document.getElementById('view-home'),
+        patient: document.getElementById('view-patient'),
+        consents: document.getElementById('view-consents'),
+        checkin: document.getElementById('view-checkin'),
+        success: document.getElementById('view-success'),
+      };
+
+      function show(name) {
+        Object.keys(views).forEach(function (k) { views[k].style.display = k === name ? 'block' : 'none'; });
+        hideError();
+        window.scrollTo(0, 0);
+      }
+      function showError(msg) {
+        errorBox.textContent = msg;
+        errorBox.style.display = 'block';
+        errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      function hideError() { errorBox.style.display = 'none'; }
+
+      // ---- Consent document cards ----
+      var container = document.getElementById('docs-container');
+      docs.forEach(function (doc) {
+        var details = document.createElement('details');
+        details.innerHTML =
+          '<summary>' + doc.title + '</summary>' +
+          '<div class="doc-body">' +
+            (doc.summary ? '<div class="doc-summary">' + doc.summary + '</div>' : '') +
+            '<div class="doc-content"></div>' +
+          '</div>' +
+          '<label class="accept-row">' +
+            '<input type="checkbox" class="accept-check" data-type="' + doc.type + '">' +
+            '<span>He leído y acepto: ' + doc.title + '</span>' +
+          '</label>';
+        details.querySelector('.doc-content').textContent = doc.content;
+        container.appendChild(details);
+      });
+
+      var consentsSubmit = document.getElementById('btn-consents-submit');
+      function allAccepted() {
+        var checks = document.querySelectorAll('.accept-check');
+        for (var i = 0; i < checks.length; i++) {
+          if (!checks[i].checked) return false;
+        }
+        return checks.length > 0;
+      }
+      container.addEventListener('change', function () {
+        consentsSubmit.disabled = !allAccepted();
+      });
+
+      // ---- Patient form helpers ----
+      var nameEl = document.getElementById('patient_name');
+      var dobEl = document.getElementById('patient_dob');
+      var guardianBlock = document.getElementById('guardian-block');
+      var guardianEl = document.getElementById('guardian_name');
+      dobEl.max = new Date().toISOString().split('T')[0];
+
+      function ageFromDob(d) {
+        return Math.floor((Date.now() - new Date(d).getTime()) / (365.25 * 86400000));
+      }
+      function isMinor() {
+        var d = dobEl.value;
+        return d && ageFromDob(d) < 18;
+      }
+      dobEl.addEventListener('change', function () {
+        guardianBlock.style.display = isMinor() ? 'block' : 'none';
+        if (!isMinor()) guardianEl.value = '';
+      });
+
+      function patientInputs() {
+        return {
+          name: nameEl.value.trim(),
+          dob: dobEl.value,
+          minor: isMinor(),
+          guardian: guardianEl.value.trim(),
+        };
+      }
+
+      async function post(payload) {
+        document.getElementById('hp_field_1').value = '';
+        payload.org_id = config.DEFAULT_ORG_ID;
+        payload.company = document.getElementById('hp_field_1').value;
+        var res = await fetch(FUNCTION_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        var result = await res.json().catch(function () { return {}; });
+        if (!res.ok || result.error) {
+          throw new Error(result.error || 'No se pudo completar el registro. Avisa al personal.');
+        }
+        return result;
+      }
+
+      function showSuccess(title, details) {
+        document.getElementById('success-title').textContent = title;
+        document.getElementById('success-details').innerHTML = details.join('<br>');
+        show('success');
+      }
+
+      // ---- Navigation ----
+      document.getElementById('btn-primera').addEventListener('click', function () {
+        state.flow = 'primera';
+        document.getElementById('patient-title').textContent = '1. Datos del paciente';
+        document.getElementById('patient-notice').style.display = 'none';
+        show('patient');
+      });
+      document.getElementById('btn-returning').addEventListener('click', function () {
+        state.flow = 'returning';
+        document.getElementById('patient-title').textContent = 'Buscar mi expediente';
+        document.getElementById('patient-notice').style.display = 'none';
+        show('patient');
+      });
+      document.querySelectorAll('.back-link').forEach(function (el) {
+        el.addEventListener('click', function () {
+          var target = el.getAttribute('data-back');
+          show(target === 'patient' ? 'patient' : 'home');
+        });
+      });
+
+      // ---- Step: patient data ----
+      document.getElementById('btn-patient-continue').addEventListener('click', async function () {
+        var p = patientInputs();
+        if (!p.name) return showError('Escribe el nombre del paciente.');
+        if (!p.dob) return showError('Captura la fecha de nacimiento.');
+        if (p.minor && !p.guardian) return showError('Escribe el nombre del padre, madre o tutor.');
+
+        if (state.flow === 'primera') {
+          consentsSubmit.textContent = 'Acepto y registro mi visita';
+          show('consents');
+          return;
+        }
+
+        // Returning patient: look up by name + DOB.
+        var btn = this;
+        btn.disabled = true;
+        btn.textContent = 'Buscando...';
+        try {
+          var result = await post({ mode: 'lookup', patient_name: p.name, date_of_birth: p.dob });
+          if (result.found) {
+            state.customerId = result.customer_id;
+            state.consentsSigned = !!result.consents_signed;
+            if (state.consentsSigned) {
+              show('checkin');
+            } else {
+              document.getElementById('consents-title').textContent = 'Documentos de consentimiento';
+              consentsSubmit.textContent = 'Acepto y continuar al check-in';
+              show('consents');
+            }
+          } else {
+            // No match: send them through the first-time flow, data prefilled.
+            state.flow = 'primera';
+            document.getElementById('patient-title').textContent = '1. Datos del paciente';
+            var notice = document.getElementById('patient-notice');
+            notice.textContent = 'No encontramos un expediente con ese nombre y fecha de nacimiento. Completa tu registro como paciente nuevo.';
+            notice.style.display = 'block';
+            show('patient');
+          }
+        } catch (err) {
+          showError(err.message || 'Error de conexión. Intenta de nuevo o avisa al personal.');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Continuar';
+        }
+      });
+
+      // ---- Step: consents ----
+      consentsSubmit.addEventListener('click', async function () {
+        var p = patientInputs();
+        var consentDocs = docs.map(function (doc) {
+          return { type: doc.type, title: doc.title, content: doc.content };
+        });
+
+        if (state.flow === 'returning') {
+          // Matched patient without consents on file: collect signatures, then questions.
+          state.pendingConsentDocs = consentDocs;
+          show('checkin');
+          return;
+        }
+
+        // Primera vez: register with consents, appointment is created server-side.
+        var btn = this;
+        btn.disabled = true;
+        btn.textContent = 'Registrando...';
+        try {
+          var result = await post({
+            mode: 'register',
+            guest: true,
+            patient_name: p.name,
+            date_of_birth: p.dob,
+            is_minor: p.minor,
+            guardian_name: p.minor ? p.guardian : '',
+            consent_docs: consentDocs,
+          });
+          var details = [];
+          details.push('<strong>' + (p.minor ? p.guardian : p.name) + '</strong>');
+          if (p.minor) details.push('Paciente: ' + p.name + ' (menor de edad)');
+          details.push('Consentimientos firmados ✓');
+          if (result.doctor_assigned) details.push('🩺 Doctor asignado: <strong>' + result.doctor_assigned + '</strong>');
+          showSuccess('¡Registro completo!', details);
+        } catch (err) {
+          showError(err.message || 'Error de conexión. Intenta de nuevo o avisa al personal.');
+          btn.disabled = false;
+          btn.textContent = 'Acepto y registro mi visita';
+        }
+      });
+
+      // ---- Step: check-in questions ----
+      document.getElementById('btn-checkin-submit').addEventListener('click', async function () {
+        var p = patientInputs();
+        var reason = document.getElementById('checkin-reason').value.trim();
+        var symptoms = document.getElementById('checkin-symptoms').value.trim();
+        if (!reason || !symptoms) return showError('Contesta al menos el motivo de visita y tus síntomas.');
+
+        var btn = this;
+        btn.disabled = true;
+        btn.textContent = 'Enviando...';
+        try {
+          var payload = {
+            mode: 'checkin',
+            customer_id: state.customerId,
+            patient_name: p.name,
+            date_of_birth: p.dob,
+            is_minor: p.minor,
+            guardian_name: p.minor ? p.guardian : '',
+            checkin: {
+              reason: reason,
+              symptoms: symptoms,
+              duration: document.getElementById('checkin-duration').value,
+              medications: document.getElementById('checkin-medications').value.trim(),
+              allergies: document.getElementById('checkin-allergies').value.trim(),
+            },
+          };
+          if (state.pendingConsentDocs) payload.consent_docs = state.pendingConsentDocs;
+          var result = await post(payload);
+          var details = [];
+          details.push('<strong>' + p.name + '</strong>');
+          if (state.pendingConsentDocs) details.push('Consentimientos firmados ✓');
+          details.push('Check-in recibido ✓');
+          if (result.doctor_assigned) details.push('🩺 Doctor asignado: <strong>' + result.doctor_assigned + '</strong>');
+          showSuccess('¡Check-in listo!', details);
+        } catch (err) {
+          showError(err.message || 'Error de conexión. Intenta de nuevo o avisa al personal.');
+          btn.disabled = false;
+          btn.textContent = 'Hacer check-in';
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

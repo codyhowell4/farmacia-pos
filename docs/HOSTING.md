@@ -8,6 +8,7 @@ The frontend is 100% static (Vite build + the vanilla customer app) — any stat
 |---|---|---|
 | **Cloudflare Pages** (`apolofarmacia`) | Production | `app.apolofarmacia.com.mx` (+ `apolofarmacia.pages.dev`) |
 | **Cloudflare Pages** (same project) | In-store tablet check-in | `formularios.apolofarmacia.com.mx` → `/registro/` |
+| **Cloudflare Pages** (same project) | No-account patient kiosk | `consentimiento.apolofarmacia.com.mx` → `/consentimiento/` |
 | **Cloudflare Pages** (same project) | Online check-in (logged-in customers) | `registro.apolofarmacia.com.mx` → `app.apolofarmacia.com.mx/customer-app/?checkin=1` |
 | **Vercel** | Testing / staging front-end | `farmacia-pos.vercel.app` |
 
@@ -22,6 +23,17 @@ Flow: patient/guardian fills name + **email OR phone** (one required; + guardian
 Walk-in citas are assigned to the **doctor on shift**: `tablet-checkin` matches the current time (America/Mexico_City) against each active doctor's `doctor_profiles.availability` weekly windows and falls back to the first active doctor.
 
 `registro.apolofarmacia.com.mx` → 301 to the customer app's `?checkin=1` view: a logged-in customer answers the 5-question pre-visit form (motivo, síntomas, duración, medicamentos, alergias); `tablet-checkin` in `checkin` mode creates the same walk-in cita + medical note with the answers. Guests are routed to login first.
+
+## Consentimiento kiosk (`consentimiento.` subdomain)
+
+`consentimiento.apolofarmacia.com.mx` is a Pages custom domain on the same project; a Redirect Rule sends its root to `/consentimiento/` (`public/consentimiento/index.html`, self-contained). This is the kiosk for patients **without phone or email** who can't make an app account.
+
+Flow: two buttons on top — **Primera Vez** and **Ya he venido antes**.
+
+- *Primera Vez*: name + DOB (a guardian name is required automatically when the DOB is under 18) → accept the 4 standard consent documents → `tablet-checkin` in `register` mode with `guest: true` creates/reuses the customer (name+DOB match, no account provisioning), stores the consents, and creates the walk-in cita + medical note.
+- *Returning*: name + DOB → `tablet-checkin` in `lookup` mode (accent/case-insensitive name match on `customers.date_of_birth`). A match goes to the 5-question check-in form; if the match has no signed consents on file, the 4 documents are signed first and inserted with the check-in (`checkin` mode + `customer_id`, re-verified against name+DOB server-side). No match → routed into the Primera Vez form with their data prefilled.
+
+Setup (one-time, Cloudflare dashboard): Pages project → Custom domains → add `consentimiento.apolofarmacia.com.mx` (auto since DNS is on Cloudflare), then Rules → Redirect Rule: hostname equals `consentimiento.apolofarmacia.com.mx` AND URI Path equals `/` → 302 to `https://consentimiento.apolofarmacia.com.mx/consentimiento/` (same pattern as `formularios.`).
 
 Both auto-deploy the same `main` branch on every push. **Both point at the same Supabase project** — same database, same auth, same edge functions. Testing on the Vercel URL touches production data; treat it as "preview the build", not an isolated sandbox.
 
