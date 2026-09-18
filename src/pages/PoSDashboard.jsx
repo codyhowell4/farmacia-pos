@@ -1222,6 +1222,9 @@ const PoSDashboard = () => {
     .filter((item) => !isConsultaNamedItem(item))
     .reduce((sum, item) => sum + item.price * item.quantity, 0) * 0.1;
   const membershipUpsellSavings = upsellConsultaSavings + upsellOtherSavings;
+  // What they'd pay today as a member (savings knock down the pre-IVA base).
+  const upsellMemberBase = Math.max(0, subtotalAfterDiscount - membershipUpsellSavings);
+  const membershipUpsellTotal = upsellMemberBase + calcIVA(upsellMemberBase, taxSettings);
 
   useEffect(() => {
     const given = parseFloat(amountGiven);
@@ -1318,6 +1321,9 @@ const PoSDashboard = () => {
                   <div>
                     <p className="text-sm font-semibold text-amber-900">
                       Con membresía ahorraría {formatMXN(membershipUpsellSavings)} en esta compra
+                    </p>
+                    <p className="text-base font-bold text-amber-900 mt-0.5">
+                      Su total hoy sería: {formatMXN(membershipUpsellTotal)}
                     </p>
                     <p className="text-xs text-amber-700">
                       {[
