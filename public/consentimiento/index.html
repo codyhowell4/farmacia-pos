@@ -38,6 +38,7 @@
     .accept-row span { font-size: 0.9rem; color: #166534; font-weight: 600; }
     .btn { width: 100%; padding: 1rem; border: none; border-radius: 14px; font-size: 1.05rem; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #46AC78, #359268); color: white; }
     .btn:disabled { background: #CBD5E1; cursor: not-allowed; }
+    .btn-secondary { background: white; color: #1E2A8A; border: 1.5px solid #C7D2FE; margin-bottom: 0.75rem; }
     .choice-btn { display: block; width: 100%; padding: 1.5rem 1.25rem; border: none; border-radius: 18px; cursor: pointer; text-align: left; margin-bottom: 1rem; background: white; }
     .choice-btn .choice-title { font-size: 1.25rem; font-weight: 800; color: #1E2A8A; }
     .choice-btn .choice-sub { font-size: 0.85rem; color: #64748b; margin-top: 0.25rem; }
@@ -54,6 +55,23 @@
     .success-card { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); border-radius: 16px; padding: 1rem; text-align: left; font-size: 0.85rem; line-height: 1.7; margin-bottom: 1.5rem; }
     .hp-field { position: absolute; left: -9999px; top: -9999px; height: 0; width: 0; overflow: hidden; }
     .loading { opacity: 0.7; pointer-events: none; }
+
+    /* Patient copy of the signed consent documents (NOM-004 10.1): hidden on
+       screen, the only thing visible when printing. */
+    #print-copy { display: none; }
+    @media print {
+      html, body { background: white; }
+      body { padding: 0; }
+      .wrap { display: none !important; }
+      #print-copy { display: block; font-family: Georgia, serif; color: #111; max-width: 720px; margin: 0 auto; padding: 24px; }
+      #print-copy h1 { font-size: 18px; text-align: center; color: #1E2A8A; margin-bottom: 2px; }
+      #print-copy .pc-sub { text-align: center; font-size: 11px; color: #555; margin-bottom: 14px; }
+      #print-copy .pc-meta { font-size: 12px; line-height: 1.7; border: 1px solid #999; border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; }
+      #print-copy h2 { font-size: 13px; margin: 16px 0 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+      #print-copy .pc-doc { white-space: pre-wrap; font-size: 11px; line-height: 1.6; }
+      #print-copy .pc-sig { margin-top: 10px; font-size: 11px; font-style: italic; color: #333; }
+      #print-copy .pc-break { page-break-after: always; }
+    }
   </style>
 </head>
 <body>
@@ -90,10 +108,31 @@
         <label for="patient_dob">Fecha de nacimiento (dd/mm/aaaa) *</label>
         <input type="text" id="patient_dob" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" autocomplete="bday">
 
+        <label for="patient_sexo">Sexo *</label>
+        <select id="patient_sexo">
+          <option value="">Selecciona...</option>
+          <option value="M">Mujer</option>
+          <option value="H">Hombre</option>
+        </select>
+
+        <label for="patient_curp">CURP (opcional)</label>
+        <input type="text" id="patient_curp" maxlength="18" placeholder="18 caracteres — si lo tienes a la mano">
+
         <div id="guardian-block" style="display: none;">
           <label for="guardian_name">Nombre completo del padre, madre o tutor *</label>
           <input type="text" id="guardian_name">
-          <p class="hint">El paciente es menor de edad — los consentimientos quedan a nombre del tutor.</p>
+
+          <label for="guardian_rel">Parentesco de quien firma *</label>
+          <select id="guardian_rel">
+            <option value="">Selecciona...</option>
+            <option value="padre">Padre</option>
+            <option value="madre">Madre</option>
+            <option value="tutor">Tutor legal</option>
+          </select>
+
+          <label for="guardian_id">Últimos 4 dígitos de la INE de quien firma *</label>
+          <input type="text" id="guardian_id" maxlength="4" placeholder="Ej. 4832">
+          <p class="hint">El paciente es menor de edad — los consentimientos quedan a nombre del padre, madre o tutor, con su parentesco e identificación como evidencia (NOM-004).</p>
         </div>
       </div>
       <button class="btn" id="btn-patient-continue">Continuar</button>
@@ -113,6 +152,7 @@
     <!-- Preguntas de check-in (paciente recurrente) -->
     <div id="view-checkin" style="display: none;">
       <button class="back-link" data-back="patient">← Volver</button>
+      <div class="notice">El personal confirmará tu identidad en recepción antes de la consulta.</div>
       <div class="card">
         <h2 id="checkin-title">Check-in</h2>
         <label>1. ¿Cuál es el motivo de tu visita? *</label>
@@ -142,8 +182,10 @@
     <div class="success-wrap" id="view-success" style="display: none;">
       <div class="success-icon">✅</div>
       <div class="success-title" id="success-title">¡Registro completo!</div>
-      <p class="success-text">Avisa al personal que ya terminaste. En breve te llamarán para tu consulta.</p>
+      <p class="success-text" id="success-text">Avisa al personal que ya terminaste. En breve te llamarán para tu consulta.</p>
       <div class="success-card" id="success-details"></div>
+      <button class="btn btn-secondary" id="btn-print-copy" style="display: none;">🖨️ Imprimir mi copia de los consentimientos</button>
+      <p class="hint" id="print-hint" style="display: none; color: rgba(255,255,255,0.75); margin-top: -0.25rem;">También puedes pedir tu copia al personal en cualquier momento.</p>
       <button class="btn" onclick="location.reload()">Registrar a otra persona</button>
     </div>
 
@@ -153,9 +195,12 @@
     </div>
   </div>
 
+  <!-- Copia impresa de los documentos firmados (solo visible al imprimir) -->
+  <div id="print-copy"></div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="/customer-app/js/supabase.js?v=1"></script>
-  <script src="/customer-app/js/consentDocs.js?v=3"></script>
+  <script src="/customer-app/js/consentDocs.js?v=4"></script>
   <script>
     (function () {
       'use strict';
@@ -168,6 +213,7 @@
         flow: null,          // 'primera' | 'returning'
         customerId: null,
         consentsSigned: true,
+        printData: null,     // { p, signedAt } — set when consents were signed this session
       };
 
       var errorBox = document.getElementById('error-box');
@@ -224,8 +270,19 @@
       // ---- Patient form helpers ----
       var nameEl = document.getElementById('patient_name');
       var dobEl = document.getElementById('patient_dob');
+      var sexoEl = document.getElementById('patient_sexo');
+      var curpEl = document.getElementById('patient_curp');
       var guardianBlock = document.getElementById('guardian-block');
       var guardianEl = document.getElementById('guardian_name');
+      var guardianRelEl = document.getElementById('guardian_rel');
+      var guardianIdEl = document.getElementById('guardian_id');
+
+      curpEl.addEventListener('input', function () {
+        curpEl.value = curpEl.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 18);
+      });
+      guardianIdEl.addEventListener('input', function () {
+        guardianIdEl.value = guardianIdEl.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+      });
 
       // DOB is captured as dd/mm/aaaa (Mexican standard) via a masked text
       // input — the native date picker follows the device locale (mm/dd/yyyy
@@ -250,7 +307,11 @@
         if (digits.length >= 5) parts.push(digits.slice(4, 8));
         dobEl.value = parts.join('/');
         guardianBlock.style.display = isMinor() ? 'block' : 'none';
-        if (!isMinor()) guardianEl.value = '';
+        if (!isMinor()) {
+          guardianEl.value = '';
+          guardianRelEl.value = '';
+          guardianIdEl.value = '';
+        }
       });
 
       function ageFromDob(d) {
@@ -265,8 +326,13 @@
         return {
           name: nameEl.value.trim(),
           dob: parseDob(dobEl.value) || '',
+          dobDisplay: dobEl.value,
+          sexo: sexoEl.value,
+          curp: curpEl.value.trim(),
           minor: isMinor(),
           guardian: guardianEl.value.trim(),
+          guardianRel: guardianRelEl.value,
+          guardianId: guardianIdEl.value.trim(),
         };
       }
 
@@ -289,8 +355,50 @@
       function showSuccess(title, details) {
         document.getElementById('success-title').textContent = title;
         document.getElementById('success-details').innerHTML = details.join('<br>');
+        var canPrint = !!state.printData;
+        document.getElementById('btn-print-copy').style.display = canPrint ? 'block' : 'none';
+        document.getElementById('print-hint').style.display = canPrint ? 'block' : 'none';
         show('success');
       }
+
+      // ---- Patient copy of the signed documents (NOM-004 10.1) ----
+      function esc(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+      function signerLabel(p) {
+        if (p.minor) {
+          var rel = p.guardianRel === 'padre' ? 'padre' : p.guardianRel === 'madre' ? 'madre' : 'tutor legal';
+          return p.guardian + ' (' + rel + (p.guardianId ? ', INE *' + p.guardianId : '') + '), por el menor ' + p.name;
+        }
+        return p.name;
+      }
+      document.getElementById('btn-print-copy').addEventListener('click', function () {
+        if (!state.printData) return;
+        var p = state.printData.p;
+        var signedAt = state.printData.signedAt;
+        var html =
+          '<h1>Farmacia Apolo — Consultorio Médico</h1>' +
+          '<div class="pc-sub">Copia del paciente — documentos de consentimiento firmados electrónicamente</div>' +
+          '<div class="pc-meta">' +
+            '<strong>Paciente:</strong> ' + esc(p.name) + '<br>' +
+            '<strong>Fecha de nacimiento:</strong> ' + esc(p.dobDisplay) + '<br>' +
+            (p.sexo ? '<strong>Sexo:</strong> ' + (p.sexo === 'M' ? 'Mujer' : 'Hombre') + '<br>' : '') +
+            (p.curp ? '<strong>CURP:</strong> ' + esc(p.curp) + '<br>' : '') +
+            '<strong>Firmado por:</strong> ' + esc(signerLabel(p)) + '<br>' +
+            '<strong>Fecha y hora de la firma:</strong> ' + esc(signedAt) +
+          '</div>';
+        docs.forEach(function (doc, i) {
+          html +=
+            '<div class="' + (i < docs.length - 1 ? 'pc-break' : '') + '">' +
+              '<h2>' + esc(doc.title) + '</h2>' +
+              '<div class="pc-doc">' + esc(doc.content) + '</div>' +
+              '<div class="pc-sig">Firmado electrónicamente por ' + esc(signerLabel(p)) + ' — ' + esc(signedAt) + '</div>' +
+            '</div>';
+        });
+        document.getElementById('print-copy').innerHTML = html;
+        window.print();
+      });
 
       // ---- Navigation ----
       document.getElementById('btn-primera').addEventListener('click', function () {
@@ -317,7 +425,11 @@
         var p = patientInputs();
         if (!p.name) return showError('Escribe el nombre del paciente.');
         if (!p.dob) return showError('Captura la fecha de nacimiento en formato dd/mm/aaaa (ej. 25/12/1990).');
+        if (!p.sexo) return showError('Selecciona el sexo del paciente.');
+        if (p.curp && p.curp.length !== 18) return showError('El CURP debe tener 18 caracteres (o déjalo vacío).');
         if (p.minor && !p.guardian) return showError('Escribe el nombre del padre, madre o tutor.');
+        if (p.minor && !p.guardianRel) return showError('Selecciona el parentesco de quien firma.');
+        if (p.minor && p.guardianId.length !== 4) return showError('Captura los últimos 4 dígitos de la INE de quien firma.');
 
         if (state.flow === 'primera') {
           document.getElementById('consents-hint').textContent = p.minor
@@ -388,10 +500,15 @@
             guest: true,
             patient_name: p.name,
             date_of_birth: p.dob,
+            sexo: p.sexo,
+            curp: p.curp,
             is_minor: p.minor,
             guardian_name: p.minor ? p.guardian : '',
+            guardian_relationship: p.minor ? p.guardianRel : '',
+            guardian_id_ref: p.minor ? p.guardianId : '',
             consent_docs: consentDocs,
           });
+          state.printData = { p: p, signedAt: new Date().toLocaleString('es-MX') };
           var details = [];
           details.push('<strong>' + p.name + '</strong>');
           if (p.minor) details.push('Tutor: ' + p.guardian);
@@ -421,8 +538,12 @@
             customer_id: state.customerId,
             patient_name: p.name,
             date_of_birth: p.dob,
+            sexo: p.sexo,
+            curp: p.curp,
             is_minor: p.minor,
             guardian_name: p.minor ? p.guardian : '',
+            guardian_relationship: p.minor ? p.guardianRel : '',
+            guardian_id_ref: p.minor ? p.guardianId : '',
             checkin: {
               reason: reason,
               symptoms: symptoms,
@@ -433,11 +554,15 @@
           };
           if (state.pendingConsentDocs) payload.consent_docs = state.pendingConsentDocs;
           var result = await post(payload);
+          if (state.pendingConsentDocs) {
+            state.printData = { p: p, signedAt: new Date().toLocaleString('es-MX') };
+          }
           var details = [];
           details.push('<strong>' + p.name + '</strong>');
           if (p.minor) details.push('Tutor: ' + p.guardian);
           if (state.pendingConsentDocs) details.push(p.minor ? 'Consentimientos firmados por el tutor ✓' : 'Consentimientos firmados ✓');
           details.push('Check-in recibido ✓');
+          details.push('El personal confirmará tu identidad antes de la consulta.');
           if (result.doctor_assigned) details.push('🩺 Doctor asignado: <strong>' + result.doctor_assigned + '</strong>');
           showSuccess('¡Check-in listo!', details);
         } catch (err) {

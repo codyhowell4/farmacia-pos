@@ -35,6 +35,7 @@ Tus datos personales no serán transferidos a terceros sin tu consentimiento, sa
 
 5. DERECHOS ARCO (ACCESO, RECTIFICACIÓN, CANCELACIÓN Y OPOSICIÓN)
 Puedes ejercer tus derechos ARCO enviando una solicitud al correo citas@apolofarmacia.com.mx, o presentándola directamente en nuestro domicilio en Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de México, México. Tu solicitud debe incluir tu nombre completo, el derecho que deseas ejercer y una descripción clara del dato respecto del cual lo ejerces. La Farmacia responderá en un plazo máximo de 20 días hábiles conforme a la LFPDPPP.
+La cancelación de tus datos personales no procederá respecto de la información que deba conservarse para cumplir obligaciones legales — en particular tu expediente clínico, que se conserva al menos 5 años a partir de tu último acto médico conforme a la NOM-004-SSA3-2012 (numeral 5.4). En ese supuesto, tus datos quedarán bloqueados y no se tratarán para finalidad distinta de su conservación, hasta que concluya el plazo legal y proceda su supresión.
 
 6. REVOCACIÓN DEL CONSENTIMIENTO
 En cualquier momento puedes revocar el consentimiento que has otorgado para el tratamiento de tus datos personales, incluidos tus datos sensibles de salud, sin que se leguen efectos retroactivos. Para revocarlo, envía tu solicitud al correo citas@apolofarmacia.com.mx o preséntala en nuestro domicilio. Ten en cuenta que la revocación puede implicar que no sea posible seguir prestando los servicios de salud, teleconsulta o farmacia que requieran dichos datos.

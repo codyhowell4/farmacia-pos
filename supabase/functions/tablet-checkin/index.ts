@@ -5,12 +5,15 @@
 //     customer, provisions the app account (password via recovery email),
 //     stores the signed consents, adds the walk-in cita + medical note.
 //   register + guest (consentimiento. subdomain): first-visit patients with no
-//     email/phone/account — name + DOB + the 4 consents. Reuses a name+DOB
-//     match instead of duplicating the customer; no account provisioning.
-//     Minors are registered under their own name+DOB so they match on return
-//     visits; the guardian signs the consent documents (parental consent).
+//     email/phone/account — name + DOB + sexo (+ optional CURP) + the 4
+//     consents. Reuses a name+DOB match instead of duplicating the customer;
+//     no account provisioning. Minors are registered under their own name+DOB
+//     so they match on return visits; the guardian signs the consent documents
+//     (parental consent) with relationship + INE last-4 as evidence.
 //   lookup (consentimiento.): returning-patient search by name + DOB. Returns
 //     whether a matching customer exists and if their 4 consents are on file.
+//     Response is deliberately minimal (no full_name) — see C1 in
+//     docs/LAUNCH_COMPLIANCE_GAPS.md.
 //   checkin (customer app, registro. subdomain): an existing account holder
 //     answers the 3-5 question check-in form. Creates the walk-in cita +
 //     medical note with the answers. No consents, no account work.
@@ -20,8 +23,8 @@
 // The walk-in cita is assigned to the doctor whose weekly availability
 // (doctor_profiles.availability, clinic local time America/Mexico_City)
 // covers the check-in time; falls back to the first active doctor.
-// Public (verify_jwt = false): no user session on the tablet. A honeypot
-// field is enforced to limit spam.
+// Public (verify_jwt = false): no user session on the tablet. Abuse controls:
+// a honeypot field plus per-IP rate limiting (rate_limit_events table).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
@@ -34,6 +37,14 @@ const corsHeaders = {
 const REQUIRED_CONSENT_TYPES = ['privacidad', 'general', 'teleconsulta', 'firma_electronica'];
 const APP_RESET_URL = 'https://app.apolofarmacia.com.mx/customer-app/';
 const CLINIC_TZ = 'America/Mexico_City';
+
+// Per-IP sliding-window caps. The kiosk and the shop share one public IP, so
+// limits leave room for walk-in bursts while still blocking scripted probing.
+const RATE_LIMITS: Record<string, { limit: number; windowMs: number }> = {
+  lookup: { limit: 15, windowMs: 10 * 60 * 1000 },
+  register: { limit: 10, windowMs: 10 * 60 * 1000 },
+  checkin: { limit: 30, windowMs: 10 * 60 * 1000 },
+};
 
 interface ConsentDocPayload {
   type: string;
@@ -57,6 +68,10 @@ interface RequestPayload {
   phone?: string;
   is_minor?: boolean;
   guardian_name?: string;
+  guardian_relationship?: string; // padre | madre | tutor — required for minors on kiosk writes
+  guardian_id_ref?: string; // last 4 of guardian INE — evidence for parental consent
+  sexo?: string; // 'M' | 'H' — NOM-024 Tabla 1
+  curp?: string; // optional, 18 chars when present
   reason?: string;
   password?: string; // required when registering without an email
   date_of_birth?: string; // YYYY-MM-DD — required for lookup/guest/matched-checkin
@@ -83,6 +98,43 @@ const isAlreadyRegisteredError = (err: { message?: string; code?: string }) => {
   const code = (err.code || '').toLowerCase();
   if (code.includes('already') || code.includes('exist')) return true;
   return /already|exist|registered|duplicate/i.test(err.message || '');
+};
+
+// Sliding-window per-IP rate limit. Fails open (with a warning) if the
+// rate_limit_events table is unreachable — the kiosk must keep working.
+const checkRateLimit = async (
+  supabase: ReturnType<typeof supabaseAdmin>,
+  mode: string,
+  ip: string | null
+): Promise<boolean> => {
+  const cfg = RATE_LIMITS[mode] || { limit: 30, windowMs: 10 * 60 * 1000 };
+  const key = ip || 'unknown';
+  try {
+    const since = new Date(Date.now() - cfg.windowMs).toISOString();
+    const { count, error } = await supabase
+      .from('rate_limit_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('bucket', mode)
+      .eq('key', key)
+      .gte('created_at', since);
+    if (error) throw error;
+    if ((count || 0) >= cfg.limit) return false;
+    const { error: insError } = await supabase
+      .from('rate_limit_events')
+      .insert({ bucket: mode, key });
+    if (insError) throw insError;
+    // Occasional cleanup so the table stays small.
+    if (Math.random() < 0.02) {
+      await supabase
+        .from('rate_limit_events')
+        .delete()
+        .lt('created_at', new Date(Date.now() - 24 * 3600 * 1000).toISOString());
+    }
+    return true;
+  } catch (err) {
+    console.warn('[tablet-checkin] rate limit unavailable; allowing request:', err);
+    return true;
+  }
 };
 
 // Creates (or reuses) the portal auth account and links it to the customers
@@ -187,6 +239,36 @@ const normalizeName = (s: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const nameTokens = (s: string) => normalizeName(s).split(' ').filter(Boolean);
+const isTokenSubset = (a: string[], b: string[]) => a.every((t) => b.includes(t));
+
+// 'exact' | 'loose' | null. Loose = one name's tokens are a subset of the
+// other's ("Juan Pérez" vs "Juan Antonio Pérez") — used so a returning
+// patient who writes their name slightly differently doesn't fork the
+// expediente. Never applied across different birthdates.
+const matchName = (candidate: string, target: string): 'exact' | 'loose' | null => {
+  const c = normalizeName(candidate);
+  const t = normalizeName(target);
+  if (!c || !t) return null;
+  if (c === t) return 'exact';
+  const ct = nameTokens(candidate);
+  const tt = nameTokens(target);
+  if (isTokenSubset(ct, tt) || isTokenSubset(tt, ct)) return 'loose';
+  return null;
+};
+
+// Best match among same-DOB candidates: exact wins; otherwise a single
+// unambiguous loose match. Ambiguous loose matches return null — never merge
+// two records when it is unclear which one is the patient.
+const findMatch = <T extends { full_name: string }>(candidates: T[], target: string): T | null => {
+  const exact = candidates.find((c) => matchName(c.full_name, target) === 'exact');
+  if (exact) return exact;
+  const loose = candidates.filter((c) => matchName(c.full_name, target) === 'loose');
+  if (loose.length === 1) return loose[0];
+  if (loose.length > 1) console.warn('[tablet-checkin] ambiguous loose name match; not reusing');
+  return null;
+};
+
 const isValidDob = (d: string) =>
   /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) && new Date(d) < new Date();
 
@@ -194,7 +276,7 @@ const ageFromDob = (d: string) =>
   Math.floor((Date.now() - new Date(d).getTime()) / (365.25 * 86400000));
 
 // Inserts signed consent rows with e-signature attribution; retries without
-// the attribution columns when the migration that added them is pending.
+// the attribution columns when an older schema is missing them.
 const insertConsentDocs = async (
   supabase: ReturnType<typeof supabaseAdmin>,
   orgId: string,
@@ -203,7 +285,9 @@ const insertConsentDocs = async (
   docs: ConsentDocPayload[],
   types: string[],
   signerIp: string | null,
-  signerUa: string | null
+  signerUa: string | null,
+  signerRelationship: string | null = null,
+  signerIdRef: string | null = null
 ) => {
   const signedAt = new Date().toISOString();
   const rows = types.map((type) => {
@@ -219,12 +303,16 @@ const insertConsentDocs = async (
       signed_at: signedAt,
       signer_ip: signerIp,
       signer_user_agent: signerUa,
+      signer_relationship: signerRelationship,
+      signer_id_ref: signerIdRef,
     };
   });
   const { error } = await supabase.from('consent_documents').insert(rows);
-  if (error && ((error.message || '').includes('signer_ip') || (error.message || '').includes('signer_user_agent'))) {
+  if (error && /signer_ip|signer_user_agent|signer_relationship|signer_id_ref/i.test(error.message || '')) {
     console.warn('consent attribution columns missing; retrying without them');
-    const fallbackRows = rows.map(({ signer_ip, signer_user_agent, ...rest }) => rest);
+    const fallbackRows = rows.map(
+      ({ signer_ip, signer_user_agent, signer_relationship, signer_id_ref, ...rest }) => rest
+    );
     const { error: retryError } = await supabase.from('consent_documents').insert(fallbackRows);
     if (retryError) throw retryError;
   } else if (error) {
@@ -294,6 +382,10 @@ Deno.serve(async (req) => {
     const email = (payload.email || '').trim().toLowerCase();
     const phone = (payload.phone || '').trim();
     const guardianName = (payload.guardian_name || '').trim();
+    const guardianRel = (payload.guardian_relationship || '').trim().toLowerCase();
+    const guardianIdRef = (payload.guardian_id_ref || '').trim().toUpperCase();
+    const sexo = (payload.sexo || '').trim().toUpperCase();
+    const curp = (payload.curp || '').trim().toUpperCase();
     const reason = (payload.reason || '').trim();
     const dob = (payload.date_of_birth || '').trim();
     const customerId = (payload.customer_id || '').trim();
@@ -316,14 +408,37 @@ Deno.serve(async (req) => {
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return jsonResponse({ error: 'Correo electrónico inválido' }, 400);
     }
+    if (sexo && !['M', 'H'].includes(sexo)) {
+      return jsonResponse({ error: 'Sexo inválido (M o H)' }, 400);
+    }
+    if (curp && !/^[A-Z0-9]{18}$/.test(curp)) {
+      return jsonResponse({ error: 'CURP inválido (debe tener 18 caracteres)' }, 400);
+    }
+    // Guest registration (consentimiento kiosk) must capture the NOM-024
+    // Tabla 1 minimum: sexo. The in-store tablet flow is untouched.
+    if (mode === 'register' && guest && !sexo) {
+      return jsonResponse({ error: 'Selecciona el sexo del paciente' }, 400);
+    }
     const password = payload.password || '';
     if (mode === 'register' && !guest && !email && password.length < 6) {
       return jsonResponse({ error: 'Sin correo, crea una contraseña de al menos 6 caracteres para la app' }, 400);
     }
-    // Lookup writes nothing, so the guardian requirement applies only to
-    // register/check-in (parental consent is captured on the consent docs).
-    if (isMinor && !guardianName && mode !== 'lookup') {
-      return jsonResponse({ error: 'El nombre del padre o tutor es obligatorio para menores' }, 400);
+    // Lookup writes nothing, so guardian evidence applies only to
+    // register/check-in (parental consent on the consent docs). Relationship
+    // + INE last-4 are required on the anonymous (kiosk) flows — the customer
+    // app has no guardian fields and is out of scope for this requirement.
+    if (isMinor && mode !== 'lookup') {
+      if (!guardianName) {
+        return jsonResponse({ error: 'El nombre del padre o tutor es obligatorio para menores' }, 400);
+      }
+      if (anonymous) {
+        if (!['padre', 'madre', 'tutor'].includes(guardianRel)) {
+          return jsonResponse({ error: 'Selecciona el parentesco del tutor (padre, madre o tutor legal)' }, 400);
+        }
+        if (!/^[A-Z0-9]{4}$/.test(guardianIdRef)) {
+          return jsonResponse({ error: 'Captura los últimos 4 dígitos de la identificación (INE) del tutor' }, 400);
+        }
+      }
     }
 
     if (mode === 'register') {
@@ -336,14 +451,28 @@ Deno.serve(async (req) => {
     }
 
     const supabase = supabaseAdmin(env);
+
+    // Abuse protection: per-IP sliding window (C1/C2). Fails open.
+    const withinLimit = await checkRateLimit(supabase, mode, signerIp);
+    if (!withinLimit) {
+      return jsonResponse(
+        { error: 'Demasiados intentos desde esta conexión. Espera unos minutos o avisa al personal.' },
+        429
+      );
+    }
+
     const orgId = payload.org_id;
     // The customer record is always the patient (minors included) so returning
     // minors match by their own name+DOB. For minors the consent documents are
-    // signed by the guardian — parental consent.
+    // signed by the guardian — parental consent, with relationship + INE ref.
     const signerName = isMinor && guardianName ? guardianName : patientName;
+    const signerRel = isMinor && guardianName ? guardianRel || null : null;
+    const signerRef = isMinor && guardianName ? guardianIdRef || null : null;
+    const guardianDesc = `${guardianName}${guardianRel ? ` (${guardianRel}${guardianIdRef ? `, INE *${guardianIdRef}` : ''})` : ''}`;
 
     // ── Lookup mode: returning-patient search by name + DOB. Reports whether
-    // a match exists and if its 4 consent documents are on file.
+    // a match exists and if its 4 consent documents are on file. Response is
+    // minimal by design: no full_name (patient-existence oracle hardening).
     if (mode === 'lookup') {
       const { data: candidates, error: lookupError } = await supabase
         .from('customers')
@@ -352,8 +481,7 @@ Deno.serve(async (req) => {
         .eq('date_of_birth', dob)
         .limit(50);
       if (lookupError) throw lookupError;
-      const target = normalizeName(patientName);
-      const match = (candidates || []).find((c) => normalizeName(c.full_name) === target);
+      const match = findMatch(candidates || [], patientName);
       if (!match) return jsonResponse({ ok: true, found: false }, 200);
 
       const { data: signedRows, error: signedError } = await supabase
@@ -369,7 +497,6 @@ Deno.serve(async (req) => {
         ok: true,
         found: true,
         customer_id: match.id,
-        full_name: match.full_name,
         consents_signed: REQUIRED_CONSENT_TYPES.every((t) => signedTypes.has(t)),
       }, 200);
     }
@@ -378,23 +505,24 @@ Deno.serve(async (req) => {
     //    name+DOB; otherwise reuse by email (or by phone when no email); a
     //    guest registration reuses a name+DOB match so a returning patient who
     //    picks "Primera vez" doesn't fork their record; else create.
+    const customerSelect = 'id, full_name, phone, email, profile_id, date_of_birth, sexo, curp';
     let customer = null;
     if (mode === 'checkin' && customerId) {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, full_name, phone, email, profile_id, date_of_birth')
+        .select(customerSelect)
         .eq('org_id', orgId)
         .eq('id', customerId)
         .maybeSingle();
       if (error) throw error;
-      if (!data || data.date_of_birth !== dob || normalizeName(data.full_name) !== normalizeName(patientName)) {
+      if (!data || data.date_of_birth !== dob || matchName(data.full_name, patientName) === null) {
         return jsonResponse({ error: 'No encontramos un expediente con ese nombre y fecha de nacimiento' }, 404);
       }
       customer = data;
     } else if (email) {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, full_name, phone, email, profile_id, date_of_birth')
+        .select(customerSelect)
         .eq('org_id', orgId)
         .ilike('email', email)
         .limit(1)
@@ -404,7 +532,7 @@ Deno.serve(async (req) => {
     } else if (phone) {
       const { data, error } = await supabase
         .from('customers')
-        .select('id, full_name, phone, email, profile_id, date_of_birth')
+        .select(customerSelect)
         .eq('org_id', orgId)
         .eq('phone', phone)
         .is('email', null)
@@ -417,13 +545,12 @@ Deno.serve(async (req) => {
     if (!customer && guest) {
       const { data: candidates, error } = await supabase
         .from('customers')
-        .select('id, full_name, phone, email, profile_id, date_of_birth')
+        .select(customerSelect)
         .eq('org_id', orgId)
         .eq('date_of_birth', dob)
         .limit(50);
       if (error) throw error;
-      const target = normalizeName(patientName);
-      customer = (candidates || []).find((c) => normalizeName(c.full_name) === target) || null;
+      customer = findMatch(candidates || [], patientName);
     }
 
     if (!customer) {
@@ -435,9 +562,11 @@ Deno.serve(async (req) => {
           email: email || null,
           phone: phone || null,
           date_of_birth: dob || null,
-          notes: isMinor ? `Menor de edad · Tutor: ${guardianName}` : null,
+          sexo: sexo || null,
+          curp: curp || null,
+          notes: isMinor ? `Menor de edad · Tutor: ${guardianDesc}` : null,
         })
-        .select('id, full_name, phone, email, profile_id, date_of_birth')
+        .select(customerSelect)
         .single();
       if (createCustomerError) throw createCustomerError;
       customer = createdCustomer;
@@ -445,9 +574,15 @@ Deno.serve(async (req) => {
       if (phone && customer.phone !== phone) {
         await supabase.from('customers').update({ phone }).eq('id', customer.id);
       }
-      // Backfill DOB on matched records that never captured it.
+      // Backfill identification data on matched records that never captured it.
       if (dob && !customer.date_of_birth) {
         await supabase.from('customers').update({ date_of_birth: dob }).eq('id', customer.id);
+      }
+      if (sexo && !customer.sexo) {
+        await supabase.from('customers').update({ sexo }).eq('id', customer.id);
+      }
+      if (curp && !customer.curp) {
+        await supabase.from('customers').update({ curp }).eq('id', customer.id);
       }
     }
 
@@ -493,7 +628,8 @@ Deno.serve(async (req) => {
     if (mode === 'register') {
       await insertConsentDocs(
         supabase, orgId, customer.id, signerName,
-        payload.consent_docs || [], REQUIRED_CONSENT_TYPES, signerIp, signerUa
+        payload.consent_docs || [], REQUIRED_CONSENT_TYPES, signerIp, signerUa,
+        signerRel, signerRef
       );
     } else if (mode === 'checkin' && Array.isArray(payload.consent_docs) && payload.consent_docs.length > 0) {
       const docs = payload.consent_docs;
@@ -513,14 +649,14 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: `Faltan documentos de consentimiento: ${missing.join(', ')}` }, 400);
       }
       if (toInsert.length > 0) {
-        await insertConsentDocs(supabase, orgId, customer.id, signerName, docs, toInsert, signerIp, signerUa);
+        await insertConsentDocs(supabase, orgId, customer.id, signerName, docs, toInsert, signerIp, signerUa, signerRel, signerRef);
       }
     }
 
     // 4. Walk-in cita + 5. medical note, assigned to the doctor on shift.
     const { doctor, scheduled } = await pickDoctor(supabase, orgId);
 
-    const minorLine = isMinor ? `Paciente: ${patientName} (menor de edad) · Tutor: ${guardianName}` : null;
+    const minorLine = isMinor ? `Paciente: ${patientName} (menor de edad) · Tutor: ${guardianDesc}` : null;
 
     const dobLine = dob ? `Fecha de nacimiento: ${dob}` : null;
 
@@ -543,7 +679,7 @@ Deno.serve(async (req) => {
         ...answered.map(([k, v]) => `${k}: ${(v || '').trim()}`),
       ].filter(Boolean) as string[];
       noteLines = [
-        '[Auto-reporte del cliente — check-in en línea]',
+        '[Auto-reporte del cliente — check-in en línea · identidad por confirmar en recepción]',
         ...answered.map(([k, v]) => `${k}: ${(v || '').trim()}`),
         dobLine,
         minorLine,
@@ -558,7 +694,7 @@ Deno.serve(async (req) => {
         'Consentimientos firmados ✓',
       ].filter(Boolean) as string[];
       noteLines = [
-        '[Auto-reporte del cliente — tableta en tienda]',
+        '[Auto-reporte del cliente — tableta en tienda · identidad por confirmar en recepción]',
         reasonLine,
         dobLine,
         minorLine,

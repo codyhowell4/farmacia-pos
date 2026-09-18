@@ -163,7 +163,7 @@ const ConsentTab = ({ customer }) => {
       return;
     }
     try {
-      await updateConsentStatus(doc.id, { status: 'signed', signer_name: signer.trim() });
+      await updateConsentStatus(doc.id, { status: 'signed', signer_name: signer.trim(), recorded_by_name: user?.name || null });
       logAudit({
         action: AUDIT_ACTIONS.CONSENT_STATUS,
         user,
@@ -282,8 +282,11 @@ const ConsentTab = ({ customer }) => {
                     </div>
                     {doc.status === 'signed' && (
                       <p className="text-xs text-slate-500 mt-1" title={doc.signer_user_agent || undefined}>
-                        Firmado por {doc.signer_name || '-'} — {formatDateTime(doc.signed_at)}
+                        Firmado por {doc.signer_name || '-'}
+                        {doc.signer_relationship && ` (${doc.signer_relationship}${doc.signer_id_ref ? `, INE *${doc.signer_id_ref}` : ''})`}
+                        {' '}— {formatDateTime(doc.signed_at)}
                         {doc.signer_ip && ` · IP ${doc.signer_ip}`}
+                        {doc.recorded_by_name && ` · registrado por ${doc.recorded_by_name}`}
                       </p>
                     )}
                   </div>

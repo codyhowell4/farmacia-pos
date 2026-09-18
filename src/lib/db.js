@@ -1966,10 +1966,14 @@ export const getAllConsentDocuments = async () => {
   return data || [];
 };
 
-export const updateConsentStatus = async (id, { status, signer_name = null }) => {
+export const updateConsentStatus = async (id, { status, signer_name = null, recorded_by_name = null }) => {
+  const updates = { status, signer_name, signed_at: status === 'signed' ? new Date().toISOString() : null };
+  // Staff member who collected the signature in person (portal flow). Null on
+  // kiosk/app signatures, which carry their own IP/UA attribution instead.
+  if (recorded_by_name) updates.recorded_by_name = recorded_by_name;
   const { data, error } = await supabase
     .from('consent_documents')
-    .update({ status, signer_name, signed_at: status === 'signed' ? new Date().toISOString() : null })
+    .update(updates)
     .eq('id', id)
     .select()
     .single();

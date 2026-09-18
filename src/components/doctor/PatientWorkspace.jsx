@@ -639,6 +639,16 @@ const PatientWorkspace = () => {
               {customer.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{customer.phone}</span>}
               {customer.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{customer.email}</span>}
             </div>
+            {(!customer.sexo || !customer.curp) && (
+              <button
+                onClick={openPatientEdit}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 hover:bg-amber-100"
+                title="Faltan datos de identificación mínimos del expediente (NOM-024, Tabla 1)"
+              >
+                <AlertCircle className="w-3 h-3" />
+                Datos NOM-024 incompletos — captura {[!customer.sexo && 'sexo', !customer.curp && 'CURP'].filter(Boolean).join(' y ')}
+              </button>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -933,7 +943,7 @@ const PatientWorkspace = () => {
           <div className="flex justify-between items-center">
             <h3 className="text-lg font-semibold">Notas médicas</h3>
             {!isNurse && (
-              <Button onClick={() => { setEditingNote(null); setNoteForm({ note: '' }); setNoteDialogOpen(true); }} size="sm">
+              <Button onClick={() => { setNoteForm({ note: '' }); setNoteDialogOpen(true); }} size="sm">
                 <Plus className="w-4 h-4 mr-1" /> Nueva Nota
               </Button>
             )}
@@ -947,6 +957,11 @@ const PatientWorkspace = () => {
             <div className="space-y-3">
               {notes.map(note => (
                 <div key={note.id} className="bg-white rounded-xl border border-slate-200 p-4">
+                  {note.note?.startsWith('[Auto-reporte') && (
+                    <Badge className="bg-amber-100 text-amber-800 border-amber-200 mb-2">
+                      Auto-reporte de kiosco — identidad por confirmar en recepción
+                    </Badge>
+                  )}
                   <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.note}</p>
                   <p className="text-xs text-slate-400 mt-2">
                     {formatDateTime(note.created_at)}
