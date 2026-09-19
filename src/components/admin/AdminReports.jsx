@@ -23,7 +23,7 @@ import {
   formatCurrency,
   formatNumber,
 } from '../../services/dashboardReportsService';
-import { exportToCSV, downloadCSV } from '../../services/reportsService';
+import { exportToCSV, downloadCSV, getExpiredItems } from '../../services/reportsService';
 import { getInventoryIntelligence } from '@/lib/db';
 import { toast } from 'sonner';
 
@@ -43,6 +43,7 @@ export default function AdminReports() {
     shifts: [],
     salesByShift: [],
     intelligence: [],
+    quarantine: [],
   });
 
   useEffect(() => {
@@ -53,13 +54,16 @@ export default function AdminReports() {
   const loadOverviewData = async () => {
     setLoading(prev => ({ ...prev, overview: true }));
     try {
-      const [top, dead, valuation, shifts] = await Promise.all([
+      const [top, dead, valuation, shifts, expired] = await Promise.all([
         getTopProducts(10),
         getDeadStock(),
         getInventoryValuation(),
         getShiftReport(),
+        getExpiredItems(),
       ]);
-      setData(prev => ({ ...prev, topProducts: top, deadStock: dead, valuation, shifts }));
+      // Cuarentena: solo los caducados que aún tienen existencia física
+      const quarantine = (expired || []).filter(i => (i.quantity || 0) > 0);
+      setData(prev => ({ ...prev, topProducts: top, deadStock: dead, valuation, shifts, quarantine }));
     } catch (err) {
       toast.error('Error loading overview data');
     } finally {
@@ -699,6 +703,72 @@ export default function AdminReports() {
                       </tbody>
                     </table>
                   </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Cuarentena: caducados con existencia (R2-33) */}
+            <Card className="border-red-200">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-red-700">Cuarentena: caducados con existencia</CardTitle>
+                  <CardDescription>
+                    {data.quarantine.length} producto{data.quarantine.length === 1 ? '' : 's'} · {data.quarantine.reduce((s, i) => s + (i.quantity || 0), 0)} unidades — el sistema ya bloquea su venta en caja
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => handleExport('cuarentena', data.quarantine, [
+                    { key: 'name', label: 'Producto' },
+                    { key: 'batch_number', label: 'Lote' },
+                    { key: 'expiration_date', label: 'Caducidad' },
+                    { key: 'quantity', label: 'Existencia' },
+                    { key: 'price', label: 'Precio' },
+                  ], 'cuarentena_caducados')}
+                  disabled={data.quarantine.length === 0}
+                >
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Exportar
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {loading.overview ? (
+                  <Skeleton className="h-32 w-full" />
+                ) : data.quarantine.length === 0 ? (
+                  <p className="text-center text-gray-500 py-4">No hay productos caducados con existencia</p>
+                ) : (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-red-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left">Producto</th>
+                            <th className="px-3 py-2 text-left">Lote</th>
+                            <th className="px-3 py-2 text-left">Caducidad</th>
+                            <th className="px-3 py-2 text-center">Existencia</th>
+                            <th className="px-3 py-2 text-right">Precio</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.quarantine.map((item) => (
+                            <tr key={item.id} className="border-b hover:bg-red-50/50">
+                              <td className="px-3 py-2 font-medium">{item.name}</td>
+                              <td className="px-3 py-2">{item.batch_number || '—'}</td>
+                              <td className="px-3 py-2 text-red-700 font-medium">
+                                {new Date(item.expiration_date).toLocaleDateString('es-MX')}
+                              </td>
+                              <td className="px-3 py-2 text-center">{item.quantity}</td>
+                              <td className="px-3 py-2 text-right">{formatCurrency(item.price)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2 flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                      Retirar físicamente del piso de venta y registrar la baja como merma (Ajuste de inventario).
+                    </p>
+                  </>
                 )}
               </CardContent>
             </Card>

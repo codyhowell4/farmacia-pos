@@ -17,12 +17,21 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { ShiftProvider } from '@/contexts/ShiftContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ShiftGate from '@/components/ShiftGate';
+import useIdleLogout from '@/hooks/useIdleLogout';
+
+// Inactivity auto-logoff; must live inside AuthProvider (useAuth) and Router
+// (useNavigate / useLocation).
+const IdleLogoutWatcher = () => {
+  useIdleLogout();
+  return null;
+};
 
 function App() {
   return (
     <AuthProvider>
       <ShiftProvider>
         <Router>
+          <IdleLogoutWatcher />
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/login" element={<LoginPage />} />

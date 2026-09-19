@@ -1,22 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { Save, Settings, Percent } from 'lucide-react';
+import { Save, Settings, Percent, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { getTaxSettings, formatMXN, calcIVA } from '@/lib/currency';
 import { getTaxSettingsDb, saveTaxSettingsDb } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
+import { getOrgInfo, clearOrgInfoCache, resolveOrgId } from '@/lib/orgInfo';
 import BankAccountSettings from '@/components/admin/BankAccountSettings';
 
 const AdminSettings = () => {
   const { toast } = useToast();
   const [settings, setSettings] = useState(getTaxSettings());
   const [dirty, setDirty] = useState(false);
+  const [ticketData, setTicketData] = useState({ rfc: '', aviso_funcionamiento: '', responsable_sanitario: '' });
+  const [ticketDirty, setTicketDirty] = useState(false);
+  const [ticketSaving, setTicketSaving] = useState(false);
 
   useEffect(() => {
     getTaxSettingsDb().then(s => setSettings({ ivaEnabled: s.iva_enabled, ivaRate: s.iva_rate })).catch(console.error);
+    getOrgInfo().then(info => setTicketData({
+      rfc: info.rfc || '',
+      aviso_funcionamiento: info.aviso_funcionamiento || '',
+      responsable_sanitario: info.responsable_sanitario || '',
+    })).catch(console.error);
   }, []);
 
   const update = (key, value) => {
@@ -36,6 +46,35 @@ const AdminSettings = () => {
       toast({ title: 'Configuración guardada' });
     } catch (e) {
       toast({ title: 'Error al guardar', description: e.message, variant: 'destructive' });
+    }
+  };
+
+  const updateTicket = (key, value) => {
+    setTicketData(prev => ({ ...prev, [key]: value }));
+    setTicketDirty(true);
+  };
+
+  const handleSaveTicket = async () => {
+    setTicketSaving(true);
+    try {
+      const orgId = await resolveOrgId();
+      if (!orgId) throw new Error('No se pudo determinar la organización');
+      const { error } = await supabase
+        .from('organizations')
+        .update({
+          rfc: ticketData.rfc.trim() || null,
+          aviso_funcionamiento: ticketData.aviso_funcionamiento.trim() || null,
+          responsable_sanitario: ticketData.responsable_sanitario.trim() || null,
+        })
+        .eq('id', orgId);
+      if (error) throw error;
+      clearOrgInfoCache();
+      setTicketDirty(false);
+      toast({ title: 'Datos del ticket guardados' });
+    } catch (e) {
+      toast({ title: 'Error al guardar', description: e.message, variant: 'destructive' });
+    } finally {
+      setTicketSaving(false);
     }
   };
 
@@ -119,6 +158,53 @@ const AdminSettings = () => {
 
           <Button onClick={handleSave} disabled={!dirty} className="w-full bg-gradient-to-r from-apolo-navy to-apolo-navy-dark">
             <Save className="w-4 h-4 mr-2" />Guardar configuración
+          </Button>
+        </motion.div>
+
+        {/* Datos del ticket (fiscal y sanitario) */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+          className="bg-white rounded-xl shadow-lg p-6 max-w-xl space-y-6">
+
+          <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
+            <div className="bg-gradient-to-br from-apolo-navy to-apolo-navy-dark p-2 rounded-lg">
+              <FileText className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-slate-900">Datos del ticket (fiscal y sanitario)</h3>
+              <p className="text-sm text-slate-500">Se imprimen en el encabezado de cada recibo de venta</p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="org-rfc">RFC</Label>
+            <Input
+              id="org-rfc"
+              value={ticketData.rfc}
+              onChange={e => updateTicket('rfc', e.target.value)}
+              placeholder="Ej. XAXX010101000"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="org-aviso">Aviso de funcionamiento Nº</Label>
+            <Input
+              id="org-aviso"
+              value={ticketData.aviso_funcionamiento}
+              onChange={e => updateTicket('aviso_funcionamiento', e.target.value)}
+              placeholder="Número de aviso de funcionamiento COFEPRIS"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="org-responsable">Responsable sanitario</Label>
+            <Input
+              id="org-responsable"
+              value={ticketData.responsable_sanitario}
+              onChange={e => updateTicket('responsable_sanitario', e.target.value)}
+              placeholder="Nombre del responsable sanitario"
+            />
+          </div>
+
+          <Button onClick={handleSaveTicket} disabled={!ticketDirty || ticketSaving} className="w-full bg-gradient-to-r from-apolo-navy to-apolo-navy-dark">
+            <Save className="w-4 h-4 mr-2" />{ticketSaving ? 'Guardando…' : 'Guardar datos del ticket'}
           </Button>
         </motion.div>
 

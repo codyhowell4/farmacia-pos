@@ -4,7 +4,7 @@ import {
   Users, ArrowLeft, Phone, Mail, Calendar, FileText, ShoppingCart,
   Pill, Clock, Plus, Edit2, Trash2, ChevronDown, ChevronUp,
   CheckCircle, XCircle, AlertCircle, Printer, FileDown, Search, Ban, ShieldAlert,
-  Play, Video, StickyNote, BookOpen
+  Play, Video, StickyNote, BookOpen, FileSignature
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +24,7 @@ import {
   cancelDoctorPrescription, getDoctorProfile, getConsultaNotesByCustomer, getConsentDocuments,
   confirmVideoAppointment, startConsulta, clockInDoctor, getActiveDoctorShift,
   getCustomerDocuments, getHistoriaClinica, needsHistoriaClinica, getAppointmentsByCustomer,
+  hasAllConsentsSigned,
 } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { dayKeyInTz, timeInTz, dateInTz, DEFAULT_TZ } from '@/lib/timezone';
@@ -58,6 +59,15 @@ const apptStatusConfig = {
   confirmed: { label: 'Confirmada', className: 'bg-blue-100 text-blue-800' },
   completed: { label: 'Completada', className: 'bg-green-100 text-green-800' },
   cancelled: { label: 'Cancelada', className: 'bg-red-100 text-red-800' },
+};
+
+// Labels for the consent documents that must be signed before saving any
+// nota médica or receta for a registered patient (REQUIRED_CONSENT_TYPES).
+const REQUIRED_CONSENT_LABELS = {
+  privacidad: 'Aviso de privacidad',
+  general: 'Consentimiento informado general',
+  teleconsulta: 'Consentimiento informado para teleconsulta',
+  firma_electronica: 'Consentimiento de firma electrónica y documentos digitales',
 };
 
 const PatientWorkspace = () => {
@@ -102,6 +112,9 @@ const PatientWorkspace = () => {
   const [needsHistoria, setNeedsHistoria] = useState(false);
   const [historiaOpen, setHistoriaOpen] = useState(false);
   const [historiaViewOpen, setHistoriaViewOpen] = useState(false);
+  // R2-35: consent gate — the required documents must be signed before
+  // saving any nota médica or receta from this expediente
+  const [missingConsents, setMissingConsents] = useState([]);
 
   // Form states
   const [rxForm, setRxForm] = useState({
@@ -259,6 +272,24 @@ const PatientWorkspace = () => {
   };
 
   // ── PRESCRIPTION HANDLERS ──
+  // R2-35: in-person consent enforcement — returns true when every required
+  // consent document is signed; otherwise opens the blocking dialog listing
+  // what's missing (no silent saves).
+  const checkConsentsSigned = async () => {
+    try {
+      const missing = await hasAllConsentsSigned(customerId);
+      if (missing.length > 0) {
+        setMissingConsents(missing);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('hasAllConsentsSigned failed:', err);
+      toast.error('No se pudo verificar los consentimientos del paciente');
+      return false;
+    }
+  };
+
   const validMeds = rxForm.medications.filter(m => m.medication.trim());
   // allergyOverride: set when the doctor confirms prescribing despite a
   // recorded allergy (conflict check already passed through the dialog).
@@ -303,6 +334,8 @@ const PatientWorkspace = () => {
         return;
       }
     }
+    // R2-35: no receta without the required signed consent documents
+    if (!(await checkConsentsSigned())) return;
     try {
       // On an allergy override the decision is printed on the receta itself
       const medsToSave = allergyOverride && allergyConflicts.length > 0
@@ -620,6 +653,8 @@ const PatientWorkspace = () => {
       toast.error('La nota no puede estar vacía');
       return;
     }
+    // R2-35: no nota médica without the required signed consent documents
+    if (!(await checkConsentsSigned())) return;
     try {
       await createMedicalNote({
         customer_id: customerId,
@@ -1114,7 +1149,7 @@ const PatientWorkspace = () => {
                   <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.note}</p>
                   <p className="text-xs text-slate-400 mt-2">
                     {formatDateTime(note.created_at)}
-                    {note.profiles?.full_name ? ` · registrada por ${note.profiles.full_name}` : ''}
+                    {(note.author_name || note.profiles?.full_name) ? ` · registrada por ${note.author_name || note.profiles?.full_name}` : ''}
                   </p>
                 </div>
               ))}
@@ -1365,6 +1400,49 @@ const PatientWorkspace = () => {
         </DialogContent>
       </Dialog>
 
+      {/* R2-35: consent gate — required documents must be signed first */}
+      <Dialog open={missingConsents.length > 0} onOpenChange={(o) => { if (!o) setMissingConsents([]); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <FileSignature className="w-5 h-5" /> Consentimientos pendientes
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-700">
+              Antes de guardar notas o emitir recetas, el paciente debe tener
+              firmados los siguientes documentos:
+            </p>
+            <ul className="space-y-1.5">
+              {missingConsents.map((t) => (
+                <li key={t} className="text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-amber-800 font-medium">
+                  {REQUIRED_CONSENT_LABELS[t] || t}
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-slate-500">
+              Captura las firmas en la pestaña <strong>Consent.</strong> de este expediente.
+            </p>
+            <div className="flex gap-3 pt-1">
+              <Button variant="outline" className="flex-1" onClick={() => setMissingConsents([])}>
+                Volver
+              </Button>
+              <Button
+                className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600"
+                onClick={() => {
+                  setMissingConsents([]);
+                  setRxDialogOpen(false);
+                  setNoteDialogOpen(false);
+                  setActiveTab('consent');
+                }}
+              >
+                Ir a Consentimientos
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Appointment Dialog */}
       <Dialog open={apptDialogOpen} onOpenChange={setApptDialogOpen}>
         <DialogContent className="max-w-lg">
@@ -1525,6 +1603,7 @@ const PatientWorkspace = () => {
         onOpenChange={setPostVisitOpen}
         appointment={postVisitAppt}
         onSaved={loadAll}
+        onGoToConsents={() => setActiveTab('consent')}
       />
 
       {/* Justificante médico generator */}

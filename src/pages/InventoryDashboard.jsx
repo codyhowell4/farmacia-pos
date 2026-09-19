@@ -702,6 +702,10 @@ const InventoryDashboard = () => {
   // Services don't track stock — excluded from low-stock/alert logic
   const lowStockItems = inventory.filter(item => !isServiceItem(item) && item.quantity > 0 && item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD));
   const expiringItems = inventory.filter(isItemExpiring);
+  const expiredCount = expiringItems.filter(i => {
+    const s = getExpiryStatus(getItemExpiryDate(i));
+    return s && s.days < 0;
+  }).length;
 
   // Linked-stock coverage: productId -> { linkedQty, linkedItems }
   const linkedStockMap = buildLinkedStockMap(inventory, allLinks);
@@ -825,6 +829,11 @@ const InventoryDashboard = () => {
                     </button>
                   </div>
                 </div>
+                {expiredCount > 0 && (
+                  <p className="px-4 pb-3 text-xs font-semibold text-red-700">
+                    {expiredCount} ya caducado{expiredCount === 1 ? '' : 's'} → ver cuarentena en Admin → Reportes
+                  </p>
+                )}
                 {expiringExpanded && (
                   <div className="px-4 pb-4">
                     <p className="text-sm text-red-700">{expiringItems.map(i => i.name).join(', ')}</p>

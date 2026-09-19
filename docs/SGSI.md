@@ -38,14 +38,16 @@ El acceso se rige por el rol asignado en la tabla `profiles`, validado en el cli
 | `pos` | Punto de venta (`/pos`): ventas, caja, turnos. |
 | `inventory` | Inventario (`/inventory`): catálogo, existencias, ajustes. |
 | `doctor` | Portal médico: agenda, consultas, expediente clínico, recetas. |
-| `secretary` | Recepción: agenda y datos administrativos de pacientes; sin acceso a notas clínicas. |
-| `nurse` | Apoyo clínico: signos vitales y datos del expediente según políticas RLS. |
+| `secretary` | **Rol reservado, sin privilegios** (ver nota abajo). |
+| `nurse` | **Rol reservado, sin privilegios** (ver nota abajo). |
 | `customer` | Portal del paciente: sus propias citas, documentos y notificaciones (RLS limita a `customer_id` propio). |
+
+**Roles reservados.** `secretary` y `nurse` existen en el catálogo de roles y la interfaz permite asignarlos, pero **ninguna política RLS les concede acceso** (deny-by-default: lo que no se otorga explícitamente, queda negado). Es una postura deliberada: permanecerán sin privilegios hasta que exista una necesidad operativa acotada; en ese momento se definirán políticas mínimas para el rol y se actualizará este documento.
 
 ### 3.2 Reglas
 
 - **Privilegio mínimo:** cada usuario recibe el rol estrictamente necesario para su función. Nunca se comparten cuentas.
-- **Altas/bajas:** la baja de personal se realiza el mismo día de la separación, desactivando su usuario en el módulo de administración.
+- **Altas/bajas:** la baja de personal se realiza el mismo día de la separación mediante **Administración → Usuarios → Desactivar**, que asienta `profiles.deactivated_at`. El efecto es **inmediato**: las funciones de rol que usan las políticas RLS (`is_admin()`, `is_org_staff()`, `is_clinical_staff()`) excluyen a los usuarios desactivados, de modo que pierden todo acceso a los datos aunque conserven una sesión abierta, y la aplicación cierra su sesión en cuanto detecta la marca. La operación queda auditada del lado del servidor (RPC `admin_set_user_active`) y la reactivación sigue la misma vía.
 - **PIN de aprobación:** operaciones sensibles del POS (cancelaciones, cambios de precio > 10 %) exigen PIN de administrador (`profiles.pin`), además del rol.
 - **Funciones privilegiadas:** las edge functions usan la *service role key* únicamente del lado del servidor; ninguna llave privilegiada se expone al navegador (solo `VITE_SUPABASE_ANON_KEY`, protegida por RLS).
 - **RLS es obligatoria:** está prohibido deshabilitar RLS en cualquier tabla o crear políticas `using (true)`.
@@ -53,9 +55,9 @@ El acceso se rige por el rol asignado en la tabla `profiles`, validado en el cli
 ## 4. Autenticación
 
 - La autenticación la provee **Supabase Auth** (correo + contraseña, con hashing y gestión de sesiones del lado del proveedor).
-- **Política de contraseñas (recomendada y comunicada al personal):** mínimo 10 caracteres, combinando mayúsculas, minúsculas, números y un símbolo; prohibido reutilizar contraseñas personales; cambio inmediato ante sospecha de compromiso. Configurar en Supabase el umbral mínimo de longitud y, de ser posible, la verificación contra contraseñas filtradas (Have I Been Pwned) en Authentication → Settings.
+- **Política de contraseñas:** mínimo 10 caracteres, combinando mayúsculas, minúsculas, números y un símbolo; prohibido reutilizar contraseñas personales; cambio inmediato ante sospecha de compromiso. La aplicación **exige el mínimo de 10 caracteres en todas las pantallas** donde se define una contraseña (alta de usuarios en Administración, restablecimiento por correo y registros de membresía). [ORG] Pendiente: elevar también a 10 el mínimo de longitud en el panel de Supabase Auth (Authentication → Settings → Password) para que el servidor lo valide de forma independiente, y de ser posible activar la verificación contra contraseñas filtradas (Have I Been Pwned).
 - **MFA (recomendado):** activar autenticación multifactor (TOTP) en Supabase Auth para todas las cuentas con rol `admin` y `doctor`, por su acceso al expediente clínico completo. (Estado: pendiente de habilitar — hoy la autenticación es usuario + contraseña; la habilitación de TOTP está en la hoja de ruta de seguridad. Mientras tanto se refuerza la política de contraseñas y la revisión trimestral de accesos.)
-- **Sesiones:** cierre de sesión al terminar el turno en equipos compartidos del mostrador; los tokens de sesión expiran según la configuración de Supabase Auth.
+- **Sesiones:** cierre de sesión al terminar el turno en equipos compartidos del mostrador; los tokens de sesión expiran según la configuración de Supabase Auth. Además, la aplicación **cierra la sesión automáticamente tras 15 minutos de inactividad** (sin interacción de teclado, ratón o pantalla táctil) en todas las vistas internas, mostrando el aviso «Sesión cerrada por inactividad».
 - **Recuperación:** el restablecimiento de contraseña se realiza únicamente por el flujo de correo de Supabase (`ForgotPasswordPage`/`ResetPasswordPage`); el administrador nunca pide contraseñas al personal.
 
 ## 5. Respaldos y recuperación
@@ -114,6 +116,7 @@ Se considera incidente, entre otros: acceso no autorizado o sospechado, filtrado
 | --- | --- | --- | --- |
 | 1.0 | 2025-XX-XX | Administrador de la farmacia | Emisión inicial del SGSI. |
 | 1.1 | 2026-09-15 | Administrador de la farmacia | Se aclara el estado del MFA (pendiente de habilitar, §4); `medical_notes` se añade a las listas de conservación y append-only (§6, §7); nueva sección 8 de custodia de la e.firma (FIEL) del médico con decisión y aceptación de riesgo, y Anexo A (autorización interna de custodia). |
+| 1.2 | 2026-09-19 | Administrador de la farmacia | La baja de personal se documenta con su mecanismo real: desactivación inmediata vía `profiles.deactivated_at` con auditoría en servidor (§3.2); la aplicación exige contraseñas de mínimo 10 caracteres y cierra la sesión tras 15 minutos de inactividad (§4); `secretary` y `nurse` se documentan como roles reservados sin privilegios (§3.1). |
 |  |  |  |  |
 
 ---

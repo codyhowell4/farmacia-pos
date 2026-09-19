@@ -141,7 +141,7 @@ const MembershipPublicPage = () => {
     }
     if (!f.email.trim()) return 'El correo electrónico es obligatorio.';
     if (!f.phone.trim()) return 'El teléfono es obligatorio.';
-    if (f.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
+    if (f.password.length < 10) return 'La contraseña debe tener al menos 10 caracteres.';
     if (f.password !== f.confirmPassword) return 'Las contraseñas no coinciden.';
     if (!f.termsAccepted) return 'Debes aceptar los Términos y Condiciones y el Aviso de Privacidad.';
     if (!isPayPalConfigured()) return 'PayPal no está configurado.';
@@ -452,7 +452,7 @@ const MembershipPublicPage = () => {
               <Label>Contraseña *</Label>
               <Input
                 type="password"
-                minLength={6}
+                minLength={10}
                 value={form.password}
                 onChange={(e) => updateField('password', e.target.value)}
                 required
@@ -462,7 +462,7 @@ const MembershipPublicPage = () => {
               <Label>Confirmar contraseña *</Label>
               <Input
                 type="password"
-                minLength={6}
+                minLength={10}
                 value={form.confirmPassword}
                 onChange={(e) => updateField('confirmPassword', e.target.value)}
                 required

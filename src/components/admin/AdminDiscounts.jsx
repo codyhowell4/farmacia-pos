@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 
 import { getDiscounts, createDiscount, deleteDiscount } from '@/lib/db';
+import { useAuth } from '@/contexts/AuthContext';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 
 const AdminDiscounts = () => {
   const [discounts, setDiscounts] = useState([]);
@@ -17,6 +19,7 @@ const AdminDiscounts = () => {
   const [editingDiscount, setEditingDiscount] = useState(null);
   const [formData, setFormData] = useState({ code: '', value: '', type: 'percent' });
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const loadDiscounts = async () => {
     try {
@@ -30,12 +33,15 @@ const AdminDiscounts = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      const valueLabel = formData.type === 'cost_plus' ? `costo +${formData.value}%` : `${formData.value}%`;
       if (editingDiscount) {
         // update via upsert — reuse createDiscount with id
         await createDiscount({ id: editingDiscount.id, code: formData.code, value: parseFloat(formData.value), type: formData.type });
+        logAudit({ action: AUDIT_ACTIONS.DISCOUNT_ADD, user, details: `Descuento actualizado: ${formData.code} (${valueLabel})` });
         toast({ title: 'Discount Updated! ✅' });
       } else {
         await createDiscount({ code: formData.code, value: parseFloat(formData.value), type: formData.type });
+        logAudit({ action: AUDIT_ACTIONS.DISCOUNT_ADD, user, details: `Descuento creado: ${formData.code} (${valueLabel})` });
         toast({ title: 'Discount Added! 🎉' });
       }
       await loadDiscounts();
@@ -48,7 +54,13 @@ const AdminDiscounts = () => {
 
   const handleDelete = async (id) => {
     try {
+      const target = discounts.find(d => d.id === id);
       await deleteDiscount(id);
+      logAudit({
+        action: AUDIT_ACTIONS.DISCOUNT_DELETE,
+        user,
+        details: `Descuento eliminado: ${target?.code || id}${target ? ` (${target.type === 'cost_plus' ? `costo +${target.value}%` : `${target.value}%`})` : ''}`,
+      });
       await loadDiscounts();
       toast({ title: 'Discount Deleted' });
     } catch (err) {

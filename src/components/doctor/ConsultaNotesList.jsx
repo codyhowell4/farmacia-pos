@@ -4,8 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/contexts/AuthContext';
-import { getConsultaNotesByCustomer } from '@/lib/db';
+import { getConsultaNotesByCustomer, getDoctorProfile, getConsentDocuments } from '@/lib/db';
 import { buildConsultaCda, downloadCda } from '@/lib/cda';
+import { VITALS_LABELS } from '@/lib/recordExport';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { toast } from 'sonner';
 
@@ -41,6 +42,24 @@ const Section = ({ label, children }) =>
     </div>
   ) : null;
 
+// Signos vitales jsonb → "Label: value" parts. Keys prefixed with '_' are
+// attribution metadata (_negated/_recorded_by/_edited_by), never vitals.
+const vitalsParts = (vitals) => {
+  if (!vitals || typeof vitals !== 'object') return [];
+  return Object.entries(VITALS_LABELS)
+    .filter(([key]) => vitals[key] !== null && vitals[key] !== undefined && vitals[key] !== '')
+    .map(([key, label]) => `${label}: ${vitals[key]}`);
+};
+
+// Attribution line from the '_' metadata written by PostVisitDialog (R2-39)
+const vitalsAttribution = (vitals) => {
+  if (!vitals || typeof vitals !== 'object') return '';
+  return [
+    vitals._recorded_by ? `registrados por ${vitals._recorded_by}` : null,
+    vitals._edited_by ? `editados por ${vitals._edited_by}` : null,
+  ].filter(Boolean).join(' · ');
+};
+
 /**
  * Structured NOM-004 consulta notes for a patient (read-only list).
  */
@@ -67,10 +86,27 @@ const ConsultaNotesList = ({ customer }) => {
     load();
   }, [load]);
 
-  const handleExportCda = (note) => {
+  const handleExportCda = async (note) => {
     try {
-      const doctorName = note.profiles?.full_name || user?.name || '';
-      const xml = buildConsultaCda({ note, customer, doctorName });
+      // The CDA header needs the author's cédula (doctor_profiles) and the
+      // patient's signed consent documents (<authorization> entries). The
+      // author name comes from the note's immutable author_name snapshot.
+      const [docProfile, signedConsents] = await Promise.all([
+        note.doctor_id
+          ? getDoctorProfile(note.doctor_id).catch(() => null)
+          : Promise.resolve(null),
+        getConsentDocuments(customer.id)
+          .then(rows => (Array.isArray(rows) ? rows : []).filter(c => c.status === 'signed'))
+          .catch(() => []),
+      ]);
+      const doctorName = note.author_name || docProfile?.profiles?.full_name || note.profiles?.full_name || user?.name || '';
+      const xml = buildConsultaCda({
+        note,
+        customer,
+        doctorName,
+        doctorLicense: docProfile?.license_number || '',
+        consents: signedConsents,
+      });
       downloadCda(xml, `CDA_consulta_${note.id}.xml`);
       logAudit({
         action: AUDIT_ACTIONS.RECORD_EXPORT,
@@ -114,8 +150,8 @@ const ConsultaNotesList = ({ customer }) => {
                 <div className="flex items-center gap-2 flex-wrap">
                   <Stethoscope className="w-4 h-4 text-teal-600" />
                   <span className="text-sm font-medium text-slate-900">{formatDateTime(note.created_at)}</span>
-                  {note.profiles?.full_name && (
-                    <span className="text-sm text-slate-500">— {note.profiles.full_name}</span>
+                  {(note.author_name || note.profiles?.full_name) && (
+                    <span className="text-sm text-slate-500">— {note.author_name || note.profiles?.full_name}</span>
                   )}
                   {note.replaces_id && (
                     <Badge className="bg-amber-100 text-amber-800">Versión {versions.get(note.id)}</Badge>
@@ -136,6 +172,16 @@ const ConsultaNotesList = ({ customer }) => {
                 )}
 
                 <Section label="Padecimiento actual">{note.padecimiento_actual}</Section>
+                <Section label="Exploración física">{note.exploracion_fisica}</Section>
+                <Section label="Resultados de estudios">{note.resultados_estudios}</Section>
+                {note.vitals?._negated ? (
+                  <Section label="Signos vitales">{note.vitals._negated}</Section>
+                ) : (
+                  <Section label="Signos vitales">{vitalsParts(note.vitals).join(' · ') || null}</Section>
+                )}
+                {vitalsAttribution(note.vitals) && (
+                  <p className="text-xs text-slate-400">Signos vitales {vitalsAttribution(note.vitals)}</p>
+                )}
                 <Section label="Diagnóstico">{note.diagnostico}</Section>
 
                 {cie10.length > 0 && (
@@ -154,6 +200,7 @@ const ConsultaNotesList = ({ customer }) => {
                   </div>
                 )}
 
+                <Section label="Pronóstico">{note.pronostico}</Section>
                 <Section label="Plan">{note.plan}</Section>
               </div>
 

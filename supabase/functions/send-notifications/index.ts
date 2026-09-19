@@ -16,8 +16,9 @@
 // bookings) is never suppressed and pays no extra query.
 //
 // Invoked by pg_cron (see docs/NOTIFICATION_PROVIDERS.md). No user JWT is
-// required; when the CRON_SECRET env var is set, callers must send it in
-// the x-cron-secret header.
+// required; callers must send the CRON_SECRET env value in the
+// x-cron-secret header. The gate fails CLOSED (R2-28): with CRON_SECRET
+// unset the function answers 500 instead of running unauthenticated.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
@@ -497,12 +498,15 @@ Deno.serve(async (req) => {
   try {
     const env = Deno.env.toObject();
 
-    // Shared-secret gate for pg_cron: only enforced when configured.
-    if (env.CRON_SECRET) {
-      const provided = req.headers.get('x-cron-secret') || '';
-      if (provided !== env.CRON_SECRET) {
-        return jsonResponse({ error: 'No autorizado' }, 401);
-      }
+    // Shared-secret gate for pg_cron (R2-28): fail CLOSED. A missing
+    // CRON_SECRET is a misconfiguration, not an unauthenticated window.
+    const cronSecret = env.CRON_SECRET || '';
+    if (!cronSecret) {
+      console.error('[send-notifications] CRON_SECRET is not configured; refusing request');
+      return jsonResponse({ error: 'Error interno. Inténtalo de nuevo.' }, 500);
+    }
+    if ((req.headers.get('x-cron-secret') || '') !== cronSecret) {
+      return jsonResponse({ error: 'No autorizado' }, 401);
     }
 
     // Preview mode: renders a template with sample data and returns the
@@ -552,8 +556,8 @@ Deno.serve(async (req) => {
     if (fetchError) throw fetchError;
 
     const summary = { processed: 0, sent: 0, skipped: 0, failed: 0 };
-    // Per-row outcome for debugging (no recipient — the endpoint can be
-    // called without auth when CRON_SECRET is unset, so keep PII out).
+    // Per-row outcome for debugging. No recipient and no provider error
+    // text (R2-38): the raw failure stays in the DB row and server logs.
     const details: Array<Record<string, unknown>> = [];
 
     for (const row of (rows || []) as NotificationRow[]) {
@@ -589,6 +593,9 @@ Deno.serve(async (req) => {
             summary.sent += 1;
           } catch (err) {
             // Retryable failed rows stay in the table with their error.
+            // Full detail goes to the server log (R2-38) — the response
+            // only flags that the send failed.
+            console.error('[send-notifications] send failed for row', row.id, err);
             const message = err instanceof Error ? err.message : 'Error desconocido';
             update = { status: 'failed', error: message.slice(0, 500) };
             summary.failed += 1;
@@ -610,14 +617,17 @@ Deno.serve(async (req) => {
         template: row.template,
         channel: row.channel,
         result: update.status,
-        ...(update.error ? { error: update.error } : {}),
+        // Skipped reasons are safe static strings; provider failure detail
+        // stays in the DB row / server logs (R2-38).
+        ...(update.error
+          ? { error: update.status === 'failed' ? 'send failed' : update.error }
+          : {}),
       });
     }
 
     return jsonResponse({ ...summary, details }, 200);
   } catch (err) {
     console.error('[send-notifications] error:', err);
-    const message = err instanceof Error ? err.message : 'Error desconocido';
-    return jsonResponse({ error: message }, 500);
+    return jsonResponse({ error: 'Error interno. Inténtalo de nuevo.' }, 500);
   }
 });

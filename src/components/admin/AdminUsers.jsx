@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Search } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, UserX, UserCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 import { getUsers, createUser, updateProfile, deleteProfile, getLocations, setProfilePin } from '@/lib/db';
 
@@ -18,6 +20,7 @@ const AdminUsers = () => {
     username: '', password: '', name: '', role: '', pharmacyLocation: '', pin: '', timezone: 'America/Mexico_City'
   });
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
 
   const loadAll = async () => {
     try {
@@ -38,6 +41,15 @@ const AdminUsers = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // Blank password on edit means "unchanged" (updateProfile never sets one).
+    if ((!editingUser || formData.password) && formData.password.length < 10) {
+      toast({ title: 'Contraseña muy corta', description: 'La contraseña debe tener al menos 10 caracteres.', variant: 'destructive' });
+      return;
+    }
+    if (formData.pin && !/^\d{4,6}$/.test(formData.pin)) {
+      toast({ title: 'PIN inválido', description: 'El PIN de administrador debe tener entre 4 y 6 dígitos.', variant: 'destructive' });
+      return;
+    }
     try {
       if (editingUser) {
         await updateProfile(editingUser.id, {
@@ -77,6 +89,29 @@ const AdminUsers = () => {
       await deleteProfile(id);
       await loadUsers();
       toast({ title: 'Usuario eliminado', description: 'El usuario ha sido eliminado' });
+    } catch (err) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  const handleToggleActive = async (user) => {
+    const isDeactivated = Boolean(user.deactivated_at);
+    const name = user.full_name || user.email;
+    const question = isDeactivated
+      ? `¿Reactivar a ${name}? Volverá a tener acceso al sistema.`
+      : `¿Desactivar a ${name}? Perderá todo acceso al sistema de inmediato.`;
+    if (!window.confirm(question)) return;
+    try {
+      const { error } = await supabase.rpc('admin_set_user_active', {
+        p_profile_id: user.id,
+        p_active: isDeactivated,
+      });
+      if (error) throw error;
+      toast({
+        title: isDeactivated ? 'Usuario reactivado' : 'Usuario desactivado',
+        description: isDeactivated ? 'El usuario recuperó su acceso al sistema' : 'El usuario ya no puede acceder al sistema',
+      });
+      await loadUsers();
     } catch (err) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
     }
@@ -161,7 +196,8 @@ const AdminUsers = () => {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="password">Contraseña</Label>
-                    <Input id="password" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required={!editingUser} />
+                    <Input id="password" type="password" minLength={10} value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required={!editingUser} />
+                    <p className="text-xs text-slate-400">Mínimo 10 caracteres</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="role">Rol</Label>
@@ -197,7 +233,7 @@ const AdminUsers = () => {
                   {formData.role === 'admin' && (
                     <div className="space-y-2">
                       <Label htmlFor="pin">PIN de administrador</Label>
-                      <Input id="pin" type="password" value={formData.pin} onChange={(e) => setFormData({ ...formData, pin: e.target.value })} placeholder="PIN de 4 dígitos" />
+                      <Input id="pin" type="password" inputMode="numeric" maxLength={6} value={formData.pin} onChange={(e) => setFormData({ ...formData, pin: e.target.value })} placeholder="PIN de 4 a 6 dígitos" />
                       {editingUser && <p className="text-xs text-slate-400">Deja vacío para conservar el PIN actual.</p>}
                     </div>
                   )}
@@ -242,7 +278,12 @@ const AdminUsers = () => {
             <tbody className="divide-y divide-slate-200">
               {filteredUsers.map((user) => (
                 <tr key={user.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3 text-sm font-medium text-slate-900">{user.full_name}</td>
+                  <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                    {user.full_name}
+                    {user.deactivated_at && (
+                      <span className="ml-2 px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">Desactivado</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-slate-600">{user.email}</td>
                   <td className="px-4 py-3 text-sm">
                     <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
@@ -263,6 +304,15 @@ const AdminUsers = () => {
                   <td className="px-4 py-3 text-sm">
                     <div className="flex space-x-2">
                       <button onClick={() => handleEdit(user)} className="text-apolo-navy hover:text-apolo-navy-dark"><Edit className="w-4 h-4" /></button>
+                      {user.id !== currentUser?.id && (
+                        <button
+                          onClick={() => handleToggleActive(user)}
+                          title={user.deactivated_at ? 'Reactivar' : 'Desactivar'}
+                          className={user.deactivated_at ? 'text-green-600 hover:text-green-800' : 'text-amber-600 hover:text-amber-800'}
+                        >
+                          {user.deactivated_at ? <UserCheck className="w-4 h-4" /> : <UserX className="w-4 h-4" />}
+                        </button>
+                      )}
                       <button onClick={() => handleDelete(user.id)} className="text-red-600 hover:text-red-800"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>

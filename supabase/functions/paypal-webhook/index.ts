@@ -418,9 +418,11 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
+    // Full detail (PayPal payloads, PostgREST, misconfiguration) stays in
+    // the server log; the caller gets one generic body (R2-38). PayPal
+    // only needs a non-2xx to schedule a retry.
     console.error('[paypal-webhook] error:', err);
-    const message = err instanceof Error ? err.message : 'Error desconocido';
-    return new Response(JSON.stringify({ error: message }), {
+    return new Response(JSON.stringify({ error: 'Error al procesar el webhook' }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

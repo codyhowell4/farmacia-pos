@@ -122,10 +122,17 @@ const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
       // createReturn also handles restocking (only 'restock' items go back to stock)
       const result = await createReturn(returnRecord, returnItems);
 
+      // Detalle por artículo con la misma disposición (merma|restock) que
+      // createReturn escribe en return_items (Rx/controlados → merma).
+      const itemLines = (foundSale.sale_items || [])
+        .filter(item => returnQtys[item.id] > 0)
+        .map(item => `${item.name} ×${returnQtys[item.id]} (${isMermaItem(item) ? 'merma' : 'restock'})`)
+        .join(' | ');
+
       logAudit({
         action: AUDIT_ACTIONS.RETURN_PROCESSED,
         user,
-        details: `Devolución de venta #${foundSale.id.slice(-8).toUpperCase()} | Reembolso: ${formatMXN(refundTotal)} | Motivo: ${reason.trim()} | Autorizó: ${adminUser.full_name}`,
+        details: `Devolución de venta #${foundSale.id.slice(-8).toUpperCase()} | Reembolso: ${formatMXN(refundTotal)} | Motivo: ${reason.trim()} | Autorizó: ${adminUser.full_name} | Artículos: ${itemLines}`,
       });
 
       toast({

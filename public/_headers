@@ -9,5 +9,30 @@
 /customer-app/*
   Cache-Control: public, max-age=0, must-revalidate
 
+# Baseline security headers on every route. No CSP here: /customer-app
+# loads PayPal + Daily.co (teleconsulta iframe), so CSPs are scoped to
+# the kiosk/public routes below. camera/microphone stay allowed for the
+# Daily.co teleconsulta iframe.
 /*
   Cache-Control: public, max-age=0, must-revalidate
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
+  Permissions-Policy: geolocation=(), payment=(), usb=()
+
+# Kiosco de registro (tablet en sucursal): supabase-js va vendorizado en
+# /vendor y solo habla con las edge functions de *.supabase.co
+/registro/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'self'
+
+# Kiosco de consentimiento (tablet en sucursal)
+/consentimiento/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'self'
+
+# Vista pública de receta
+/receta-view/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'self'
+
+# Verificación pública de recetas (QR)
+/verifica/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'self'

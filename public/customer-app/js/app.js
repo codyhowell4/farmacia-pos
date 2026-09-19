@@ -70,6 +70,9 @@ let isPasswordRecovery = false;
 // full-screen consent-onboarding view.
 const REQUIRED_CONSENT_TYPES = ['privacidad', 'general', 'teleconsulta', 'firma_electronica'];
 let consentGateActive = false;
+// Fail-closed variant of the gate (R2-32): when the signed-documents
+// check itself fails, renderPage() is locked to a blocking retry view.
+let consentGateVerifyError = false;
 
 // Check-in mode (?checkin=1): after login, route to the pre-visit
 // check-in form instead of the normal start page.
@@ -167,7 +170,7 @@ async function initAuth() {
     const user = await FarmaciaAPI.getCurrentUser();
     if (user) {
       currentAuthUser = user;
-      console.log('[Auth] Session restored for:', user.email);
+      console.log('[Auth] Session restored');
       
       // Try to load customer profile
       currentCustomerProfile = await FarmaciaAPI.getCustomerProfile();
@@ -378,7 +381,7 @@ function renderFamilyActivation() {
 
         <div style="margin-bottom: 1.5rem;">
           <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Contraseña</label>
-          <input type="password" id="family-password" placeholder="Mínimo 6 caracteres" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+          <input type="password" id="family-password" placeholder="Mínimo 10 caracteres" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
         </div>
 
         <button onclick="handleFamilyActivation()" id="family-activation-btn" style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; margin-bottom: 1rem;">Activar mi cuenta</button>
@@ -415,8 +418,8 @@ async function handleFamilyActivation() {
     showError('Escribe una fecha de nacimiento válida (dd/mm/aaaa)');
     return;
   }
-  if (password.length < 6) {
-    showError('La contraseña debe tener al menos 6 caracteres');
+  if (password.length < 10) {
+    showError('La contraseña debe tener al menos 10 caracteres');
     return;
   }
 
@@ -553,7 +556,7 @@ function renderSignup() {
         
         <div style="margin-bottom: 1rem;">
           <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Contraseña</label>
-          <input type="password" id="signup-password" placeholder="Mínimo 6 caracteres" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+          <input type="password" id="signup-password" placeholder="Mínimo 10 caracteres" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
         </div>
         
         <div style="margin-bottom: 1.5rem;">
@@ -618,8 +621,8 @@ async function handleSignup() {
     return showSignupError('El paciente es menor de edad: selecciona el parentesco (padre, madre o tutor).');
   }
   
-  if (password.length < 6) {
-    return showSignupError('La contraseña debe tener al menos 6 caracteres');
+  if (password.length < 10) {
+    return showSignupError('La contraseña debe tener al menos 10 caracteres');
   }
   
   if (password !== confirm) {
@@ -730,7 +733,7 @@ function renderResetPassword() {
       <div class="glass-card" style="padding: 1.5rem; background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; backdrop-filter: none; -webkit-backdrop-filter: none;" id="reset-card">
         <div style="margin-bottom: 1rem;">
           <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Nueva contraseña</label>
-          <input type="password" id="reset-password" placeholder="Mínimo 6 caracteres" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+          <input type="password" id="reset-password" placeholder="Mínimo 10 caracteres" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
         </div>
         
         <div style="margin-bottom: 1.5rem;">
@@ -751,8 +754,8 @@ async function handleResetPassword() {
   const confirm = document.getElementById('reset-confirm')?.value;
   const errorEl = document.getElementById('reset-error');
   
-  if (!password || password.length < 6) {
-    errorEl.textContent = 'La contraseña debe tener al menos 6 caracteres';
+  if (!password || password.length < 10) {
+    errorEl.textContent = 'La contraseña debe tener al menos 10 caracteres';
     errorEl.style.display = 'block';
     return;
   }
@@ -1194,10 +1197,11 @@ async function handleRevokeConsents() {
 
 // ============================================================
 // CONSENT ONBOARDING GATE
-// Every signed-in user must have signed the three standard
-// documents (window.APOLO_CONSENT_DOCS) before using the app.
-// While the gate is active, renderPage() renders only this
-// full-screen view; guests (no session) are never gated.
+// Every signed-in user must have signed the standard documents
+// (window.APOLO_CONSENT_DOCS) before using the app.
+// While the gate is active, renderPage() renders only the
+// full-screen gate view (or the fail-closed retry view, R2-32);
+// guests (no session) are never gated.
 // ============================================================
 
 // Returns true when the gate was rendered (caller must not render
@@ -1208,21 +1212,63 @@ async function checkConsentGate() {
     const signedTypes = await FarmaciaAPI.getMySignedConsentTypes();
     if (!signedTypes) {
       // Verification failed (DB/RLS error, missing customer record):
-      // fail open — don't lock users out of the app on transient errors
-      console.warn('[Consent] Could not verify signed documents; skipping gate');
-      return false;
+      // FAIL CLOSED (R2-32) — the DB rejects unsigned bookings, so the
+      // app stays locked behind a retry view until the check succeeds.
+      console.warn('[Consent] Could not verify signed documents; blocking app');
+      consentGateActive = true;
+      consentGateVerifyError = true;
+      renderConsentVerifyError();
+      return true;
     }
     const missing = REQUIRED_CONSENT_TYPES.filter(t => !signedTypes.includes(t));
     if (missing.length === 0) return false;
     consentGateActive = true;
+    consentGateVerifyError = false;
     renderConsentOnboarding();
     return true;
   } catch (e) {
-    // Fail open on unexpected errors: don't lock users out of the app
+    // Fail closed on unexpected errors (R2-32): blocking retry view.
     console.warn('[Consent] Gate check failed:', e);
-    return false;
+    consentGateActive = true;
+    consentGateVerifyError = true;
+    renderConsentVerifyError();
+    return true;
   }
 }
+
+// Blocking view for the fail-closed path: the signed-documents check
+// could not run (transient DB/RLS failure). renderPage() is locked to
+// this view exactly like the gate; "Reintentar" re-runs the whole check.
+function renderConsentVerifyError() {
+  closeMenu();
+  setAppChromeVisible(false);
+
+  mainContent.innerHTML = `
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
+      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📋 Documentos de consentimiento</h1>
+    </div>
+
+    <div style="padding: 2.5rem 1.5rem; text-align: center;">
+      <div style="font-size: 3rem; margin-bottom: 1rem;">⚠️</div>
+      <h2 style="margin: 0 0 0.75rem; font-size: 1.15rem; color: #1E2A8A;">No pudimos verificar tus documentos de consentimiento</h2>
+      <p style="margin: 0 auto 1.5rem; max-width: 26rem; font-size: 0.9rem; color: #64748b; line-height: 1.5;">Revisa tu conexión a internet e intenta de nuevo. Si el problema continúa, avisa al personal de la farmacia.</p>
+      <button id="consent-retry-btn" onclick="retryConsentGate()" style="width: 100%; max-width: 20rem; padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;">Reintentar</button>
+    </div>
+  `;
+
+  window.scrollTo(0, 0);
+}
+
+async function retryConsentGate() {
+  const btn = document.getElementById('consent-retry-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Verificando...'; }
+  consentGateActive = false;
+  consentGateVerifyError = false;
+  setAppChromeVisible(true);
+  const gated = await checkConsentGate();
+  if (!gated) renderPage(currentPage);
+}
+window.retryConsentGate = retryConsentGate;
 
 // Hide/show the app chrome (bottom nav + header actions) while the gate is up
 function setAppChromeVisible(visible) {
@@ -1453,7 +1499,7 @@ function renderFirmaRegistro() {
         </div>
         <div style="margin-bottom: 0.75rem;">
           <label style="${labelStyle}">Contraseña</label>
-          <input type="password" id="firma-password" placeholder="Mínimo 6 caracteres" style="${fieldStyle}">
+          <input type="password" id="firma-password" placeholder="Mínimo 10 caracteres" style="${fieldStyle}">
         </div>
         <div>
           <label style="${labelStyle}">Confirmar contraseña</label>
@@ -1517,7 +1563,7 @@ async function handleFirmaRegistroSubmit() {
   if (isMinor && !guardianName) return showError('El paciente es menor de edad: escribe el nombre del padre, madre o tutor que firma.');
   if (isMinor && !guardianRel) return showError('El paciente es menor de edad: selecciona el parentesco de quien firma.');
   if (!email) return showError('Ingresa tu correo electrónico');
-  if (password.length < 6) return showError('La contraseña debe tener al menos 6 caracteres');
+  if (password.length < 10) return showError('La contraseña debe tener al menos 10 caracteres');
   if (password !== confirm) return showError('Las contraseñas no coinciden');
 
   const btn = document.getElementById('firma-submit-btn');
@@ -2115,9 +2161,35 @@ function updateTierBadges() {
   });
 }
 
+// R2-36: wipe every app-owned localStorage key on logout so health/PII
+// data never leaks into the next session on a shared device. Explicit
+// removeItem list (never localStorage.clear()) — the Supabase auth
+// token is handled by signOut().
+function clearAppData() {
+  const keys = [
+    'emergencyInfo', 'emergencyContacts', 'userProfile', 'healthMetrics', 'bodyMeasurements',
+    'medicineSchedules', 'medicineReminders', 'wellnessReminders',
+    'allPrescriptions', 'prescriptionMedicines', 'prescriptionUploads', 'refillRequests',
+    'vaccines', 'vaccineRecords', 'userExams', 'appointments', 'videoConsultations',
+    'chatHistory', 'allProfiles', 'activeProfileId',
+    'currentFast', 'fastHistory', 'sleepHistory', 'checkInHistory', 'scheduledNotifications',
+    'apollo_vitals_log', 'apollo_medicines', 'apollo_cart', 'apollo_orders',
+    'healthConnections',
+    'dailySteps', 'dailyCalories', 'caloriesConsumed', 'proteinConsumed', 'foodLog',
+    'activeMinutes', 'waterIntake', 'stepsGoal', 'calorieGoal', 'proteinGoal',
+    'exercises', 'meals', 'healthGoals', 'goalHistory',
+    'activityLevel', 'healthGoal', 'goalWeight', 'goalTimeline', 'goalStartDate',
+    'pointsBalance', 'achievements', 'locations', 'notifications'
+  ];
+  keys.forEach(k => {
+    try { localStorage.removeItem(k); } catch (e) { /* storage unavailable */ }
+  });
+}
+
 async function handleLogout() {
   if (!confirm('¿Cerrar sesión?')) return;
-  
+
+  clearAppData();
   await FarmaciaAPI.signOut();
   currentAuthUser = null;
   currentCustomerProfile = null;
@@ -2126,6 +2198,7 @@ async function handleLogout() {
 
   // Reset the consent gate so a gated session can't stick to the next one
   consentGateActive = false;
+  consentGateVerifyError = false;
   setAppChromeVisible(true);
 
   updateMenuUserInfo();
@@ -2492,10 +2565,15 @@ function updateMenuActiveState(page) {
 }
 
 function renderPage(page) {
-  // Consent gate: while the standard documents are pending, the
-  // full-screen consent-onboarding view is the only thing that renders.
+  // Consent gate: while the standard documents are pending (or their
+  // verification failed — fail closed, R2-32), the full-screen consent
+  // views are the only thing that renders.
   if (consentGateActive) {
-    renderConsentOnboarding();
+    if (consentGateVerifyError) {
+      renderConsentVerifyError();
+    } else {
+      renderConsentOnboarding();
+    }
     return;
   }
 
@@ -7589,7 +7667,7 @@ window.saveSmartReminder = function(prescriptionId) {
   
   // Schedule notifications for this medication
   NotificationManager.scheduleAllDoses(schedule).then(() => {
-    console.log('Notifications scheduled for', schedule.medicine);
+    console.log('Dose notifications scheduled');
   });
   
   document.querySelector('.modal-overlay')?.remove();
@@ -9458,7 +9536,7 @@ function renderVideoPaymentSuccess(result) {
   const ctx = window.__videoPayment;
   const modal = document.querySelector('.modal-overlay');
   if (!modal) return;
-  console.log('[confirmVideoBooking] Payment captured, appointment confirmed:', result);
+  console.log('[confirmVideoBooking] Payment captured, appointment confirmed:', ctx?.appointmentId || null);
   modal.innerHTML = `
     <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; text-align: center;">
       <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>

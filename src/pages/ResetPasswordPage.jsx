@@ -41,10 +41,10 @@ const ResetPasswordPage = () => {
   }, [toast]);
 
   const validatePassword = () => {
-    if (password.length < 6) {
+    if (password.length < 10) {
       toast({
         title: 'Contraseña muy corta',
-        description: 'La contraseña debe tener al menos 6 caracteres.',
+        description: 'La contraseña debe tener al menos 10 caracteres.',
         variant: 'destructive',
       });
       return false;
@@ -136,6 +136,7 @@ const ResetPasswordPage = () => {
                         onChange={(e) => setPassword(e.target.value)}
                         className="pl-10 pr-10"
                         autoComplete="new-password"
+                        minLength={10}
                         disabled={submitting}
                       />
                       <button
@@ -151,7 +152,7 @@ const ResetPasswordPage = () => {
                       </button>
                     </div>
                     <p className="text-xs text-slate-500">
-                      Mínimo 6 caracteres
+                      Mínimo 10 caracteres
                     </p>
                   </div>
 
@@ -167,6 +168,7 @@ const ResetPasswordPage = () => {
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         className="pl-10"
                         autoComplete="new-password"
+                        minLength={10}
                         disabled={submitting}
                       />
                     </div>

@@ -212,12 +212,12 @@ export const syncAllCustomers = async () => {
     try {
       const res = await syncCustomer(customer);
       results[res.action]++;
-      console.log('[syncAllCustomers] synced:', customer.full_name, '->', res.action, res.akauntingId);
+      console.log('[syncAllCustomers] synced:', customer.id, '->', res.action, res.akauntingId);
     } catch (e) {
       results.failed++;
       const errInfo = { name: customer.full_name || customer.id, error: e.message };
       results.errors.push(errInfo);
-      console.error('[syncAllCustomers] failed:', customer.full_name, e.message);
+      console.error('[syncAllCustomers] failed:', customer.id, e.message);
     }
   }
 

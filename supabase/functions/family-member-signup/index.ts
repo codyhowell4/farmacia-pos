@@ -2,17 +2,27 @@
 // Lets a family-plan member (a membership_members row, e.g. sub_id
 // APOLO-00001-2) activate their own customer-portal account.
 // JWT verification is OFF (supabase/config.toml): the person has no session
-// yet — the registered member NAME is the identity proof, since the sub_id
-// alone is guessable from the plan id.
+// yet — the registered member NAME plus their DATE OF BIRTH are the
+// identity proof, since the sub_id alone is guessable from the plan id.
+//
+// Anti-oracle hardening (R2-30): every validation/identity rejection —
+// bad sub_id, unknown member, name mismatch, DOB mismatch — returns the
+// SAME generic body, so the endpoint cannot be used to probe which
+// members exist or which check failed. A per-IP sliding-window rate
+// limit (10 req / 10 min via rate_limit_events, fail-open) bounds
+// scripted probing.
 //
 // On success the new auth user is stored in membership_members.claimed_user_id
 // (+ email), so lookup_login_email can resolve their sub_id/email to THEIR
 // account and the portal can find their parent membership.
 //
 // birth_date (YYYY-MM-DD) is required (R2-21): it is persisted on the
-// membership_members row and the member's customers row. For minors the
-// guardian defaults to the plan titular (guardian_relationship
-// 'familiar titular') unless the caller passes guardian data explicitly.
+// membership_members row and the member's customers row. When the member
+// row already carries a date_of_birth, the presented DOB must match it
+// (R2-30 second factor); legacy rows with a NULL DOB capture it here.
+// For minors the guardian defaults to the plan titular
+// (guardian_relationship 'familiar titular') unless the caller passes
+// guardian data explicitly.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
@@ -43,6 +53,52 @@ const supabaseAdmin = (env: Record<string, string>) => {
   const url = env.SUPABASE_URL!;
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SERVICE_ROLE_KEY!;
   return createClient(url, serviceKey, { auth: { persistSession: false } });
+};
+
+// Anti-oracle responses (R2-30): every validation/identity failure returns
+// the same body; only the HTTP status varies (400 validation, 404 unknown
+// member, 409 already provisioned). An attacker learns nothing about which
+// check failed.
+const VALIDATION_ERROR = 'No se pudieron validar los datos. Verifícalos e inténtalo de nuevo.';
+const validationError = (status = 400) => jsonResponse({ error: VALIDATION_ERROR }, status);
+const CONFLICT_ERROR =
+  'No se pudo activar la cuenta con esos datos. Si ya la activaste, inicia sesión.';
+
+// Per-IP sliding-window cap (R2-30). Fails open (with a warning) if the
+// rate_limit_events table is unreachable — same pattern as tablet-checkin.
+const SIGNUP_RATE_LIMIT = { limit: 10, windowMs: 10 * 60 * 1000 };
+
+const checkRateLimit = async (
+  supabase: ReturnType<typeof supabaseAdmin>,
+  ip: string | null
+): Promise<boolean> => {
+  const key = ip || 'unknown';
+  try {
+    const since = new Date(Date.now() - SIGNUP_RATE_LIMIT.windowMs).toISOString();
+    const { count, error } = await supabase
+      .from('rate_limit_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('bucket', 'family-member-signup')
+      .eq('key', key)
+      .gte('created_at', since);
+    if (error) throw error;
+    if ((count || 0) >= SIGNUP_RATE_LIMIT.limit) return false;
+    const { error: insError } = await supabase
+      .from('rate_limit_events')
+      .insert({ bucket: 'family-member-signup', key });
+    if (insError) throw insError;
+    // Occasional cleanup so the table stays small.
+    if (Math.random() < 0.02) {
+      await supabase
+        .from('rate_limit_events')
+        .delete()
+        .lt('created_at', new Date(Date.now() - 24 * 3600 * 1000).toISOString());
+    }
+    return true;
+  } catch (err) {
+    console.warn('[family-member-signup] rate limit unavailable; allowing request:', err);
+    return true;
+  }
 };
 
 // lowercase + accent-fold + trim + collapse internal whitespace
@@ -103,41 +159,56 @@ Deno.serve(async (req) => {
     const guardianNameInput = (payload.guardian_name || '').trim();
     const guardianRelInput = (payload.guardian_relationship || '').trim();
 
+    // Abuse protection (R2-30): per-IP sliding window, checked BEFORE any
+    // validation so malformed probes also consume the budget. Fails open.
+    const clientIp =
+      (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() ||
+      req.headers.get('cf-connecting-ip') ||
+      null;
+    const supabase = supabaseAdmin(env);
+    const withinLimit = await checkRateLimit(supabase, clientIp);
+    if (!withinLimit) {
+      return jsonResponse(
+        { error: 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.' },
+        429
+      );
+    }
+
+    // All validation failures below share one generic body (R2-30).
     // Sub-ids look like APOLO-00001-2; restricting the charset also keeps
     // LIKE wildcards out of the lookup below.
     if (!/^[A-Za-z0-9-]+$/.test(subId)) {
-      return jsonResponse({ error: 'Número de integrante inválido' }, 400);
+      return validationError();
     }
     if (!name) {
-      return jsonResponse({ error: 'Nombre requerido' }, 400);
+      return validationError();
     }
     if (!email || !email.includes('@')) {
-      return jsonResponse({ error: 'Correo electrónico inválido' }, 400);
+      return validationError();
     }
-    if (password.length < 6) {
-      return jsonResponse({ error: 'La contraseña debe tener al menos 6 caracteres' }, 400);
+    // Password minimum is 10 (R2-30).
+    if (password.length < 10) {
+      return validationError();
     }
     // DOB is required (R2-21): it is persisted on the member/customer rows
     // and lets the server derive minority. Validated up front, before any
     // lookup, so the error leaks nothing about whether the member exists.
     if (!isValidDob(birthDate)) {
-      return jsonResponse({ error: 'Fecha de nacimiento requerida' }, 400);
+      return validationError();
     }
-
-    const supabase = supabaseAdmin(env);
 
     // ilike with a wildcard-free value = case-insensitive exact match.
     // Sub-ids are only unique within an org, so scope the lookup when the
     // caller supplies org_id (the !inner embed lets the filter constrain the
     // parent rows). Without org_id, refuse an ambiguous cross-org match
-    // instead of picking one arbitrarily — same generic 404 as a miss, so
-    // existence in other orgs is not leaked.
+    // instead of picking one arbitrarily — same undifferentiated body as a
+    // miss, so existence in other orgs is not leaked.
     let memberQuery = supabase
       .from('membership_members')
       .select(
         requestOrgId
-          ? 'id, membership_id, sub_id, name, email, is_owner, claimed_user_id, memberships!inner(org_id)'
-          : 'id, membership_id, sub_id, name, email, is_owner, claimed_user_id, memberships(org_id)'
+          ? 'id, membership_id, sub_id, name, email, is_owner, claimed_user_id, date_of_birth, memberships!inner(org_id)'
+          : 'id, membership_id, sub_id, name, email, is_owner, claimed_user_id, date_of_birth, memberships(org_id)'
       )
       .ilike('sub_id', subId)
       .limit(2);
@@ -151,22 +222,32 @@ Deno.serve(async (req) => {
     if (memberError) throw memberError;
     const member = memberRows?.[0] || null;
     if (!member || (!requestOrgId && memberRows!.length > 1)) {
-      return jsonResponse({ error: 'No encontramos ese número de integrante' }, 404);
+      return validationError(404);
     }
 
     // The titular's own row is not claimable here — their account is created
     // at signup (paypal-subscription) or by staff (create-portal-account).
     if (member.is_owner) {
-      return jsonResponse({ error: 'Ese número pertenece al titular del plan. Inicia sesión con tu cuenta.' }, 400);
+      return validationError();
     }
 
     // Identity proof: the sub_id is guessable, so the registered name must match.
     if (!namesMatch(name, member.name || '')) {
-      return jsonResponse({ error: 'El nombre no coincide con nuestros registros' }, 400);
+      return validationError();
+    }
+
+    // Second factor (R2-30): once the member row carries a date_of_birth,
+    // the presented DOB must match it — the rejection is the same generic
+    // body as every other failure, so the caller can't tell which check
+    // failed. Legacy rows with a NULL DOB capture the presented one at
+    // claim time below (mirrored onto the customers row as before).
+    const storedDob = (member.date_of_birth || '').trim();
+    if (storedDob && storedDob !== birthDate) {
+      return validationError();
     }
 
     if (member.claimed_user_id || member.email) {
-      return jsonResponse({ error: 'Esta cuenta ya fue activada, inicia sesión' }, 409);
+      return jsonResponse({ error: CONFLICT_ERROR }, 409);
     }
 
     // Email must not be in use by an existing portal account or another
@@ -188,7 +269,7 @@ Deno.serve(async (req) => {
     if (memberEmailError) throw memberEmailError;
 
     if (existingProfile || existingMemberEmail) {
-      return jsonResponse({ error: 'Ese correo ya tiene una cuenta' }, 409);
+      return jsonResponse({ error: CONFLICT_ERROR }, 409);
     }
 
     const orgId = (member.memberships as { org_id?: string } | null)?.org_id || null;
@@ -202,7 +283,7 @@ Deno.serve(async (req) => {
 
     if (createError) {
       if (isAlreadyRegisteredError(createError)) {
-        return jsonResponse({ error: 'Ese correo ya tiene una cuenta' }, 409);
+        return jsonResponse({ error: CONFLICT_ERROR }, 409);
       }
       throw createError;
     }
@@ -215,7 +296,8 @@ Deno.serve(async (req) => {
 
     // Claim the member row. Guarded to still-unclaimed rows so a concurrent
     // activation can't overwrite an existing claim. The DOB is persisted on
-    // the member row here (R2-21).
+    // the member row here (R2-21) — for legacy rows whose date_of_birth was
+    // still NULL this is also the R2-30 second-factor capture.
     const { data: claimed, error: claimError } = await supabase
       .from('membership_members')
       .update({ email, claimed_user_id: userId, date_of_birth: birthDate })
@@ -227,7 +309,7 @@ Deno.serve(async (req) => {
     if (claimError) throw claimError;
     if (!claimed || claimed.length === 0) {
       console.error('[family-member-signup] claim race lost for member', member.id, 'auth user', userId);
-      return jsonResponse({ error: 'Esta cuenta ya fue activada, inicia sesión' }, 409);
+      return jsonResponse({ error: CONFLICT_ERROR }, 409);
     }
 
     // Minority is derived server-side from the DOB. For a minor, the
@@ -270,8 +352,9 @@ Deno.serve(async (req) => {
 
     return jsonResponse({ success: true }, 200);
   } catch (err) {
+    // Full detail stays in the server log; the client gets a generic body
+    // (R2-38) — PostgREST/GoTrue messages must never leak.
     console.error('[family-member-signup] error:', err);
-    const message = err instanceof Error ? err.message : 'Error desconocido';
-    return jsonResponse({ error: message }, 400);
+    return jsonResponse({ error: 'Error interno. Inténtalo de nuevo.' }, 400);
   }
 });

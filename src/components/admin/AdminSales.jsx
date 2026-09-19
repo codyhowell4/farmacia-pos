@@ -39,6 +39,8 @@ const SyncStatusBadge = ({ sale }) => {
 };
 
 import { getSales } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
+import { maskCurp } from '@/lib/utils';
 import ReceiptModal from '@/components/ReceiptModal';
 
 const AdminSales = () => {
@@ -52,17 +54,45 @@ const AdminSales = () => {
   const { toast } = useToast();
 
   // Map a DB sale row to the shape ReceiptModal expects (same as the POS builds on checkout).
-  const handleReprint = (sale) => {
+  const handleReprint = async (sale) => {
+    // Recetas ligadas a la venta (columnas verificadas contra createPrescription:
+    // prescription_number / doctor_name / doctor_license_number). No-fatal: si
+    // falla la consulta el ticket sale sin el bloque de receta.
+    let rxRows = [];
+    try {
+      const { data } = await supabase
+        .from('prescriptions')
+        .select('id, prescription_number, doctor_name, doctor_license_number, sale_id')
+        .eq('sale_id', sale.id);
+      rxRows = data || [];
+    } catch (e) {
+      console.warn('No se pudieron cargar las recetas de la venta', sale.id, e);
+    }
+    const recetaByFolio = Object.fromEntries(
+      rxRows.map(rx => [rx.prescription_number, {
+        folio: rx.prescription_number,
+        doctor_name: rx.doctor_name,
+        doctor_license: rx.doctor_license_number,
+      }])
+    );
+    // Sin prescription_id por artículo: se liga por rx_number y, si la venta
+    // tiene una sola receta, se usa como comodín para los artículos Rx.
+    const singleReceta = rxRows.length === 1 ? recetaByFolio[rxRows[0].prescription_number] : null;
+
     setReceiptSale({
       ...sale,
       customer_name: sale.customers?.full_name || sale.patient_name,
-      customer_curp: sale.customers?.curp || sale.patient_curp,
-      items: (sale.sale_items || []).map(item => ({
-        ...item,
-        originalPrice: item.original_price,
-        rxNumber: item.rx_number,
-        requiresPrescription: !!item.rx_number,
-      })),
+      customer_curp: maskCurp(sale.customers?.curp || sale.patient_curp),
+      items: (sale.sale_items || []).map(item => {
+        const requiresPrescription = item.requires_prescription ?? !!item.rx_number;
+        return {
+          ...item,
+          originalPrice: item.original_price,
+          rxNumber: item.rx_number,
+          requiresPrescription,
+          receta: requiresPrescription ? (recetaByFolio[item.rx_number] || singleReceta) : null,
+        };
+      }),
       payments: sale.sale_payments || [],
       discount: sale.discount_amount
         ? { code: sale.discount_code || null, percent: sale.discount_value || null, amount: sale.discount_amount }

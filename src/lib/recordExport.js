@@ -55,7 +55,9 @@ const DOC_TYPE_LABELS = {
   otro: 'Otro',
 };
 
-const VITALS_LABELS = {
+// Vitals jsonb keys → labels (shared with ConsultaNotesList). Keys prefixed
+// with '_' in the jsonb are attribution metadata, never rendered as vitals.
+export const VITALS_LABELS = {
   edad: 'Edad',
   height_cm: 'Talla (cm)',
   weight_kg: 'Peso (kg)',
@@ -237,7 +239,9 @@ export const buildPatientRecordPdf = ({
   } else {
     medicalNotes.forEach((n) => {
       checkPage(14);
-      const author = n.profiles?.full_name || '';
+      // author_name snapshot first (NOM-004 5.10) — the live profiles join
+      // only fills rows that predate the snapshot column
+      const author = n.author_name || n.profiles?.full_name || '';
       line(`${formatDateTime(n.created_at)}${author ? ` — ${author}` : ''}`, { bold: true, size: 11 });
       line(n.note || '', { indent: 4 });
       y += 2;
@@ -251,7 +255,7 @@ export const buildPatientRecordPdf = ({
   } else {
     consultaNotes.forEach((n) => {
       checkPage(24);
-      const doctor = n.profiles?.full_name || '';
+      const doctor = n.author_name || n.profiles?.full_name || '';
       const modality = n.modality === 'video' ? ' — Teleconsulta' : '';
       line(`${formatDateTime(n.created_at)}${doctor ? ` — ${doctor}` : ''}${modality}`, { bold: true, size: 11 });
       if (n.modality === 'video') {
@@ -260,8 +264,16 @@ export const buildPatientRecordPdf = ({
       }
       if (n.padecimiento_actual) field('Padecimiento actual', n.padecimiento_actual);
       if (n.exploracion_fisica) field('Exploración física', n.exploracion_fisica);
+      // Vitals jsonb: '_' keys are attribution metadata (_negated/_recorded_by/
+      // _edited_by), rendered as their own line, never as vital signs
       const vitalsText = formatVitals(n.vitals);
-      if (vitalsText) field('Signos vitales', vitalsText);
+      if (n.vitals?._negated) field('Signos vitales', n.vitals._negated);
+      else if (vitalsText) field('Signos vitales', vitalsText);
+      const vitalsMeta = [
+        n.vitals?._recorded_by ? `registrados por ${n.vitals._recorded_by}` : null,
+        n.vitals?._edited_by ? `editados por ${n.vitals._edited_by}` : null,
+      ].filter(Boolean).join(' · ');
+      if (vitalsMeta) field('Signos — atribución', vitalsMeta);
       if (n.resultados_estudios) field('Resultados de estudios', n.resultados_estudios);
       if (n.diagnostico) field('Diagnóstico', n.diagnostico);
       const codes = Array.isArray(n.cie10_codes) ? n.cie10_codes : [];
@@ -349,6 +361,9 @@ export const buildPatientRecordPdf = ({
       const status = CONSENT_STATUS_LABELS[c.status] || c.status || '';
       line(`${c.title || 'Consentimiento'} (${type}) — ${status}`, { bold: true, size: 11 });
       line(`Creado: ${formatDate(c.created_at)}`, { indent: 4, size: 9 });
+      // content_sha256 is trigger-computed at insert and immutable — it pins
+      // the exact text the patient signed (integrity evidence, NOM-024)
+      if (c.content_sha256) line(`SHA-256 del contenido: ${c.content_sha256}`, { indent: 4, size: 9 });
       if (c.status === 'signed') {
         const signer = [
           c.signer_name,

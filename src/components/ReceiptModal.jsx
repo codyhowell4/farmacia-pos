@@ -1,9 +1,11 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Printer, X } from 'lucide-react';
 import { formatMXN } from '@/lib/currency';
 import { useToast } from '@/components/ui/use-toast';
+import { getOrgInfo } from '@/lib/orgInfo';
+import { maskCurp } from '@/lib/utils';
 
 const PAYMENT_LABELS = {
   cash: 'Efectivo',
@@ -13,7 +15,7 @@ const PAYMENT_LABELS = {
 };
 
 // Shared receipt markup — used in the on-screen dialog and the hidden 58mm print area.
-const ReceiptContent = ({ sale }) => {
+const ReceiptContent = ({ sale, orgInfo }) => {
   const paymentMethod = sale.payment_method || sale.paymentMethod || sale.payments?.[0]?.payment_method || 'cash';
   const paymentLabel = PAYMENT_LABELS[paymentMethod] || paymentMethod;
 
@@ -28,6 +30,9 @@ const ReceiptContent = ({ sale }) => {
         {sale.pharmacyLocation && <p className="text-slate-600">{sale.pharmacyLocation}</p>}
         <p className="text-slate-600">Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de México, México</p>
         <p className="text-slate-600">Tel: +52 1 442 548 8893</p>
+        {orgInfo?.rfc && <p className="text-slate-600">RFC: {orgInfo.rfc}</p>}
+        {orgInfo?.aviso_funcionamiento && <p className="text-slate-600">Aviso de Funcionamiento Nº: {orgInfo.aviso_funcionamiento}</p>}
+        {orgInfo?.responsable_sanitario && <p className="text-slate-600">Responsable Sanitario: {orgInfo.responsable_sanitario}</p>}
         <p className="text-slate-500">{new Date(sale.timestamp).toLocaleString('es-MX')}</p>
       </div>
 
@@ -37,7 +42,7 @@ const ReceiptContent = ({ sale }) => {
         <p>Folio: <span className="font-bold">#{sale.id.slice(-8).toUpperCase()}</span></p>
         <p>Cajero: {sale.salesperson_name || sale.salesperson || 'N/A'}</p>
         {(sale.customer_name || sale.patient_name) && <p>Cliente: {sale.customer_name || sale.patient_name}</p>}
-        {(sale.customer_curp || sale.patient_curp) && <p>CURP: {sale.customer_curp || sale.patient_curp}</p>}
+        {(sale.customer_curp || sale.patient_curp) && <p>CURP: {maskCurp(sale.customer_curp || sale.patient_curp)}</p>}
       </div>
 
       <div className="border-t border-dashed border-slate-300 pt-2 space-y-1">
@@ -49,8 +54,17 @@ const ReceiptContent = ({ sale }) => {
             </div>
             <div className="flex justify-between text-slate-500 pl-2">
               <span>{item.quantity} × {formatMXN(item.price)}</span>
-              {item.rxNumber && <span>Rx: {item.rxNumber}</span>}
+              {item.rxNumber && !item.receta && <span>Rx: {item.rxNumber}</span>}
             </div>
+            {item.requiresPrescription && item.receta && (
+              <p className="text-slate-500 pl-2">
+                {[
+                  `Receta — Folio: ${item.receta.folio || item.rxNumber || '—'}`,
+                  item.receta.doctor_name && `Médico: ${item.receta.doctor_name}`,
+                  item.receta.doctor_license && `Céd: ${item.receta.doctor_license}`,
+                ].filter(Boolean).join(' · ')}
+              </p>
+            )}
           </div>
         ))}
       </div>
@@ -108,6 +122,13 @@ const ReceiptContent = ({ sale }) => {
 const ReceiptModal = ({ open, onOpenChange, sale, autoPrint = false }) => {
   const { toast } = useToast();
   const hasAutoPrinted = useRef(false);
+  const [orgInfo, setOrgInfo] = useState(null);
+
+  // Datos fiscales/sanitarios del encabezado (organizations) — cacheados por
+  // getOrgInfo; falla silenciosa para no bloquear el ticket.
+  useEffect(() => {
+    if (open) getOrgInfo().then(setOrgInfo).catch(() => {});
+  }, [open]);
 
   // Print via window.print() against the hidden #receipt-print-area.
   // This works when fired programmatically (unlike window.open popups).
@@ -148,7 +169,7 @@ const ReceiptModal = ({ open, onOpenChange, sale, autoPrint = false }) => {
           </DialogHeader>
 
           <div className="border border-dashed border-slate-300 rounded">
-            <ReceiptContent sale={sale} />
+            <ReceiptContent sale={sale} orgInfo={orgInfo} />
           </div>
 
           <div className="flex gap-2">
@@ -176,7 +197,7 @@ const ReceiptModal = ({ open, onOpenChange, sale, autoPrint = false }) => {
 
       {/* Hidden print-only receipt area (58mm thermal). Visible only in print via index.css */}
       <div id="receipt-print-area" className="hidden print:block" aria-hidden="true">
-        <ReceiptContent sale={sale} />
+        <ReceiptContent sale={sale} orgInfo={orgInfo} />
       </div>
     </>
   );

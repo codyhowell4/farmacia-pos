@@ -28,6 +28,8 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { enqueueRxJob, flushRxQueue } from '@/lib/rxQueue';
 
 const PAYMENT_METHODS = [
   { id: 'cash', label: 'Efectivo', icon: DollarSign, color: 'from-green-500 to-emerald-600' },
@@ -75,6 +77,7 @@ const PoSDashboard = () => {
   const [isVoidOpen, setIsVoidOpen] = useState(false);
   const [voidSaleId, setVoidSaleId] = useState('');
   const [voidPin, setVoidPin] = useState('');
+  const [voidReason, setVoidReason] = useState('');
   const [recentSales, setRecentSales] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
@@ -145,6 +148,7 @@ const PoSDashboard = () => {
       .catch(console.error);
     processMembershipRenewals().catch(console.error);
     getTaxSettingsDb().then(setTaxSettings).catch(console.error);
+    retryRxQueue();
     getBankAccounts().then(accounts => {
       setBankAccounts(accounts);
       const defaultAccount = accounts.find(a => a.is_default);
@@ -161,6 +165,26 @@ const PoSDashboard = () => {
       console.error(e);
     }
   };
+
+  // R2-26: reintenta los registros de receta/bitácora que fallaron tras
+  // ventas anteriores (cola local rx_failed_queue).
+  const retryRxQueue = async () => {
+    try {
+      const result = await flushRxQueue({
+        createPrescriptionFn: createPrescription,
+        insertControlledFn: createControlledRegisterRows,
+      });
+      if (result.flushed > 0) {
+        toast({ title: 'Registros de receta recuperados', description: `Se completaron ${result.flushed} registro(s) sanitario(s) pendientes.` });
+      }
+    } catch { /* se reintenta en el próximo flush */ }
+  };
+
+  useEffect(() => {
+    const onOnline = () => retryRxQueue();
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, []);
 
   const handleLogout = () => { logout(); navigate('/login'); };
 
@@ -514,6 +538,11 @@ const PoSDashboard = () => {
       const foundDiscount = await findDiscount(discountCode);
       if (foundDiscount) {
         setDiscount(foundDiscount);
+        logAudit({
+          action: AUDIT_ACTIONS.DISCOUNT_APPLIED,
+          user,
+          details: `Código ${foundDiscount.code} (${foundDiscount.type === 'cost_plus' ? `costo +${foundDiscount.value}%` : `${foundDiscount.value}%`}) | Subtotal del carrito: ${formatMXN(subtotal)}`,
+        });
         toast({
           title: '¡Descuento aplicado!',
           description: foundDiscount.type === 'cost_plus'
@@ -540,13 +569,21 @@ const PoSDashboard = () => {
     const item = cart.find(item => item.id === id);
     if (!item || item.price === item.originalPrice) return;
     const discountPercentage = ((item.originalPrice - item.price) / item.originalPrice) * 100;
-    if (discountPercentage > 10 || item.price < 0) {
-      setOverrideData({ itemId: id, newPrice: item.price });
+    // Cualquier aumento de precio requiere PIN de administrador (riesgo de
+    // cobro de más / fraude), igual que un descuento >10% o precio negativo.
+    if (item.price > item.originalPrice || discountPercentage > 10 || item.price < 0) {
+      setOverrideData({ itemId: id, itemName: item.name, originalPrice: item.originalPrice, newPrice: item.price });
       setIsAdminPinOpen(true);
       setCart(cart.map(i => i.id === id ? { ...i, price: i.originalPrice } : i));
       toast({ title: 'Se requiere aprobación del administrador', description: 'Este cambio de precio requiere autorización del administrador.' });
     } else {
+      // Descuento ≤10%: se auto-aprueba pero queda en la bitácora (R2-25).
       setCart(cart.map(i => i.id === id ? { ...i, overrideBy: 'auto-approved' } : i));
+      logAudit({
+        action: AUDIT_ACTIONS.PRICE_OVERRIDE,
+        user,
+        details: `${item.name}: ${formatMXN(item.originalPrice)} → ${formatMXN(item.price)} — auto-aprobado (≤10%)`,
+      });
     }
   };
 
@@ -554,7 +591,11 @@ const PoSDashboard = () => {
     const adminUser = await verifyAdminPin(adminPin);
     if (adminUser) {
       setCart(cart.map(item => item.id === overrideData.itemId ? { ...item, price: overrideData.newPrice, overrideBy: adminUser.full_name } : item));
-      logAudit({ action: AUDIT_ACTIONS.PRICE_OVERRIDE, user, details: `Item overridden to {formatMXN(overrideData.newPrice)} by ${adminUser.full_name}` });
+      logAudit({
+        action: AUDIT_ACTIONS.PRICE_OVERRIDE,
+        user,
+        details: `${overrideData.itemName}: ${formatMXN(overrideData.originalPrice)} → ${formatMXN(overrideData.newPrice)} — autorizado por ${adminUser.full_name}`,
+      });
       setIsAdminPinOpen(false); setAdminPin(''); setOverrideData(null);
       toast({ title: '¡Precio modificado!' });
     } else {
@@ -991,9 +1032,7 @@ const PoSDashboard = () => {
           membership_visits_used: isMembershipActive ? usedVisits : 0,
         };
 
-        console.log('Creating sale with record:', saleRecord);
-        console.log('Sale items:', saleItems);
-        console.log('Payments:', payments);
+        console.log('Creating sale — items:', saleItems.length, '| payments:', payments.length);
 
         const sale = await createSaleWithPayments(saleRecord, saleItems, payments);
 
@@ -1026,10 +1065,13 @@ const PoSDashboard = () => {
           }
         }
 
-        console.log('Sale created successfully:', sale);
+        console.log('Sale created:', sale.id);
 
         // Create or link prescription record if prescription data exists
         if (prescription) {
+          // Se declara fuera del try para que el catch pueda encolar el
+          // reintento (R2-26) con el mismo payload.
+          let prescriptionRecord = null;
           try {
             if (prescription.linked_prescription_id) {
               // Link existing doctor prescription to this sale
@@ -1041,7 +1083,7 @@ const PoSDashboard = () => {
               });
             } else {
               // Create new COFEPRIS prescription record
-              const prescriptionRecord = {
+              prescriptionRecord = {
                 sale_id: sale.id,
                 customer_id: selectedCustomer?.id || null,
                 patient_name: prescription.patient_name,
@@ -1056,7 +1098,7 @@ const PoSDashboard = () => {
               };
 
               const createdPrescription = await createPrescription(prescriptionRecord);
-              console.log('Prescription created:', createdPrescription);
+              console.log('Prescription created:', createdPrescription?.id);
 
               logAudit({
                 action: AUDIT_ACTIONS.PRESCRIPTION_ADDED,
@@ -1071,39 +1113,46 @@ const PoSDashboard = () => {
             // friendly message the modal's pre-check uses if it raced.
             const isDuplicateFolio = rxErr?.code === '23505'
               || /folio de receta ya registrado/i.test(rxErr?.message || '');
+            // Folio duplicado = error de captura del cajero → NO se encola;
+            // cualquier otro fallo se reintenta automáticamente (R2-26).
+            if (!isDuplicateFolio && prescriptionRecord) {
+              enqueueRxJob({ kind: 'prescription', payload: prescriptionRecord });
+            }
             toast({
               title: isDuplicateFolio ? 'Folio duplicado' : 'Advertencia',
               description: isDuplicateFolio
                 ? 'Este folio ya fue registrado en otra venta. La venta se completó; corrige el folio de la receta con el administrador.'
-                : 'La venta se completó pero hubo un error guardando la receta. Contacte al administrador.',
+                : 'La venta se completó; el registro de receta se reintentará automáticamente',
               variant: 'destructive',
             });
           }
         }
 
         // Controlled substances (grupo II/III): one row per controlled item in
-        // the COFEPRIS foliada register. Non-fatal — the sale already succeeded,
-        // but the failure must be loud so staff can fix the register.
+        // the COFEPRIS foliada register. Non-fatal — the sale already succeeded;
+        // a failure gets queued for automatic retry (R2-26).
         const controlledSold = cart.filter(item => item.controlled_group);
         if (controlledSold.length > 0) {
+          const controlledRows = controlledSold.map(item => ({
+            sale_id: sale.id,
+            inventory_id: item.id,
+            product_name: item.name,
+            controlled_group: item.controlled_group,
+            quantity: item.quantity,
+            patient_name: prescription?.patient_name || selectedCustomer?.full_name || null,
+            prescription_folio: controlledData.folio,
+            doctor_name: controlledData.doctor_name,
+            doctor_cedula: controlledData.doctor_cedula,
+            created_by: user?.id || null,
+          }));
           try {
-            await createControlledRegisterRows(controlledSold.map(item => ({
-              sale_id: sale.id,
-              inventory_id: item.id,
-              product_name: item.name,
-              controlled_group: item.controlled_group,
-              quantity: item.quantity,
-              patient_name: prescription?.patient_name || selectedCustomer?.full_name || null,
-              prescription_folio: controlledData.folio,
-              doctor_name: controlledData.doctor_name,
-              doctor_cedula: controlledData.doctor_cedula,
-              created_by: user?.id || null,
-            })));
+            await createControlledRegisterRows(controlledRows);
           } catch (crErr) {
             console.error('Failed to write controlled_register:', crErr);
+            enqueueRxJob({ kind: 'controlled_register', payload: controlledRows });
             toast({
               title: 'Advertencia',
-              description: 'La venta se completó pero no se pudo registrar en la bitácora de controlados. Contacte al administrador.',
+              description: 'La venta se completó; el registro de receta se reintentará automáticamente',
               variant: 'destructive',
             });
           }
@@ -1132,7 +1181,14 @@ const PoSDashboard = () => {
         logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(finalTotal)} | ${isSplitPayment ? 'split' : paymentMethod} | ${cart.length} item(s)` });
         toast({ title: '¡Venta completada!', description: `${formatMXN(finalTotal)} ${isSplitPayment ? '(pago dividido)' : ''}` });
 
-        // Prepare sale data for receipt
+        // Prepare sale data for receipt. Los datos de receta salen del modal
+        // de captura — el ticket los imprime aunque el registro en
+        // `prescriptions` haya quedado en la cola de reintento (R2-26/R2-27).
+        const recetaInfo = prescription ? {
+          folio: prescription.prescription_number || null,
+          doctor_name: prescription.doctor_name || null,
+          doctor_license: prescription.doctor_license_number || null,
+        } : null;
         const saleData = {
           ...sale,
           paymentMethod: saleRecord.payment_method,
@@ -1142,6 +1198,7 @@ const PoSDashboard = () => {
             ...item,
             rxNumber: item.rx_number,
             requiresPrescription: cart.find(c => c.id === item.inventory_id)?.requires_prescription,
+            receta: cart.find(c => c.id === item.inventory_id)?.requires_prescription ? recetaInfo : null,
           })),
           payments: payments,
           discount: (discount || useMembershipDiscount) && discountAmount !== 0
@@ -1161,6 +1218,9 @@ const PoSDashboard = () => {
         // Show receipt modal
         setCompletedSale(saleData);
         setReceiptOpen(true);
+
+        // Reintenta registros sanitarios pendientes de ventas anteriores
+        retryRxQueue();
 
         // Refresh local inventory from DB
         const updatedInventory = await getInventory(user.locationId);
@@ -1197,9 +1257,10 @@ const PoSDashboard = () => {
     const adminUser = await verifyAdminPin(voidPin);
     if (!adminUser) { toast({ title: 'PIN inválido', variant: 'destructive' }); return; }
     if (!voidSaleId) { toast({ title: 'Selecciona una venta a anular', variant: 'destructive' }); return; }
+    if (!voidReason.trim()) { toast({ title: 'Motivo requerido', description: 'Ingresa el motivo de la anulación', variant: 'destructive' }); return; }
 
     try {
-      await voidSale(voidSaleId, adminUser.full_name || adminUser.name);
+      await voidSale(voidSaleId, adminUser.full_name || adminUser.name, voidReason.trim());
 
       const updatedInventory = await getInventory(user.locationId);
       setInventory(updatedInventory);
@@ -1210,8 +1271,8 @@ const PoSDashboard = () => {
       );
 
       toast({ title: 'Sale Voided', description: `Venta #${voidSaleId.slice(-6)} anulada` });
-      logAudit({ action: AUDIT_ACTIONS.SALE_VOID, user, details: `Venta #${voidSaleId.slice(-6)} anulada por ${adminUser.full_name || adminUser.name}` });
-      setIsVoidOpen(false); setVoidSaleId(''); setVoidPin('');
+      logAudit({ action: AUDIT_ACTIONS.SALE_VOID, user, details: `Venta #${voidSaleId.slice(-6)} anulada por ${adminUser.full_name || adminUser.name} — Motivo: ${voidReason.trim()}` });
+      setIsVoidOpen(false); setVoidSaleId(''); setVoidPin(''); setVoidReason('');
     } catch (e) {
       toast({ title: e.message || 'Error al anular', variant: 'destructive' });
     }
@@ -2071,7 +2132,7 @@ const PoSDashboard = () => {
       </Dialog>
 
       {/* Void Sale Dialog */}
-      <Dialog open={isVoidOpen} onOpenChange={(open) => { setIsVoidOpen(open); if (!open) { setVoidSaleId(''); setVoidPin(''); } }}>
+      <Dialog open={isVoidOpen} onOpenChange={(open) => { setIsVoidOpen(open); if (!open) { setVoidSaleId(''); setVoidPin(''); setVoidReason(''); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-red-500" />Anular una venta</DialogTitle></DialogHeader>
           <div className="space-y-4">
@@ -2094,10 +2155,20 @@ const PoSDashboard = () => {
               </div>
             </div>
             <div className="space-y-2">
+              <Label htmlFor="void-reason">Motivo de la anulación *</Label>
+              <Textarea
+                id="void-reason"
+                placeholder="Ej. Error de captura, el cliente canceló la compra…"
+                value={voidReason}
+                onChange={e => setVoidReason(e.target.value)}
+                rows={2}
+              />
+            </div>
+            <div className="space-y-2">
               <Label>PIN de administrador para autorizar</Label>
               <Input type="password" placeholder="Ingresa el PIN de administrador" value={voidPin} onChange={e => setVoidPin(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleVoidSale()} />
             </div>
-            <Button onClick={handleVoidSale} variant="destructive" className="w-full" disabled={!voidSaleId || !voidPin}>
+            <Button onClick={handleVoidSale} variant="destructive" className="w-full" disabled={!voidSaleId || !voidPin || !voidReason.trim()}>
               <XCircle className="w-4 h-4 mr-2" />Void Selected Sale
             </Button>
           </div>

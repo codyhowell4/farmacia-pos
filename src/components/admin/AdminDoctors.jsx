@@ -50,9 +50,6 @@ const AdminDoctors = () => {
     try {
       const data = await getDoctorUsersWithProfiles();
       console.log('[AdminDoctors] loaded doctors count:', data?.length);
-      if (data?.[0]) {
-        console.log('[AdminDoctors] first doctor row:', JSON.stringify(data[0], null, 2));
-      }
       setDoctors(Array.isArray(data) ? data : []);
     } catch (err) {
       toast.error('Error cargando médicos');
@@ -81,7 +78,6 @@ const AdminDoctors = () => {
   const openEdit = (doctor) => {
     setEditingDoctor(doctor);
     const dp = getDoctorProfileFromRow(doctor);
-    console.log('[AdminDoctors] openEdit profile:', dp);
     setForm({
       full_name: doctor.full_name || '',
       license_number: dp?.license_number || '',
@@ -114,12 +110,7 @@ const AdminDoctors = () => {
       availability: form.availability || {},
     };
 
-    console.log('[AdminDoctors] Saving profile for doctor:', {
-      doctorId: editingDoctor.id,
-      doctorName: editingDoctor.full_name,
-      doctorEmail: editingDoctor.email,
-      payload,
-    });
+    console.log('[AdminDoctors] Saving profile for doctor:', editingDoctor.id);
 
     try {
       await upsertDoctorProfile(editingDoctor.id, payload);
@@ -179,7 +170,6 @@ const AdminDoctors = () => {
           {filtered.map(doctor => {
             const dp = getDoctorProfileFromRow(doctor);
             const hasProfile = !!dp;
-            console.log('[AdminDoctors] render doctor:', doctor?.full_name, 'hasProfile:', hasProfile, 'dp:', dp);
             return (
               <div key={doctor?.id || Math.random()} className="p-4 hover:bg-slate-50 transition-colors">
                 <div className="flex items-start justify-between gap-4">

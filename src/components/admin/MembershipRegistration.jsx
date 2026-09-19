@@ -95,7 +95,7 @@ const MembershipRegistration = () => {
     if (!form.ownerName.trim()) return 'El nombre del titular es obligatorio.';
     if (!form.email.trim()) return 'El correo electrónico es obligatorio.';
     if (!form.phone.trim()) return 'El teléfono es obligatorio.';
-    if (form.password.length < 6) return 'La contraseña del portal debe tener al menos 6 caracteres.';
+    if (form.password.length < 10) return 'La contraseña del portal debe tener al menos 10 caracteres.';
     if (!form.termsAccepted) return 'El titular debe aceptar los Términos y Condiciones y el Aviso de Privacidad.';
     if (form.paymentMethod === 'paypal' && !isPayPalConfigured()) {
       return 'PayPal no está configurado.';
@@ -187,7 +187,7 @@ const MembershipRegistration = () => {
       if (!currentForm.ownerName.trim()) return 'El nombre del titular es obligatorio.';
       if (!currentForm.email.trim()) return 'El correo electrónico es obligatorio.';
       if (!currentForm.phone.trim()) return 'El teléfono es obligatorio.';
-      if (currentForm.password.length < 6) return 'La contraseña del portal debe tener al menos 6 caracteres.';
+      if (currentForm.password.length < 10) return 'La contraseña del portal debe tener al menos 10 caracteres.';
       if (!currentForm.termsAccepted) return 'El titular debe aceptar los Términos y Condiciones y el Aviso de Privacidad.';
       if (!isPayPalConfigured()) return 'PayPal no está configurado.';
       return null;
@@ -346,7 +346,7 @@ const MembershipRegistration = () => {
             </div>
             <div className="md:col-span-2">
               <Label>Contraseña del portal *</Label>
-              <Input type="password" minLength={6} value={form.password} onChange={(e) => updateField('password', e.target.value)} required />
+              <Input type="password" minLength={10} value={form.password} onChange={(e) => updateField('password', e.target.value)} required />
             </div>
           </div>
         </div>

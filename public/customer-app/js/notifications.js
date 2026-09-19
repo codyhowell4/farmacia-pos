@@ -94,16 +94,19 @@ export const NotificationManager = {
       }, delayMs);
     }
 
-    console.log(`Scheduled notification for ${medicine} at ${time} (in ${Math.round(delayMs / 60000)} minutes)`);
+    console.log(`Scheduled dose notification at ${time} (in ${Math.round(delayMs / 60000)} minutes)`);
   },
 
-  // Show a dose notification immediately
+  // Show a dose notification immediately.
+  // PII (R2-37): medicine name and dose stay in the data payload for
+  // in-app use only — never in the title/body, which are visible on the
+  // lock screen.
   async showDoseNotification(scheduleId, doseId, medicine, dose) {
     const registration = await this.getRegistration();
     if (!registration) return;
 
     await registration.showNotification('💊 Hora de tu medicamento', {
-      body: `${medicine}${dose ? ` - ${dose}` : ''}`,
+      body: 'Es hora de tu medicamento programado',
       icon: './icon-192x192.png',
       badge: './badge-72x72.png',
       tag: `dose_${scheduleId}_${doseId}`,

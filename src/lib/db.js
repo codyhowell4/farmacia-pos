@@ -687,7 +687,7 @@ export const getSalesSince = async (since) => {
   return data || [];
 };
 
-export const voidSale = async (saleId, voidedByName) => {
+export const voidSale = async (saleId, voidedByName, reason = null) => {
   const { data: sale, error: fetchError } = await supabase
     .from('sales')
     .select('*, sale_items(*)')
@@ -722,8 +722,12 @@ export const voidSale = async (saleId, voidedByName) => {
     voided: true,
     voided_by: voidedByName,
     voided_at: new Date().toISOString(),
+    voided_reason: reason || null,
   }).eq('id', saleId);
   if (error) throw error;
+
+  // Las recetas ligadas a esta venta se anulan en cascada por el trigger de
+  // BD sales_void_cascade_trg (hereda voided_reason) — no anularlas aquí.
 
   // Give back any membership benefits this ticket consumed (visits and
   // revision usages). Non-fatal: the void itself already succeeded.
@@ -1656,7 +1660,7 @@ export const getAppointments = async () => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('appointments')
-    .select('*, customers(id, full_name, phone, profile_id), profiles!appointments_doctor_id_fkey(full_name)')
+    .select('*, customers(id, full_name, phone, curp, date_of_birth, profile_id), profiles!appointments_doctor_id_fkey(full_name)')
     .eq('org_id', orgId)
     .order('appointment_date', { ascending: true });
   if (error) throw error;
@@ -1667,7 +1671,7 @@ export const getAppointmentsByDoctor = async (doctorId) => {
   const orgId = await getOrgId();
   const { data, error } = await supabase
     .from('appointments')
-    .select('*, customers(full_name, phone)')
+    .select('*, customers(full_name, phone, curp, date_of_birth)')
     .eq('org_id', orgId)
     .eq('doctor_id', doctorId)
     .order('appointment_date', { ascending: true });
@@ -2187,6 +2191,26 @@ export const getConsentDocuments = async (customerId) => {
   return data || [];
 };
 
+// Required signed consents before any clinical note/receta is saved for a
+// registered patient (R2-35: in-person consultas had no consent gate).
+export const REQUIRED_CONSENT_TYPES = ['privacidad', 'general', 'teleconsulta', 'firma_electronica'];
+
+// Returns the list of REQUIRED_CONSENT_TYPES with no signed consent_document
+// yet — an empty array means the patient is fully covered. Clinical staff
+// (doctor/nurse roles) can read consent_documents per RLS.
+export const hasAllConsentsSigned = async (customerId) => {
+  if (!customerId) return [...REQUIRED_CONSENT_TYPES];
+  const { data, error } = await supabase
+    .from('consent_documents')
+    .select('type')
+    .eq('customer_id', customerId)
+    .eq('status', 'signed')
+    .in('type', REQUIRED_CONSENT_TYPES);
+  if (error) throw error;
+  const signed = new Set((data || []).map(r => r.type));
+  return REQUIRED_CONSENT_TYPES.filter(t => !signed.has(t));
+};
+
 // Org-wide list for the admin "Consentimientos" page (staff RLS policy).
 export const getAllConsentDocuments = async () => {
   const orgId = await getOrgId();
@@ -2253,10 +2277,10 @@ export const getPatientDocumentUrl = async (path) => {
 
 // ── NURSE PRE-CONSULTA VITALS ───────────────────────────────
 
-export const saveNurseVitals = async (appointmentId, vitals, recordedBy = null) => {
+export const saveNurseVitals = async (appointmentId, vitals, recordedBy = null, nurseName = null) => {
   const { data, error } = await supabase
     .from('appointments')
-    .update({ nurse_vitals: vitals, nurse_vitals_by: recordedBy })
+    .update({ nurse_vitals: vitals, nurse_vitals_by: recordedBy, nurse_vitals_by_name: nurseName })
     .eq('id', appointmentId)
     .select()
     .single();
@@ -2335,7 +2359,6 @@ export const getDoctorProfile = async (profileId) => {
     console.error('[getDoctorProfile] error:', error);
     throw error;
   }
-  console.log('[getDoctorProfile] result:', data);
   return data;
 };
 
@@ -2371,15 +2394,11 @@ export const getDoctorUsersWithProfiles = async () => {
     throw error;
   }
   console.log('[getDoctorUsersWithProfiles] rows:', data?.length || 0);
-  if (data?.[0]) {
-    console.log('[getDoctorUsersWithProfiles] first row shape:', JSON.stringify(data[0], null, 2));
-  }
   return data || [];
 };
 
 export const upsertDoctorProfile = async (profileId, data) => {
   console.log('[upsertDoctorProfile] profileId:', profileId);
-  console.log('[upsertDoctorProfile] data:', data);
 
   // 1. Check if row already exists
   const { data: existing, error: findError } = await supabase

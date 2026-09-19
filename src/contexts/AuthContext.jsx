@@ -35,6 +35,10 @@ export const AuthProvider = ({ children }) => {
   // Guard to prevent concurrent auth operations
   const isProcessingAuth = useRef(false);
 
+  // Set when a profile fetch finds the account deactivated, so login() can
+  // surface the right error after the fetch returns null
+  const deactivatedRef = useRef(false);
+
   // Fetch profile with retry logic (for trigger delays)
   const fetchProfileWithRetry = useCallback(async (authUser, maxRetries = 3) => {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -58,6 +62,19 @@ export const AuthProvider = ({ children }) => {
           if (attempt === maxRetries) return null;
           await new Promise(r => setTimeout(r, 300 * attempt));
           continue;
+        }
+
+        // A deactivated account loses all access immediately (the RLS role
+        // helpers exclude it server-side): end the auth session and refuse
+        // the profile, skipping the retry/location-onboarding logic below.
+        // The ref also dedupes the toast when startup fires two fetches.
+        if (data.deactivated_at) {
+          if (!deactivatedRef.current) {
+            deactivatedRef.current = true;
+            toast.error('Tu cuenta ha sido desactivada. Contacta al administrador.');
+            await supabase.auth.signOut();
+          }
+          return null;
         }
 
         // If profile has no location_id yet, default to first location in org
@@ -189,11 +206,16 @@ export const AuthProvider = ({ children }) => {
 
       // Step 2: Directly fetch profile (don't rely on onAuthStateChange - it's unreliable)
       await deferAuthFollowup();
+      deactivatedRef.current = false;
       const userProfile = await fetchProfileWithRetry(signInData.user);
 
       if (!userProfile) {
         // Sign out since we couldn't get the profile
         await supabase.auth.signOut();
+        if (deactivatedRef.current) {
+          deactivatedRef.current = false;
+          throw new Error('Tu cuenta ha sido desactivada. Contacta al administrador.');
+        }
         throw new Error('Perfil no encontrado. Contacta al administrador.');
       }
 

@@ -263,8 +263,9 @@ Deno.serve(async (req) => {
       ...(warning ? { warning } : {}),
     }, 200);
   } catch (err) {
+    // Full detail stays in the server log; the client gets a generic body
+    // (R2-38) — PostgREST/PayPal messages must never leak.
     console.error('[cancel-my-membership] error:', err);
-    const message = err instanceof Error ? err.message : 'Error desconocido';
-    return jsonResponse({ error: message }, 400);
+    return jsonResponse({ error: 'Error interno. Inténtalo de nuevo.' }, 400);
   }
 });

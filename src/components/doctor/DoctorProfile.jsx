@@ -196,7 +196,6 @@ const DoctorProfile = () => {
         getDoctorProfile(user.id),
         getMyEfirma().catch(() => null),
       ]);
-      console.log('[DoctorProfile] loaded data:', JSON.stringify(data, null, 2));
       setProfile(data);
       setEfirma(efirmaRow);
       setLicenseNumber(data?.license_number || '');

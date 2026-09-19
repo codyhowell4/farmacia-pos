@@ -199,8 +199,9 @@ Deno.serve(async (req) => {
 
     return jsonResponse({ linked: true, account_existed: accountExisted }, 200);
   } catch (err) {
+    // Full detail stays in the server log; the client gets a generic body
+    // (R2-38) — PostgREST/GoTrue messages must never leak.
     console.error('[create-portal-account] error:', err);
-    const message = err instanceof Error ? err.message : 'Error desconocido';
-    return jsonResponse({ error: message }, 500);
+    return jsonResponse({ error: 'Error interno. Inténtalo de nuevo.' }, 500);
   }
 });

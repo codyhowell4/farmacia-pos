@@ -103,10 +103,10 @@
       <div class="card">
         <h2 id="patient-title">1. Datos del paciente</h2>
         <label for="patient_name">Nombre completo del paciente *</label>
-        <input type="text" id="patient_name" autocomplete="name">
+        <input type="text" id="patient_name" autocomplete="off">
 
         <label for="patient_dob">Fecha de nacimiento (dd/mm/aaaa) *</label>
-        <input type="text" id="patient_dob" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" autocomplete="bday">
+        <input type="text" id="patient_dob" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" autocomplete="off">
 
         <label for="patient_sexo">Sexo *</label>
         <select id="patient_sexo">
@@ -116,11 +116,11 @@
         </select>
 
         <label for="patient_curp">CURP (opcional)</label>
-        <input type="text" id="patient_curp" maxlength="18" placeholder="18 caracteres — si lo tienes a la mano">
+        <input type="text" id="patient_curp" maxlength="18" placeholder="18 caracteres — si lo tienes a la mano" autocomplete="off">
 
         <div id="guardian-block" style="display: none;">
           <label for="guardian_name">Nombre completo del padre, madre o tutor *</label>
-          <input type="text" id="guardian_name">
+          <input type="text" id="guardian_name" autocomplete="off">
 
           <label for="guardian_rel">Parentesco de quien firma *</label>
           <select id="guardian_rel">
@@ -131,7 +131,7 @@
           </select>
 
           <label for="guardian_id">Últimos 4 dígitos de la INE de quien firma *</label>
-          <input type="text" id="guardian_id" maxlength="4" placeholder="Ej. 4832">
+          <input type="text" id="guardian_id" maxlength="4" placeholder="Ej. 4832" autocomplete="off">
           <p class="hint">El paciente es menor de edad — los consentimientos quedan a nombre del padre, madre o tutor, con su parentesco e identificación como evidencia (NOM-004).</p>
         </div>
       </div>
@@ -156,10 +156,10 @@
       <div class="card">
         <h2 id="checkin-title">Check-in</h2>
         <label>1. ¿Cuál es el motivo de tu visita? *</label>
-        <input type="text" id="checkin-reason" placeholder="Ej. consulta general, seguimiento, receta...">
+        <input type="text" id="checkin-reason" placeholder="Ej. consulta general, seguimiento, receta..." autocomplete="off">
 
         <label>2. ¿Qué síntomas tienes? *</label>
-        <textarea id="checkin-symptoms" placeholder="Ej. fiebre, dolor de garganta y tos..."></textarea>
+        <textarea id="checkin-symptoms" placeholder="Ej. fiebre, dolor de garganta y tos..." autocomplete="off"></textarea>
 
         <label>3. ¿Desde cuándo tienes estos síntomas?</label>
         <select id="checkin-duration">
@@ -170,10 +170,10 @@
         </select>
 
         <label>4. ¿Tomas algún medicamento actualmente? (opcional)</label>
-        <input type="text" id="checkin-medications" placeholder="Ej. paracetamol, ninguno...">
+        <input type="text" id="checkin-medications" placeholder="Ej. paracetamol, ninguno..." autocomplete="off">
 
         <label>5. ¿Tienes alergias conocidas? (opcional)</label>
-        <input type="text" id="checkin-allergies" placeholder="Ej. penicilina, ninguna...">
+        <input type="text" id="checkin-allergies" placeholder="Ej. penicilina, ninguna..." autocomplete="off">
       </div>
       <button class="btn" id="btn-checkin-submit">Hacer check-in</button>
     </div>
@@ -187,6 +187,7 @@
       <button class="btn btn-secondary" id="btn-print-copy" style="display: none;">🖨️ Imprimir mi copia de los consentimientos</button>
       <p class="hint" id="print-hint" style="display: none; color: rgba(255,255,255,0.75); margin-top: -0.25rem;">También puedes pedir tu copia al personal en cualquier momento.</p>
       <button class="btn" onclick="location.reload()">Registrar a otra persona</button>
+      <p id="success-countdown" style="font-size: 0.8rem; color: rgba(255,255,255,0.75); margin-top: 0.75rem;"></p>
     </div>
 
     <!-- Honeypot: no llenar (anti-spam) -->
@@ -198,7 +199,7 @@
   <!-- Copia impresa de los documentos firmados (solo visible al imprimir) -->
   <div id="print-copy"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="/vendor/supabase-js.min.js"></script>
   <script src="/customer-app/js/supabase.js?v=1"></script>
   <script src="/customer-app/js/consentDocs.js?v=4"></script>
   <script>
@@ -236,6 +237,35 @@
         errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
       function hideError() { errorBox.style.display = 'none'; }
+
+      // ---- Inactividad (kiosco compartido): 90 s sin interacción → reinicio ----
+      var idleTimer = null;
+      function resetIdleTimer() {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(function () { location.reload(); }, 90000);
+      }
+      ['input', 'click', 'keydown'].forEach(function (evt) {
+        document.addEventListener(evt, resetIdleTimer, true);
+      });
+      resetIdleTimer();
+
+      // ---- Pantalla de éxito: cuenta regresiva visible y cierre a los 45 s (privacidad) ----
+      function startSuccessCountdown() {
+        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        var el = document.getElementById('success-countdown');
+        var seconds = 45;
+        function tick() {
+          if (seconds <= 0) {
+            clearInterval(interval);
+            location.reload();
+            return;
+          }
+          if (el) el.textContent = 'Esta pantalla se cerrará en ' + seconds + ' s por privacidad.';
+          seconds--;
+        }
+        var interval = setInterval(tick, 1000);
+        tick();
+      }
 
       // ---- Consent document cards ----
       var container = document.getElementById('docs-container');
@@ -359,6 +389,7 @@
         document.getElementById('btn-print-copy').style.display = canPrint ? 'block' : 'none';
         document.getElementById('print-hint').style.display = canPrint ? 'block' : 'none';
         show('success');
+        startSuccessCountdown();
       }
 
       // ---- Patient copy of the signed documents (NOM-004 10.1) ----

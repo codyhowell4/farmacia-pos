@@ -156,7 +156,7 @@ window.FarmaciaAPI = (function () {
     async getCurrentUser() {
       const user = await getAuthUser();
       if (user) {
-        console.log('[FarmaciaAPI] Current user:', user.email);
+        console.log('[FarmaciaAPI] Current user session found');
       }
       return user;
     },
@@ -201,7 +201,7 @@ window.FarmaciaAPI = (function () {
 
         const { data, error } = await sb.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        console.log('[FarmaciaAPI] User signed in:', data.user?.email);
+        console.log('[FarmaciaAPI] User signed in');
         return { data, error: null };
       } catch (err) {
         console.error('[FarmaciaAPI] signIn failed:', err.message);
@@ -648,7 +648,7 @@ window.FarmaciaAPI = (function () {
           }
         });
         if (error) throw error;
-        console.log('[FarmaciaAPI] User signed up:', data.user?.email);
+        console.log('[FarmaciaAPI] User signed up');
         return { data, error: null };
       } catch (err) {
         console.error('[FarmaciaAPI] signUp failed:', err.message);
@@ -1317,22 +1317,22 @@ window.FarmaciaAPI = (function () {
                 }).eq('id', invId);
 
                 if (updErr) {
-                  console.warn('[placeOrder] Inventory fallback failed for', item.name, updErr.message);
+                  console.warn('[placeOrder] Inventory fallback failed for', invId, updErr.message);
                   inventoryFail++;
                 } else {
-                  console.log('[placeOrder] Inventory deducted (fallback) for', item.name);
+                  console.log('[placeOrder] Inventory deducted (fallback) for', invId);
                   inventorySuccess++;
                 }
               } else {
-                console.warn('[placeOrder] Inventory not found for', item.name);
+                console.warn('[placeOrder] Inventory not found for', invId);
                 inventoryFail++;
               }
             } else {
-              console.log('[placeOrder] Inventory deducted (RPC) for', item.name);
+              console.log('[placeOrder] Inventory deducted (RPC) for', invId);
               inventorySuccess++;
             }
           } catch (invErr) {
-            console.warn('[placeOrder] Inventory deduction error for', item.name, invErr.message);
+            console.warn('[placeOrder] Inventory deduction error for', invId, invErr.message);
             inventoryFail++;
           }
         }
@@ -1582,8 +1582,8 @@ window.FarmaciaAPI = (function () {
      * signed. Used by the consent-onboarding gate in app.js to decide
      * which standard documents (window.APOLO_CONSENT_DOCS) are still
      * missing. Returns [] only when the query succeeded and nothing is
-     * signed; returns null on any failure so callers can fail open
-     * instead of locking the user inside the gate.
+     * signed; returns null on any failure so the caller can show its
+     * fail-closed retry view (R2-32) instead of a wrong document list.
      */
     async getMySignedConsentTypes() {
       if (!sb) return null;
@@ -1613,16 +1613,17 @@ window.FarmaciaAPI = (function () {
     },
 
     /**
-     * Insert signed consent documents for the current customer
-     * (consent-onboarding gate). Each doc: { type, title, content } —
-     * all rows are inserted with status 'signed'.
+     * Sign consent documents for the current customer via the
+     * security-definer RPC sign_consent_documents (consent-onboarding
+     * gate). Each doc: { type, title, content }. The server derives the
+     * customer row from auth.uid(), validates each type, and forces
+     * status 'signed' / signed_at now() — clients can no longer insert
+     * consent rows directly (INSERT policy revoked, R2-31).
      * `opts.signerRelationship` (padre/madre/tutor) is recorded for a
      * MINOR patient: the guardian signs, so the row must carry the
      * parentesco alongside signer_name (parental consent, R2-21).
-     * NOTE: requires the RLS policy 'consent_documents_customer_insert'
-     * (see supabase/migrations/MIGRATION_consent_customer_insert.sql) —
-     * without it the INSERT is rejected because customers only have
-     * SELECT/UPDATE on their own rows.
+     * The RPC is idempotent (already-signed types are skipped), so a
+     * retry after a failure never duplicates documents.
      */
     async acceptConsentDocuments(docs, signerName, opts) {
       if (!sb) {
@@ -1633,53 +1634,27 @@ window.FarmaciaAPI = (function () {
         return { data: null, error: new Error('Not authenticated') };
       }
       try {
-        const { data: customer, error: custErr } = await sb
-          .from('customers')
-          .select('id, org_id')
-          .eq('profile_id', user.id)
-          .single();
-        if (custErr) throw custErr;
-        if (!customer) throw new Error('Customer record not found');
-
-        const orgId = customer.org_id || (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
-        if (!orgId) throw new Error('org_id not available');
-
         const signerRelationship = (opts && opts.signerRelationship) || null;
-        const rows = (docs || []).map(doc => ({
-          org_id:      orgId,
-          customer_id: customer.id,
+        const signerUserAgent = (typeof navigator !== 'undefined' && navigator.userAgent) || null;
+        const pDocs = (docs || []).map(doc => ({
           type:        doc.type,
           title:       doc.title,
           content:     doc.content,
-          status:      'signed',
           signer_name: signerName,
-          signed_at:   new Date().toISOString(),
-          signer_user_agent: (typeof navigator !== 'undefined' && navigator.userAgent) || null,
-          ...(signerRelationship ? { signer_relationship: signerRelationship } : {})
+          ...(signerRelationship ? { signer_relationship: signerRelationship } : {}),
+          ...(signerUserAgent ? { signer_user_agent: signerUserAgent } : {})
         }));
-        if (rows.length === 0) throw new Error('No consent documents provided');
+        if (pDocs.length === 0) throw new Error('No consent documents provided');
 
-        let { data, error } = await sb
-          .from('consent_documents')
-          .insert(rows)
-          .select();
-        // Fallback: if the attribution columns don't exist yet (migration
-        // 20260912140000 pending), retry without them — the signature itself
-        // must never be blocked by the extra evidence fields.
-        if (error && /signer_ip|signer_user_agent|signer_relationship/.test(error.message || '')) {
-          console.warn('[FarmaciaAPI] consent attribution columns missing; retrying without them');
-          const fallbackRows = rows.map(({ signer_user_agent, signer_relationship, ...rest }) => rest);
-          ({ data, error } = await sb
-            .from('consent_documents')
-            .insert(fallbackRows)
-            .select());
-        }
+        const { data, error } = await sb.rpc('sign_consent_documents', { p_docs: pDocs });
         if (error) throw error;
-        console.log('[FarmaciaAPI] Consent documents accepted:', (data || []).length);
+        console.log('[FarmaciaAPI] Consent documents signed server-side:', data);
         return { data, error: null };
       } catch (err) {
         console.error('[FarmaciaAPI] acceptConsentDocuments failed:', err.message);
-        return { data: null, error: err };
+        // User-facing Spanish message — no silent direct-insert fallback
+        // (the INSERT policy is revoked) and no PostgREST text in the UI.
+        return { data: null, error: new Error('No pudimos registrar tus documentos de consentimiento. Intenta de nuevo; si el problema continúa, avisa al personal.') };
       }
     },
 
