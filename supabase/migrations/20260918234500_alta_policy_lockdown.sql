@@ -50,6 +50,17 @@ create policy medical_notes_staff on medical_notes
 revoke execute on function public.lookup_login_email(text, uuid) from anon;
 revoke execute on function public.lookup_login_email(text, uuid) from authenticated;
 
+-- ── 2b. pos_* RPCs + revoke_consent: strip the default PUBLIC grant ───────
+-- (They already raise unless is_org_staff() internally; this is defense in
+-- depth — authenticated staff only.)
+revoke execute on function public.pos_search_customers(text) from public, anon;
+revoke execute on function public.pos_create_customer(text, text, text, text, date, text, text) from public, anon;
+revoke execute on function public.pos_search_prescriptions(text) from public, anon;
+revoke execute on function public.pos_search_memberships(text) from public, anon;
+revoke execute on function public.pos_get_membership(uuid) from public, anon;
+revoke execute on function public.pos_get_sale_for_return(uuid) from public, anon;
+revoke execute on function public.revoke_consent(text) from public, anon;
+
 -- ── 3. Minors require guardian evidence (R2-21) ───────────────────────────
 create or replace function public.customers_require_guardian_for_minors()
 returns trigger
