@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ArrowLeft } from 'lucide-react';
+import { PRIVACIDAD_TEXT } from '@/lib/consentTexts';
 
 const LAST_UPDATED = '9 de septiembre de 2026';
 const CONTACT_EMAIL = 'citas@apolofarmacia.com.mx';
@@ -158,49 +159,10 @@ const MembershipTermsPage = () => (
       </Section>
 
       <Section title="6. Privacidad y datos personales (Aviso de Privacidad)">
-        <p>
-          Farmacia Apolo, como responsable del tratamiento de sus datos personales, recaba los siguientes
-          datos para operar la membresía: nombre completo, datos de contacto (correo electrónico y
-          teléfono) y datos de salud derivados de las consultas médicas y revisiones de laboratorio
-          utilizadas con la membresía.
-        </p>
-        <p>Estos datos se utilizan exclusivamente para:</p>
-        <ul className="list-disc pl-5 space-y-1">
-          <li>La operación y administración de la membresía (altas, pagos, beneficios y renovaciones).</li>
-          <li>Recordatorios de citas, renovaciones y beneficios disponibles.</li>
-          <li>El expediente clínico y la atención médica del titular y sus integrantes.</li>
-        </ul>
-        <p>
-          Sus datos personales no se venden ni se comparten con terceros con fines comerciales. Solo se
-          transmiten cuando es necesario para prestar el servicio (por ejemplo, el procesador de pagos) o
-          cuando una autoridad competente lo requiera conforme a la ley.
-        </p>
-        <p>
-          Para operar el servicio utilizamos proveedores que pueden procesar sus datos fuera de México:
-          PayPal procesa los pagos con cargo automático, los proveedores de correo electrónico y de
-          mensajería (WhatsApp) gestionan nuestras comunicaciones, y el alojamiento de nuestros sistemas
-          se encuentra en servidores en Estados Unidos. En estos casos, sus datos personales pueden ser
-          tratados en servidores ubicados fuera de México por dichos proveedores, con las mismas
-          protecciones descritas en este aviso de privacidad.
-        </p>
-        <p>
-          Usted puede ejercer en cualquier momento sus derechos de Acceso, Rectificación, Cancelación y
-          Oposición (derechos ARCO), así como revocar su consentimiento, enviando una solicitud al correo{' '}
-          <a href={`mailto:${CONTACT_EMAIL}`} className="text-apolo-navy underline">
-            {CONTACT_EMAIL}
-          </a>{' '}
-          o por escrito en nuestro domicilio: {BUSINESS_ADDRESS}, indicando su nombre completo y el
-          derecho que desea ejercer. Daremos respuesta en los plazos que marca la Ley Federal de
-          Protección de Datos Personales en Posesión de los Particulares (LFPDPPP), publicada en el
-          Diario Oficial de la Federación el 20 de marzo de 2025. La autoridad garante en materia de
-          protección de datos personales es la Secretaría Anticorrupción y Buen Gobierno.
-        </p>
-        <p>
-          Los datos personales se resguardan conforme a la LFPDPPP vigente, publicada en el Diario
-          Oficial de la Federación el 20 de marzo de 2025. Los datos clínicos se tratan, además, bajo
-          secreto profesional y con los lineamientos de la Norma Oficial Mexicana NOM-004 sobre el
-          expediente clínico.
-        </p>
+        {/* Canonical aviso de privacidad — the single source of truth lives in
+            public/customer-app/js/consentDocs.js, mirrored by
+            src/lib/consentTexts.js. Do not fork the text here. */}
+        <p className="whitespace-pre-wrap">{PRIVACIDAD_TEXT}</p>
       </Section>
 
       <p className="text-xs text-slate-500 text-center">

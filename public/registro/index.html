@@ -19,9 +19,9 @@
     .card { background: white; border-radius: 20px; padding: 1.25rem; margin-bottom: 1rem; }
     .card h2 { font-size: 1.05rem; color: #1E2A8A; margin-bottom: 0.875rem; }
     label { display: block; font-size: 0.85rem; font-weight: 600; color: #334155; margin-bottom: 0.3rem; }
-    input[type=text], input[type=email], input[type=tel], input[type=password], textarea {
+    input[type=text], input[type=email], input[type=tel], input[type=password], textarea, select {
       width: 100%; padding: 0.8rem; border: 1.5px solid #E3E8F2; border-radius: 12px;
-      font-size: 1rem; margin-bottom: 0.875rem; outline: none;
+      font-size: 1rem; margin-bottom: 0.875rem; outline: none; background: white;
     }
     input:focus, textarea:focus { border-color: #1E2A8A; }
     textarea { min-height: 90px; resize: vertical; }
@@ -67,14 +67,21 @@
         <label for="patient_name">Nombre completo del paciente *</label>
         <input type="text" id="patient_name" autocomplete="name" required>
 
-        <label class="check-row" for="is_minor">
-          <input type="checkbox" id="is_minor">
-          <span>El paciente es menor de edad</span>
-        </label>
+        <label for="dob">Fecha de nacimiento *</label>
+        <input type="text" id="dob" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" autocomplete="bday">
+        <p class="hint">Formato: día/mes/año — ejemplo: 15/03/1985.</p>
 
         <div id="guardian-block" style="display: none;">
+          <p class="hint" style="margin-top: 0; font-weight: 700; color: #92400e;">El paciente es menor de edad — se requieren los datos del padre, madre o tutor.</p>
           <label for="guardian_name">Nombre completo del padre, madre o tutor *</label>
           <input type="text" id="guardian_name">
+          <label for="guardian_relationship">Parentesco *</label>
+          <select id="guardian_relationship">
+            <option value="">Selecciona…</option>
+            <option value="padre">Padre</option>
+            <option value="madre">Madre</option>
+            <option value="tutor">Tutor</option>
+          </select>
           <p class="hint">La cuenta y los consentimientos quedarán a nombre del tutor.</p>
         </div>
 
@@ -138,10 +145,61 @@
       var form = document.getElementById('checkin-form');
       var submitBtn = document.getElementById('submit-btn');
       var errorBox = document.getElementById('error-box');
-      var isMinorEl = document.getElementById('is_minor');
+      var dobEl = document.getElementById('dob');
       var guardianBlock = document.getElementById('guardian-block');
       var guardianNameEl = document.getElementById('guardian_name');
+      var guardianRelEl = document.getElementById('guardian_relationship');
       var emailHint = document.getElementById('email-hint');
+
+      // ---- Fecha de nacimiento: dd/mm/aaaa (máscara + validación de calendario) ----
+      dobEl.addEventListener('input', function () {
+        var digits = dobEl.value.replace(/\D/g, '').slice(0, 8);
+        var out = '';
+        if (digits.length > 0) out = digits.slice(0, 2);
+        if (digits.length >= 3) out += '/' + digits.slice(2, 4);
+        if (digits.length >= 5) out += '/' + digits.slice(4, 8);
+        dobEl.value = out;
+      });
+
+      function parseDobMx(value) {
+        var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((value || '').trim());
+        if (!m) return null;
+        var day = +m[1], month = +m[2], year = +m[3];
+        if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900) return null;
+        var date = new Date(Date.UTC(year, month - 1, day));
+        if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+        var now = new Date();
+        if (date.getTime() > now.getTime()) return null;
+        return year + '-' + String(month).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+      }
+
+      function ageFromIso(iso) {
+        if (!iso) return null;
+        var birth = new Date(iso + 'T00:00:00');
+        var now = new Date();
+        var age = now.getFullYear() - birth.getFullYear();
+        var beforeBirthday = (now.getMonth() < birth.getMonth()) ||
+          (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate());
+        return beforeBirthday ? age - 1 : age;
+      }
+
+      function currentDobIso() {
+        return parseDobMx(dobEl.value);
+      }
+
+      function currentIsMinor() {
+        var age = ageFromIso(currentDobIso());
+        return age !== null && age < 18;
+      }
+
+      dobEl.addEventListener('blur', function () {
+        var isMinor = currentIsMinor();
+        guardianBlock.style.display = isMinor ? 'block' : 'none';
+        emailHint.textContent = isMinor
+          ? 'Enviaremos el correo de activación de la app al tutor.'
+          : 'Te enviaremos un correo para activar tu cuenta de la app.';
+        if (!isMinor) { guardianNameEl.value = ''; guardianRelEl.value = ''; }
+      });
 
       // ---- Consent document cards ----
       var container = document.getElementById('docs-container');
@@ -173,15 +231,6 @@
         submitBtn.disabled = !allAccepted();
       });
 
-      isMinorEl.addEventListener('change', function () {
-        var isMinor = isMinorEl.checked;
-        guardianBlock.style.display = isMinor ? 'block' : 'none';
-        emailHint.textContent = isMinor
-          ? 'Enviaremos el correo de activación de la app al tutor.'
-          : 'Te enviaremos un correo para activar tu cuenta de la app.';
-        if (!isMinor) guardianNameEl.value = '';
-      });
-
       // Sin correo, la contraseña se crea aquí mismo (entran con teléfono + contraseña).
       var emailEl = document.getElementById('email');
       var passwordBlock = document.getElementById('password-block');
@@ -209,16 +258,20 @@
         var patientName = document.getElementById('patient_name').value.trim();
         var email = document.getElementById('email').value.trim();
         var phone = document.getElementById('phone').value.trim();
-        var isMinor = isMinorEl.checked;
+        var dobIso = currentDobIso();
+        var isMinor = currentIsMinor();
         var guardianName = guardianNameEl.value.trim();
+        var guardianRelationship = guardianRelEl.value;
         var reason = document.getElementById('reason').value.trim();
         var password = document.getElementById('password').value;
 
         if (!patientName) return showError('Escribe el nombre del paciente.');
+        if (!dobIso) return showError('Escribe una fecha de nacimiento válida (dd/mm/aaaa).');
         if (!email && !phone) return showError('Captura el correo electrónico o el teléfono (al menos uno).');
         if (email && email.indexOf('@') === -1) return showError('Escribe un correo electrónico válido.');
         if (!email && password.length < 6) return showError('Crea una contraseña de al menos 6 caracteres (la necesitas para entrar a la app).');
-        if (isMinor && !guardianName) return showError('Escribe el nombre del padre, madre o tutor.');
+        if (isMinor && !guardianName) return showError('El paciente es menor de edad — escribe el nombre del padre, madre o tutor.');
+        if (isMinor && !guardianRelationship) return showError('El paciente es menor de edad — selecciona el parentesco (padre, madre o tutor).');
         if (!allAccepted()) return showError('Debes aceptar los tres documentos de consentimiento.');
 
         var consentDocs = docs.map(function (doc) {
@@ -241,8 +294,10 @@
               patient_name: patientName,
               email: email,
               phone: phone,
+              date_of_birth: dobIso,
               is_minor: isMinor,
               guardian_name: isMinor ? guardianName : '',
+              guardian_relationship: isMinor ? guardianRelationship : '',
               reason: reason,
               password: email ? '' : password,
               company: document.getElementById('hp_field_1').value,

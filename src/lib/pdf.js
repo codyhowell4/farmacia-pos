@@ -90,6 +90,7 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
   meds.forEach((med) => {
     let h = 0.20; // name line
     if (med.dosage) h += 0.15;
+    if (med.via) h += 0.15;
     if (med.frequency) h += 0.15;
     if (med.duration) h += 0.15;
     if (med.notes) h += 0.15;
@@ -98,7 +99,8 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
 
   // If too many meds, shrink font
   const BASE_SHEET_H = 5.5;
-  const neededH = HEADER_H + BODY_GAP + PATIENT_HDR_H + MED_BLOCK_H + NEXT_APPT_H + FOOTER_H + 0.2;
+  const SIG_H = 0.60;      // firma del médico block (line + name + cédula)
+  const neededH = HEADER_H + BODY_GAP + PATIENT_HDR_H + MED_BLOCK_H + NEXT_APPT_H + SIG_H + FOOTER_H + 0.2;
   let sheetH = Math.max(BASE_SHEET_H, neededH);
 
   // Scale down if still too tall for letter page (11in - 2*margin = 10.3in usable)
@@ -258,6 +260,10 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
       txt(med.dosage, MAIN_X + 0.15, medY);
       medY += 0.16 * scale;
     }
+    if (med.via) {
+      txt(med.via, MAIN_X + 0.15, medY);
+      medY += 0.16 * scale;
+    }
     if (med.frequency) {
       txt(med.frequency, MAIN_X + 0.15, medY);
       medY += 0.16 * scale;
@@ -292,8 +298,26 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
   txt(nextDate.year, ax, medY);
   line(ax, medY + 0.07 * scale, ax + 0.35, medY + 0.07 * scale);
 
-  // ── FOOTER ──
+  // ── Signature block (mirrors PrintablePrescription) ──
   const FOOTER_Y = bT + bH - 0.85;
+  const SIG_W = 2.0;
+  const SIG_X = MAIN_R - SIG_W;
+  const SIG_CX = SIG_X + SIG_W / 2;
+  const SIG_LINE_Y = FOOTER_Y - 0.45 * scale;
+  // E-signed recetas carry the same firma notice as the print template
+  if (prescription.signature && prescription.signer_cert_serial) {
+    setFont('normal', 7);
+    txt('Firmada electrónicamente', SIG_CX, SIG_LINE_Y - 0.07 * scale, { align: 'center' });
+  }
+  pdf.setLineWidth((1 / INCH) * scale);
+  line(SIG_X + 0.15, SIG_LINE_Y, SIG_X + SIG_W - 0.15, SIG_LINE_Y);
+  setFont('bold', 7.5);
+  txt('FIRMA DEL MÉDICO', SIG_CX, SIG_LINE_Y + 0.11 * scale, { align: 'center' });
+  setFont('normal', 8);
+  txt(prescription.doctor_name || '', SIG_CX, SIG_LINE_Y + 0.22 * scale, { align: 'center' });
+  txt(`Céd. Prof. ${prescription.doctor_license_number || ''}`, SIG_CX, SIG_LINE_Y + 0.33 * scale, { align: 'center' });
+
+  // ── FOOTER ──
 
   pdf.setDrawColor(180, 180, 180);
   pdf.setLineWidth((1 / INCH) * scale);

@@ -628,6 +628,31 @@ export const getSales = async () => {
   return data;
 };
 
+// POS-safe shift sales for the close-shift flow: no customers embed
+// (pos/inventory roles cannot read the customers table).
+export const getShiftSales = async (shiftId) => {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('*, sale_items(*), sale_payments(*)')
+    .eq('shift_id', shiftId)
+    .eq('voided', false)
+    .order('timestamp', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+// Recent sale ids for the returns folio lookup (pos-safe: no joins).
+// The full record is then fetched with getSaleForReturnPos.
+export const listRecentSaleIds = async (limit = 500) => {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('id')
+    .order('timestamp', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+};
+
 export const getRecentSales = async (locationId, limit = 10) => {
   const { data, error } = await supabase
     .from('sales')
@@ -1527,6 +1552,95 @@ export const getCustomersForSync = async () => {
   return data || [];
 };
 
+// ── POS SELF-SERVICE RPCs (R2-14) ────────────────────────────
+// Narrow security-definer surfaces so pos/inventory roles never read
+// customers or other clinical tables directly. Direct-access functions
+// above stay for admin/doctor (clinical) callers.
+
+export const searchCustomersPos = async (query) => {
+  const { data, error } = await supabase.rpc('pos_search_customers', { p_query: query });
+  if (error) throw error;
+  return data || [];
+};
+
+export const createCustomerPos = async ({ full_name, phone, email, curp, date_of_birth, guardian_name, guardian_relationship } = {}) => {
+  const { data, error } = await supabase.rpc('pos_create_customer', {
+    p_full_name: full_name,
+    p_phone: phone || null,
+    p_email: email || null,
+    p_curp: curp || null,
+    p_date_of_birth: date_of_birth || null,
+    p_guardian_name: guardian_name || null,
+    p_guardian_relationship: guardian_relationship || null,
+  });
+  if (error) throw error;
+  return data?.[0] || null;
+};
+
+// Flat RPC rows are mapped back to the embedded shape POS components
+// already consume (customers{...} / profiles{...}).
+export const searchPrescriptionsPos = async (query) => {
+  const { data, error } = await supabase.rpc('pos_search_prescriptions', { p_query: query });
+  if (error) throw error;
+  return (data || []).map((row) => {
+    const {
+      customer_full_name, customer_phone, customer_height, customer_weight,
+      doctor_full_name, ...rx
+    } = row;
+    return {
+      ...rx,
+      customers: (customer_full_name || customer_phone)
+        ? { full_name: customer_full_name, phone: customer_phone, height: customer_height, weight: customer_weight }
+        : null,
+      profiles: doctor_full_name ? { full_name: doctor_full_name } : null,
+    };
+  });
+};
+
+export const searchMembershipsPos = async (term) => {
+  const { data, error } = await supabase.rpc('pos_search_memberships', { p_term: term });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getMembershipByIdPos = async (id) => {
+  const { data, error } = await supabase.rpc('pos_get_membership', { p_id: id });
+  if (error) throw error;
+  return data || null;
+};
+
+export const getSaleForReturnPos = async (saleId) => {
+  const { data, error } = await supabase.rpc('pos_get_sale_for_return', { p_sale_id: saleId });
+  if (error) throw error;
+  return data || null;
+};
+
+// ── ARCO REQUESTS (R2-22, LFPDPPP) ───────────────────────────
+// Admin-only register of access/rectification/cancellation/opposition/
+// revocation requests from data subjects.
+
+export const getArcoRequests = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('arco_requests')
+    .select('*, customers(full_name, email, phone)')
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+export const updateArcoRequest = async (id, updates) => {
+  const { data, error } = await supabase
+    .from('arco_requests')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
 
 // ── DOCTOR PORTAL ───────────────────────────────────────────
 
@@ -1557,6 +1671,19 @@ export const getAppointmentsByDoctor = async (doctorId) => {
     .eq('org_id', orgId)
     .eq('doctor_id', doctorId)
     .order('appointment_date', { ascending: true });
+  if (error) throw error;
+  return data || [];
+};
+
+// Full agenda of one patient across all doctors (expediente export, NOM-024 6.6.6)
+export const getAppointmentsByCustomer = async (customerId) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('*, profiles!appointments_doctor_id_fkey(full_name)')
+    .eq('org_id', orgId)
+    .eq('customer_id', customerId)
+    .order('appointment_date', { ascending: false });
   if (error) throw error;
   return data || [];
 };
@@ -1933,6 +2060,52 @@ export const getConsultaNotesByCustomer = async (customerId) => {
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data || [];
+};
+
+// ── HISTORIA CLÍNICA DE PRIMERA VEZ (NOM-004 6.1, append-only) ──
+// One row per patient; a DB trigger rejects the first nota de evolución
+// when neither this nor a prior consulta note exists.
+
+export const getHistoriaClinica = async (customerId) => {
+  const { data, error } = await supabase
+    .from('historia_clinica')
+    .select('*, profiles:doctor_id(full_name)')
+    .eq('customer_id', customerId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+};
+
+export const createHistoriaClinica = async (historia) => {
+  const orgId = await getOrgId();
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data, error } = await supabase
+    .from('historia_clinica')
+    .insert({ ...historia, org_id: orgId, doctor_id: user?.id, created_by: user?.id })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+// First-time gate (R2-19): the patient needs the historia clínica before the
+// first nota de evolución. Walk-ins (customerId null) are exempt.
+export const needsHistoriaClinica = async (customerId) => {
+  if (!customerId) return false;
+  const [notesRes, historiaRes] = await Promise.all([
+    supabase
+      .from('consulta_notes')
+      .select('*', { count: 'exact', head: true })
+      .eq('customer_id', customerId),
+    supabase
+      .from('historia_clinica')
+      .select('id')
+      .eq('customer_id', customerId)
+      .maybeSingle(),
+  ]);
+  if (notesRes.error) throw notesRes.error;
+  if (historiaRes.error) throw historiaRes.error;
+  return (notesRes.count || 0) === 0 && !historiaRes.data;
 };
 
 export const getConsultaNotesByDoctor = async (doctorId, { from = null, to = null } = {}) => {

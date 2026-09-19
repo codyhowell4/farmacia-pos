@@ -29,6 +29,10 @@ interface CustomerPayload {
   full_name: string;
   email: string;
   phone: string;
+  date_of_birth?: string; // YYYY-MM-DD (R2-21) — forwarded to public_signup_membership
+  guardian_name?: string; // required with date_of_birth when the titular is < 18
+  guardian_relationship?: string;
+  guardian_id_ref?: string;
 }
 
 interface RequestPayload {
@@ -120,6 +124,12 @@ const supabaseAdmin = (env: Record<string, string>) => {
 
 const normalizeEmail = (email: string) => (email || '').trim().toLowerCase();
 
+const isValidDob = (d: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) && new Date(d) < new Date();
+
+const ageFromDob = (d: string) =>
+  Math.floor((Date.now() - new Date(d).getTime()) / (365.25 * 86400000));
+
 // Exact email match ONLY (case-insensitive). Phone/substring matching was
 // removed: it let an attacker attach a paid signup to a stranger's record.
 // The JS-side re-check guards against ilike wildcard injection (% and _
@@ -202,6 +212,10 @@ const createMembership = async (
       full_name: payload.customer.full_name,
       email: payload.customer.email,
       phone: payload.customer.phone,
+      date_of_birth: payload.customer.date_of_birth || null,
+      guardian_name: payload.customer.guardian_name || null,
+      guardian_relationship: payload.customer.guardian_relationship || null,
+      guardian_id_ref: payload.customer.guardian_id_ref || null,
     },
     p_membership: {
       plan_type: payload.plan_type,
@@ -431,6 +445,25 @@ Deno.serve(async (req) => {
     }
     if (!payload.customer?.email) {
       throw new ClientError('El correo electrónico del titular es requerido');
+    }
+
+    // Minor rule (R2-21, mirrors the kiosk): when the titular's DOB says
+    // < 18, guardian name + parentesco are mandatory — rejected here, before
+    // PayPal is called and before public_signup_membership runs. Adults:
+    // no new requirements (DOB itself stays optional in this flow).
+    const customerDob = (payload.customer.date_of_birth || '').trim();
+    if (customerDob && !isValidDob(customerDob)) {
+      throw new ClientError('Fecha de nacimiento inválida (AAAA-MM-DD)');
+    }
+    if (customerDob && ageFromDob(customerDob) < 18) {
+      if (!(payload.customer.guardian_name || '').trim()) {
+        throw new ClientError('El nombre del padre o tutor es obligatorio para menores de edad');
+      }
+      if (!(payload.customer.guardian_relationship || '').trim()) {
+        throw new ClientError(
+          'El parentesco del tutor (padre, madre o tutor legal) es obligatorio para menores de edad'
+        );
+      }
     }
 
     const plan = PLANS[payload.plan_type];

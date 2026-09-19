@@ -1,4 +1,4 @@
-// Patient clinical-record PDF export (expediente clínico).
+// Patient clinical-record PDF export (expediente clínico completo, NOM-024 6.6.6).
 // Simple sectioned text layout: headings + wrapped lines, matching the
 // jsPDF import style already used in src/lib/pdf.js.
 
@@ -6,7 +6,7 @@ import { jsPDF } from 'jspdf';
 
 // Section titles mirror SECTIONS in PatientMedicalHistory.jsx
 // (kept as a plain map so this lib has no component imports).
-const HISTORY_SECTION_TITLES = {
+export const HISTORY_SECTION_TITLES = {
   alergias: 'Alergias',
   patologicos: 'Antecedentes Patológicos',
   no_patologicos: 'Antecedentes No Patológicos',
@@ -23,10 +23,19 @@ const RX_STATUS_LABELS = {
   cancelled: 'Cancelada',
 };
 
+const APPT_STATUS_LABELS = {
+  pending: 'Pendiente',
+  confirmed: 'Confirmada',
+  in_consulta: 'En consulta',
+  completed: 'Completada',
+  cancelled: 'Cancelada',
+};
+
 const CONSENT_STATUS_LABELS = {
   pending: 'Pendiente',
   signed: 'Firmado',
   declined: 'Rechazado',
+  revoked: 'Revocado',
 };
 
 const CONSENT_TYPE_LABELS = {
@@ -34,6 +43,29 @@ const CONSENT_TYPE_LABELS = {
   teleconsulta: 'Teleconsulta',
   procedimiento: 'Procedimiento',
   otro: 'Otro',
+};
+
+const DOC_TYPE_LABELS = {
+  laboratorio: 'Laboratorio',
+  imagen: 'Imagen',
+  consentimiento: 'Consentimiento',
+  justificante: 'Justificante',
+  receta: 'Receta',
+  nota_doctor: 'Nota del doctor',
+  otro: 'Otro',
+};
+
+const VITALS_LABELS = {
+  edad: 'Edad',
+  height_cm: 'Talla (cm)',
+  weight_kg: 'Peso (kg)',
+  temperatura: 'Temp',
+  ta: 'T/A',
+  fc: 'FC',
+  fr: 'FR',
+  so2: 'So2%',
+  glicemia: 'Glicemia',
+  alergias: 'Alergias',
 };
 
 const formatDate = (ts) => {
@@ -47,23 +79,45 @@ const formatDateTime = (ts) => {
   return `${d.toLocaleDateString('es-MX')} ${d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`;
 };
 
+// Storage path is {orgId}/{customerId}/{ts}_{name} — show just the file name
+const fileNameFromPath = (path) => {
+  const base = (path || '').split('/').pop() || '';
+  return base.replace(/^\d+_/, '');
+};
+
+const formatVitals = (vitals) => {
+  if (!vitals || typeof vitals !== 'object') return null;
+  const parts = Object.entries(VITALS_LABELS)
+    .filter(([key]) => vitals[key] !== null && vitals[key] !== undefined && vitals[key] !== '')
+    .map(([key, label]) => `${label}: ${vitals[key]}`);
+  return parts.length ? parts.join(' · ') : null;
+};
+
 /**
- * Build the full clinical-record PDF for a patient.
+ * Build the full clinical-record PDF for a patient (NOM-024 6.6.6: the export
+ * must reproduce the complete expediente, not a subset).
  * @param {Object} args
  * @param {Object} args.customer       — customers row (incl. medical_history jsonb)
  * @param {Object} [args.history]      — medical_history object (defaults to customer.medical_history)
+ * @param {Object} [args.historia]     — historia_clinica row (primera vez, NOM-004 6.1)
+ * @param {Array}  [args.medicalNotes] — medical_notes rows (with profiles join)
  * @param {Array}  [args.consultaNotes]— consulta_notes rows (with profiles join)
  * @param {Array}  [args.prescriptions]— prescriptions rows
+ * @param {Array}  [args.appointments] — appointments rows (with profiles join)
+ * @param {Array}  [args.attachments]  — customer_documents rows (metadata index)
  * @param {Array}  [args.consents]     — consent_documents rows
  * @returns {jsPDF} the document (not yet saved)
  */
 export const buildPatientRecordPdf = ({
   customer,
   history = null,
+  historia = null,
+  medicalNotes = [],
   consultaNotes = [],
   prescriptions = [],
+  appointments = [],
+  attachments = [],
   consents = [],
-  justificantes = [],
 }) => {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
 
@@ -129,14 +183,37 @@ export const buildPatientRecordPdf = ({
   field('Sexo', customer?.sexo === 'M' ? 'Mujer' : customer?.sexo === 'H' ? 'Hombre' : null);
   field('Fecha de nacimiento', formatDate(customer?.date_of_birth));
   field('Entidad de nacimiento', customer?.birth_state);
+  field('Domicilio', customer?.address);
   field('Teléfono', customer?.phone);
   field('Email', customer?.email);
+  if (customer?.guardian_name) {
+    field(
+      'Tutor / responsable',
+      `${customer.guardian_name}${customer.guardian_relationship ? ` (${customer.guardian_relationship})` : ''}${customer.guardian_id_ref ? ` — INE ${customer.guardian_id_ref}` : ''}`
+    );
+  }
   if (customer?.height) field('Talla', `${customer.height} cm`);
   if (customer?.weight) field('Peso', `${customer.weight} kg`);
   if (customer?.notes) field('Notas', customer.notes);
 
-  // ── Historia clínica ────────────────────────────────────────────────
-  heading('Historia clínica');
+  // ── Historia clínica de primera vez (NOM-004 6.1) ───────────────────
+  heading('Historia clínica de primera vez (NOM-004 6.1)');
+  if (!historia) {
+    line('Sin historia clínica de primera vez registrada.', { indent: 2 });
+  } else {
+    line(
+      `Registrada: ${formatDateTime(historia.created_at)}${historia.profiles?.full_name ? ` — ${historia.profiles.full_name}` : ''}`,
+      { bold: true, size: 11 }
+    );
+    field('Padecimiento actual', historia.padecimiento_actual);
+    field('Interrogatorio por aparatos y sistemas', historia.interrogatorio_aparatos);
+    field('Exploración física', historia.exploracion_fisica);
+    field('Antecedentes (resumen)', historia.antecedentes_resumen);
+    field('Diagnóstico', historia.diagnostico);
+  }
+
+  // ── Antecedentes (historial médico) ─────────────────────────────────
+  heading('Antecedentes (historial médico)');
   const hist = history || customer?.medical_history || {};
   const sectionKeys = Object.keys(HISTORY_SECTION_TITLES);
   let anyEntry = false;
@@ -153,22 +230,52 @@ export const buildPatientRecordPdf = ({
   });
   if (!anyEntry) line('Sin antecedentes registrados.', { indent: 2 });
 
-  // ── Notas de consulta ───────────────────────────────────────────────
+  // ── Notas médicas ───────────────────────────────────────────────────
+  heading('Notas médicas');
+  if (!medicalNotes.length) {
+    line('Sin notas médicas registradas.', { indent: 2 });
+  } else {
+    medicalNotes.forEach((n) => {
+      checkPage(14);
+      const author = n.profiles?.full_name || '';
+      line(`${formatDateTime(n.created_at)}${author ? ` — ${author}` : ''}`, { bold: true, size: 11 });
+      line(n.note || '', { indent: 4 });
+      y += 2;
+    });
+  }
+
+  // ── Notas de consulta (NOM-004 structured) ──────────────────────────
   heading('Notas de consulta');
   if (!consultaNotes.length) {
     line('Sin notas de consulta registradas.', { indent: 2 });
   } else {
     consultaNotes.forEach((n) => {
-      checkPage(20);
+      checkPage(24);
       const doctor = n.profiles?.full_name || '';
-      line(`${formatDateTime(n.created_at)}${doctor ? ` — ${doctor}` : ''}`, { bold: true, size: 11 });
+      const modality = n.modality === 'video' ? ' — Teleconsulta' : '';
+      line(`${formatDateTime(n.created_at)}${doctor ? ` — ${doctor}` : ''}${modality}`, { bold: true, size: 11 });
+      if (n.modality === 'video') {
+        field('Ubicación declarada del paciente', n.tele_patient_location);
+        field('Identidad verificada', n.tele_identity_verified ? 'Sí' : 'No');
+      }
       if (n.padecimiento_actual) field('Padecimiento actual', n.padecimiento_actual);
+      if (n.exploracion_fisica) field('Exploración física', n.exploracion_fisica);
+      const vitalsText = formatVitals(n.vitals);
+      if (vitalsText) field('Signos vitales', vitalsText);
+      if (n.resultados_estudios) field('Resultados de estudios', n.resultados_estudios);
       if (n.diagnostico) field('Diagnóstico', n.diagnostico);
       const codes = Array.isArray(n.cie10_codes) ? n.cie10_codes : [];
       if (codes.length) {
         field('CIE-10', codes.map((c) => (c.description ? `${c.code} ${c.description}` : c.code)).join('; '));
       }
+      if (n.pronostico) field('Pronóstico', n.pronostico);
       if (n.plan) field('Plan', n.plan);
+      if (n.signed_at) {
+        field(
+          'Firma electrónica',
+          `Firmada el ${formatDateTime(n.signed_at)}${n.signer_cert_serial ? ` — cert. ${n.signer_cert_serial}` : ''}`
+        );
+      }
       y += 2;
     });
   }
@@ -185,14 +292,49 @@ export const buildPatientRecordPdf = ({
       const meds = Array.isArray(rx.medications) && rx.medications.length > 0
         ? rx.medications
         : rx.medication
-          ? [{ medication: rx.medication, dosage: rx.dosage, frequency: rx.frequency, duration: rx.duration, notes: rx.notes }]
+          ? [{ medication: rx.medication, dosage: rx.dosage, via: rx.via, frequency: rx.frequency, duration: rx.duration, notes: rx.notes }]
           : [];
       meds.forEach((m) => {
-        const parts = [m.medication, m.dosage, m.frequency, m.duration].filter(Boolean).join(' · ');
+        const parts = [m.medication, m.dosage, m.via ? `vía ${m.via}` : null, m.frequency, m.duration].filter(Boolean).join(' · ');
         line(`• ${parts}`, { indent: 4 });
         if (m.notes) line(`  ${m.notes}`, { indent: 6, size: 9 });
       });
+      if (rx.alergias) field('Alergias', rx.alergias);
+      if (rx.signed_at) {
+        field(
+          'Firma electrónica',
+          `Firmada el ${formatDateTime(rx.signed_at)}${rx.signer_cert_serial ? ` — cert. ${rx.signer_cert_serial}` : ''}`
+        );
+      }
       y += 2;
+    });
+  }
+
+  // ── Citas ───────────────────────────────────────────────────────────
+  heading('Citas');
+  if (!appointments.length) {
+    line('Sin citas registradas.', { indent: 2 });
+  } else {
+    appointments.forEach((a) => {
+      checkPage(8);
+      const status = APPT_STATUS_LABELS[a.status] || a.status || '';
+      const type = a.type === 'video' ? 'Teleconsulta' : 'Presencial';
+      const doctor = a.profiles?.full_name ? ` — ${a.profiles.full_name}` : '';
+      line(`• ${formatDateTime(a.appointment_date)} — ${type} — ${status}${doctor}`, { indent: 2 });
+    });
+  }
+
+  // ── Adjuntos (índice) ───────────────────────────────────────────────
+  heading('Documentos adjuntos (índice)');
+  if (!attachments.length) {
+    line('Sin documentos adjuntos.', { indent: 2 });
+  } else {
+    attachments.forEach((d) => {
+      checkPage(8);
+      const type = DOC_TYPE_LABELS[d.document_type] || d.document_type || 'Documento';
+      const title = d.notes || fileNameFromPath(d.file_url) || 'Sin título';
+      const status = d.status ? ` — ${d.status}` : '';
+      line(`• ${title} (${type})${status} — ${formatDate(d.created_at)}`, { indent: 2 });
     });
   }
 
@@ -202,26 +344,25 @@ export const buildPatientRecordPdf = ({
     line('Sin consentimientos registrados.', { indent: 2 });
   } else {
     consents.forEach((c) => {
-      checkPage(12);
+      checkPage(14);
       const type = CONSENT_TYPE_LABELS[c.type] || c.type || '';
       const status = CONSENT_STATUS_LABELS[c.status] || c.status || '';
       line(`${c.title || 'Consentimiento'} (${type}) — ${status}`, { bold: true, size: 11 });
       line(`Creado: ${formatDate(c.created_at)}`, { indent: 4, size: 9 });
       if (c.status === 'signed') {
-        line(`Firmado por: ${c.signer_name || '-'} — ${formatDateTime(c.signed_at)}`, { indent: 4, size: 9 });
+        const signer = [
+          c.signer_name,
+          c.signer_relationship ? `(${c.signer_relationship})` : null,
+          c.signer_id_ref ? `INE ${c.signer_id_ref}` : null,
+        ].filter(Boolean).join(' ');
+        line(`Firmado por: ${signer || '-'} — ${formatDateTime(c.signed_at)}`, { indent: 4, size: 9 });
+        if (c.signer_ip) line(`IP del firmante: ${c.signer_ip}`, { indent: 4, size: 9 });
+        if (c.signer_user_agent) line(`Dispositivo: ${c.signer_user_agent}`, { indent: 4, size: 9 });
+      }
+      if (c.status === 'revoked' && c.revoked_at) {
+        line(`Revocado: ${formatDateTime(c.revoked_at)}`, { indent: 4, size: 9 });
       }
       y += 2;
-    });
-  }
-
-  // ── Justificantes médicos ─────────────────────────────────────────────
-  heading('Justificantes médicos');
-  if (!justificantes.length) {
-    line('Sin justificantes registrados.', { indent: 2 });
-  } else {
-    justificantes.forEach((j) => {
-      checkPage(8);
-      line(`• ${formatDate(j.created_at)}${j.notes ? ` — ${j.notes}` : ''}`, { indent: 2 });
     });
   }
 

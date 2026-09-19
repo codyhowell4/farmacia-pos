@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
 import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory, getAllInventoryBatches, restockInventoryItem, isServiceItem, getProductLinks, getAllProductLinks, addProductLink, removeProductLink, buildLinkedStockMap } from '@/lib/db';
+import { isAntibioticName } from '@/lib/antibiotics';
 
 const LOW_STOCK_THRESHOLD = 0;
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -128,6 +129,12 @@ const InventoryDashboard = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // R2-13: an antibiotic saved without the Rx flag slips past the register
+    // barrier entirely — require an explicit confirmation to leave it off.
+    if (!formData.requiresPrescription && isAntibioticName(formData.name)) {
+      const ok = window.confirm('Este producto parece ser un antibiótico — normalmente requiere receta. ¿Continuar sin marcarlo?');
+      if (!ok) return;
+    }
     const threshold = parseInt(formData.lowStockThreshold) || LOW_STOCK_THRESHOLD;
     try {
       const item = {
@@ -556,7 +563,9 @@ const InventoryDashboard = () => {
         barcode,
         warehouse_location: warehouseLocation,
         expiration_date: expirationDate,
-        requires_prescription: requiresPrescription,
+        // R2-13: antibiotics always import with the Rx flag on, even when the
+        // CSV has no Receta column (same validator as tools/import-inventory-csv.js).
+        requires_prescription: requiresPrescription || isAntibioticName(name),
         batch_number: batchNumber,
         supplier_id: supplierId,
         item_type: itemType,

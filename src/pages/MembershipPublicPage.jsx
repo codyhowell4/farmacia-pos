@@ -44,6 +44,38 @@ const PLANS = {
 const PUBLIC_ORG_ID = import.meta.env.VITE_PUBLIC_ORG_ID;
 const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paypal-subscription`;
 
+// DOB entry: dd/mm/aaaa (Mexican standard) via a masked text input — the
+// native date picker follows the device locale (mm/dd/yyyy on US laptops).
+// Same pattern as the consentimiento kiosk; stored/sent as ISO YYYY-MM-DD.
+const maskDobValue = (v) => {
+  const digits = (v || '').replace(/\D/g, '').slice(0, 8);
+  const parts = [];
+  if (digits.length > 0) parts.push(digits.slice(0, 2));
+  if (digits.length >= 3) parts.push(digits.slice(2, 4));
+  if (digits.length >= 5) parts.push(digits.slice(4, 8));
+  return parts.join('/');
+};
+
+const parseDobMx = (v) => {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v || '');
+  if (!m) return null;
+  const d = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  const y = parseInt(m[3], 10);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || y < 1900) return null;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  if (dt.getTime() > Date.now()) return null;
+  const mm = mo < 10 ? '0' + mo : '' + mo;
+  const dd = d < 10 ? '0' + d : '' + d;
+  return `${y}-${mm}-${dd}`;
+};
+
+const isMinorDobIso = (iso) => {
+  if (!iso) return false;
+  return Math.floor((Date.now() - new Date(iso).getTime()) / (365.25 * 86400000)) < 18;
+};
+
 const MembershipPublicPage = () => {
   const { toast } = useToast();
   const [step, setStep] = useState('plans');
@@ -62,6 +94,9 @@ const MembershipPublicPage = () => {
 
   const [form, setForm] = useState({
     ownerName: '',
+    dob: '',
+    guardianName: '',
+    guardianRelationship: '',
     email: '',
     phone: '',
     password: '',
@@ -93,16 +128,27 @@ const MembershipPublicPage = () => {
 
   const updateField = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
-  const validate = () => {
-    if (!form.ownerName.trim()) return 'El nombre del titular es obligatorio.';
-    if (!form.email.trim()) return 'El correo electrónico es obligatorio.';
-    if (!form.phone.trim()) return 'El teléfono es obligatorio.';
-    if (form.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
-    if (form.password !== form.confirmPassword) return 'Las contraseñas no coinciden.';
-    if (!form.termsAccepted) return 'Debes aceptar los Términos y Condiciones y el Aviso de Privacidad.';
+  // Shared validation for the PayPal onApprove path (uses the ref snapshot)
+  // and the local validate(). Includes the minor-guardian evidence (R2-21):
+  // a titular under 18 cannot hold the account without padre/madre/tutor data.
+  const validateMembershipForm = (f) => {
+    if (!f.ownerName.trim()) return 'El nombre del titular es obligatorio.';
+    const dobIso = parseDobMx(f.dob);
+    if (!dobIso) return 'Captura la fecha de nacimiento del titular en formato dd/mm/aaaa (ej. 25/12/1990).';
+    if (isMinorDobIso(dobIso)) {
+      if (!f.guardianName.trim()) return 'El titular es menor de edad: escribe el nombre del padre, madre o tutor.';
+      if (!f.guardianRelationship) return 'El titular es menor de edad: selecciona el parentesco (padre, madre o tutor).';
+    }
+    if (!f.email.trim()) return 'El correo electrónico es obligatorio.';
+    if (!f.phone.trim()) return 'El teléfono es obligatorio.';
+    if (f.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
+    if (f.password !== f.confirmPassword) return 'Las contraseñas no coinciden.';
+    if (!f.termsAccepted) return 'Debes aceptar los Términos y Condiciones y el Aviso de Privacidad.';
     if (!isPayPalConfigured()) return 'PayPal no está configurado.';
     return null;
   };
+
+  const validate = () => validateMembershipForm(form);
 
   const getFamilyMembers = () => {
     if (selectedPlanKey !== 'familiar') return [];
@@ -120,6 +166,11 @@ const MembershipPublicPage = () => {
           .filter(Boolean)
       : [];
 
+    // DOB (ISO) always; guardian evidence only for a minor titular — the
+    // edge function forwards these into the customers insert (R2-21).
+    const dobIso = parseDobMx(snapshot.dob);
+    const titularIsMinor = isMinorDobIso(dobIso);
+
     const res = await fetch(EDGE_FUNCTION_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -131,6 +182,11 @@ const MembershipPublicPage = () => {
           full_name: snapshot.ownerName.trim(),
           email: snapshot.email.trim(),
           phone: snapshot.phone.trim(),
+          date_of_birth: dobIso,
+          ...(titularIsMinor ? {
+            guardian_name: snapshot.guardianName.trim(),
+            guardian_relationship: snapshot.guardianRelationship,
+          } : {}),
         },
         member_names: familyMembers,
         trackers_to_fulfill: 0,
@@ -160,16 +216,7 @@ const MembershipPublicPage = () => {
     const currentForm = formRef.current;
     const currentPlanKey = selectedPlanKeyRef.current;
 
-    const validationError = (() => {
-      if (!currentForm.ownerName.trim()) return 'El nombre del titular es obligatorio.';
-      if (!currentForm.email.trim()) return 'El correo electrónico es obligatorio.';
-      if (!currentForm.phone.trim()) return 'El teléfono es obligatorio.';
-      if (currentForm.password.length < 6) return 'La contraseña debe tener al menos 6 caracteres.';
-      if (currentForm.password !== currentForm.confirmPassword) return 'Las contraseñas no coinciden.';
-      if (!currentForm.termsAccepted) return 'Debes aceptar los Términos y Condiciones y el Aviso de Privacidad.';
-      if (!isPayPalConfigured()) return 'PayPal no está configurado.';
-      return null;
-    })();
+    const validationError = validateMembershipForm(currentForm);
 
     if (validationError) {
       // PayPal may already have taken the money by the time onApprove runs,
@@ -311,7 +358,10 @@ const MembershipPublicPage = () => {
     </div>
   );
 
-  const renderForm = () => (
+  const renderForm = () => {
+    const formDobIso = parseDobMx(form.dob);
+    const titularIsMinor = isMinorDobIso(formDobIso);
+    return (
     <div className="max-w-2xl mx-auto space-y-6">
       <Button variant="outline" onClick={() => { setStep('plans'); paypalRendered.current = false; setPaypalReady(false); }} className="flex items-center gap-2">
         <ArrowLeft className="w-4 h-4" /> Volver a planes
@@ -337,6 +387,49 @@ const MembershipPublicPage = () => {
                 required
               />
             </div>
+            <div>
+              <Label>Fecha de nacimiento (dd/mm/aaaa) *</Label>
+              <Input
+                value={form.dob}
+                onChange={(e) => updateField('dob', maskDobValue(e.target.value))}
+                placeholder="dd/mm/aaaa"
+                inputMode="numeric"
+                maxLength={10}
+                autoComplete="bday"
+                required
+              />
+            </div>
+            {titularIsMinor && (
+              <div className="md:col-span-2 rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-4">
+                <p className="text-sm text-amber-800">
+                  El titular es menor de edad — se requieren los datos del padre, madre o tutor, quien además
+                  deberá firmar los consentimientos en la aplicación.
+                </p>
+                <div>
+                  <Label>Nombre del padre/madre/tutor *</Label>
+                  <Input
+                    value={form.guardianName}
+                    onChange={(e) => updateField('guardianName', e.target.value)}
+                    placeholder="Nombre completo de quien responde por el menor"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Parentesco *</Label>
+                  <select
+                    value={form.guardianRelationship}
+                    onChange={(e) => updateField('guardianRelationship', e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    required
+                  >
+                    <option value="">Selecciona…</option>
+                    <option value="padre">Padre</option>
+                    <option value="madre">Madre</option>
+                    <option value="tutor">Tutor</option>
+                  </select>
+                </div>
+              </div>
+            )}
             <div>
               <Label>Teléfono *</Label>
               <Input
@@ -457,7 +550,8 @@ const MembershipPublicPage = () => {
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderSuccess = () => (
     <div className="max-w-xl mx-auto text-center space-y-6">

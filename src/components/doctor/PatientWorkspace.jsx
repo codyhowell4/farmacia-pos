@@ -4,7 +4,7 @@ import {
   Users, ArrowLeft, Phone, Mail, Calendar, FileText, ShoppingCart,
   Pill, Clock, Plus, Edit2, Trash2, ChevronDown, ChevronUp,
   CheckCircle, XCircle, AlertCircle, Printer, FileDown, Search, Ban, ShieldAlert,
-  Play, Video, StickyNote
+  Play, Video, StickyNote, BookOpen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,7 +23,7 @@ import {
   getInventoryForDoctor, updateCustomer,
   cancelDoctorPrescription, getDoctorProfile, getConsultaNotesByCustomer, getConsentDocuments,
   confirmVideoAppointment, startConsulta, clockInDoctor, getActiveDoctorShift,
-  getCustomerDocuments,
+  getCustomerDocuments, getHistoriaClinica, needsHistoriaClinica, getAppointmentsByCustomer,
 } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { dayKeyInTz, timeInTz, dateInTz, DEFAULT_TZ } from '@/lib/timezone';
@@ -36,11 +36,13 @@ import ConsultaNotesList from './ConsultaNotesList';
 import AttachmentsTab from './AttachmentsTab';
 import ConsentTab from './ConsentTab';
 import JustificanteDialog from './JustificanteDialog';
+import HistoriaClinicaModal from './HistoriaClinicaModal';
 import { downloadPrescriptionPDF } from '@/lib/pdf';
 import { buildPatientRecordPdf, triggerDownload } from '@/lib/recordExport';
 import { isValidCurp } from '@/lib/curp';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { findControlledMed, controlledMedMessage, CONTROLLED_MED_MESSAGE } from '@/lib/controlledMeds';
+import { findAllergyConflicts, allergyOverrideNote } from '@/lib/allergyCheck';
 import { formatMXN } from '@/lib/currency';
 import { toast } from 'sonner';
 
@@ -95,15 +97,23 @@ const PatientWorkspace = () => {
   const tz = timezone || DEFAULT_TZ;
   const [justificanteOpen, setJustificanteOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // Historia clínica de primera vez (NOM-004 6.1) — one per patient, append-only
+  const [historia, setHistoria] = useState(null);
+  const [needsHistoria, setNeedsHistoria] = useState(false);
+  const [historiaOpen, setHistoriaOpen] = useState(false);
+  const [historiaViewOpen, setHistoriaViewOpen] = useState(false);
 
   // Form states
   const [rxForm, setRxForm] = useState({
-    medications: [{ medication: '', dosage: '', frequency: '', duration: '', notes: '' }],
+    medications: [{ medication: '', dosage: '', via: '', frequency: '', duration: '', notes: '' }],
     useInventory: false, inventoryId: '',
     height_cm: '', weight_kg: '',
     edad: '', temperatura: '', ta: '', fc: '', fr: '', so2: '', glicemia: '', alergias: '',
     next_appointment: '',
   });
+  // Conflictos med↔alergia pendientes de confirmación y errores de captura
+  const [allergyConflicts, setAllergyConflicts] = useState([]);
+  const [showRxMedErrors, setShowRxMedErrors] = useState(false);
   const [apptForm, setApptForm] = useState({
     appointment_date: '', status: 'pending', notes: '', type: 'in_person',
   });
@@ -140,6 +150,8 @@ const PatientWorkspace = () => {
       ...prev,
       alergias: prev.alergias || historyAllergies,
     }));
+    setAllergyConflicts([]);
+    setShowRxMedErrors(false);
     setRxDialogOpen(true);
   };
 
@@ -204,6 +216,18 @@ const PatientWorkspace = () => {
       });
       setNotes(Array.isArray(meds) ? meds : []);
 
+      // NOM-004 6.1: historia clínica de primera vez + first-note gate state
+      const historiaRow = await getHistoriaClinica(customerId).catch(e => {
+        console.error('getHistoriaClinica failed:', e);
+        return null;
+      });
+      setHistoria(historiaRow);
+      const missing = await needsHistoriaClinica(customerId).catch(e => {
+        console.error('needsHistoriaClinica failed:', e);
+        return false;
+      });
+      setNeedsHistoria(missing);
+
       const inv = await getInventoryForDoctor().catch(e => {
         console.error('getInventoryForDoctor failed:', e);
         return [];
@@ -236,7 +260,9 @@ const PatientWorkspace = () => {
 
   // ── PRESCRIPTION HANDLERS ──
   const validMeds = rxForm.medications.filter(m => m.medication.trim());
-  const handleCreateRx = async () => {
+  // allergyOverride: set when the doctor confirms prescribing despite a
+  // recorded allergy (conflict check already passed through the dialog).
+  const handleCreateRx = async (allergyOverride = false) => {
     if (validMeds.length === 0) {
       toast.error('Agrega al menos un medicamento');
       return;
@@ -246,14 +272,50 @@ const PatientWorkspace = () => {
       toast.error('Capture su cédula profesional en su perfil antes de emitir recetas (LGS 42 Bis).');
       return;
     }
+    // LGS 42/42 Bis: dosis, vía y frecuencia son obligatorias por medicamento
+    const incompleteMed = validMeds.find(m => !m.dosage.trim() || !(m.via || '').trim() || !m.frequency.trim());
+    if (incompleteMed) {
+      setShowRxMedErrors(true);
+      const missing = [
+        !incompleteMed.dosage.trim() && 'dosis',
+        !(incompleteMed.via || '').trim() && 'vía',
+        !incompleteMed.frequency.trim() && 'frecuencia',
+      ].filter(Boolean).join(', ');
+      toast.error(`Faltan datos en "${incompleteMed.medication.trim()}" (${missing}) — dosis, vía y frecuencia son obligatorias para emitir la receta.`);
+      return;
+    }
     // LGS 245-255: los controlados nunca salen en receta electrónica
     const controlledHit = findControlledMed(validMeds.map(m => m.medication), inventory);
     if (controlledHit) {
       toast.error(controlledMedMessage(controlledHit));
       return;
     }
+    // NOM-004 6.2 / patient safety: when a medication matches a recorded
+    // allergy the save stops until the doctor confirms the override.
+    if (!allergyOverride) {
+      const conflicts = findAllergyConflicts(
+        validMeds.map(m => m.medication),
+        customer?.medical_history?.alergias,
+        rxForm.alergias,
+      );
+      if (conflicts.length > 0) {
+        setAllergyConflicts(conflicts);
+        return;
+      }
+    }
     try {
-      const first = validMeds[0];
+      // On an allergy override the decision is printed on the receta itself
+      const medsToSave = allergyOverride && allergyConflicts.length > 0
+        ? validMeds.map(m => {
+            const lines = allergyConflicts
+              .filter(c => c.medication === m.medication.trim())
+              .map(c => allergyOverrideNote(c.medication, c.allergy));
+            return lines.length > 0
+              ? { ...m, notes: [m.notes.trim(), ...lines].filter(Boolean).join('\n') }
+              : m;
+          })
+        : validMeds;
+      const first = medsToSave[0];
       const payload = {
         customer_id: customerId,
         patient_name: customer?.full_name || '',
@@ -268,9 +330,10 @@ const PatientWorkspace = () => {
         prescription_date: new Date().toISOString().split('T')[0],
         height_cm: rxForm.height_cm ? parseFloat(rxForm.height_cm) : null,
         weight_kg: rxForm.weight_kg ? parseFloat(rxForm.weight_kg) : null,
-        medications: validMeds.map(m => ({
+        medications: medsToSave.map(m => ({
           medication: m.medication.trim(),
           dosage: m.dosage.trim() || null,
+          via: (m.via || '').trim() || null,
           frequency: m.frequency.trim() || null,
           duration: m.duration.trim() || null,
           notes: m.notes.trim() || null,
@@ -298,10 +361,19 @@ const PatientWorkspace = () => {
         user,
         details: `Receta creada (${validMeds.length} medicamento${validMeds.length !== 1 ? 's' : ''}) — paciente ${customer?.full_name || ''}`,
       });
+      // NOM-024 audit: prescribing despite a recorded allergy is always logged
+      if (allergyOverride && allergyConflicts.length > 0) {
+        logAudit({
+          action: AUDIT_ACTIONS.PRESCRIPTION_ALLERGY_OVERRIDE,
+          user,
+          details: `Receta emitida pese a alergia registrada — médico ${doctorProfile?.profiles?.full_name || user?.name || user?.email || ''} (céd. ${doctorProfile?.license_number || '-'}) — paciente ${customer?.full_name || ''} — ${allergyConflicts.map(c => `${c.medication} ↔ ${c.allergy}`).join('; ')}`,
+        });
+      }
       toast.success('Receta creada exitosamente');
       setRxDialogOpen(false);
+      setAllergyConflicts([]);
       setRxForm({
-        medications: [{ medication: '', dosage: '', frequency: '', duration: '', notes: '' }],
+        medications: [{ medication: '', dosage: '', via: '', frequency: '', duration: '', notes: '' }],
         useInventory: false, inventoryId: '',
         height_cm: '', weight_kg: '',
         edad: '', temperatura: '', ta: '', fc: '', fr: '', so2: '', glicemia: '', alergias: '',
@@ -332,12 +404,12 @@ const PatientWorkspace = () => {
     }
   };
 
-  // ── RECORD EXPORT (expediente clínico PDF) ──
+  // ── RECORD EXPORT (expediente clínico completo PDF, NOM-024 6.6.6) ──
   const handleExportRecord = async () => {
     if (!customer) return;
     setExporting(true);
     try {
-      const [consultaNotes, consents, documents] = await Promise.all([
+      const [consultaNotes, consents, documents, historiaRow, customerAppts] = await Promise.all([
         getConsultaNotesByCustomer(customerId).catch(e => {
           console.error('getConsultaNotesByCustomer failed:', e);
           return [];
@@ -350,16 +422,25 @@ const PatientWorkspace = () => {
           console.error('getCustomerDocuments failed:', e);
           return [];
         }),
+        getHistoriaClinica(customerId).catch(e => {
+          console.error('getHistoriaClinica failed:', e);
+          return null;
+        }),
+        getAppointmentsByCustomer(customerId).catch(e => {
+          console.error('getAppointmentsByCustomer failed:', e);
+          return [];
+        }),
       ]);
-      const justificantes = (Array.isArray(documents) ? documents : [])
-        .filter(d => d.document_type === 'justificante');
       const doc = buildPatientRecordPdf({
         customer,
         history: customer.medical_history || {},
+        historia: historiaRow,
+        medicalNotes: Array.isArray(notes) ? notes : [],
         consultaNotes: Array.isArray(consultaNotes) ? consultaNotes : [],
         prescriptions,
+        appointments: Array.isArray(customerAppts) ? customerAppts : [],
+        attachments: Array.isArray(documents) ? documents : [],
         consents: Array.isArray(consents) ? consents : [],
-        justificantes,
       });
       const safeName = (customer.full_name || 'paciente').replace(/\s+/g, '_');
       triggerDownload(doc, `Expediente_${safeName}.pdf`);
@@ -753,7 +834,50 @@ const PatientWorkspace = () => {
         </TabsContent>
 
         {/* HISTORIA CLÍNICA TAB */}
-        <TabsContent value="historia">
+        <TabsContent value="historia" className="space-y-4">
+          {/* Historia clínica de primera vez (NOM-004 6.1) — one per patient */}
+          <div className={`rounded-xl border p-6 ${historia ? 'bg-white border-slate-200' : 'bg-amber-50 border-amber-200'}`}>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2 min-w-0">
+                <BookOpen className={`w-5 h-5 shrink-0 ${historia ? 'text-teal-600' : 'text-amber-500'}`} />
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-slate-900">Historia clínica de primera vez</h3>
+                  {historia ? (
+                    <p className="text-sm text-slate-500">
+                      Registrada el {formatDate(historia.created_at)}
+                      {historia.profiles?.full_name ? ` por ${historia.profiles.full_name}` : ''}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-amber-700">
+                      Pendiente — la NOM-004 (6.1) la exige antes de la primera nota de evolución.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {historia ? (
+                  <>
+                    <Badge className="bg-green-100 text-green-800 border-green-200">Registrada</Badge>
+                    <Button size="sm" variant="outline" onClick={() => setHistoriaViewOpen(true)}>
+                      Ver
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    {needsHistoria && (
+                      <Badge className="bg-amber-100 text-amber-800 border-amber-200">Requerida para la 1ª nota</Badge>
+                    )}
+                    {!isNurse && (
+                      <Button size="sm" className="bg-gradient-to-r from-teal-500 to-emerald-600" onClick={() => setHistoriaOpen(true)}>
+                        <Plus className="w-3 h-3 mr-1" /> Capturar historia
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
           <PatientMedicalHistory customer={customer} onSaved={loadAll} />
         </TabsContent>
 
@@ -1022,7 +1146,7 @@ const PatientWorkspace = () => {
                 <Label>Medicamentos *</Label>
                 <Button size="sm" variant="outline" onClick={() => setRxForm({
                   ...rxForm,
-                  medications: [...rxForm.medications, { medication: '', dosage: '', frequency: '', duration: '', notes: '' }]
+                  medications: [...rxForm.medications, { medication: '', dosage: '', via: '', frequency: '', duration: '', notes: '' }]
                 })}>
                   <Plus className="w-3 h-3 mr-1" /> Agregar medicamento
                 </Button>
@@ -1125,8 +1249,9 @@ const PatientWorkspace = () => {
                       )}
                     </div>
                     <Input
-                      placeholder="Dosis"
+                      placeholder="Dosis *"
                       value={med.dosage}
+                      className={showRxMedErrors && !med.dosage.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}
                       onChange={(e) => {
                         const updated = [...rxForm.medications];
                         updated[idx].dosage = e.target.value;
@@ -1134,8 +1259,19 @@ const PatientWorkspace = () => {
                       }}
                     />
                     <Input
-                      placeholder="Frecuencia"
+                      placeholder="Vía (oral, tópica, IM...) *"
+                      value={med.via || ''}
+                      className={showRxMedErrors && !(med.via || '').trim() ? 'border-red-500 ring-1 ring-red-500' : ''}
+                      onChange={(e) => {
+                        const updated = [...rxForm.medications];
+                        updated[idx].via = e.target.value;
+                        setRxForm({ ...rxForm, medications: updated });
+                      }}
+                    />
+                    <Input
+                      placeholder="Frecuencia *"
                       value={med.frequency}
+                      className={showRxMedErrors && !med.frequency.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}
                       onChange={(e) => {
                         const updated = [...rxForm.medications];
                         updated[idx].frequency = e.target.value;
@@ -1187,7 +1323,43 @@ const PatientWorkspace = () => {
 
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => setRxDialogOpen(false)}>Cancelar</Button>
-              <Button className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600" onClick={handleCreateRx}>Guardar Receta</Button>
+              <Button className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600" onClick={() => handleCreateRx(false)}>Guardar Receta</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bloqueo por posible alergia — requiere confirmación explícita del médico */}
+      <Dialog open={allergyConflicts.length > 0} onOpenChange={(o) => { if (!o) setAllergyConflicts([]); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700">
+              <ShieldAlert className="w-5 h-5" /> Posible reacción alérgica
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-slate-700">
+              La receta incluye medicamentos que coinciden con alergias registradas del paciente:
+            </p>
+            <ul className="space-y-1.5">
+              {allergyConflicts.map((c, i) => (
+                <li key={i} className="text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  <span className="font-semibold text-red-800">{c.medication}</span>
+                  <span className="text-slate-600"> ↔ alergia registrada: </span>
+                  <span className="font-semibold text-red-800">{c.allergy}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-xs text-slate-500">
+              Si continúa, la prescripción quedará anotada en la receta y en la bitácora (NOM-024).
+            </p>
+            <div className="flex gap-3 pt-1">
+              <Button variant="outline" className="flex-1" onClick={() => setAllergyConflicts([])}>
+                Volver y corregir
+              </Button>
+              <Button className="flex-1 bg-red-600 hover:bg-red-700" onClick={() => handleCreateRx(true)}>
+                Continuar de todas formas
+              </Button>
             </div>
           </div>
         </DialogContent>
@@ -1360,6 +1532,21 @@ const PatientWorkspace = () => {
         open={justificanteOpen}
         onOpenChange={setJustificanteOpen}
         customer={customer}
+      />
+
+      {/* Historia clínica de primera vez (NOM-004 6.1): capture + read-only view */}
+      <HistoriaClinicaModal
+        open={historiaOpen}
+        onOpenChange={setHistoriaOpen}
+        customer={customer}
+        onSaved={() => { setNeedsHistoria(false); loadAll(); }}
+      />
+      <HistoriaClinicaModal
+        open={historiaViewOpen}
+        onOpenChange={setHistoriaViewOpen}
+        customer={customer}
+        readOnly
+        historia={historia}
       />
 
       {/* Print Prescription Dialog */}

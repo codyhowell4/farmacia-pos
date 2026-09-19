@@ -31,6 +31,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
+import { isAntibioticName } from '../src/lib/antibiotics.js';
 
 // Try to load a local .env file if one exists.
 try {
@@ -207,6 +208,13 @@ function buildInventoryRows(records, orgId, locationId, mergeDuplicates, departm
       continue;
     }
 
+    // R2-13: antibiotics/antifungals must never import with the Rx flag off —
+    // force it and warn so the register barrier always fires for them.
+    const isAntibiotic = isAntibioticName(name);
+    if (isAntibiotic) {
+      console.warn(`⚠️  Línea ${line}: "${name}" parece un antibiótico/antifúngico — se forzará requires_prescription=true`);
+    }
+
     const row = {
       org_id: orgId,
       location_id: locationId || null,
@@ -218,7 +226,7 @@ function buildInventoryRows(records, orgId, locationId, mergeDuplicates, departm
       barcode,
       warehouse_location: null,
       expiration_date: null,
-      requires_prescription: false,
+      requires_prescription: isAntibiotic,
       sales_count: 0,
     };
     row[departmentColumn] = department || null;

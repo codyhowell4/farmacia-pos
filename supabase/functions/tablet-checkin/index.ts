@@ -1,9 +1,12 @@
 // Supabase Edge Function: tablet-checkin
 // Modes:
-//   register (in-store tablet): patient (or guardian) fills name + email/phone,
-//     accepts the 4 consent documents, optional reason. Creates/reuses the
-//     customer, provisions the app account (password via recovery email),
-//     stores the signed consents, adds the walk-in cita + medical note.
+//   register (in-store tablet): patient (or guardian) fills name + DOB +
+//     email/phone, accepts the 4 consent documents, optional reason.
+//     Creates/reuses the customer, provisions the app account (password via
+//     recovery email), stores the signed consents, adds the walk-in cita +
+//     medical note. DOB is required on every registration and minority is
+//     derived from it server-side (R2-21) — guardian name + parentesco are
+//     persisted on the customer record for minors.
 //   register + guest (consentimiento. subdomain): first-visit patients with no
 //     email/phone/account — name + DOB + sexo (+ optional CURP) + the 4
 //     consents. Reuses a name+DOB match instead of duplicating the customer;
@@ -66,7 +69,7 @@ interface RequestPayload {
   patient_name: string;
   email?: string;
   phone?: string;
-  is_minor?: boolean;
+  is_minor?: boolean; // legacy client checkbox — accepted for backward compat but ignored; minority is derived server-side from date_of_birth (R2-21)
   guardian_name?: string;
   guardian_relationship?: string; // padre | madre | tutor — required for minors on kiosk writes
   guardian_id_ref?: string; // last 4 of guardian INE — evidence for parental consent
@@ -393,13 +396,17 @@ Deno.serve(async (req) => {
     // Anonymous flows (lookup / guest register / matched check-in) identify the
     // patient by name+DOB instead of contact info.
     const anonymous = mode === 'lookup' || guest || (mode === 'checkin' && !!customerId);
-    // DOB is authoritative for minority — a tablet user can skip the checkbox.
+    // Minority is derived server-side from the DOB (R2-21) — the client's
+    // is_minor checkbox is accepted for backward compatibility but ignored.
     const dobAge = dob && isValidDob(dob) ? ageFromDob(dob) : null;
-    const isMinor = !!payload.is_minor || (dobAge !== null && dobAge < 18);
+    const isMinor = dobAge !== null && dobAge < 18;
 
     if (!payload.org_id) return jsonResponse({ error: 'org_id requerido' }, 400);
     if (!patientName) return jsonResponse({ error: 'El nombre del paciente es obligatorio' }, 400);
-    if (anonymous && !isValidDob(dob)) {
+    // Every registration captures DOB (R2-21): it anchors identity on the
+    // anonymous flows and lets the server — not a client checkbox — derive
+    // minority on every flow that creates a customer.
+    if ((anonymous || mode === 'register') && !isValidDob(dob)) {
       return jsonResponse({ error: 'Fecha de nacimiento inválida (AAAA-MM-DD)' }, 400);
     }
     if (!anonymous && !email && !phone) {
@@ -424,17 +431,22 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Sin correo, crea una contraseña de al menos 6 caracteres para la app' }, 400);
     }
     // Lookup writes nothing, so guardian evidence applies only to
-    // register/check-in (parental consent on the consent docs). Relationship
-    // + INE last-4 are required on the anonymous (kiosk) flows — the customer
-    // app has no guardian fields and is out of scope for this requirement.
+    // register/check-in (parental consent on the consent docs). Name +
+    // parentesco are required on every registration — they are persisted on
+    // the customer record (guardian_name/guardian_relationship, R2-21) and a
+    // DB trigger rejects minor rows without them. INE last-4 stays required
+    // only on the anonymous (kiosk) flows — the customer app has no guardian
+    // fields and is out of scope for this requirement.
     if (isMinor && mode !== 'lookup') {
       if (!guardianName) {
         return jsonResponse({ error: 'El nombre del padre o tutor es obligatorio para menores' }, 400);
       }
-      if (anonymous) {
+      if (mode === 'register' || anonymous) {
         if (!['padre', 'madre', 'tutor'].includes(guardianRel)) {
           return jsonResponse({ error: 'Selecciona el parentesco del tutor (padre, madre o tutor legal)' }, 400);
         }
+      }
+      if (anonymous) {
         if (!/^[A-Z0-9]{4}$/.test(guardianIdRef)) {
           return jsonResponse({ error: 'Captura los últimos 4 dígitos de la identificación (INE) del tutor' }, 400);
         }
@@ -505,7 +517,8 @@ Deno.serve(async (req) => {
     //    name+DOB; otherwise reuse by email (or by phone when no email); a
     //    guest registration reuses a name+DOB match so a returning patient who
     //    picks "Primera vez" doesn't fork their record; else create.
-    const customerSelect = 'id, full_name, phone, email, profile_id, date_of_birth, sexo, curp';
+    const customerSelect =
+      'id, full_name, phone, email, profile_id, date_of_birth, sexo, curp, guardian_name, guardian_relationship, guardian_id_ref';
     let customer = null;
     if (mode === 'checkin' && customerId) {
       const { data, error } = await supabase
@@ -564,6 +577,11 @@ Deno.serve(async (req) => {
           date_of_birth: dob || null,
           sexo: sexo || null,
           curp: curp || null,
+          // Guardian evidence lives on the customer record itself (R2-21) —
+          // a DB trigger rejects minor rows without name + parentesco.
+          guardian_name: isMinor ? guardianName : null,
+          guardian_relationship: isMinor ? guardianRel || null : null,
+          guardian_id_ref: isMinor ? guardianIdRef || null : null,
           notes: isMinor ? `Menor de edad · Tutor: ${guardianDesc}` : null,
         })
         .select(customerSelect)
@@ -571,18 +589,25 @@ Deno.serve(async (req) => {
       if (createCustomerError) throw createCustomerError;
       customer = createdCustomer;
     } else {
-      if (phone && customer.phone !== phone) {
-        await supabase.from('customers').update({ phone }).eq('id', customer.id);
+      // Backfill identification data on matched records that never captured
+      // it — one update so a DOB that reveals a minor never lands without
+      // the guardian evidence in the same write.
+      const backfill: Record<string, unknown> = {};
+      if (phone && customer.phone !== phone) backfill.phone = phone;
+      if (dob && !customer.date_of_birth) backfill.date_of_birth = dob;
+      if (sexo && !customer.sexo) backfill.sexo = sexo;
+      if (curp && !customer.curp) backfill.curp = curp;
+      if (isMinor && guardianName) {
+        if (!customer.guardian_name) backfill.guardian_name = guardianName;
+        if (!customer.guardian_relationship && guardianRel) {
+          backfill.guardian_relationship = guardianRel;
+        }
+        if (!customer.guardian_id_ref && guardianIdRef) {
+          backfill.guardian_id_ref = guardianIdRef;
+        }
       }
-      // Backfill identification data on matched records that never captured it.
-      if (dob && !customer.date_of_birth) {
-        await supabase.from('customers').update({ date_of_birth: dob }).eq('id', customer.id);
-      }
-      if (sexo && !customer.sexo) {
-        await supabase.from('customers').update({ sexo }).eq('id', customer.id);
-      }
-      if (curp && !customer.curp) {
-        await supabase.from('customers').update({ curp }).eq('id', customer.id);
+      if (Object.keys(backfill).length > 0) {
+        await supabase.from('customers').update(backfill).eq('id', customer.id);
       }
     }
 

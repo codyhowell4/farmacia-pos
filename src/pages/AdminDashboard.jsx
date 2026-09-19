@@ -6,7 +6,7 @@ import {
   Users, Package, ShoppingCart, LogOut, BarChart3, Ticket, Menu, X, Clock, Shield,
   Settings, Truck, FileText, TrendingUp, TrendingDown, BookOpen, UserCircle, Stethoscope, Smartphone,
   ClipboardList, Pill, CalendarDays, AlertTriangle, ChevronDown, ChevronRight, UserPlus,
-  Award, FileSignature, HeartHandshake,
+  Award, FileSignature, HeartHandshake, FileWarning,
 } from 'lucide-react';
 import ApoloBrand from '@/components/ApoloBrand';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,7 @@ import AdminLostSales from '@/components/admin/AdminLostSales';
 import MembershipRegistration from '@/components/admin/MembershipRegistration';
 import AdminMemberships from '@/components/admin/AdminMemberships';
 import AdminConsents from '@/components/admin/AdminConsents';
+import AdminArco from '@/components/admin/AdminArco';
 import AdminPartners from '@/components/admin/AdminPartners';
 
 const AdminDashboard = () => {
@@ -63,6 +64,7 @@ const AdminDashboard = () => {
     if (path.includes('/doctors')) return 'doctors';
     if (path.includes('/prescriptions')) return 'prescriptions';
     if (path.includes('/consents')) return 'consents';
+    if (path.includes('/arco')) return 'arco';
     if (path.includes('/preorders')) return 'preorders';
     if (path.includes('/appointments')) return 'appointments';
     if (path.includes('/orders')) return 'orders';
@@ -202,6 +204,10 @@ const AdminDashboard = () => {
       <button onClick={() => navigateTo('/admin/consents', 'consents')} className={navButtonClass(isActive('consents'))}>
         <FileSignature className="w-5 h-5" />
         <span className="font-medium">Consentimientos</span>
+      </button>
+      <button onClick={() => navigateTo('/admin/arco', 'arco')} className={navButtonClass(isActive('arco'))}>
+        <FileWarning className="w-5 h-5" />
+        <span className="font-medium">ARCO / Privacidad</span>
       </button>
       <button onClick={() => navigateTo('/admin/memberships', 'memberships')} className={navButtonClass(isActive('memberships'))}>
         <Award className="w-5 h-5" />
@@ -374,6 +380,7 @@ const AdminDashboard = () => {
                 <Route path="/doctors" element={<AdminDoctors />} />
                 <Route path="/prescriptions" element={<AdminPrescriptions />} />
                 <Route path="/consents" element={<AdminConsents />} />
+                <Route path="/arco" element={<AdminArco />} />
                 <Route path="/preorders" element={<AdminPreorders />} />
                 <Route path="/appointments" element={<AdminAppointments />} />
                 <Route path="/orders" element={<AdminOrders />} />

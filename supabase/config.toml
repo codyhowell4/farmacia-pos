@@ -31,6 +31,12 @@ verify_jwt = false
 [functions.tablet-checkin]
 verify_jwt = false
 
+# Login-identifier resolution for the customer portal (R2-16) — no session
+# yet by definition; the direct anon grant on the DB function is revoked, so
+# this wrapper is the only path. Abuse bounded by per-IP rate limiting.
+[functions.lookup-login-email]
+verify_jwt = false
+
 # Public receta verification for pharmacists (LGS 42 Bis) — no session;
 # response is minimal by design, abuse bounded by per-IP rate limiting
 [functions.verify-receta]

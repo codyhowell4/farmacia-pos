@@ -18,9 +18,9 @@ import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN, getTaxSettings, calcIVA } from '@/lib/currency';
 import {
   getInventory, createSale, createSaleWithPayments, getRecentSales, voidSale, findDiscount,
-  getTaxSettingsDb, getBankAccounts, createPrescription, linkPrescriptionToSale, searchCustomers, createCustomer,
+  getTaxSettingsDb, getBankAccounts, createPrescription, linkPrescriptionToSale, searchCustomersPos, createCustomerPos,
   processMembershipRenewals, ensureMembershipConsultationProduct, decrementMembershipVisits,
-  fulfillMembershipTrackers, getMembershipById, isServiceItem,
+  fulfillMembershipTrackers, getMembershipByIdPos, isServiceItem,
   ensureMembershipRevisionProducts, getPendingMemberRevisions, markMembershipRevisionUsed,
   validateMembershipCheckout, clearSaleMembershipVisitsUsed, createControlledRegisterRows,
 } from '@/lib/db';
@@ -174,7 +174,7 @@ const PoSDashboard = () => {
         description: `Se entregó ${result.fulfilled} rastreador(es).`,
       });
       // Refresh selected membership data.
-      const updated = await getMembershipById(selectedMembership.id);
+      const updated = await getMembershipByIdPos(selectedMembership.id);
       if (updated) setSelectedMembership(updated);
     } catch (err) {
       console.error(err);
@@ -583,7 +583,7 @@ const PoSDashboard = () => {
     // Auto-register the patient as a customer when contact info was captured
     if ((prescription.patient_phone || prescription.patient_email) && !selectedCustomer) {
       try {
-        const existing = await searchCustomers(prescription.patient_phone || prescription.patient_email);
+        const existing = await searchCustomersPos(prescription.patient_phone || prescription.patient_email);
         const duplicate = existing.find(c =>
           (prescription.patient_phone && c.phone === prescription.patient_phone) ||
           (prescription.patient_email && c.email === prescription.patient_email)
@@ -592,7 +592,7 @@ const PoSDashboard = () => {
           selectCustomer(duplicate);
           toast({ title: 'Cliente existente seleccionado', description: duplicate.full_name });
         } else {
-          const created = await createCustomer({
+          const created = await createCustomerPos({
             full_name: prescription.patient_name,
             phone: prescription.patient_phone || null,
             email: prescription.patient_email || null,
@@ -656,7 +656,7 @@ const PoSDashboard = () => {
       return;
     }
     try {
-      const results = await searchCustomers(query);
+      const results = await searchCustomersPos(query);
       setCustomerSearchResults(results);
     } catch {
       setCustomerSearchResults([]);
@@ -684,7 +684,7 @@ const PoSDashboard = () => {
     try {
       // Check for duplicates by phone, email, or CURP
       if (newCustomer.phone || newCustomer.email || newCustomer.curp) {
-        const existing = await searchCustomers(
+        const existing = await searchCustomersPos(
           newCustomer.phone || newCustomer.email || newCustomer.curp
         );
         const duplicate = existing.find(c =>
@@ -704,7 +704,7 @@ const PoSDashboard = () => {
           return;
         }
       }
-      const created = await createCustomer({
+      const created = await createCustomerPos({
         full_name: newCustomer.full_name.trim(),
         phone: newCustomer.phone.trim() || null,
         email: newCustomer.email.trim() || null,
@@ -1052,6 +1052,7 @@ const PoSDashboard = () => {
                 doctor_phone: prescription.doctor_phone,
                 prescription_number: prescription.prescription_number,
                 prescription_date: prescription.prescription_date,
+                receta_retenida: prescription.receta_retenida === true,
               };
 
               const createdPrescription = await createPrescription(prescriptionRecord);
@@ -1065,9 +1066,16 @@ const PoSDashboard = () => {
             }
           } catch (rxErr) {
             console.error('Failed to create prescription:', rxErr);
+            // The DB trigger prescriptions_unique_folio rejects a folio that
+            // already exists for the org (errcode 23505) — surface the same
+            // friendly message the modal's pre-check uses if it raced.
+            const isDuplicateFolio = rxErr?.code === '23505'
+              || /folio de receta ya registrado/i.test(rxErr?.message || '');
             toast({
-              title: 'Advertencia',
-              description: 'La venta se completó pero hubo un error guardando la receta. Contacte al administrador.',
+              title: isDuplicateFolio ? 'Folio duplicado' : 'Advertencia',
+              description: isDuplicateFolio
+                ? 'Este folio ya fue registrado en otra venta. La venta se completó; corrige el folio de la receta con el administrador.'
+                : 'La venta se completó pero hubo un error guardando la receta. Contacte al administrador.',
               variant: 'destructive',
             });
           }

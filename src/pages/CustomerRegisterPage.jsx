@@ -3,19 +3,17 @@ import { Helmet } from 'react-helmet';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
-import { Pill, User, Mail, Phone, CheckCircle, FileText } from 'lucide-react';
+import { Pill, User, Mail, Phone, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
-import { createCustomer } from '@/lib/db';
+import { createCustomerPos } from '@/lib/db';
 
 const CustomerRegisterPage = () => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
@@ -32,11 +30,10 @@ const CustomerRegisterPage = () => {
 
     setSubmitting(true);
     try {
-      const result = await createCustomer({
+      await createCustomerPos({
         full_name: fullName.trim(),
         email: email.trim() || null,
         phone: phone.trim(),
-        notes: notes.trim() || null,
       });
 
       setRegisteredEmail(email.trim() || phone.trim());
@@ -166,21 +163,6 @@ const CustomerRegisterPage = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10"
-                    disabled={submitting}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notes">Notas</Label>
-                <div className="relative">
-                  <FileText className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
-                  <Textarea
-                    id="notes"
-                    placeholder="Alergias, preferencias, etc."
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    className="pl-10 min-h-[80px]"
                     disabled={submitting}
                   />
                 </div>

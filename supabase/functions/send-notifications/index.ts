@@ -9,6 +9,12 @@
 // error='provider not configured' instead of failing — plugging the
 // secrets in later makes the same code live with no redeploy.
 //
+// Marketing suppression (R2-22, LFPDPPP secondary purposes): templates in
+// PROMO_TEMPLATES are checked against customers.marketing_opt_out before
+// sending; opted-out recipients are marked 'skipped_opt_out'. The customer
+// lookup only runs for promo templates — transactional traffic (receipts,
+// bookings) is never suppressed and pays no extra query.
+//
 // Invoked by pg_cron (see docs/NOTIFICATION_PROVIDERS.md). No user JWT is
 // required; when the CRON_SECRET env var is set, callers must send it in
 // the x-cron-secret header.
@@ -22,6 +28,18 @@ const corsHeaders = {
 };
 
 const BATCH_SIZE = 50;
+
+// Marketing/secondary-purpose templates (R2-22). Anything in this set
+// honors customers.marketing_opt_out before sending.
+const PROMO_TEMPLATES: Set<string> = new Set([
+  'promotion',
+  'promo',
+  'newsletter',
+  'marketing',
+  'birthday',
+  'reengagement',
+  'offers',
+]);
 
 interface NotificationRow {
   id: string;
@@ -99,6 +117,39 @@ const formatDateOnly = (iso: string) =>
 const formatMoney = (amount: unknown, currency = 'MXN') => {
   const n = Number(amount);
   return `$${(Number.isFinite(n) ? n : 0).toFixed(2)} ${currency}`;
+};
+
+// Resolves a queued promo notification's recipient to an org-scoped
+// customers row with marketing_opt_out set — by email for email channels,
+// by trailing phone digits otherwise (formatting differs between the
+// queue and the customers table). Fails open: a lookup hiccup must never
+// stall the queue, it only skips the suppression for that row.
+const hasMarketingOptOut = async (
+  supabase: ReturnType<typeof supabaseAdmin>,
+  row: NotificationRow
+): Promise<boolean> => {
+  const recipient = (row.recipient || '').trim();
+  if (!recipient) return false;
+  try {
+    let query = supabase
+      .from('customers')
+      .select('id')
+      .eq('org_id', row.org_id)
+      .eq('marketing_opt_out', true);
+    if (row.channel === 'email') {
+      query = query.ilike('email', recipient);
+    } else {
+      const digits = recipient.replace(/\D/g, '');
+      if (digits.length < 7) return false;
+      query = query.ilike('phone', `%${digits.slice(-10)}`);
+    }
+    const { data, error } = await query.limit(1).maybeSingle();
+    if (error) throw error;
+    return !!data;
+  } catch (err) {
+    console.error('[send-notifications] opt-out lookup failed; sending anyway:', err);
+    return false;
+  }
 };
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
@@ -508,30 +559,40 @@ Deno.serve(async (req) => {
     for (const row of (rows || []) as NotificationRow[]) {
       summary.processed += 1;
 
-      const message = buildMessage(env, row);
-      const providerConfigured =
-        row.channel === 'email' ? !!env.RESEND_API_KEY : !!env.WHATSAPP_TOKEN;
+      let update: Record<string, unknown> | null = null;
 
-      let update: Record<string, unknown>;
-      if (!providerConfigured) {
-        // Provider not plugged in yet — harmless no-op per row.
-        update = { status: 'skipped', error: 'provider not configured' };
+      // Marketing suppression (R2-22): promo templates are never sent to
+      // customers who opted out. The lookup only runs for promo templates.
+      if (PROMO_TEMPLATES.has(row.template) && (await hasMarketingOptOut(supabase, row))) {
+        update = { status: 'skipped_opt_out', error: 'marketing opt-out' };
         summary.skipped += 1;
-      } else {
-        try {
-          if (row.channel === 'email') {
-            await sendEmail(env, row, message);
-          } else {
-            // whatsapp and sms both go through the WhatsApp Cloud API.
-            await sendWhatsApp(env, row, message);
+      }
+
+      if (!update) {
+        const message = buildMessage(env, row);
+        const providerConfigured =
+          row.channel === 'email' ? !!env.RESEND_API_KEY : !!env.WHATSAPP_TOKEN;
+
+        if (!providerConfigured) {
+          // Provider not plugged in yet — harmless no-op per row.
+          update = { status: 'skipped', error: 'provider not configured' };
+          summary.skipped += 1;
+        } else {
+          try {
+            if (row.channel === 'email') {
+              await sendEmail(env, row, message);
+            } else {
+              // whatsapp and sms both go through the WhatsApp Cloud API.
+              await sendWhatsApp(env, row, message);
+            }
+            update = { status: 'sent', sent_at: new Date().toISOString(), error: null };
+            summary.sent += 1;
+          } catch (err) {
+            // Retryable failed rows stay in the table with their error.
+            const message = err instanceof Error ? err.message : 'Error desconocido';
+            update = { status: 'failed', error: message.slice(0, 500) };
+            summary.failed += 1;
           }
-          update = { status: 'sent', sent_at: new Date().toISOString(), error: null };
-          summary.sent += 1;
-        } catch (err) {
-          // Retryable failed rows stay in the table with their error.
-          const message = err instanceof Error ? err.message : 'Error desconocido';
-          update = { status: 'failed', error: message.slice(0, 500) };
-          summary.failed += 1;
         }
       }
 

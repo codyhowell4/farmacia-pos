@@ -14,7 +14,9 @@
 //   cancelMyMembership, familyMemberSignup,
 //   createAppointment, updateAppointment,
 //   getConsultaNotes, getConsentDocuments, signConsentDocument,
-//   getMySignedConsentTypes, acceptConsentDocuments, updateMyCustomerPhone
+//   getMySignedConsentTypes, acceptConsentDocuments, updateMyCustomerPhone,
+//   submitArcoRequest, getMyArcoRequests, revokeMyConsents,
+//   getMarketingOptOut, setMarketingOptOut
 // ============================================================
 
 window.FarmaciaAPI = (function () {
@@ -22,6 +24,11 @@ window.FarmaciaAPI = (function () {
 
   const sb = window.farmaciaSupabase;
   const isSupabaseAvailable = !!sb;
+
+  // Last error message from ensureCustomerProfile — lets signup surface
+  // DB rejections (e.g. a minor without guardian evidence) while the
+  // method keeps its id-or-null contract for older callers.
+  let lastCustomerProfileError = null;
 
   // Helper: check if a string is a valid UUID
   function isValidUuid(str) {
@@ -156,8 +163,11 @@ window.FarmaciaAPI = (function () {
 
     /**
      * Sign in with email, phone, or membership # and password.
-     * Non-email identifiers are resolved to the account email
-     * via the lookup_login_email RPC before signing in.
+     * Non-email identifiers are resolved to the account email via the
+     * rate-limited lookup-login-email edge function (the direct RPC is
+     * revoked from anon/authenticated — R2-16). Called pre-auth, so the
+     * anon key goes as apikey + Authorization bearer like the app's
+     * other public function calls.
      */
     async signIn(identifier, password) {
       if (!sb) {
@@ -169,15 +179,24 @@ window.FarmaciaAPI = (function () {
 
         // Phone or membership # (e.g. APOLO-00001) → resolve to account email
         if (email && !email.includes('@')) {
-          const defaultOrgId = (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
-          const { data: resolvedEmail, error: lookupError } = await sb.rpc('lookup_login_email', {
-            p_identifier: email,
-            p_org_id: defaultOrgId
+          const cfg = window.farmaciaSupabaseConfig || {};
+          const res = await fetch(cfg.URL + '/functions/v1/lookup-login-email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(cfg.ANON_KEY ? { apikey: cfg.ANON_KEY } : {}),
+              ...(cfg.ANON_KEY ? { Authorization: 'Bearer ' + cfg.ANON_KEY } : {}),
+            },
+            body: JSON.stringify({ identifier: email, org_id: cfg.DEFAULT_ORG_ID }),
           });
-          if (lookupError || !resolvedEmail) {
+          if (res.status === 429) {
+            throw new Error('Demasiados intentos — espera unos minutos');
+          }
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok || !json.email) {
             throw new Error('No encontramos una cuenta con esos datos');
           }
-          email = resolvedEmail;
+          email = json.email;
         }
 
         const { data, error } = await sb.auth.signInWithPassword({ email, password });
@@ -288,7 +307,7 @@ window.FarmaciaAPI = (function () {
 
         const { data, error } = await sb
           .from('customers')
-          .select('id, full_name, phone, email, address, date_of_birth, profile_id')
+          .select('id, full_name, phone, email, address, date_of_birth, profile_id, guardian_name, guardian_relationship, marketing_opt_out')
           .eq('profile_id', user.id)
           .single();
 
@@ -302,14 +321,17 @@ window.FarmaciaAPI = (function () {
 
         console.log('[FarmaciaAPI] Customer profile loaded from Supabase');
         return {
-          id:         data.id,
-          name:       data.full_name,
-          phone:      data.phone,
-          email:      data.email,
-          address:    data.address,
-          birthdate:  data.date_of_birth,
-          profileId:  data.profile_id,
-          source:     'supabase'
+          id:                   data.id,
+          name:                 data.full_name,
+          phone:                data.phone,
+          email:                data.email,
+          address:              data.address,
+          birthdate:            data.date_of_birth,
+          profileId:            data.profile_id,
+          guardianName:         data.guardian_name || null,
+          guardianRelationship: data.guardian_relationship || null,
+          marketingOptOut:      !!data.marketing_opt_out,
+          source:               'supabase'
         };
       } catch (err) {
         console.warn('[FarmaciaAPI] getCustomerProfile error:', err.message);
@@ -637,8 +659,14 @@ window.FarmaciaAPI = (function () {
     /**
      * Ensure the current auth user has a customers row.
      * Creates one if missing. Requires SUPABASE_CONFIG.DEFAULT_ORG_ID.
+     * `extras` may carry date_of_birth (ISO YYYY-MM-DD) and, for minors,
+     * guardian_name + guardian_relationship — the customers insert
+     * forwards them; the DB rejects a minor without guardian evidence.
+     * On failure the last DB error message is readable via
+     * getLastCustomerProfileError() so signup can surface it.
      */
-    async ensureCustomerProfile(fullName) {
+    async ensureCustomerProfile(fullName, extras) {
+      lastCustomerProfileError = null;
       if (!sb) {
         console.log('[FarmaciaAPI] ensureCustomerProfile skipped - Supabase not available');
         return null;
@@ -662,6 +690,24 @@ window.FarmaciaAPI = (function () {
         }
 
         if (existing) {
+          // The handle_new_user trigger pre-creates the customers row at
+          // auth signup with a blank DOB — fill in the signup-collected
+          // DOB + guardian evidence (fill-in-only: never overwrite an
+          // existing date_of_birth). The minor-guardian DB trigger
+          // validates the combination; its message is surfaced to signup.
+          const ex0 = extras || {};
+          const fill = {};
+          if (ex0.date_of_birth) fill.date_of_birth = ex0.date_of_birth;
+          if (ex0.guardian_name) fill.guardian_name = ex0.guardian_name;
+          if (ex0.guardian_relationship) fill.guardian_relationship = ex0.guardian_relationship;
+          if (Object.keys(fill).length > 0) {
+            const { error: fillErr } = await sb
+              .from('customers')
+              .update(fill)
+              .eq('id', existing.id)
+              .is('date_of_birth', null);
+            if (fillErr) throw fillErr;
+          }
           console.log('[FarmaciaAPI] Customer profile already exists');
           return existing.id;
         }
@@ -673,6 +719,7 @@ window.FarmaciaAPI = (function () {
           return null;
         }
 
+        const ex = extras || {};
         const { data: newCustomer, error: createErr } = await sb
           .from('customers')
           .insert({
@@ -682,7 +729,9 @@ window.FarmaciaAPI = (function () {
             email: user.email,
             phone: null,
             address: null,
-            date_of_birth: null,
+            date_of_birth: ex.date_of_birth || null,
+            guardian_name: ex.guardian_name || null,
+            guardian_relationship: ex.guardian_relationship || null,
             notes: null
           })
           .select('id')
@@ -692,9 +741,18 @@ window.FarmaciaAPI = (function () {
         console.log('[FarmaciaAPI] Customer profile created:', newCustomer.id);
         return newCustomer.id;
       } catch (err) {
+        lastCustomerProfileError = err.message || null;
         console.error('[FarmaciaAPI] ensureCustomerProfile failed:', err.message);
         return null;
       }
+    },
+
+    /**
+     * Last error message from ensureCustomerProfile (e.g. the DB
+     * minor-guardian rejection), null when the last call succeeded.
+     */
+    getLastCustomerProfileError() {
+      return lastCustomerProfileError;
     },
 
     /**
@@ -966,7 +1024,7 @@ window.FarmaciaAPI = (function () {
      * Sends org_id (SUPABASE_CONFIG.DEFAULT_ORG_ID) so the function scopes
      * the sub_id lookup to this org; omitted automatically if unset.
      */
-    async familyMemberSignup({ sub_id, name, email, password }) {
+    async familyMemberSignup({ sub_id, name, email, password, birth_date }) {
       if (!sb) return { data: null, error: new Error('Supabase not available') };
       try {
         const cfg = window.farmaciaSupabaseConfig || {};
@@ -976,7 +1034,7 @@ window.FarmaciaAPI = (function () {
             'Content-Type': 'application/json',
             ...(cfg.ANON_KEY ? { apikey: cfg.ANON_KEY } : {}),
           },
-          body: JSON.stringify({ sub_id, name, email, password, org_id: cfg.DEFAULT_ORG_ID }),
+          body: JSON.stringify({ sub_id, name, email, password, birth_date, org_id: cfg.DEFAULT_ORG_ID }),
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || json.error) {
@@ -1558,12 +1616,15 @@ window.FarmaciaAPI = (function () {
      * Insert signed consent documents for the current customer
      * (consent-onboarding gate). Each doc: { type, title, content } —
      * all rows are inserted with status 'signed'.
+     * `opts.signerRelationship` (padre/madre/tutor) is recorded for a
+     * MINOR patient: the guardian signs, so the row must carry the
+     * parentesco alongside signer_name (parental consent, R2-21).
      * NOTE: requires the RLS policy 'consent_documents_customer_insert'
      * (see supabase/migrations/MIGRATION_consent_customer_insert.sql) —
      * without it the INSERT is rejected because customers only have
      * SELECT/UPDATE on their own rows.
      */
-    async acceptConsentDocuments(docs, signerName) {
+    async acceptConsentDocuments(docs, signerName, opts) {
       if (!sb) {
         return { data: null, error: new Error('Supabase not available') };
       }
@@ -1583,6 +1644,7 @@ window.FarmaciaAPI = (function () {
         const orgId = customer.org_id || (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
         if (!orgId) throw new Error('org_id not available');
 
+        const signerRelationship = (opts && opts.signerRelationship) || null;
         const rows = (docs || []).map(doc => ({
           org_id:      orgId,
           customer_id: customer.id,
@@ -1592,7 +1654,8 @@ window.FarmaciaAPI = (function () {
           status:      'signed',
           signer_name: signerName,
           signed_at:   new Date().toISOString(),
-          signer_user_agent: (typeof navigator !== 'undefined' && navigator.userAgent) || null
+          signer_user_agent: (typeof navigator !== 'undefined' && navigator.userAgent) || null,
+          ...(signerRelationship ? { signer_relationship: signerRelationship } : {})
         }));
         if (rows.length === 0) throw new Error('No consent documents provided');
 
@@ -1603,9 +1666,9 @@ window.FarmaciaAPI = (function () {
         // Fallback: if the attribution columns don't exist yet (migration
         // 20260912140000 pending), retry without them — the signature itself
         // must never be blocked by the extra evidence fields.
-        if (error && /signer_ip|signer_user_agent/.test(error.message || '')) {
+        if (error && /signer_ip|signer_user_agent|signer_relationship/.test(error.message || '')) {
           console.warn('[FarmaciaAPI] consent attribution columns missing; retrying without them');
-          const fallbackRows = rows.map(({ signer_user_agent, ...rest }) => rest);
+          const fallbackRows = rows.map(({ signer_user_agent, signer_relationship, ...rest }) => rest);
           ({ data, error } = await sb
             .from('consent_documents')
             .insert(fallbackRows)
@@ -1726,6 +1789,135 @@ window.FarmaciaAPI = (function () {
         return { data: true, error: null };
       } catch (err) {
         console.error('[FarmaciaAPI] addMyHistoryEntry failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
+     * File an ARCO rights request (acceso/rectificacion/cancelacion/
+     * oposicion/revocacion) for the signed-in customer. RLS requires
+     * profile_id = auth.uid(); status starts as 'pendiente'.
+     */
+    async submitArcoRequest(tipo, details) {
+      if (!sb) return { data: null, error: new Error('Supabase not available') };
+      try {
+        const user = await getAuthUser();
+        if (!user) return { data: null, error: new Error('Not authenticated') };
+
+        const { data: customer, error: custErr } = await sb
+          .from('customers')
+          .select('id, org_id')
+          .eq('profile_id', user.id)
+          .single();
+        if (custErr) throw custErr;
+        if (!customer) throw new Error('Customer record not found');
+
+        const orgId = customer.org_id || (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
+        if (!orgId) throw new Error('org_id not available');
+
+        const { data, error } = await sb
+          .from('arco_requests')
+          .insert({
+            org_id:      orgId,
+            customer_id: customer.id,
+            profile_id:  user.id,
+            tipo,
+            details:     details || null
+          })
+          .select('id')
+          .single();
+        if (error) throw error;
+        console.log('[FarmaciaAPI] ARCO request filed:', data.id);
+        return { data, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] submitArcoRequest failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
+     * The signed-in customer's own ARCO requests, newest first
+     * (RLS scopes to profile_id = auth.uid()).
+     */
+    async getMyArcoRequests() {
+      if (!sb) return { data: null, error: new Error('Supabase not available') };
+      try {
+        const user = await getAuthUser();
+        if (!user) return { data: null, error: new Error('Not authenticated') };
+        const { data, error } = await sb
+          .from('arco_requests')
+          .select('id, tipo, details, status, response, created_at, resolved_at')
+          .eq('profile_id', user.id)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        return { data: data || [], error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] getMyArcoRequests failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
+     * Revoke the signed-in customer's consent documents via the
+     * revoke_consent RPC. Pass 'all' (or null) for every signed document,
+     * or a specific document type. Rows flip to status='revoked' (evidence
+     * kept) so the consent gate and video-room stop honoring them at once.
+     * Returns the number of documents revoked.
+     */
+    async revokeMyConsents(pType) {
+      if (!sb) return { data: null, error: new Error('Supabase not available') };
+      try {
+        const { data, error } = await sb.rpc('revoke_consent', {
+          p_type: pType || 'all'
+        });
+        if (error) throw error;
+        return { data: typeof data === 'number' ? data : 0, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] revokeMyConsents failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
+     * Secondary-purposes suppression flag (customers.marketing_opt_out)
+     * for the signed-in customer. Returns null when it can't be read so
+     * the UI can leave the control untouched instead of guessing.
+     */
+    async getMarketingOptOut() {
+      if (!sb) return null;
+      try {
+        const user = await getAuthUser();
+        if (!user) return null;
+        const { data, error } = await sb
+          .from('customers')
+          .select('marketing_opt_out')
+          .eq('profile_id', user.id)
+          .single();
+        if (error) throw error;
+        return !!data?.marketing_opt_out;
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getMarketingOptOut failed:', err.message);
+        return null;
+      }
+    },
+
+    /**
+     * Set customers.marketing_opt_out on the signed-in customer's own row
+     * (existing self-update policy). true = no promociones/mercadotecnia.
+     */
+    async setMarketingOptOut(optOut) {
+      if (!sb) return { data: null, error: new Error('Supabase not available') };
+      try {
+        const user = await getAuthUser();
+        if (!user) return { data: null, error: new Error('Not authenticated') };
+        const { error } = await sb
+          .from('customers')
+          .update({ marketing_opt_out: !!optOut })
+          .eq('profile_id', user.id);
+        if (error) throw error;
+        return { data: true, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] setMarketingOptOut failed:', err.message);
         return { data: null, error: err };
       }
     }

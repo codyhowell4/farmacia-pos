@@ -304,7 +304,8 @@ async function handleLogin() {
   const { data, error } = await FarmaciaAPI.signIn(identifier, password);
   
   if (error) {
-    errorEl.textContent = error.message === 'No encontramos una cuenta con esos datos'
+    const passThrough = ['No encontramos una cuenta con esos datos', 'Demasiados intentos — espera unos minutos'];
+    errorEl.textContent = passThrough.includes(error.message)
       ? error.message
       : 'Datos o contraseña incorrectos';
     errorEl.style.display = 'block';
@@ -366,6 +367,11 @@ function renderFamilyActivation() {
         </div>
 
         <div style="margin-bottom: 1rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Fecha de nacimiento</label>
+          <input type="text" id="family-dob" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" autocomplete="bday" oninput="maskDobInput(this)" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+        </div>
+
+        <div style="margin-bottom: 1rem;">
           <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Correo electrónico</label>
           <input type="email" id="family-email" placeholder="tu@email.com" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
         </div>
@@ -390,6 +396,7 @@ function renderFamilyActivation() {
 async function handleFamilyActivation() {
   const subId = document.getElementById('family-sub-id')?.value.trim();
   const name = document.getElementById('family-name')?.value.trim();
+  const dobIso = parseDobMx(document.getElementById('family-dob')?.value);
   const email = document.getElementById('family-email')?.value.trim();
   const password = document.getElementById('family-password')?.value;
   const errorEl = document.getElementById('family-error');
@@ -404,6 +411,10 @@ async function handleFamilyActivation() {
     showError('Por favor completa todos los campos');
     return;
   }
+  if (!dobIso) {
+    showError('Escribe una fecha de nacimiento válida (dd/mm/aaaa)');
+    return;
+  }
   if (password.length < 6) {
     showError('La contraseña debe tener al menos 6 caracteres');
     return;
@@ -415,7 +426,7 @@ async function handleFamilyActivation() {
     submitBtn.textContent = 'Activando...';
   }
 
-  const { data, error } = await FarmaciaAPI.familyMemberSignup({ sub_id: subId, name, email, password });
+  const { data, error } = await FarmaciaAPI.familyMemberSignup({ sub_id: subId, name, email, password, birth_date: dobIso });
 
   if (error) {
     showError(error.message || 'No se pudo activar tu cuenta. Intenta de nuevo.');
@@ -455,6 +466,49 @@ async function handleFamilyActivation() {
 window.renderFamilyActivation = renderFamilyActivation;
 window.handleFamilyActivation = handleFamilyActivation;
 
+// DOB entry helpers — dd/mm/aaaa (Mexican standard), the same masked-text
+// pattern as the consentimiento kiosk (public/consentimiento/index.html):
+// the native date picker follows the device locale (mm/dd/yyyy on US
+// laptops). Values are stored/sent as ISO YYYY-MM-DD.
+function maskDobInput(el) {
+  const digits = el.value.replace(/\D/g, '').slice(0, 8);
+  const parts = [];
+  if (digits.length > 0) parts.push(digits.slice(0, 2));
+  if (digits.length >= 3) parts.push(digits.slice(2, 4));
+  if (digits.length >= 5) parts.push(digits.slice(4, 8));
+  el.value = parts.join('/');
+}
+
+function parseDobMx(v) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v || '');
+  if (!m) return null;
+  const d = parseInt(m[1], 10), mo = parseInt(m[2], 10), y = parseInt(m[3], 10);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || y < 1900) return null;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  if (dt.getTime() > Date.now()) return null;
+  const mm = mo < 10 ? '0' + mo : '' + mo;
+  const dd = d < 10 ? '0' + d : '' + d;
+  return y + '-' + mm + '-' + dd;
+}
+
+function ageFromDobIso(iso) {
+  return Math.floor((Date.now() - new Date(iso).getTime()) / (365.25 * 86400000));
+}
+
+function isMinorDobIso(iso) {
+  return !!iso && ageFromDobIso(iso) < 18;
+}
+
+// Reveal/clear a guardian block as its DOB input changes (signup + firma)
+function toggleGuardianBlock(dobInputId, blockId) {
+  const block = document.getElementById(blockId);
+  const minor = isMinorDobIso(parseDobMx(document.getElementById(dobInputId)?.value));
+  if (block) block.style.display = minor ? 'block' : 'none';
+}
+function toggleSignupGuardian() { toggleGuardianBlock('signup-dob', 'signup-guardian-block'); }
+function toggleFirmaGuardian() { toggleGuardianBlock('firma-dob', 'firma-guardian-block'); }
+
 function renderSignup() {
   closeMenu();
   mainContent.innerHTML = `
@@ -468,6 +522,28 @@ function renderSignup() {
         <div style="margin-bottom: 1rem;">
           <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Nombre completo</label>
           <input type="text" id="signup-name" placeholder="María García" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+        </div>
+
+        <div style="margin-bottom: 1rem;">
+          <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Fecha de nacimiento (dd/mm/aaaa) *</label>
+          <input type="text" id="signup-dob" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" autocomplete="bday" oninput="maskDobInput(this); toggleSignupGuardian();" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+        </div>
+
+        <div id="signup-guardian-block" style="display: none; margin-bottom: 1rem; padding: 0.875rem; background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 10px;">
+          <p style="margin: 0 0 0.75rem; font-size: 0.8rem; color: #9A3412; line-height: 1.4;">El paciente es menor de edad — se requieren los datos del padre, madre o tutor.</p>
+          <div style="margin-bottom: 0.75rem;">
+            <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Nombre del padre/madre/tutor *</label>
+            <input type="text" id="signup-guardian-name" placeholder="Nombre completo de quien responde por el menor" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Parentesco *</label>
+            <select id="signup-guardian-rel" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+              <option value="">Selecciona…</option>
+              <option value="padre">Padre</option>
+              <option value="madre">Madre</option>
+              <option value="tutor">Tutor</option>
+            </select>
+          </div>
         </div>
         
         <div style="margin-bottom: 1rem;">
@@ -515,35 +591,43 @@ async function handleSignup() {
   const email = document.getElementById('signup-email')?.value.trim();
   const password = document.getElementById('signup-password')?.value;
   const confirm = document.getElementById('signup-confirm')?.value;
+  const dobIso = parseDobMx(document.getElementById('signup-dob')?.value);
+  const isMinor = isMinorDobIso(dobIso);
+  const guardianName = document.getElementById('signup-guardian-name')?.value.trim();
+  const guardianRel = document.getElementById('signup-guardian-rel')?.value;
   const errorEl = document.getElementById('signup-error');
   const successEl = document.getElementById('signup-success');
-  
-  if (!name || !email || !password) {
-    errorEl.textContent = 'Por favor completa todos los campos';
+  const showSignupError = (msg) => {
+    errorEl.textContent = msg;
     errorEl.style.display = 'block';
     successEl.style.display = 'none';
-    return;
+  };
+
+  if (!name || !email || !password) {
+    return showSignupError('Por favor completa todos los campos');
+  }
+
+  if (!dobIso) {
+    return showSignupError('Captura tu fecha de nacimiento en formato dd/mm/aaaa (ej. 25/12/1990).');
+  }
+
+  if (isMinor && !guardianName) {
+    return showSignupError('El paciente es menor de edad: escribe el nombre del padre, madre o tutor.');
+  }
+  if (isMinor && !guardianRel) {
+    return showSignupError('El paciente es menor de edad: selecciona el parentesco (padre, madre o tutor).');
   }
   
   if (password.length < 6) {
-    errorEl.textContent = 'La contraseña debe tener al menos 6 caracteres';
-    errorEl.style.display = 'block';
-    successEl.style.display = 'none';
-    return;
+    return showSignupError('La contraseña debe tener al menos 6 caracteres');
   }
   
   if (password !== confirm) {
-    errorEl.textContent = 'Las contraseñas no coinciden';
-    errorEl.style.display = 'block';
-    successEl.style.display = 'none';
-    return;
+    return showSignupError('Las contraseñas no coinciden');
   }
 
   if (!document.getElementById('signup-consent')?.checked) {
-    errorEl.textContent = 'Debes leer el aviso de privacidad y aceptar el tratamiento de tus datos personales para crear tu cuenta';
-    errorEl.style.display = 'block';
-    successEl.style.display = 'none';
-    return;
+    return showSignupError('Debes leer el aviso de privacidad y aceptar el tratamiento de tus datos personales para crear tu cuenta');
   }
   
   errorEl.style.display = 'none';
@@ -559,12 +643,22 @@ async function handleSignup() {
   
   currentAuthUser = data.user;
   
-  // Try to create customer profile
-  const customerId = await FarmaciaAPI.ensureCustomerProfile(name);
+  // Try to create customer profile (DOB + guardian evidence for minors —
+  // the DB rejects a minor without guardian data; surface that message)
+  const customerId = await FarmaciaAPI.ensureCustomerProfile(name, {
+    date_of_birth: dobIso,
+    guardian_name: isMinor ? guardianName : null,
+    guardian_relationship: isMinor ? guardianRel : null
+  });
   if (customerId) {
     successEl.textContent = '✅ Cuenta creada. Verifica tu correo electrónico para activar tu cuenta.';
   } else {
     successEl.textContent = '✅ Cuenta creada. Tu perfil de cliente se vinculará al iniciar sesión.';
+    const profileErr = FarmaciaAPI.getLastCustomerProfileError?.();
+    if (profileErr) {
+      errorEl.textContent = 'No pudimos guardar tu perfil de cliente: ' + profileErr;
+      errorEl.style.display = 'block';
+    }
   }
   successEl.style.display = 'block';
   
@@ -759,7 +853,7 @@ function renderPrivacidad() {
             <li style="${liStyle}">Agenda, recordatorios y seguimiento de citas médicas.</li>
             <li style="${liStyle}">Facturación, cobro y administración de tu membresía.</li>
           </ul>
-          <p style="${pStyle}"><strong>Finalidades secundarias (opcionales):</strong> envío de promociones, programas de lealtad y estadísticas internas de mejora del servicio. Si no deseas que tus datos sean tratados para estas finalidades secundarias, puedes manifestarlo en cualquier momento por los medios descritos en la sección 5.</p>
+          <p style="${pStyle}"><strong>Finalidades secundarias (opcionales):</strong> envío de promociones, programas de lealtad y estadísticas internas de mejora del servicio. Desde el momento de la recolección puedes negarte a estas finalidades secundarias sin que por ello se te niegue el servicio: al crear tu cuenta o firmar tus documentos de consentimiento, la aplicación muestra una casilla independiente y opcional ("Acepto el uso de mis datos para finalidades secundarias"); si no la marcas, tus datos no se tratarán para finalidades secundarias. También puedes cambiar tu decisión en cualquier momento en la sección "Privacidad y mis datos" de la aplicación o por los medios descritos en la sección 5.</p>
         </div>
 
         <div style="${sectionStyle}">
@@ -772,11 +866,13 @@ function renderPrivacidad() {
             como encargados del tratamiento, bajo acuerdos de confidencialidad.
           </p>
           <p style="${pStyle}">
-            Para operar esta aplicación, la Farmacia se auxilia de proveedores de servicios que tratan tus
-            datos por cuenta de la Farmacia y con las mismas protecciones previstas en este aviso y en la
-            LFPDPPP: servicios de hospedaje de la información (con servidores ubicados en Estados Unidos),
-            procesamiento de pagos (PayPal), envío de correos electrónicos y mensajes de WhatsApp, y el
-            proveedor de videollamadas utilizado en la teleconsulta.
+            Para operar la aplicación, la Farmacia se auxilia de los siguientes <strong>encargados técnicos</strong>,
+            que tratan tus datos por cuenta del responsable y con las mismas protecciones previstas en este aviso y
+            en la LFPDPPP: <strong>Daily.co</strong> (plataforma de videoconsulta), <strong>Resend</strong> (correo
+            electrónico transaccional), <strong>Meta Platforms / WhatsApp</strong> (mensajería), <strong>PayPal</strong>
+            (procesamiento de pagos), <strong>Supabase</strong> (base de datos) y <strong>Cloudflare</strong>
+            (hospedaje y red de entrega de contenido). Algunos de estos encargados tratan datos en servidores
+            ubicados en Estados Unidos.
           </p>
           <p style="${pStyle}">
             Tus datos sensibles de salud se almacenan y tratan conforme a la NOM-004-SSA3-2012 del expediente
@@ -788,11 +884,19 @@ function renderPrivacidad() {
           <h3 style="${h3Style}">5. Derechos ARCO (Acceso, Rectificación, Cancelación y Oposición)</h3>
           <p style="${pStyle}">
             Puedes ejercer tus derechos de Acceso, Rectificación, Cancelación u Oposición (derechos ARCO)
-            enviando una solicitud al correo citas@apolofarmacia.com.mx, o presentándola directamente en
-            nuestro domicilio en Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de
+            desde la sección <button type="button" onclick="renderPage('privacidad-datos')" style="background: none; border: none; padding: 0; color: #7dd3a8; font-weight: 600; font-size: 0.85rem; cursor: pointer; text-decoration: underline;">Privacidad y mis datos</button> de
+            la aplicación, enviando una solicitud al correo citas@apolofarmacia.com.mx, o presentándola directamente
+            en nuestro domicilio en Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de
             México, México. Tu solicitud debe incluir tu nombre completo, el derecho que deseas ejercer y
             una descripción clara del dato respecto del cual lo ejerces.
             La Farmacia responderá en un plazo máximo de 20 días hábiles conforme a la LFPDPPP.
+          </p>
+          <p style="${pStyle}">
+            La cancelación de tus datos personales no procederá respecto de la información que deba conservarse
+            para cumplir obligaciones legales — en particular tu expediente clínico, que se conserva al menos 5
+            años a partir de tu último acto médico conforme a la NOM-004-SSA3-2012 (numeral 5.4). En ese supuesto,
+            tus datos quedarán bloqueados y no se tratarán para finalidad distinta de su conservación, hasta que
+            concluya el plazo legal y proceda su supresión.
           </p>
         </div>
 
@@ -801,14 +905,34 @@ function renderPrivacidad() {
           <p style="${pStyle}">
             En cualquier momento puedes revocar el consentimiento que has otorgado para el tratamiento de tus
             datos personales, incluidos tus datos sensibles de salud, sin que se leguen efectos retroactivos.
-            Para revocar tu consentimiento, envía tu solicitud al correo citas@apolofarmacia.com.mx
-            o preséntala en nuestro domicilio. Ten en cuenta que la revocación puede implicar que no sea
-            posible seguir prestando los servicios de salud, teleconsulta o farmacia que requieran dichos datos.
+            Para revocarlo, usa la opción "Revocar consentimientos" de la sección "Privacidad y mis datos" de la
+            aplicación, envía tu solicitud al correo citas@apolofarmacia.com.mx o preséntala en nuestro domicilio.
+            Ten en cuenta que la revocación puede implicar que no sea posible seguir prestando los servicios de
+            salud, teleconsulta o farmacia que requieran dichos datos, mismos que se pausarán hasta que firmes
+            los documentos de nuevo.
           </p>
         </div>
 
         <div style="${sectionStyle}">
-          <h3 style="${h3Style}">7. Cambios al aviso de privacidad</h3>
+          <h3 style="${h3Style}">7. Almacenamiento local en tu dispositivo y notificaciones</h3>
+          <p style="${pStyle}">
+            La aplicación guarda algunos datos de salud directamente en tu dispositivo (almacenamiento local del
+            navegador o "localStorage"), como las métricas de salud que registras (peso, altura, sueño, ayuno,
+            actividad física), tus medicamentos y recordatorios. Estos datos permanecen en tu dispositivo y no se
+            envían a nuestros servidores salvo que formen parte de tu expediente clínico; cualquier persona con
+            acceso a tu dispositivo podría verlos. Puedes eliminarlos en cualquier momento borrando los datos del
+            sitio desde la configuración de tu navegador, o al cerrar tu sesión en un dispositivo compartido.
+          </p>
+          <p style="${pStyle}">
+            Asimismo, si aceptas las notificaciones, la aplicación puede enviarte notificaciones push
+            (recordatorios de citas, de medicamentos y avisos del servicio), cuyo texto puede ser visible en la
+            pantalla de bloqueo de tu dispositivo. Puedes desactivarlas en cualquier momento desde la sección
+            "Notificaciones" de la aplicación o en la configuración de notificaciones de tu navegador o dispositivo.
+          </p>
+        </div>
+
+        <div style="${sectionStyle}">
+          <h3 style="${h3Style}">8. Cambios al aviso de privacidad</h3>
           <p style="${pStyle}">
             El presente aviso de privacidad puede sufrir modificaciones, cambios o actualizaciones derivadas de
             nuevos requerimientos legales, mejoras de nuestros procesos o de nuestros servicios. Cualquier cambio
@@ -828,6 +952,244 @@ function renderPrivacidad() {
       </div>
     </div>
   `;
+}
+
+// ============================================================
+// PRIVACIDAD Y MIS DATOS (LFPDPPP: ARCO, revocación, opt-out)
+// Self-service privacy center: secondary-purposes opt-out switch,
+// consent revocation (re-opens the consent gate), and the ARCO
+// rights-request register backed by the arco_requests table.
+// ============================================================
+
+const ARCO_TIPO_HELP = {
+  acceso:        'Conocer qué datos personales tuyos tenemos y cómo los usamos.',
+  rectificacion: 'Corregir datos personales inexactos, incompletos o desactualizados.',
+  cancelacion:   'Pedir que eliminemos tus datos cuando consideres que no se están usando conforme a la ley (el expediente clínico se conserva los plazos que marca la NOM-004-SSA3-2012).',
+  oposicion:     'Oponerte al tratamiento de tus datos para una finalidad específica.',
+  revocacion:    'Retirar el consentimiento que otorgaste para el tratamiento de tus datos, sin efectos retroactivos.'
+};
+
+const ARCO_STATUS_BADGE = {
+  pendiente:  { label: 'Pendiente',  bg: '#FEF3C7', color: '#B45309' },
+  en_proceso: { label: 'En proceso', bg: '#DBEAFE', color: '#1D4ED8' },
+  resuelta:   { label: 'Resuelta',   bg: '#D1FAE5', color: '#047857' }
+};
+
+// null = not loaded / unavailable; boolean once read from customers.marketing_opt_out
+let marketingOptOutState = null;
+
+async function renderPrivacidadDatos() {
+  closeMenu();
+
+  if (!currentAuthUser) {
+    mainContent.innerHTML = `
+      <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
+        <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🔐 Privacidad y mis datos</h1>
+      </div>
+      <div style="padding: 1.5rem 1rem; text-align: center;">
+        <p style="color: #475569; font-size: 0.9rem; margin-bottom: 1rem;">Inicia sesión para ejercer tus derechos ARCO, revocar consentimientos y elegir el uso de tus datos.</p>
+        <button onclick="renderLogin()" style="padding: 0.875rem 2rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Iniciar sesión</button>
+      </div>
+    `;
+    return;
+  }
+
+  mainContent.innerHTML = `
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
+      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🔐 Privacidad y mis datos</h1>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Ejerce tus derechos sobre tus datos personales (LFPDPPP)</p>
+    </div>
+
+    <div style="padding: 1rem; padding-bottom: 100px;">
+
+      <!-- Finalidades secundarias -->
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
+        <h3 style="margin: 0 0 0.25rem; font-size: 1rem; font-weight: 700; color: #1E2A8A;">Promociones y mercadotecnia</h3>
+        <p style="margin: 0 0 0.75rem; font-size: 0.8rem; color: #64748b; line-height: 1.5;">
+          Finalidad secundaria (opcional). Puedes desactivarla en cualquier momento — el servicio de salud y farmacia se presta exactamente igual.
+        </p>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+          <span style="font-size: 0.9rem; color: #1a1a2e; font-weight: 600;">Recibir promociones y mercadotecnia</span>
+          <button id="marketing-toggle" onclick="handleMarketingToggle()" role="switch" aria-checked="false" disabled style="flex-shrink: 0; width: 52px; height: 30px; border-radius: 15px; border: none; background: #CBD5E1; position: relative; cursor: pointer; transition: background 0.2s; opacity: 0.6;">
+            <span id="marketing-toggle-knob" style="position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transition: left 0.2s;"></span>
+          </button>
+        </div>
+        <p id="marketing-toggle-status" style="margin: 0.5rem 0 0; font-size: 0.75rem; color: #94a3b8;">Cargando tu preferencia…</p>
+      </div>
+
+      <!-- Derechos ARCO -->
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
+        <h3 style="margin: 0 0 0.25rem; font-size: 1rem; font-weight: 700; color: #1E2A8A;">Derechos ARCO</h3>
+        <p style="margin: 0 0 0.75rem; font-size: 0.8rem; color: #64748b; line-height: 1.5;">
+          Acceso, Rectificación, Cancelación u Oposición. Respondemos en un plazo máximo de 20 días hábiles conforme a la LFPDPPP. También puedes acudir a sucursal o escribir a citas@apolofarmacia.com.mx.
+        </p>
+        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Tipo de solicitud</label>
+        <select id="arco-tipo" onchange="updateArcoTipoHelp()" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box; margin-bottom: 0.5rem;">
+          <option value="">Selecciona…</option>
+          <option value="acceso">Acceso</option>
+          <option value="rectificacion">Rectificación</option>
+          <option value="cancelacion">Cancelación</option>
+          <option value="oposicion">Oposición</option>
+          <option value="revocacion">Revocación del consentimiento</option>
+        </select>
+        <p id="arco-tipo-help" style="display: none; margin: 0 0 0.75rem; font-size: 0.8rem; color: #475569; line-height: 1.5;"></p>
+        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Describe tu solicitud *</label>
+        <textarea id="arco-details" rows="4" placeholder="Ej. Quiero una copia de los datos personales que tienen de mí…" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 0.95rem; color: #1a1a2e; box-sizing: border-box; resize: vertical; font-family: inherit;"></textarea>
+        <button id="arco-submit-btn" onclick="handleArcoSubmit()" style="width: 100%; margin-top: 0.75rem; padding: 0.875rem; background: linear-gradient(135deg, #2B37A5, #1E2A8A); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 0.95rem; cursor: pointer;">Enviar solicitud ARCO</button>
+
+        <div id="arco-list" style="margin-top: 1rem;"></div>
+      </div>
+
+      <!-- Revocación de consentimientos -->
+      <div style="background: #ffffff; border: 1px solid #FECACA; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
+        <h3 style="margin: 0 0 0.25rem; font-size: 1rem; font-weight: 700; color: #B91C1C;">Revocar consentimientos</h3>
+        <p style="margin: 0 0 0.75rem; font-size: 0.8rem; color: #64748b; line-height: 1.5;">
+          Retira el consentimiento de los documentos que firmaste (aviso de privacidad, consentimiento informado, teleconsulta y firma electrónica). La evidencia de tus firmas anteriores se conserva.
+        </p>
+        <button onclick="handleRevokeConsents()" style="width: 100%; padding: 0.875rem; background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; border-radius: 12px; font-weight: 600; font-size: 0.95rem; cursor: pointer;">Revocar todos mis consentimientos</button>
+      </div>
+
+    </div>
+  `;
+
+  // Load current preference + ARCO history (independent; either may fail alone)
+  marketingOptOutState = await FarmaciaAPI.getMarketingOptOut();
+  updateMarketingToggleUI();
+  await renderArcoList();
+}
+
+function updateMarketingToggleUI() {
+  const toggle = document.getElementById('marketing-toggle');
+  const knob = document.getElementById('marketing-toggle-knob');
+  const status = document.getElementById('marketing-toggle-status');
+  if (!toggle || !knob || !status) return;
+  if (marketingOptOutState === null) {
+    toggle.disabled = true;
+    toggle.style.opacity = '0.6';
+    status.textContent = 'No pudimos cargar tu preferencia. Intenta reabrir esta sección.';
+    return;
+  }
+  const optIn = !marketingOptOutState; // switch ON = recibe promociones
+  toggle.disabled = false;
+  toggle.style.opacity = '1';
+  toggle.style.background = optIn ? '#46AC78' : '#CBD5E1';
+  toggle.setAttribute('aria-checked', optIn ? 'true' : 'false');
+  knob.style.left = optIn ? '25px' : '3px';
+  status.textContent = optIn
+    ? 'Recibes promociones y mercadotecnia (finalidad secundaria).'
+    : 'No recibes promociones ni mercadotecnia.';
+}
+
+async function handleMarketingToggle() {
+  if (marketingOptOutState === null) return;
+  // Flipping the switch inverts the current opt-out flag
+  const targetOptOut = !marketingOptOutState;
+  const toggle = document.getElementById('marketing-toggle');
+  if (toggle) toggle.disabled = true;
+  const { error } = await FarmaciaAPI.setMarketingOptOut(targetOptOut);
+  if (error) {
+    showToast('No pudimos guardar tu preferencia. Intenta de nuevo.', 'error');
+    if (toggle) toggle.disabled = false;
+    return;
+  }
+  marketingOptOutState = targetOptOut;
+  updateMarketingToggleUI();
+  showToast(targetOptOut
+    ? 'Listo — ya no recibirás promociones ni mercadotecnia.'
+    : 'Listo — recibirás promociones y mercadotecnia.', 'success');
+}
+
+function updateArcoTipoHelp() {
+  const tipo = document.getElementById('arco-tipo')?.value;
+  const help = document.getElementById('arco-tipo-help');
+  if (!help) return;
+  if (tipo && ARCO_TIPO_HELP[tipo]) {
+    help.textContent = ARCO_TIPO_HELP[tipo];
+    help.style.display = 'block';
+  } else {
+    help.style.display = 'none';
+  }
+}
+
+async function handleArcoSubmit() {
+  const tipo = document.getElementById('arco-tipo')?.value;
+  const details = (document.getElementById('arco-details')?.value || '').trim();
+  if (!tipo) {
+    showToast('Selecciona el tipo de solicitud ARCO.', 'error');
+    return;
+  }
+  if (!details) {
+    showToast('Describe tu solicitud: qué derecho ejerces y sobre qué datos.', 'error');
+    return;
+  }
+  const btn = document.getElementById('arco-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  const { error } = await FarmaciaAPI.submitArcoRequest(tipo, details);
+  if (btn) { btn.disabled = false; btn.textContent = 'Enviar solicitud ARCO'; }
+  if (error) {
+    showToast('No pudimos registrar tu solicitud. Intenta de nuevo.' + (error.message ? ` (${error.message})` : ''), 'error');
+    return;
+  }
+  document.getElementById('arco-details').value = '';
+  document.getElementById('arco-tipo').value = '';
+  updateArcoTipoHelp();
+  showToast('Solicitud ARCO registrada — respondemos en máximo 20 días hábiles.', 'success');
+  await renderArcoList();
+}
+
+async function renderArcoList() {
+  const list = document.getElementById('arco-list');
+  if (!list) return;
+  const { data, error } = await FarmaciaAPI.getMyArcoRequests();
+  if (error) {
+    list.innerHTML = '<p style="font-size: 0.8rem; color: #94a3b8;">No pudimos cargar tus solicitudes anteriores.</p>';
+    return;
+  }
+  if (!data || data.length === 0) {
+    list.innerHTML = '<p style="font-size: 0.8rem; color: #94a3b8;">Aún no has presentado solicitudes ARCO.</p>';
+    return;
+  }
+  const tipoLabel = { acceso: 'Acceso', rectificacion: 'Rectificación', cancelacion: 'Cancelación', oposicion: 'Oposición', revocacion: 'Revocación' };
+  list.innerHTML = `
+    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 0.5rem;">Mis solicitudes</div>
+    ${data.map(r => {
+      const badge = ARCO_STATUS_BADGE[r.status] || ARCO_STATUS_BADGE.pendiente;
+      const fecha = r.created_at ? new Date(r.created_at).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+      return `
+      <div style="padding: 0.75rem 0; border-top: 1px solid #F1F5F9;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.25rem;">
+          <span style="font-size: 0.85rem; font-weight: 600; color: #1a1a2e;">${tipoLabel[r.tipo] || r.tipo}</span>
+          <span style="font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.6rem; border-radius: 999px; background: ${badge.bg}; color: ${badge.color}; white-space: nowrap;">${badge.label}</span>
+        </div>
+        <div style="font-size: 0.78rem; color: #64748b; line-height: 1.5;">${escapeHtml(r.details || '')}</div>
+        ${r.status === 'resuelta' && r.response ? `
+        <div style="margin-top: 0.4rem; padding: 0.5rem 0.75rem; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; font-size: 0.78rem; color: #166534; line-height: 1.5;">
+          <strong>Respuesta:</strong> ${escapeHtml(r.response)}
+        </div>` : ''}
+        <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 0.25rem;">${fecha}</div>
+      </div>`;
+    }).join('')}
+  `;
+}
+
+async function handleRevokeConsents() {
+  const confirmed = confirm(
+    '¿Revocar todos tus consentimientos?\n\n' +
+    'Los servicios que requieren consentimiento (incluida la teleconsulta) se pausarán hasta que firmes los documentos de nuevo.\n\n' +
+    'Tu expediente clínico y la evidencia de tus firmas anteriores se conservan conforme a la ley.'
+  );
+  if (!confirmed) return;
+
+  const { data: count, error } = await FarmaciaAPI.revokeMyConsents('all');
+  if (error) {
+    showToast('No pudimos revocar tus consentimientos. Intenta de nuevo.' + (error.message ? ` (${error.message})` : ''), 'error');
+    return;
+  }
+  showToast(`Se revocaron ${count} documento(s). Los servicios que requieren consentimiento se pausaron.`, 'success');
+
+  // The gate queries status='signed', so revoked documents no longer count:
+  // it re-appears on its own to collect the signatures again.
+  await checkConsentGate();
 }
 
 // ============================================================
@@ -894,7 +1256,17 @@ function renderConsentOnboarding() {
   setAppChromeVisible(false);
 
   const docs = (window.APOLO_CONSENT_DOCS || []).filter(d => REQUIRED_CONSENT_TYPES.includes(d.type));
-  const signerName = (currentCustomerProfile?.name || currentAuthUser?.user_metadata?.full_name || '')
+
+  // Minor patient (from customers.date_of_birth): the padre/madre/tutor
+  // signs — signer_name is the guardian's name and each document records
+  // the parentesco as signer_relationship (parental consent, R2-21).
+  const isMinor = isMinorDobIso(currentCustomerProfile?.birthdate);
+  const guardianName = currentCustomerProfile?.guardianName || '';
+  const guardianRel = currentCustomerProfile?.guardianRelationship || '';
+  const rawSignerName = isMinor
+    ? guardianName
+    : (currentCustomerProfile?.name || currentAuthUser?.user_metadata?.full_name || '');
+  const signerName = rawSignerName
     .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
   const cardsHtml = consentDocCardsHtml(docs, 'consent-check-', 'updateConsentSubmitButton');
@@ -906,11 +1278,34 @@ function renderConsentOnboarding() {
     </div>
 
     <div style="padding: 1rem;">
+      ${isMinor ? `
+      <div style="margin-bottom: 1rem; padding: 0.875rem 1rem; background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 14px;">
+        <p style="margin: 0; font-size: 0.85rem; color: #9A3412; line-height: 1.5; font-weight: 600;">El paciente es menor de edad — el padre/madre/tutor debe firmar.</p>
+        <p style="margin: 0.25rem 0 0; font-size: 0.8rem; color: #9A3412; line-height: 1.5;">Los documentos quedan registrados a nombre del paciente con la firma de quien ejerce la patria potestad o tutela.</p>
+      </div>
+      ` : ''}
+
       ${cardsHtml}
 
       <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
-        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">Nombre de quien firma</label>
-        <input type="text" id="consent-signer-name" value="${signerName}" placeholder="Tu nombre completo" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+        <label style="display: flex; align-items: flex-start; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" id="consent-marketing-optin" style="margin-top: 0.15rem; width: 1rem; height: 1rem; flex-shrink: 0; accent-color: #46AC78; cursor: pointer;">
+          <span style="font-size: 0.8rem; color: #475569; line-height: 1.4;"><strong>Opcional:</strong> Acepto el uso de mis datos para finalidades secundarias (promociones y mercadotecnia). Si no marcas esta casilla, tus datos no se usarán para esas finalidades y el servicio se presta exactamente igual.</span>
+        </label>
+      </div>
+
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
+        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: #141B5E;">${isMinor ? 'Nombre del padre/madre/tutor que firma' : 'Nombre de quien firma'}</label>
+        <input type="text" id="consent-signer-name" value="${signerName}" placeholder="${isMinor ? 'Nombre completo del padre, madre o tutor' : 'Tu nombre completo'}" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+        ${isMinor ? `
+        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin: 0.75rem 0 0.5rem; color: #141B5E;">Parentesco de quien firma *</label>
+        <select id="consent-signer-rel" style="width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;">
+          <option value="">Selecciona…</option>
+          <option value="padre" ${guardianRel === 'padre' ? 'selected' : ''}>Padre</option>
+          <option value="madre" ${guardianRel === 'madre' ? 'selected' : ''}>Madre</option>
+          <option value="tutor" ${guardianRel === 'tutor' ? 'selected' : ''}>Tutor</option>
+        </select>
+        ` : ''}
       </div>
 
       <button id="consent-submit-btn" onclick="handleConsentOnboardingSubmit()" disabled style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; opacity: 0.5; margin-bottom: 1.5rem;">Firmar y continuar</button>
@@ -937,15 +1332,25 @@ async function handleConsentOnboardingSubmit() {
   const allChecked = docs.length > 0 && docs.every(d => document.getElementById('consent-check-' + d.type)?.checked);
   if (!allChecked) return;
 
+  const isMinor = isMinorDobIso(currentCustomerProfile?.birthdate);
   const signerName = (document.getElementById('consent-signer-name')?.value || '').trim()
+    || (isMinor ? currentCustomerProfile?.guardianName : null)
     || currentCustomerProfile?.name
     || currentAuthUser?.email
     || 'Paciente';
+  const signerRelationship = isMinor
+    ? (document.getElementById('consent-signer-rel')?.value || '')
+    : null;
+
+  if (isMinor && !signerRelationship) {
+    showToast('Selecciona el parentesco de quien firma (padre, madre o tutor).', 'error');
+    return;
+  }
 
   const btn = document.getElementById('consent-submit-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Firmando...'; }
 
-  const { error } = await FarmaciaAPI.acceptConsentDocuments(docs, signerName);
+  const { error } = await FarmaciaAPI.acceptConsentDocuments(docs, signerName, { signerRelationship });
 
   if (error) {
     // Stay on the gate so the user can retry; include the real reason for support
@@ -953,6 +1358,14 @@ async function handleConsentOnboardingSubmit() {
     if (btn) { btn.disabled = false; btn.textContent = 'Firmar y continuar'; }
     return;
   }
+
+  // Secondary purposes are opt-in (LFPDPPP): the optional checkbox is the
+  // refusal mechanism at collection time — unchecked means marketing_opt_out.
+  // Best-effort: never block the signature flow on this write.
+  const marketingOptIn = !!document.getElementById('consent-marketing-optin')?.checked;
+  FarmaciaAPI.setMarketingOptOut(!marketingOptIn).then(({ error: optErr }) => {
+    if (optErr) console.warn('[Consent] marketing_opt_out write failed (best-effort):', optErr.message);
+  });
 
   consentGateActive = false;
   setAppChromeVisible(true);
@@ -1007,8 +1420,28 @@ function renderFirmaRegistro() {
       <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
         <p style="margin: 0 0 0.75rem; font-size: 0.85rem; font-weight: 700; color: #141B5E;">Tu cuenta se creará con estos datos</p>
         <div style="margin-bottom: 0.75rem;">
-          <label style="${labelStyle}">Nombre completo (de quien firma)</label>
-          <input type="text" id="firma-name" placeholder="Tu nombre completo" style="${fieldStyle}">
+          <label style="${labelStyle}">Nombre completo del paciente</label>
+          <input type="text" id="firma-name" placeholder="Nombre completo del paciente" style="${fieldStyle}">
+        </div>
+        <div style="margin-bottom: 0.75rem;">
+          <label style="${labelStyle}">Fecha de nacimiento del paciente (dd/mm/aaaa) *</label>
+          <input type="text" id="firma-dob" inputmode="numeric" placeholder="dd/mm/aaaa" maxlength="10" autocomplete="bday" oninput="maskDobInput(this); toggleFirmaGuardian();" style="${fieldStyle}">
+        </div>
+        <div id="firma-guardian-block" style="display: none; margin-bottom: 0.75rem; padding: 0.875rem; background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 10px;">
+          <p style="margin: 0 0 0.75rem; font-size: 0.8rem; color: #9A3412; line-height: 1.4;">El paciente es menor de edad — el padre/madre/tutor debe firmar. Los documentos quedan a nombre del paciente con la firma de quien ejerce la patria potestad o tutela.</p>
+          <div style="margin-bottom: 0.75rem;">
+            <label style="${labelStyle}">Nombre del padre/madre/tutor que firma *</label>
+            <input type="text" id="firma-guardian-name" placeholder="Nombre completo de quien firma por el menor" style="${fieldStyle}">
+          </div>
+          <div>
+            <label style="${labelStyle}">Parentesco de quien firma *</label>
+            <select id="firma-guardian-rel" style="${fieldStyle}">
+              <option value="">Selecciona…</option>
+              <option value="padre">Padre</option>
+              <option value="madre">Madre</option>
+              <option value="tutor">Tutor</option>
+            </select>
+          </div>
         </div>
         <div style="margin-bottom: 0.75rem;">
           <label style="${labelStyle}">Correo electrónico</label>
@@ -1026,6 +1459,13 @@ function renderFirmaRegistro() {
           <label style="${labelStyle}">Confirmar contraseña</label>
           <input type="password" id="firma-password-confirm" placeholder="Repite tu contraseña" style="${fieldStyle}">
         </div>
+      </div>
+
+      <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
+        <label style="display: flex; align-items: flex-start; gap: 0.5rem; cursor: pointer;">
+          <input type="checkbox" id="firma-marketing-optin" style="margin-top: 0.15rem; width: 1rem; height: 1rem; flex-shrink: 0; accent-color: #46AC78; cursor: pointer;">
+          <span style="font-size: 0.8rem; color: #475569; line-height: 1.4;"><strong>Opcional:</strong> Acepto el uso de mis datos para finalidades secundarias (promociones y mercadotecnia). Si no marcas esta casilla, tus datos no se usarán para esas finalidades y el servicio se presta exactamente igual.</span>
+        </label>
       </div>
 
       <button id="firma-submit-btn" onclick="handleFirmaRegistroSubmit()" disabled style="width: 100%; padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; opacity: 0.5; margin-bottom: 1rem;">Firmar y crear mi cuenta</button>
@@ -1067,8 +1507,15 @@ async function handleFirmaRegistroSubmit() {
   const phone = (document.getElementById('firma-phone')?.value || '').trim();
   const password = document.getElementById('firma-password')?.value || '';
   const confirm = document.getElementById('firma-password-confirm')?.value || '';
+  const dobIso = parseDobMx(document.getElementById('firma-dob')?.value);
+  const isMinor = isMinorDobIso(dobIso);
+  const guardianName = (document.getElementById('firma-guardian-name')?.value || '').trim();
+  const guardianRel = document.getElementById('firma-guardian-rel')?.value || '';
 
-  if (!name) return showError('Ingresa tu nombre completo');
+  if (!name) return showError('Ingresa el nombre completo del paciente');
+  if (!dobIso) return showError('Captura la fecha de nacimiento en formato dd/mm/aaaa (ej. 25/12/1990).');
+  if (isMinor && !guardianName) return showError('El paciente es menor de edad: escribe el nombre del padre, madre o tutor que firma.');
+  if (isMinor && !guardianRel) return showError('El paciente es menor de edad: selecciona el parentesco de quien firma.');
   if (!email) return showError('Ingresa tu correo electrónico');
   if (password.length < 6) return showError('La contraseña debe tener al menos 6 caracteres');
   if (password !== confirm) return showError('Las contraseñas no coinciden');
@@ -1090,16 +1537,36 @@ async function handleFirmaRegistroSubmit() {
     return showError('Tu cuenta fue creada pero necesitas confirmar tu correo antes de entrar. Confírmala e inicia sesión para firmar los documentos.');
   }
 
-  // Account created and logged in — link the customer record, then sign
+  // Account created and logged in — link the customer record, then sign.
+  // For a minor, the customers row carries the DOB + guardian evidence and
+  // the guardian signs the documents (signer_name + signer_relationship).
   currentAuthUser = data.user;
-  await FarmaciaAPI.ensureCustomerProfile(name);
+  const firmaCustomerId = await FarmaciaAPI.ensureCustomerProfile(name, {
+    date_of_birth: dobIso,
+    guardian_name: isMinor ? guardianName : null,
+    guardian_relationship: isMinor ? guardianRel : null
+  });
+  if (!firmaCustomerId && FarmaciaAPI.getLastCustomerProfileError?.()) {
+    showError('Tu cuenta fue creada, pero no pudimos guardar tu perfil: ' + FarmaciaAPI.getLastCustomerProfileError());
+  }
   if (phone && FarmaciaAPI.updateMyCustomerPhone) {
     await FarmaciaAPI.updateMyCustomerPhone(phone);
   }
   currentCustomerProfile = await FarmaciaAPI.getCustomerProfile();
 
   if (btn) btn.textContent = 'Registrando firmas...';
-  const { error: consentError } = await FarmaciaAPI.acceptConsentDocuments(docs, name);
+  const firmaSignerName = isMinor ? guardianName : name;
+  const { error: consentError } = await FarmaciaAPI.acceptConsentDocuments(docs, firmaSignerName, {
+    signerRelationship: isMinor ? guardianRel : null
+  });
+
+  // Secondary purposes are opt-in (LFPDPPP): unchecked = marketing_opt_out.
+  if (!consentError) {
+    const marketingOptIn = !!document.getElementById('firma-marketing-optin')?.checked;
+    FarmaciaAPI.setMarketingOptOut(!marketingOptIn).then(({ error: optErr }) => {
+      if (optErr) console.warn('[Firma] marketing_opt_out write failed (best-effort):', optErr.message);
+    });
+  }
 
   // Strip ?firma=1 so a refresh doesn't reopen this view
   history.replaceState({}, '', window.location.pathname);
@@ -2072,6 +2539,7 @@ function renderPage(page) {
     case 'family-activation': renderFamilyActivation(); break;
     case 'forgot-password': renderForgotPassword(); break;
     case 'privacidad': renderPrivacidad(); break;
+    case 'privacidad-datos': renderPrivacidadDatos(); break;
     default: renderConsulta();
   }
 }
@@ -3283,11 +3751,11 @@ function renderSettings() {
           </div>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
-        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="alert('Privacidad')">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="renderPage('privacidad-datos')">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #6366f1, #4f46e5); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🔒</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Privacidad y Seguridad</div>
-            <div style="font-size: 0.8rem; color: #64748b;">Contraseña, datos biométricos</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Privacidad y mis datos</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Derechos ARCO, revocar consentimientos, promociones</div>
           </div>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
@@ -5129,6 +5597,14 @@ window.updateFirmaSubmitButton = updateFirmaSubmitButton;
 window.handleFirmaRegistroSubmit = handleFirmaRegistroSubmit;
 window.handleForgotPassword = handleForgotPassword;
 window.handleResetPassword = handleResetPassword;
+window.maskDobInput = maskDobInput;
+window.toggleSignupGuardian = toggleSignupGuardian;
+window.toggleFirmaGuardian = toggleFirmaGuardian;
+window.renderPrivacidadDatos = renderPrivacidadDatos;
+window.handleMarketingToggle = handleMarketingToggle;
+window.updateArcoTipoHelp = updateArcoTipoHelp;
+window.handleArcoSubmit = handleArcoSubmit;
+window.handleRevokeConsents = handleRevokeConsents;
 
 // ============================================
 // SLEEP TRACKER PAGE

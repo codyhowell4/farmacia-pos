@@ -5,9 +5,25 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AlertTriangle, Stethoscope, User, FileText, Calendar, MapPin, Phone, Search, Link2, Printer, FileDown } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
-import { searchPrescriptions, linkPrescriptionToSale } from '@/lib/db';
+import { searchPrescriptionsPos } from '@/lib/db';
+import { isAntibioticName } from '@/lib/antibiotics';
 import PrintablePrescription from '@/components/doctor/PrintablePrescription';
 import { downloadPrescriptionPDF } from '@/lib/pdf';
+
+// Receta folios without evidentiary value are exempt from the duplicate-folio
+// check — mirrors the exemptions in the DB trigger prescriptions_unique_folio.
+const RX_FOLIO_PLACEHOLDERS = new Set(['', 'SN', 'S/N', 'SIN', 'SIN NUMERO', 'SIN NÚMERO', 'N/A', 'NA']);
+const normalizeFolio = (value) => (value || '').trim().toUpperCase();
+const isPlaceholderFolio = (value) => {
+  const folio = normalizeFolio(value);
+  return RX_FOLIO_PLACEHOLDERS.has(folio) || folio.startsWith('MANUAL-');
+};
+
+const CEDULA_RE = /^\d{6,8}$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Vigencias: antibióticos 30 días (bloqueo), demás Rx 180 días (confirmación).
+const ANTIBIOTIC_MAX_AGE_DAYS = 30;
+const RX_WARN_AGE_DAYS = 180;
 
 const PrescriptionModal = ({ 
   open, 
@@ -21,6 +37,7 @@ const PrescriptionModal = ({
 }) => {
   const { toast } = useToast();
   const rxItems = cart.filter(item => item.requires_prescription);
+  const cartHasAntibiotic = rxItems.some(item => isAntibioticName(item.name));
   
   const [formData, setFormData] = useState({
     patientName: '',
@@ -40,6 +57,9 @@ const PrescriptionModal = ({
   const [linkedPrescription, setLinkedPrescription] = useState(null);
   const [searching, setSearching] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [recetaRetenida, setRecetaRetenida] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Auto-fill from selected customer
   useEffect(() => {
@@ -72,11 +92,20 @@ const PrescriptionModal = ({
     }
   }, [open, initialData]);
 
+  // Reset transient validation state each time the modal opens; the
+  // receta-retenida flag defaults ON for antibiotic carts (editable).
+  useEffect(() => {
+    if (!open) return;
+    setFieldErrors({});
+    setSubmitting(false);
+    setRecetaRetenida(initialData?.receta_retenida ?? cartHasAntibiotic);
+  }, [open, cartHasAntibiotic, initialData]);
+
   const handleSearchPrescriptions = async () => {
     if (!searchQuery.trim()) return;
     setSearching(true);
     try {
-      const results = await searchPrescriptions(searchQuery.trim());
+      const results = await searchPrescriptionsPos(searchQuery.trim());
       setSearchResults(results.filter(r => r.status === 'active'));
     } catch (err) {
       console.error(err);
@@ -115,7 +144,9 @@ const PrescriptionModal = ({
     });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (submitting) return;
+    const errors = {};
     const missing = [];
     if (!formData.patientName?.trim()) missing.push('nombre del paciente');
     if (!formData.doctorName?.trim()) missing.push('nombre del médico');
@@ -129,7 +160,82 @@ const PrescriptionModal = ({
       return;
     }
 
+    // Cédula profesional: obligatoria, 6–8 dígitos (LGS 42 / RIS 27).
+    const cedula = formData.doctorLicense.trim();
+    if (!cedula) {
+      errors.doctorLicense = 'La cédula profesional es obligatoria';
+    } else if (!CEDULA_RE.test(cedula)) {
+      errors.doctorLicense = 'La cédula profesional debe tener 6 a 8 dígitos';
+    }
+
+    // Fecha de la receta: obligatoria, nunca futura, y dentro de la vigencia
+    // legal (antibióticos: 30 días — bloqueo; demás Rx: 180 días — aviso).
+    const dateStr = formData.prescriptionDate;
+    if (!dateStr) {
+      errors.prescriptionDate = 'La fecha de la receta es obligatoria';
+    } else {
+      const rxDate = new Date(`${dateStr}T00:00:00`);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (Number.isNaN(rxDate.getTime())) {
+        errors.prescriptionDate = 'Fecha inválida';
+      } else if (rxDate > today) {
+        errors.prescriptionDate = 'La fecha de la receta no puede ser futura';
+      } else {
+        const ageDays = Math.floor((today - rxDate) / DAY_MS);
+        if (cartHasAntibiotic && ageDays > ANTIBIOTIC_MAX_AGE_DAYS) {
+          errors.prescriptionDate = `Receta de antibiótico vencida: tiene ${ageDays} días y la vigencia es de ${ANTIBIOTIC_MAX_AGE_DAYS} días. No se puede surtir.`;
+        } else if (!cartHasAntibiotic && ageDays > RX_WARN_AGE_DAYS) {
+          const confirmed = window.confirm(
+            `La receta tiene ${ageDays} días de antigüedad (más de ${RX_WARN_AGE_DAYS}). ` +
+            'Confirma con el cliente que la receta sigue vigente antes de continuar. ¿Deseas registrarla así?'
+          );
+          if (!confirmed) return;
+        }
+      }
+    }
+
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      toast({
+        title: 'Revisa la receta',
+        description: 'Hay campos con errores — corrígelos antes de guardar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const globalRx = formData.prescriptionNumber.trim();
+
+    // Folio único por org: la receta vinculada reutiliza su propio folio y
+    // los placeholders (S/N, MANUAL-…) están exentos — igual que el trigger
+    // prescriptions_unique_folio, que es el último respaldo si esto falla.
+    if (!linkedPrescription && !isPlaceholderFolio(globalRx)) {
+      setSubmitting(true);
+      try {
+        const matches = await searchPrescriptionsPos(globalRx);
+        const folio = normalizeFolio(globalRx);
+        const duplicate = matches.find(r =>
+          !r.is_voided && normalizeFolio(r.prescription_number) === folio
+        );
+        if (duplicate) {
+          setFieldErrors({ prescriptionNumber: 'Este folio ya fue registrado en otra venta' });
+          toast({
+            title: 'Folio duplicado',
+            description: 'Este folio ya fue registrado en otra venta',
+            variant: 'destructive',
+          });
+          return;
+        }
+      } catch (err) {
+        console.error('Folio availability check failed:', err);
+        // Fail open here: the DB trigger enforces uniqueness at insert time
+        // and surfaces as the same friendly message at checkout.
+      } finally {
+        setSubmitting(false);
+      }
+    }
+
     const itemRxNumbers = {};
     for (const item of rxItems) {
       itemRxNumbers[item.id] = globalRx;
@@ -141,11 +247,12 @@ const PrescriptionModal = ({
       patient_phone: formData.patientPhone.trim() || null,
       patient_email: formData.patientEmail.trim() || null,
       doctor_name: formData.doctorName.trim(),
-      doctor_license_number: formData.doctorLicense.trim() || null,
+      doctor_license_number: cedula,
       doctor_office_address: formData.doctorAddress.trim() || null,
       doctor_phone: formData.doctorPhone.trim() || null,
       prescription_number: globalRx,
       prescription_date: formData.prescriptionDate,
+      receta_retenida: cartHasAntibiotic ? recetaRetenida : false,
       rx_item_numbers: itemRxNumbers,
       linked_prescription_id: linkedPrescription?.id || null,
     };
@@ -169,6 +276,9 @@ const PrescriptionModal = ({
     setLinkedPrescription(null);
     setSearchResults([]);
     setSearchQuery('');
+    setFieldErrors({});
+    setRecetaRetenida(false);
+    setSubmitting(false);
     onOpenChange(false);
   };
 
@@ -188,11 +298,16 @@ const PrescriptionModal = ({
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-blue-800">Medicamentos controlados detectados</p>
+              <p className="font-semibold text-blue-800">Medicamentos con receta detectados</p>
               <p className="text-sm text-blue-600">
-                Esta venta incluye {rxItems.length} medicamento(s) que requieren receta médica. 
-                Nombre del paciente, nombre del médico y número de receta son obligatorios.
+                Esta venta incluye {rxItems.length} medicamento(s) que requieren receta médica.
+                Nombre del paciente, nombre del médico, cédula profesional y número de receta son obligatorios.
               </p>
+              {cartHasAntibiotic && (
+                <p className="text-sm text-amber-700 font-medium mt-1">
+                  El carrito contiene un antibiótico: la receta debe tener máximo 30 días de vigencia y queda retenida en la farmacia.
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -315,13 +430,19 @@ const PrescriptionModal = ({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="doctorLicense">Cédula profesional</Label>
+                <Label htmlFor="doctorLicense">Cédula profesional *</Label>
                 <Input
                   id="doctorLicense"
                   value={formData.doctorLicense}
                   onChange={(e) => setFormData({ ...formData, doctorLicense: e.target.value })}
-                  placeholder="Número de cédula profesional"
+                  placeholder="6 a 8 dígitos"
+                  inputMode="numeric"
+                  maxLength={8}
+                  className={fieldErrors.doctorLicense ? 'border-red-500' : ''}
                 />
+                {fieldErrors.doctorLicense && (
+                  <p className="text-xs text-red-600">{fieldErrors.doctorLicense}</p>
+                )}
               </div>
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="doctorAddress" className="flex items-center gap-1">
@@ -364,21 +485,48 @@ const PrescriptionModal = ({
                   value={formData.prescriptionNumber}
                   onChange={(e) => setFormData({ ...formData, prescriptionNumber: e.target.value })}
                   placeholder="Número de folio de la receta"
+                  className={fieldErrors.prescriptionNumber ? 'border-red-500' : ''}
                 />
+                {fieldErrors.prescriptionNumber && (
+                  <p className="text-xs text-red-600">{fieldErrors.prescriptionNumber}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="prescriptionDate" className="flex items-center gap-1">
                   <Calendar className="w-3 h-3" />
-                  Fecha de la receta
+                  Fecha de la receta *
                 </Label>
                 <Input
                   id="prescriptionDate"
                   type="date"
                   value={formData.prescriptionDate}
+                  max={new Date().toISOString().split('T')[0]}
                   onChange={(e) => setFormData({ ...formData, prescriptionDate: e.target.value })}
+                  className={fieldErrors.prescriptionDate ? 'border-red-500' : ''}
                 />
+                {fieldErrors.prescriptionDate && (
+                  <p className="text-xs text-red-600">{fieldErrors.prescriptionDate}</p>
+                )}
               </div>
             </div>
+
+            {cartHasAntibiotic && (
+              <div className="mt-4 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <input
+                  type="checkbox"
+                  id="recetaRetenida"
+                  checked={recetaRetenida}
+                  onChange={(e) => setRecetaRetenida(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-slate-300 accent-amber-600"
+                />
+                <Label htmlFor="recetaRetenida" className="text-sm cursor-pointer leading-snug">
+                  Receta retenida en la farmacia
+                  <span className="block text-xs text-amber-700 font-normal mt-0.5">
+                    Antibióticos: la receta queda retenida en la farmacia como parte del control sanitario (LGS 42 / RIS 27).
+                  </span>
+                </Label>
+              </div>
+            )}
           </div>
         </div>
 
@@ -389,8 +537,9 @@ const PrescriptionModal = ({
           <Button 
             className="flex-1 bg-gradient-to-r from-apolo-green to-apolo-green-dark" 
             onClick={handleSubmit}
+            disabled={submitting}
           >
-            Guardar receta
+            {submitting ? 'Verificando folio…' : 'Guardar receta'}
           </Button>
         </div>
 

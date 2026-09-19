@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, Pill, Activity, FileText, Search } from 'lucide-react';
+import { Plus, Trash2, Pill, Activity, FileText, Search, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,11 +11,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   updateAppointment, createDoctorPrescription,
   createConsultaNote, getConsultaNotesByAppointment, getDoctorProfile,
-  getInventoryForDoctor
+  getInventoryForDoctor, needsHistoriaClinica, getCustomerById
 } from '@/lib/db';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { findControlledMed, controlledMedMessage, CONTROLLED_MED_MESSAGE } from '@/lib/controlledMeds';
+import { findAllergyConflicts, summarizeAllergies, allergyOverrideNote } from '@/lib/allergyCheck';
 import Cie10Search from './Cie10Search';
+import HistoriaClinicaModal from './HistoriaClinicaModal';
 import { tryAutoSignReceta } from '@/lib/efirma';
 import { toast } from 'sonner';
 
@@ -61,6 +63,14 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
   // NOM-027 teleconsulta record-keeping (video citas only)
   const [teleLocation, setTeleLocation] = useState('');
   const [teleIdentity, setTeleIdentity] = useState(false);
+  // NOM-004 6.1: first nota de evolución requires the historia clínica
+  const [needsHistoria, setNeedsHistoria] = useState(false);
+  const [historiaOpen, setHistoriaOpen] = useState(false);
+  // Alergias del expediente (customers.medical_history.alergias) y
+  // conflictos med↔alergia pendientes de confirmación del médico
+  const [patientAllergies, setPatientAllergies] = useState([]);
+  const [allergyConflicts, setAllergyConflicts] = useState([]);
+  const [showMedErrors, setShowMedErrors] = useState(false);
 
   const patientName = appointment?.customers?.full_name || appointment?.walkin_name || 'Paciente';
   const hasCustomer = !!appointment?.customer_id;
@@ -84,6 +94,34 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
     setMedications([emptyMed()]);
     setTeleLocation('');
     setTeleIdentity(false);
+    setNeedsHistoria(false);
+    setHistoriaOpen(false);
+    setPatientAllergies([]);
+    setAllergyConflicts([]);
+    setShowMedErrors(false);
+    // NOM-004 6.1 gate: no prior consulta notes and no historia clínica →
+    // the historia must be captured before the first nota de evolución.
+    // Walk-ins (no customer_id) are exempt.
+    if (appointment.customer_id) {
+      needsHistoriaClinica(appointment.customer_id)
+        .then(setNeedsHistoria)
+        .catch(err => console.error('needsHistoriaClinica failed:', err));
+    }
+    // Alergias: prefill the receta field from the patient's recorded history
+    // when empty (the appointments query only embeds name/phone). Never
+    // overwrites a nurse-captured or doctor-typed value.
+    if (appointment.customer_id) {
+      getCustomerById(appointment.customer_id)
+        .then(cust => {
+          const list = Array.isArray(cust?.medical_history?.alergias) ? cust.medical_history.alergias : [];
+          setPatientAllergies(list);
+          const recorded = summarizeAllergies(list);
+          if (recorded) {
+            setVitals(prev => (prev.alergias?.trim() ? prev : { ...prev, alergias: recorded }));
+          }
+        })
+        .catch(err => console.error('getCustomerById failed:', err));
+    }
     // The receta needs the doctor's cédula profesional from doctor_profiles
     if (user?.id) {
       getDoctorProfile(user.id)
@@ -115,7 +153,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
         })
         .catch(err => console.error('getConsultaNotesByAppointment failed:', err));
     }
-  }, [open, appointment?.id, appointment?.status, appointment?.nurse_vitals, user?.id]);
+  }, [open, appointment?.id, appointment?.status, appointment?.nurse_vitals, appointment?.customer_id, user?.id]);
 
   const updateMed = (idx, field, value) => {
     const updated = [...medications];
@@ -133,7 +171,11 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
     return Object.values(obj).every(v => v === null) ? null : obj;
   };
 
-  const handleSave = async () => {
+  // skipHistoriaGate: set when handleHistoriaSaved re-invokes the pending save —
+  // the setNeedsHistoria(false) state update hasn't flushed yet in that call.
+  // allergyOverride: set when the doctor confirms prescribing despite a
+  // recorded allergy (conflict check already passed through the dialog).
+  const handleSave = async (skipHistoriaGate = false, allergyOverride = false) => {
     if (!padecimiento.trim()) {
       toast.error('El padecimiento actual es obligatorio');
       return;
@@ -159,6 +201,18 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
         toast.error('Capture su cédula profesional en su perfil antes de emitir recetas (LGS 42 Bis).');
         return;
       }
+      // LGS 42/42 Bis: dosis, vía y frecuencia son obligatorias por medicamento
+      const incompleteMed = validMeds.find(m => !m.dosage.trim() || !m.via.trim() || !m.frequency.trim());
+      if (incompleteMed) {
+        setShowMedErrors(true);
+        const missing = [
+          !incompleteMed.dosage.trim() && 'dosis',
+          !incompleteMed.via.trim() && 'vía',
+          !incompleteMed.frequency.trim() && 'frecuencia',
+        ].filter(Boolean).join(', ');
+        toast.error(`Faltan datos en "${incompleteMed.medication.trim()}" (${missing}) — dosis, vía y frecuencia son obligatorias para emitir la receta.`);
+        return;
+      }
       const controlledHit = findControlledMed(validMeds.map(m => m.medication), inventory);
       if (controlledHit) {
         toast.error(controlledMedMessage(controlledHit));
@@ -166,6 +220,22 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
       }
     }
     if (!appointment?.id || !user?.id) return;
+    // NOM-004 6.1: capture the historia clínica de primera vez before the
+    // first nota de evolución; the pending note save proceeds on onSaved.
+    if (hasCustomer && needsHistoria && !skipHistoriaGate) {
+      toast.error('Este paciente aún no tiene historia clínica de primera vez. Captúrela antes de la primera nota de evolución (NOM-004 6.1).');
+      setHistoriaOpen(true);
+      return;
+    }
+    // NOM-004 6.2 / patient safety: when a medication matches a recorded
+    // allergy the save stops until the doctor confirms the override.
+    if (validMeds.length > 0 && hasCustomer && !allergyOverride) {
+      const conflicts = findAllergyConflicts(validMeds.map(m => m.medication), patientAllergies, vitals.alergias);
+      if (conflicts.length > 0) {
+        setAllergyConflicts(conflicts);
+        return;
+      }
+    }
     setSaving(true);
     try {
       if (!alreadyCompleted) {
@@ -202,7 +272,18 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
       });
 
       if (validMeds.length > 0 && hasCustomer) {
-        const first = validMeds[0];
+        // On an allergy override the decision is printed on the receta itself
+        const medsToSave = allergyOverride && allergyConflicts.length > 0
+          ? validMeds.map(m => {
+              const lines = allergyConflicts
+                .filter(c => c.medication === m.medication.trim())
+                .map(c => allergyOverrideNote(c.medication, c.allergy));
+              return lines.length > 0
+                ? { ...m, notes: [m.notes.trim(), ...lines].filter(Boolean).join('\n') }
+                : m;
+            })
+          : validMeds;
+        const first = medsToSave[0];
         const createdRx = await createDoctorPrescription({
           customer_id: appointment.customer_id,
           patient_name: patientName,
@@ -217,7 +298,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
           prescription_date: new Date().toISOString().split('T')[0],
           height_cm: vitals.height_cm ? parseFloat(vitals.height_cm) : null,
           weight_kg: vitals.weight_kg ? parseFloat(vitals.weight_kg) : null,
-          medications: validMeds.map(m => ({
+          medications: medsToSave.map(m => ({
             medication: m.medication.trim(),
             dosage: m.dosage.trim() || null,
             via: m.via.trim() || null,
@@ -235,6 +316,14 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
           alergias: vitals.alergias.trim() || null,
           next_appointment: null,
         });
+        // NOM-024 audit: prescribing despite a recorded allergy is always logged
+        if (allergyOverride && allergyConflicts.length > 0) {
+          await logAudit({
+            action: AUDIT_ACTIONS.PRESCRIPTION_ALLERGY_OVERRIDE,
+            user,
+            details: `Receta emitida pese a alergia registrada — médico ${doctorProfile?.profiles?.full_name || user?.name || user?.email || ''} (céd. ${doctorProfile?.license_number || '-'}) — paciente ${patientName} — ${allergyConflicts.map(c => `${c.medication} ↔ ${c.allergy}`).join('; ')}`,
+          });
+        }
         // Auto-sign with the doctor's stored e.firma when the session is unlocked
         try {
           const signedRx = await tryAutoSignReceta(createdRx, appointment?.customers, doctorProfile, user.id);
@@ -245,6 +334,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
       }
 
       toast.success(alreadyCompleted ? 'Nota guardada (nueva versión)' : 'Consulta terminada');
+      setAllergyConflicts([]);
       onOpenChange(false);
       onSaved?.();
     } catch (err) {
@@ -255,7 +345,14 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
     }
   };
 
+  // Historia saved from the NOM-004 gate: proceed with the pending note save
+  const handleHistoriaSaved = () => {
+    setNeedsHistoria(false);
+    handleSave(true);
+  };
+
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -263,6 +360,19 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
             {alreadyCompleted ? 'Nota de evolución' : inConsulta ? 'Consulta en curso' : 'Completar consulta'} — {patientName}
           </DialogTitle>
         </DialogHeader>
+
+        {hasCustomer && needsHistoria && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex items-center justify-between gap-2 flex-wrap">
+            <span>
+              <strong>Historia clínica pendiente.</strong> Este paciente no tiene historia
+              clínica de primera vez ni notas previas — la NOM-004 (6.1) exige capturarla
+              antes de la primera nota de evolución.
+            </span>
+            <Button size="sm" variant="outline" className="border-amber-300 text-amber-800" onClick={() => setHistoriaOpen(true)}>
+              Capturar historia
+            </Button>
+          </div>
+        )}
 
         {alreadyCompleted && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -486,11 +596,14 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
                             </div>
                           )}
                         </div>
-                        <Input placeholder="Dosis" value={med.dosage}
+                        <Input placeholder="Dosis *" value={med.dosage}
+                          className={showMedErrors && !med.dosage.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}
                           onChange={(e) => updateMed(idx, 'dosage', e.target.value)} />
-                        <Input placeholder="Vía (oral, tópica, IM...)" value={med.via}
+                        <Input placeholder="Vía (oral, tópica, IM...) *" value={med.via}
+                          className={showMedErrors && !med.via.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}
                           onChange={(e) => updateMed(idx, 'via', e.target.value)} />
-                        <Input placeholder="Frecuencia" value={med.frequency}
+                        <Input placeholder="Frecuencia *" value={med.frequency}
+                          className={showMedErrors && !med.frequency.trim() ? 'border-red-500 ring-1 ring-red-500' : ''}
                           onChange={(e) => updateMed(idx, 'frequency', e.target.value)} />
                         <Input placeholder="Duración" value={med.duration}
                           onChange={(e) => updateMed(idx, 'duration', e.target.value)} />
@@ -516,13 +629,60 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved }) => {
             <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancelar
             </Button>
-            <Button className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600" onClick={handleSave} disabled={saving}>
+            <Button className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600" onClick={() => handleSave()} disabled={saving}>
               {saving ? 'Guardando...' : alreadyCompleted ? 'Guardar nueva versión' : 'Guardar y terminar consulta'}
             </Button>
           </div>
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Bloqueo por posible alergia — requiere confirmación explícita del médico */}
+    <Dialog open={allergyConflicts.length > 0} onOpenChange={(o) => { if (!o) setAllergyConflicts([]); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-red-700">
+            <ShieldAlert className="w-5 h-5" /> Posible reacción alérgica
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-sm text-slate-700">
+            La receta incluye medicamentos que coinciden con alergias registradas del paciente:
+          </p>
+          <ul className="space-y-1.5">
+            {allergyConflicts.map((c, i) => (
+              <li key={i} className="text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <span className="font-semibold text-red-800">{c.medication}</span>
+                <span className="text-slate-600"> ↔ alergia registrada: </span>
+                <span className="font-semibold text-red-800">{c.allergy}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-slate-500">
+            Si continúa, la prescripción quedará anotada en la receta y en la bitácora (NOM-024).
+          </p>
+          <div className="flex gap-3 pt-1">
+            <Button variant="outline" className="flex-1" onClick={() => setAllergyConflicts([])} disabled={saving}>
+              Volver y corregir
+            </Button>
+            <Button className="flex-1 bg-red-600 hover:bg-red-700" onClick={() => handleSave(false, true)} disabled={saving}>
+              {saving ? 'Guardando...' : 'Continuar de todas formas'}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    {/* NOM-004 6.1 gate: historia clínica de primera vez (registered patients) */}
+    <HistoriaClinicaModal
+      open={historiaOpen}
+      onOpenChange={setHistoriaOpen}
+      customer={appointment?.customer_id
+        ? { ...(appointment?.customers || {}), id: appointment.customer_id, full_name: patientName }
+        : null}
+      onSaved={handleHistoriaSaved}
+    />
+    </>
   );
 };
 

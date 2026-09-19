@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useShift } from '@/contexts/ShiftContext';
 import { useToast } from '@/components/ui/use-toast';
-import { getSales, getInventory } from '@/lib/db';
+import { getShiftSales, getInventory } from '@/lib/db';
 
 const CloseShiftModal = ({ open, onOpenChange }) => {
   const { activeShift, closeShift } = useShift();
@@ -25,8 +25,9 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
   useEffect(() => {
     if (!activeShift || !open) return;
     
-    // Load sales and inventory data
-    Promise.all([getSales(), getInventory(activeShift.location_id)])
+    // Load sales and inventory data (getShiftSales is pos-safe: scoped to
+    // this shift, no customers embed — the old getSales() is admin-only now).
+    Promise.all([getShiftSales(activeShift.id), getInventory(activeShift.location_id)])
       .then(([allSales, inventoryData]) => {
         setInventory(inventoryData || []);
         

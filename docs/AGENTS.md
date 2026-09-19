@@ -212,6 +212,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key-here
 - `discounts` — promo codes (% off)
 - `suppliers`, `purchase_orders`, `purchase_order_items` — supplier management
 - `audit_log` — immutable action log
+- `arco_requests` — LFPDPPP ARCO/privacy requests (admin-managed, Admin → ARCO / Privacidad)
 - `tax_settings` — per-org IVA settings
 - `bank_accounts` — transfer destination accounts
 - `stock_adjustments` — manual inventory adjustments with reason
@@ -226,7 +227,7 @@ The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional m
 
 ### Sales & Checkout (`PoSDashboard.jsx`)
 - Barcode scanner auto-adds on exact match.
-- Prescription-required (Rx) items no longer block entry to checkout: the Cobrar screen opens immediately and the receta modal is launched from there ("Agregar información de receta"). 'Finalizar venta' stays disabled until patient name, doctor name, and folio (Rx #) are captured; patient phone/email optionally auto-registers the customer.
+- Prescription-required (Rx) items no longer block entry to checkout: the Cobrar screen opens immediately and the receta modal is launched from there ("Agregar información de receta"). 'Finalizar venta' stays disabled until patient name, doctor name, and folio (Rx #) are captured; patient phone/email optionally auto-registers the customer. The modal also requires cédula profesional (6–8 dígitos), blocks future receta dates and duplicate folios per org (DB trigger `prescriptions_unique_folio` backs this up), blocks antibiotic recetas older than 30 days, and flags antibiotic recetas as `receta_retenida`.
 - Cobrar upsell note: when no membership is applied, an amber "Con membresía ahorraría $X" box shows hypothetical member savings (items named "Consulta" priced free + 10% off the rest — informational only) plus "Su total hoy sería: $Y" (post-savings total incl. IVA). A Membresía card (`MembershipPosLookup`) sits under Cliente so a just-registered member can be searched and applied to the sale without returning to the cart.
 - Price changes > 10% require admin PIN.
 - Supports split payments across multiple methods.
@@ -289,6 +290,7 @@ The frontend is fully static; Supabase does all backend work. See `docs/HOSTING.
 - Supabase RLS policies enforce org isolation. Do not disable RLS.
 - Admin PINs are stored bcrypt-hashed in `profiles.pin_hash` (never plaintext). Set/clear them via the `admin_set_profile_pin` RPC (admin-only); verify via the `verify_admin_pin` RPC. The legacy `profiles.pin` column is always NULL.
 - All DB mutations go through `src/lib/db.js` which uses the authenticated Supabase client.
+- pos/inventory roles reach customer data ONLY through the `pos_*` security-definer RPCs (`searchCustomersPos`, `createCustomerPos`, `searchPrescriptionsPos`, `searchMembershipsPos`, `getMembershipByIdPos`, `getSaleForReturnPos` in `db.js`) — direct SELECT/INSERT/UPDATE on `customers` and other clinical tables is restricted to admin/doctor (clinical staff).
 - Price overrides, voids, and user management require admin PIN or admin role.
 
 ---

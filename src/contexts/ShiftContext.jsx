@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
-import { getOpenShift, createShift, closeShiftDb, getSales } from '@/lib/db';
+import { getOpenShift, createShift, closeShiftDb, getShiftSales } from '@/lib/db';
 import { formatMXN } from '@/lib/currency';
 
 const ShiftContext = createContext(null);
@@ -40,7 +40,8 @@ export const ShiftProvider = ({ children }) => {
     if (!activeShift) return null;
 
     // Calculate shift totals from DB sales using shift_id for accuracy
-    const allSales = await getSales();
+    // (getShiftSales is pos-safe: no customers embed).
+    const allSales = await getShiftSales(activeShift.id);
     const shiftSales = allSales.filter(s =>
       !s.voided && s.shift_id === activeShift.id
     );

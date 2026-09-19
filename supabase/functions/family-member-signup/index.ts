@@ -8,6 +8,11 @@
 // On success the new auth user is stored in membership_members.claimed_user_id
 // (+ email), so lookup_login_email can resolve their sub_id/email to THEIR
 // account and the portal can find their parent membership.
+//
+// birth_date (YYYY-MM-DD) is required (R2-21): it is persisted on the
+// membership_members row and the member's customers row. For minors the
+// guardian defaults to the plan titular (guardian_relationship
+// 'familiar titular') unless the caller passes guardian data explicitly.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
@@ -23,6 +28,9 @@ interface RequestPayload {
   email?: string;
   password?: string;
   org_id?: string;
+  birth_date?: string; // YYYY-MM-DD — required (R2-21); persisted on the member + customer rows
+  guardian_name?: string; // optional override; minors default to the titular
+  guardian_relationship?: string; // optional override; minors default to 'familiar titular'
 }
 
 const jsonResponse = (body: Record<string, unknown>, status: number) =>
@@ -67,6 +75,12 @@ const isAlreadyRegisteredError = (err: { message?: string; code?: string }) => {
   return /already|exist|registered|duplicate/i.test(err.message || '');
 };
 
+const isValidDob = (d: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) && new Date(d) < new Date();
+
+const ageFromDob = (d: string) =>
+  Math.floor((Date.now() - new Date(d).getTime()) / (365.25 * 86400000));
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders, status: 204 });
@@ -85,6 +99,9 @@ Deno.serve(async (req) => {
     const email = (payload.email || '').trim().toLowerCase();
     const password = payload.password || '';
     const requestOrgId = (payload.org_id || '').trim();
+    const birthDate = (payload.birth_date || '').trim();
+    const guardianNameInput = (payload.guardian_name || '').trim();
+    const guardianRelInput = (payload.guardian_relationship || '').trim();
 
     // Sub-ids look like APOLO-00001-2; restricting the charset also keeps
     // LIKE wildcards out of the lookup below.
@@ -99,6 +116,12 @@ Deno.serve(async (req) => {
     }
     if (password.length < 6) {
       return jsonResponse({ error: 'La contraseña debe tener al menos 6 caracteres' }, 400);
+    }
+    // DOB is required (R2-21): it is persisted on the member/customer rows
+    // and lets the server derive minority. Validated up front, before any
+    // lookup, so the error leaks nothing about whether the member exists.
+    if (!isValidDob(birthDate)) {
+      return jsonResponse({ error: 'Fecha de nacimiento requerida' }, 400);
     }
 
     const supabase = supabaseAdmin(env);
@@ -191,10 +214,11 @@ Deno.serve(async (req) => {
     }
 
     // Claim the member row. Guarded to still-unclaimed rows so a concurrent
-    // activation can't overwrite an existing claim.
+    // activation can't overwrite an existing claim. The DOB is persisted on
+    // the member row here (R2-21).
     const { data: claimed, error: claimError } = await supabase
       .from('membership_members')
-      .update({ email, claimed_user_id: userId })
+      .update({ email, claimed_user_id: userId, date_of_birth: birthDate })
       .eq('id', member.id)
       .is('claimed_user_id', null)
       .is('email', null)
@@ -204,6 +228,44 @@ Deno.serve(async (req) => {
     if (!claimed || claimed.length === 0) {
       console.error('[family-member-signup] claim race lost for member', member.id, 'auth user', userId);
       return jsonResponse({ error: 'Esta cuenta ya fue activada, inicia sesión' }, 409);
+    }
+
+    // Minority is derived server-side from the DOB. For a minor, the
+    // guardian defaults to the titular of the plan unless the caller
+    // explicitly passed guardian data (R2-21).
+    let guardianName: string | null = null;
+    let guardianRel: string | null = null;
+    if (ageFromDob(birthDate) < 18) {
+      guardianName = guardianNameInput || null;
+      guardianRel = guardianRelInput || null;
+      if (!guardianName || !guardianRel) {
+        const { data: ownerRow, error: ownerError } = await supabase
+          .from('membership_members')
+          .select('name')
+          .eq('membership_id', member.membership_id)
+          .eq('is_owner', true)
+          .limit(1)
+          .maybeSingle();
+        if (ownerError) throw ownerError;
+        guardianName = guardianName || (ownerRow?.name || '').trim() || null;
+        guardianRel = guardianRel || 'familiar titular';
+      }
+    }
+
+    // The handle_new_user trigger already created this user's customers row;
+    // stamp the DOB (and guardian evidence for minors) onto it.
+    const customerUpdate: Record<string, unknown> = { date_of_birth: birthDate };
+    if (guardianName) customerUpdate.guardian_name = guardianName;
+    if (guardianRel) customerUpdate.guardian_relationship = guardianRel;
+    const { error: customerUpdateError } = await supabase
+      .from('customers')
+      .update(customerUpdate)
+      .eq('profile_id', userId);
+    if (customerUpdateError) {
+      // The account + claim already succeeded; failing now would orphan the
+      // activation. Logged loudly instead — the row keeps a NULL dob rather
+      // than a minor record without guardian evidence.
+      console.error('[family-member-signup] customers row update failed for user', userId, customerUpdateError);
     }
 
     return jsonResponse({ success: true }, 200);

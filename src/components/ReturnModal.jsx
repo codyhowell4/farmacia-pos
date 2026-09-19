@@ -8,7 +8,9 @@ import { formatMXN } from '@/lib/currency';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
-import { getSales, createReturn, getInventoryFlags } from '@/lib/db';
+import { getSaleForReturnPos, listRecentSaleIds, createReturn, getInventoryFlags } from '@/lib/db';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
   const { user, verifyAdminPin } = useAuth();
@@ -24,12 +26,22 @@ const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
   const [flagsById, setFlagsById] = useState({}); // { [inventory_id]: { requires_prescription, controlled_group } }
 
   const handleSearch = async () => {
+    const needle = searchId.trim();
+    if (!needle) return;
     try {
-      const allSales = await getSales();
-      const sale = allSales.find(s =>
-        s.id === searchId.trim() ||
-        s.id.slice(-8).toUpperCase() === searchId.trim().toUpperCase()
-      );
+      // Resolve the folio to a full sale id: receipts print the last 8
+      // characters, so suffix-match against recent sales (pos-safe — the
+      // full record then comes from the pos_get_sale_for_return RPC).
+      let saleId = null;
+      if (UUID_RE.test(needle)) {
+        saleId = needle;
+      } else {
+        const recent = await listRecentSaleIds(500);
+        const match = recent.find(s => s.id.slice(-8).toUpperCase() === needle.toUpperCase());
+        saleId = match?.id || null;
+      }
+      if (!saleId) { setNotFound(true); setFoundSale(null); return; }
+      const sale = await getSaleForReturnPos(saleId);
       if (!sale || sale.voided) { setNotFound(true); setFoundSale(null); return; }
       setNotFound(false);
       setFoundSale(sale);

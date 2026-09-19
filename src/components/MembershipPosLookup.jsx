@@ -3,7 +3,7 @@ import { Search, X, Users, Award, ScanLine, Package, TestTube } from 'lucide-rea
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { searchMemberships, getPendingMemberRevisions } from '@/lib/db';
+import { searchMembershipsPos, getPendingMemberRevisions } from '@/lib/db';
 
 const MembershipPosLookup = ({
   selectedMembership,
@@ -63,7 +63,7 @@ const MembershipPosLookup = ({
       }
       setLoading(true);
       try {
-        const data = await searchMemberships(term);
+        const data = await searchMembershipsPos(term);
         setResults(data || []);
       } catch (e) {
         console.error(e);
@@ -79,7 +79,7 @@ const MembershipPosLookup = ({
     const timer = setTimeout(async () => {
       const term = dialogQuery.trim();
       try {
-        const data = await searchMemberships(term);
+        const data = await searchMembershipsPos(term);
         setDialogResults(data || []);
       } catch (e) {
         console.error(e);
