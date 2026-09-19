@@ -1,5 +1,11 @@
 project_id = "ieinjhonepkudxxpmuly"
 
+# Receta/consulta e.firma signing — caller must present a valid user JWT;
+# the function additionally enforces role=doctor + is_active, e.firma key
+# binding (doctor_efirma), and a per-user rate limit
+[functions.sign-document]
+verify_jwt = true
+
 [functions.paypal-subscription]
 verify_jwt = false
 

@@ -1,6 +1,21 @@
 // Supabase Edge Function: paypal-subscription
 // Verifies a PayPal subscription and creates/reinstates a membership.
 // Exposed without JWT verification so the public signup page can call it.
+//
+// Security posture (audit R2-9):
+// - Only PayPal status ACTIVE activates anything. APPROVAL_PENDING /
+//   APPROVED / any other state registers the membership as 'pending' and
+//   answers { status: 'pending_activation' } — paypal-webhook flips it to
+//   active when the first payment actually confirms.
+// - Existing-customer matching is by exact normalized email ONLY (no phone
+//   or substring matching, which let attackers attach to strangers).
+// - Account-takeover guard: when a portal account already exists for the
+//   email (profiles row, or customers.profile_id), the caller-supplied
+//   password is NEVER applied — the request is refused with 409
+//   account_exists and the user is told to log in / reset their password.
+// - The PayPal plan_id on the subscription must match the configured plan
+//   env var for the claimed plan_type (mandatory, fails closed).
+// - Client-facing errors are generic; details are logged server-side only.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
@@ -32,6 +47,23 @@ const PLANS: Record<string, { price: number; visits: number; basicTrackers: numb
   individual: { price: 150, visits: 2, basicTrackers: 0 },
   familiar: { price: 500, visits: 8, basicTrackers: 0 },
 };
+
+// Errors whose message is safe to show the caller. Everything else (PayPal
+// API payloads, PostgREST details, stack traces) is logged and answered
+// with a generic message.
+class ClientError extends Error {
+  status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const jsonResponse = (body: Record<string, unknown>, status: number) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 
 const paypalBaseUrl = (env: Record<string, string>) =>
   env.PAYPAL_ENV === 'live'
@@ -86,25 +118,49 @@ const supabaseAdmin = (env: Record<string, string>) => {
   return createClient(url, serviceKey, { auth: { persistSession: false } });
 };
 
-const normalizePhone = (phone: string) => (phone || '').replace(/\D/g, '');
+const normalizeEmail = (email: string) => (email || '').trim().toLowerCase();
 
-const findCustomerByEmailOrPhone = async (
+// Exact email match ONLY (case-insensitive). Phone/substring matching was
+// removed: it let an attacker attach a paid signup to a stranger's record.
+// The JS-side re-check guards against ilike wildcard injection (% and _
+// are technically valid in email local parts).
+const findCustomerByEmail = async (
   supabase: ReturnType<typeof supabaseAdmin>,
   orgId: string,
-  email: string,
-  phone: string
+  email: string
 ) => {
-  const normalizedPhone = normalizePhone(phone);
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
   const { data, error } = await supabase
     .from('customers')
     .select('*')
     .eq('org_id', orgId)
-    .or(`email.ilike.${email},phone.ilike.%${normalizedPhone}%`)
+    .ilike('email', normalized)
     .order('created_at', { ascending: false })
-    .limit(1);
+    .limit(5);
 
   if (error) throw error;
-  return data?.[0] || null;
+  return (data || []).find((c) => normalizeEmail(c.email || '') === normalized) || null;
+};
+
+// A portal (auth) account exists for an email when a profiles row carries
+// it — the handle_new_user trigger creates one for every auth user. Org-
+// agnostic on purpose: auth accounts are global. Same exact-match +
+// JS-verify discipline as findCustomerByEmail.
+const findProfileByEmail = async (
+  supabase: ReturnType<typeof supabaseAdmin>,
+  email: string
+) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return null;
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, email')
+    .ilike('email', normalized)
+    .limit(5);
+
+  if (error) throw error;
+  return (data || []).find((p) => normalizeEmail(p.email || '') === normalized) || null;
 };
 
 const findMembershipByCustomer = async (
@@ -137,7 +193,8 @@ const formatDate = (d: Date) => d.toISOString().split('T')[0];
 const createMembership = async (
   supabase: ReturnType<typeof supabaseAdmin>,
   payload: RequestPayload,
-  plan: (typeof PLANS)['individual']
+  plan: (typeof PLANS)['individual'],
+  status: 'active' | 'pending' = 'active'
 ) => {
   const { data, error } = await supabase.rpc('public_signup_membership', {
     p_org_id: payload.org_id,
@@ -157,7 +214,7 @@ const createMembership = async (
       payment_method: 'paypal',
       payment_processor: 'paypal',
       processor_subscription_id: payload.subscription_id,
-      status: 'active',
+      status,
     },
     p_member_names: payload.member_names || [],
     p_terms_accepted_at: payload.terms_accepted_at || null,
@@ -275,7 +332,11 @@ const scheduleFlush = async (env: Record<string, string>) => {
 // trigger-created customers row duplicates the membership's row, so it is
 // removed before linking (unique index on customers.profile_id).
 //
-// An existing account is reused as-is: its password is never updated.
+// The serve handler refuses the request with 409 account_exists whenever a
+// portal account already exists for the email, so by the time this runs
+// the account is always new. The already-registered branch below is kept
+// as race-condition defense only: it reuses the account and NEVER sets or
+// updates a password for it.
 const provisionPortalAccount = async (
   supabase: ReturnType<typeof supabaseAdmin>,
   customer: { id: string; email: string; profile_id: string | null },
@@ -295,7 +356,7 @@ const provisionPortalAccount = async (
   if (createError) {
     if (!isAlreadyRegisteredError(createError)) throw createError;
 
-    // Account already registered: reuse it, never touch its password.
+    // Account already registered (race): reuse it, never touch its password.
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('id')
@@ -352,10 +413,7 @@ Deno.serve(async (req) => {
   }
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ error: 'Method not allowed' }, 405);
   }
 
   try {
@@ -363,13 +421,16 @@ Deno.serve(async (req) => {
     const payload = (await req.json()) as RequestPayload;
 
     if (!payload.subscription_id) {
-      throw new Error('subscription_id requerido');
+      throw new ClientError('subscription_id requerido');
     }
     if (!payload.plan_type || !PLANS[payload.plan_type]) {
-      throw new Error('plan_type inválido');
+      throw new ClientError('plan_type inválido');
     }
     if (!payload.org_id) {
-      throw new Error('org_id requerido');
+      throw new ClientError('org_id requerido');
+    }
+    if (!payload.customer?.email) {
+      throw new ClientError('El correo electrónico del titular es requerido');
     }
 
     const plan = PLANS[payload.plan_type];
@@ -380,84 +441,145 @@ Deno.serve(async (req) => {
     const status = (subscription.status as string || '').toUpperCase();
     const planId = subscription.plan_id as string | undefined;
 
-    if (!['ACTIVE', 'APPROVAL_PENDING', 'APPROVED'].includes(status)) {
-      throw new Error(`La suscripción de PayPal no está activa (estado: ${status})`);
-    }
-
-    // Optional sanity check: PayPal plan_id matches our expected plan.
+    // Mandatory plan binding (fail closed): the PayPal plan_id on the
+    // subscription must be the configured plan for the claimed plan_type —
+    // otherwise the caller could pay for a cheap/unknown plan and receive
+    // this plan's benefits. A missing env var is a misconfiguration and
+    // also rejects.
     const expectedPlanId =
       payload.plan_type === 'individual'
         ? env.PAYPAL_PLAN_INDIVIDUAL
         : env.PAYPAL_PLAN_FAMILIAR;
-    if (expectedPlanId && planId && planId !== expectedPlanId) {
-      throw new Error('El plan de PayPal no coincide con el plan seleccionado');
+    if (!expectedPlanId) {
+      console.error(
+        `[paypal-subscription] PAYPAL_PLAN_${payload.plan_type.toUpperCase()} is not configured`
+      );
+      throw new ClientError('No se pudo verificar el plan seleccionado');
+    }
+    if (!planId || planId !== expectedPlanId) {
+      console.warn('[paypal-subscription] plan mismatch:', { planId, planType: payload.plan_type });
+      throw new ClientError('El plan de PayPal no coincide con el plan seleccionado');
     }
 
-    const existingCustomer = await findCustomerByEmailOrPhone(
+    // ── Non-ACTIVE subscriptions (APPROVAL_PENDING / APPROVED / anything
+    //    else): PayPal has not charged yet. Register/keep the membership as
+    //    pending — paypal-webhook flips it active when the first payment
+    //    confirms. No accounts, benefits, or reactivations happen here.
+    if (status !== 'ACTIVE') {
+      const pendingCustomer = await findCustomerByEmail(
+        supabase,
+        payload.org_id,
+        payload.customer.email
+      );
+      if (pendingCustomer) {
+        const pendingMembership = await findMembershipByCustomer(supabase, pendingCustomer.id);
+        if (pendingMembership?.processor_subscription_id === payload.subscription_id) {
+          // Retry of the same signup: keep the pending membership as-is.
+          await scheduleFlush(env);
+          return jsonResponse(
+            {
+              success: true,
+              status: 'pending_activation',
+              membership: pendingMembership,
+              replayed: true,
+            },
+            200
+          );
+        }
+        if (pendingMembership && ['active', 'paused'].includes(pendingMembership.status)) {
+          throw new ClientError(
+            'Ya existe una membresía activa o pausada para este correo. Usa el panel de administración para gestionarla.'
+          );
+        }
+      }
+      const membership = await createMembership(supabase, payload, plan, 'pending');
+      await scheduleFlush(env);
+      return jsonResponse({ success: true, status: 'pending_activation', membership }, 200);
+    }
+
+    // ── ACTIVE: PayPal confirms the subscription is billing. ──
+    const existingCustomer = await findCustomerByEmail(
       supabase,
       payload.org_id,
-      payload.customer.email,
-      payload.customer.phone
+      payload.customer.email
     );
 
-    let membership;
-
+    let existingMembership: Record<string, any> | null = null;
     if (existingCustomer) {
-      const existingMembership = await findMembershipByCustomer(supabase, existingCustomer.id);
+      existingMembership = await findMembershipByCustomer(supabase, existingCustomer.id);
 
       if (existingMembership && ['active', 'paused'].includes(existingMembership.status)) {
         if (existingMembership.processor_subscription_id === payload.subscription_id) {
           // Replay of the same approved PayPal subscription (client retry
           // after a network blip, or the "Reintentar activación" button on
           // the pending screen): the membership is already registered, so
-          // answer success instead of blocking a paid signup.
+          // answer success instead of blocking a paid signup. Checked before
+          // the account_exists guard so a legit retry still succeeds.
           await scheduleFlush(env);
-          return new Response(
-            JSON.stringify({
+          return jsonResponse(
+            {
               success: true,
               membership: existingMembership,
               portal_account: 'skipped',
               replayed: true,
-            }),
-            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            },
+            200
           );
         }
-        throw new Error(
-          'Ya existe una membresía activa o pausada para este correo o teléfono. Usa el panel de administración para gestionarla.'
+        throw new ClientError(
+          'Ya existe una membresía activa o pausada para este correo. Usa el panel de administración para gestionarla.'
         );
       }
+    }
 
-      if (existingMembership) {
-        // Reactivate cancelled/expired membership.
-        membership = await reinstateMembership(
-          supabase,
-          existingMembership.id,
-          payload,
-          plan,
-          0,
-          existingMembership.basic_trackers_fulfilled || 0
-        );
+    // Account-takeover guard: when a portal account already exists for this
+    // email (a profiles row — the handle_new_user trigger creates one per
+    // auth user — or a customers.profile_id link), the password in this
+    // payload must NEVER be applied to that account: the caller chose it.
+    // Refuse and point the user at login / password reset instead.
+    const existingProfile = await findProfileByEmail(supabase, payload.customer.email);
+    if (existingProfile || existingCustomer?.profile_id) {
+      console.warn('[paypal-subscription] signup refused: portal account already exists for email');
+      return jsonResponse(
+        {
+          error: 'account_exists',
+          message:
+            'Ya existe una cuenta con este correo electrónico. Inicia sesión o restablece tu contraseña desde el portal del cliente; el personal de la farmacia puede ayudarte a asociar tu nueva membresía.',
+        },
+        409
+      );
+    }
 
-        // Re-signup = a new payment: count it toward their milestone
-        // progress (payments_made carries over per business rule), book
-        // the sale, and fire receipt + welcome emails. Guarded so a
-        // bookkeeping hiccup never blocks a paid reactivation.
-        try {
-          const { error: payError } = await supabase.rpc('record_membership_payment', {
-            p_membership_id: membership.id,
-            p_amount: plan.price,
-            p_payment_method: 'paypal',
-            p_staff_id: null,
-            p_is_signup: true,
-          });
-          if (payError) {
-            console.error('[paypal-subscription] reinstate payment recording failed:', payError);
-          }
-        } catch (payErr) {
-          console.error('[paypal-subscription] reinstate payment recording failed:', payErr);
+    let membership;
+
+    if (existingMembership) {
+      // Reactivate cancelled/expired membership.
+      membership = await reinstateMembership(
+        supabase,
+        existingMembership.id,
+        payload,
+        plan,
+        0,
+        existingMembership.basic_trackers_fulfilled || 0
+      );
+
+      // Re-signup = a new payment: count it toward their milestone
+      // progress (payments_made carries over per business rule), book
+      // the sale, and fire receipt + welcome emails. Guarded so a
+      // bookkeeping hiccup never blocks a paid reactivation.
+      try {
+        const { error: payError } = await supabase.rpc('record_membership_payment', {
+          p_membership_id: membership.id,
+          p_amount: plan.price,
+          p_payment_method: 'paypal',
+          p_staff_id: null,
+          p_is_signup: true,
+        });
+        if (payError) {
+          console.error('[paypal-subscription] reinstate payment recording failed:', payError);
         }
-      } else {
-        membership = await createMembership(supabase, payload, plan);
+      } catch (payErr) {
+        console.error('[paypal-subscription] reinstate payment recording failed:', payErr);
       }
     } else {
       membership = await createMembership(supabase, payload, plan);
@@ -465,7 +587,9 @@ Deno.serve(async (req) => {
 
     // Provision the customer portal account when a password was supplied.
     // Runs for both the new-signup and the reinstatement path, and never
-    // blocks the purchase: errors are logged and only flagged in the response.
+    // blocks the purchase: errors are logged and only flagged in the
+    // response. The account_exists guard above guarantees this only ever
+    // creates NEW accounts.
     let portalAccount: 'created' | 'linked' | 'skipped' | 'error' = 'skipped';
     if (payload.password) {
       try {
@@ -495,24 +619,15 @@ Deno.serve(async (req) => {
 
     await scheduleFlush(env);
 
-    return new Response(JSON.stringify({ success: true, membership, portal_account: portalAccount }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ success: true, membership, portal_account: portalAccount }, 200);
   } catch (err) {
     console.error('[paypal-subscription] error:', err);
-    let message = 'Error desconocido';
-    if (err instanceof Error) {
-      message = err.message;
-    } else if (err && typeof err === 'object') {
-      // PostgREST/GoTrue errors are plain objects, not Error instances.
-      // Without this unwrap the client only ever sees "Error desconocido".
-      const e = err as { message?: string; details?: string; hint?: string; code?: string };
-      message = e.message || e.details || (e.code ? `Error de base de datos (${e.code})` : message);
+    if (err instanceof ClientError) {
+      return jsonResponse({ error: err.message }, err.status);
     }
-    return new Response(JSON.stringify({ error: message }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return jsonResponse(
+      { error: 'No se pudo procesar la suscripción. Intenta de nuevo o contacta a la farmacia.' },
+      500
+    );
   }
 });

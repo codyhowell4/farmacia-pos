@@ -18,7 +18,6 @@ const toUserShim = (profile, email) =>
         pharmacyLocation: profile.locations?.name || profile.location_id,
         locationId: profile.location_id,
         orgId: profile.org_id,
-        pin: profile.pin,
         email: email || profile.email,
       }
     : null;

@@ -1,13 +1,14 @@
 // ============================================================
 // efirma.js — e.firma (FIEL) session handling + receta signing
 // ============================================================
-// The doctor's .cer/.key files are stored once on doctor_profiles (the .key
-// stays encrypted with the doctor's own SAT password). The password is never
-// persisted — it lives only in the tab's sessionStorage, so recetas can be
-// auto-signed while the doctor works and the stored key is useless without it.
+// The doctor's .cer/.key files are stored once in the doctor_efirma table (the
+// .key stays encrypted with the doctor's own SAT password). The password is
+// never persisted — it lives only in the tab's sessionStorage, so recetas can
+// be auto-signed while the doctor works and the stored key is useless without
+// it.
 
 import { supabase } from '@/lib/supabase';
-import { signPrescription } from '@/lib/db';
+import { signPrescription, getMyEfirma } from '@/lib/db';
 import { buildRecetaCadena } from '@/lib/cda';
 
 const storageKey = (userId) => `efirma_pw_${userId}`;
@@ -24,8 +25,9 @@ export const clearEfirmaSessionPassword = (userId) => {
   try { sessionStorage.removeItem(storageKey(userId)); } catch { /* ignore */ }
 };
 
-export const hasStoredEfirma = (doctorProfile) =>
-  !!(doctorProfile?.efirma_cer_base64 && doctorProfile?.efirma_key_base64);
+// `efirmaRow` is a doctor_efirma row ({ cer_base64, key_base64, ... }) or null.
+export const hasStoredEfirma = (efirmaRow) =>
+  !!(efirmaRow?.cer_base64 && efirmaRow?.key_base64);
 
 // Reads a File as a base64 string (without the data: URL prefix).
 export const readFileAsBase64 = (file) =>
@@ -69,12 +71,13 @@ export const validateEfirma = async ({ cer_base64, key_base64, password }) => {
 };
 
 // Signs a receta with the given files + password and persists the signature
-// on the prescription row.
+// on the prescription row. `efirmaFiles` is a doctor_efirma row (or an ad-hoc
+// { cer_base64, key_base64 } pair for one-off signing).
 export const signRecetaWithPassword = async (prescription, customer, efirmaFiles, password) => {
   const cadena = buildRecetaCadena(prescription, customer);
   const data = await invokeSignDocument({
-    cer_base64: efirmaFiles.efirma_cer_base64,
-    key_base64: efirmaFiles.efirma_key_base64,
+    cer_base64: efirmaFiles.cer_base64,
+    key_base64: efirmaFiles.key_base64,
     password,
     payload: cadena,
   });
@@ -89,10 +92,14 @@ export const signRecetaWithPassword = async (prescription, customer, efirmaFiles
 
 // Auto-sign at receta creation: only when the doctor has stored files AND an
 // unlocked session password. Returns true when the receta was signed.
+// (The doctorProfile param is kept for caller compatibility but ignored — the
+// efirma row is fetched straight from doctor_efirma.)
 export const tryAutoSignReceta = async (prescription, customer, doctorProfile, userId) => {
-  if (!prescription?.id || !hasStoredEfirma(doctorProfile) || !userId) return false;
+  if (!prescription?.id || !userId) return false;
   const password = getEfirmaSessionPassword(userId);
   if (!password) return false;
-  await signRecetaWithPassword(prescription, customer, doctorProfile, password);
+  const efirma = await getMyEfirma();
+  if (!hasStoredEfirma(efirma)) return false;
+  await signRecetaWithPassword(prescription, customer, efirma, password);
   return true;
 };

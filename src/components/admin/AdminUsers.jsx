@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 
-import { getUsers, createUser, updateProfile, deleteProfile, getLocations } from '@/lib/db';
+import { getUsers, createUser, updateProfile, deleteProfile, getLocations, setProfilePin } from '@/lib/db';
 
 const AdminUsers = () => {
   const [users, setUsers] = useState([]);
@@ -45,9 +45,13 @@ const AdminUsers = () => {
           email: formData.username,
           role: formData.role,
           location_id: formData.pharmacyLocation,
-          pin: formData.pin || null,
           timezone: formData.timezone || 'America/Mexico_City',
         });
+        // PINs live hashed server-side (profiles.pin_hash) and can only be set
+        // via RPC. Blank on edit = keep the current PIN (it can't be read back).
+        if (formData.pin) {
+          await setProfilePin(editingUser.id, formData.pin);
+        }
         toast({ title: 'Usuario actualizado', description: 'La información del usuario ha sido actualizada' });
       } else {
         await createUser({
@@ -86,7 +90,7 @@ const AdminUsers = () => {
       name: user.full_name || '',
       role: user.role || '',
       pharmacyLocation: user.location_id || (locations?.length > 0 ? locations[0].id : ''),
-      pin: user.pin || '',
+      pin: '',
       timezone: user.timezone || 'America/Mexico_City',
     });
     setIsDialogOpen(true);
@@ -194,6 +198,7 @@ const AdminUsers = () => {
                     <div className="space-y-2">
                       <Label htmlFor="pin">PIN de administrador</Label>
                       <Input id="pin" type="password" value={formData.pin} onChange={(e) => setFormData({ ...formData, pin: e.target.value })} placeholder="PIN de 4 dígitos" />
+                      {editingUser && <p className="text-xs text-slate-400">Deja vacío para conservar el PIN actual.</p>}
                     </div>
                   )}
                   <div className="space-y-2">

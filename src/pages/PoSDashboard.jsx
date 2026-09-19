@@ -22,7 +22,7 @@ import {
   processMembershipRenewals, ensureMembershipConsultationProduct, decrementMembershipVisits,
   fulfillMembershipTrackers, getMembershipById, isServiceItem,
   ensureMembershipRevisionProducts, getPendingMemberRevisions, markMembershipRevisionUsed,
-  validateMembershipCheckout, clearSaleMembershipVisitsUsed,
+  validateMembershipCheckout, clearSaleMembershipVisitsUsed, createControlledRegisterRows,
 } from '@/lib/db';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
@@ -93,6 +93,9 @@ const PoSDashboard = () => {
   const [lostSaleOpen, setLostSaleOpen] = useState(false);
   const [prescriptionModalOpen, setPrescriptionModalOpen] = useState(false);
   const [prescriptionData, setPrescriptionData] = useState(null);
+  const [controlledModalOpen, setControlledModalOpen] = useState(false);
+  const [controlledData, setControlledData] = useState(null); // { folio, doctor_name, doctor_cedula }
+  const [controlledForm, setControlledForm] = useState({ folio: '', doctor_name: '', doctor_cedula: '' });
   const [selectedMembership, setSelectedMembership] = useState(null);
   const [selectedMember, setSelectedMember] = useState(null);
   const [pendingRevisions, setPendingRevisions] = useState([]);
@@ -550,8 +553,8 @@ const PoSDashboard = () => {
   const verifyPinAndOverride = async () => {
     const adminUser = await verifyAdminPin(adminPin);
     if (adminUser) {
-      setCart(cart.map(item => item.id === overrideData.itemId ? { ...item, price: overrideData.newPrice, overrideBy: adminUser.name } : item));
-      logAudit({ action: AUDIT_ACTIONS.PRICE_OVERRIDE, user, details: `Item overridden to {formatMXN(overrideData.newPrice)} by ${adminUser.name}` });
+      setCart(cart.map(item => item.id === overrideData.itemId ? { ...item, price: overrideData.newPrice, overrideBy: adminUser.full_name } : item));
+      logAudit({ action: AUDIT_ACTIONS.PRICE_OVERRIDE, user, details: `Item overridden to {formatMXN(overrideData.newPrice)} by ${adminUser.full_name}` });
       setIsAdminPinOpen(false); setAdminPin(''); setOverrideData(null);
       toast({ title: '¡Precio modificado!' });
     } else {
@@ -613,6 +616,37 @@ const PoSDashboard = () => {
     setPatientModalOpen(false);
     setPendingCheckout(false);
     completeSale(patient, prescriptionData);
+  };
+
+  // Receta foliada (controlled substances grupo II/III): folio + médico + cédula
+  // are required at checkout whenever the cart holds a controlled item.
+  const openControlledModal = () => {
+    setControlledForm({
+      folio: controlledData?.folio || '',
+      doctor_name: controlledData?.doctor_name || '',
+      doctor_cedula: controlledData?.doctor_cedula || '',
+    });
+    setControlledModalOpen(true);
+  };
+
+  const handleControlledConfirm = () => {
+    const folio = controlledForm.folio.trim();
+    const doctorName = controlledForm.doctor_name.trim();
+    const cedula = controlledForm.doctor_cedula.trim();
+    if (!folio) {
+      toast({ title: 'Folio requerido', description: 'Ingresa el folio de la receta foliada', variant: 'destructive' });
+      return;
+    }
+    if (!doctorName) {
+      toast({ title: 'Médico requerido', description: 'Ingresa el nombre del médico', variant: 'destructive' });
+      return;
+    }
+    if (!/^\d{6,8}$/.test(cedula)) {
+      toast({ title: 'Cédula inválida', description: 'La cédula profesional debe tener 6 a 8 dígitos', variant: 'destructive' });
+      return;
+    }
+    setControlledData({ folio, doctor_name: doctorName, doctor_cedula: cedula });
+    setControlledModalOpen(false);
   };
 
   const handleCustomerSearch = async (query) => {
@@ -750,6 +784,12 @@ const PoSDashboard = () => {
       const missingRx = cart.filter(item => item.requires_prescription && !rxNumbers[item.id]?.trim());
       if (missingRx.length > 0) {
         toast({ title: 'Número de receta requerido', description: `Ingresa Rx # para: ${missingRx.map(i => i.name).join(', ')}`, variant: 'destructive' });
+        return;
+      }
+
+      if (cart.some(item => item.controlled_group) &&
+        (!controlledData?.folio?.trim() || !controlledData?.doctor_name?.trim() || !/^\d{6,8}$/.test(controlledData?.doctor_cedula || ''))) {
+        toast({ title: 'Receta foliada requerida', description: 'Completa los datos de la receta foliada (controlados) antes de finalizar la venta', variant: 'destructive' });
         return;
       }
 
@@ -1033,6 +1073,34 @@ const PoSDashboard = () => {
           }
         }
 
+        // Controlled substances (grupo II/III): one row per controlled item in
+        // the COFEPRIS foliada register. Non-fatal — the sale already succeeded,
+        // but the failure must be loud so staff can fix the register.
+        const controlledSold = cart.filter(item => item.controlled_group);
+        if (controlledSold.length > 0) {
+          try {
+            await createControlledRegisterRows(controlledSold.map(item => ({
+              sale_id: sale.id,
+              inventory_id: item.id,
+              product_name: item.name,
+              controlled_group: item.controlled_group,
+              quantity: item.quantity,
+              patient_name: prescription?.patient_name || selectedCustomer?.full_name || null,
+              prescription_folio: controlledData.folio,
+              doctor_name: controlledData.doctor_name,
+              doctor_cedula: controlledData.doctor_cedula,
+              created_by: user?.id || null,
+            })));
+          } catch (crErr) {
+            console.error('Failed to write controlled_register:', crErr);
+            toast({
+              title: 'Advertencia',
+              description: 'La venta se completó pero no se pudo registrar en la bitácora de controlados. Contacte al administrador.',
+              variant: 'destructive',
+            });
+          }
+        }
+
         // ── Fire-and-forget Akaunting sync ──
         setTimeout(async () => {
           try {
@@ -1102,6 +1170,7 @@ const PoSDashboard = () => {
           setSplitPayments([]); setIsSplitPayment(false);
           setTransferenciaReference(''); setCardReference('');
           setSelectedCustomer(null); setSelectedMembership(null); setSelectedMember(null);
+          setControlledData(null); setControlledModalOpen(false);
           searchInputRef.current?.focus();
         }, 500);
       } catch (e) {
@@ -1235,6 +1304,9 @@ const PoSDashboard = () => {
     const rxItemsInCart = cart.filter(item => item.requires_prescription);
     const rxInfoMissing = rxItemsInCart.length > 0 &&
       (!prescriptionData || rxItemsInCart.some(item => !rxNumbers[item.id]?.trim()));
+    const controlledItemsInCart = cart.filter(item => item.controlled_group);
+    const controlledInfoMissing = controlledItemsInCart.length > 0 &&
+      (!controlledData?.folio?.trim() || !controlledData?.doctor_name?.trim() || !/^\d{6,8}$/.test(controlledData?.doctor_cedula || ''));
     const isCash = paymentMethod === 'cash';
     const remainingForSplit = finalTotal - splitPayments.reduce((sum, p) => sum + p.amount, 0);
     
@@ -1500,6 +1572,36 @@ const PoSDashboard = () => {
                 </div>
               )}
 
+              {/* Receta foliada (grupo II/III) — required before charging controlled items */}
+              {controlledItemsInCart.length > 0 && (
+                <div className="mt-4 bg-slate-50 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-semibold text-sm">Receta foliada (controlados)</h3>
+                    {controlledInfoMissing ? (
+                      <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Pendiente</span>
+                    ) : (
+                      <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded">Completa</span>
+                    )}
+                  </div>
+                  {controlledData ? (
+                    <div className="text-sm bg-white border rounded-md p-2 space-y-1">
+                      <p className="font-medium text-slate-900 font-mono">Folio {controlledData.folio}</p>
+                      <p className="text-slate-500 text-xs">Dr. {controlledData.doctor_name}</p>
+                      <p className="text-slate-500 text-xs font-mono">Céd. prof. {controlledData.doctor_cedula}</p>
+                      <div className="flex gap-2 pt-1">
+                        <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={openControlledModal}>Editar</Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600" onClick={() => setControlledData(null)}>Quitar</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button variant="outline" className="w-full border-purple-300 text-purple-700 hover:bg-purple-50" onClick={openControlledModal}>
+                      <AlertTriangle className="w-4 h-4 mr-2" />
+                      Agregar receta foliada
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {/* Split Payments List */}
               {isSplitPayment && splitPayments.length > 0 && (
                 <div className="mt-4 bg-slate-50 rounded-lg p-3">
@@ -1688,7 +1790,12 @@ const PoSDashboard = () => {
                     Falta información de receta — usa "Agregar información de receta"
                   </p>
                 )}
-                <Button onClick={handleCheckoutClick} disabled={isCompletingSale || rxInfoMissing} className="w-full bg-gradient-to-r from-apolo-green to-apolo-green-dark text-lg py-6">
+                {controlledInfoMissing && (
+                  <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 text-center">
+                    Falta la receta foliada (controlados) — usa "Agregar receta foliada"
+                  </p>
+                )}
+                <Button onClick={handleCheckoutClick} disabled={isCompletingSale || rxInfoMissing || controlledInfoMissing} className="w-full bg-gradient-to-r from-apolo-green to-apolo-green-dark text-lg py-6">
                   {isCompletingSale ? 'Procesando...' : 'Finalizar venta'}
                 </Button>
                 <Button onClick={() => setView('main')} variant="outline" className="w-full">Volver al carrito</Button>
@@ -1706,6 +1813,48 @@ const PoSDashboard = () => {
           selectedCustomer={selectedCustomer}
           initialData={prescriptionData}
         />
+        <Dialog open={controlledModalOpen} onOpenChange={setControlledModalOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader><DialogTitle>Receta foliada (controlados)</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500">
+                Requerida para vender medicamentos del grupo II/III. Los datos se registran en la bitácora de controlados (COFEPRIS).
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="controlled-folio">Folio de la receta foliada *</Label>
+                <Input
+                  id="controlled-folio"
+                  placeholder="Ej. A0001234"
+                  value={controlledForm.folio}
+                  onChange={e => setControlledForm(prev => ({ ...prev, folio: e.target.value }))}
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="controlled-doctor">Nombre del médico *</Label>
+                <Input
+                  id="controlled-doctor"
+                  placeholder="Dr. Nombre Apellido"
+                  value={controlledForm.doctor_name}
+                  onChange={e => setControlledForm(prev => ({ ...prev, doctor_name: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="controlled-cedula">Cédula profesional *</Label>
+                <Input
+                  id="controlled-cedula"
+                  placeholder="6 a 8 dígitos"
+                  inputMode="numeric"
+                  maxLength={8}
+                  value={controlledForm.doctor_cedula}
+                  onChange={e => setControlledForm(prev => ({ ...prev, doctor_cedula: e.target.value.replace(/\D/g, '') }))}
+                  onKeyDown={e => e.key === 'Enter' && handleControlledConfirm()}
+                />
+              </div>
+              <Button onClick={handleControlledConfirm} className="w-full">Guardar receta foliada</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   }

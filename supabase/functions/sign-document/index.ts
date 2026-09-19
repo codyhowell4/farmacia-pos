@@ -7,8 +7,20 @@
 // ONLY for the duration of this request. They are never stored, never
 // logged, and never returned to the caller. Do not add logging of the
 // request body here.
+//
+// Access control (verify_jwt = true at the gateway, re-validated here):
+// the caller must be an active doctor (profiles.role = 'doctor' AND
+// doctor_profiles.is_active = true) — these checks fail closed. When the
+// doctor already has an e.firma registered in doctor_efirma, the presented
+// certificate must be that same one (base64 equality or cert-serial
+// match); with no row on file the first-use validation flow is allowed
+// (the doctor portal validates the files before saving them). A per-user
+// sliding-window rate limit (30 req / 10 min via rate_limit_events) bounds
+// password-guessing against the encrypted .key; the rate limiter alone
+// fails OPEN on infrastructure errors so signing keeps working.
 
 import forge from 'https://esm.sh/node-forge@1.3.1';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -28,6 +40,62 @@ const jsonResponse = (body: Record<string, unknown>, status: number) =>
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+
+const supabaseAdmin = (env: Record<string, string>) => {
+  const url = env.SUPABASE_URL!;
+  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SERVICE_ROLE_KEY!;
+  return createClient(url, serviceKey, { auth: { persistSession: false } });
+};
+
+// User-scoped client: validates the caller's JWT by calling auth.getUser()
+// under the request's own Authorization header.
+const supabaseAsUser = (env: Record<string, string>, authorization: string) => {
+  const url = env.SUPABASE_URL!;
+  const anonKey = env.SUPABASE_ANON_KEY || env.SUPABASE_SERVICE_ROLE_KEY || env.SERVICE_ROLE_KEY!;
+  return createClient(url, anonKey, {
+    global: { headers: { Authorization: authorization } },
+    auth: { persistSession: false },
+  });
+};
+
+// Per-user sliding-window cap for signing requests.
+const SIGN_RATE_LIMIT = { limit: 30, windowMs: 10 * 60 * 1000 };
+
+// Sliding-window per-user rate limit (same rate_limit_events pattern as
+// tablet-checkin, keyed by user id instead of IP). Fails OPEN with a
+// warning when the table is unreachable — availability for the doctor on
+// shift; the role/key checks above are the ones that must fail closed.
+const checkSignRateLimit = async (
+  supabase: ReturnType<typeof supabaseAdmin>,
+  userId: string
+): Promise<boolean> => {
+  try {
+    const since = new Date(Date.now() - SIGN_RATE_LIMIT.windowMs).toISOString();
+    const { count, error } = await supabase
+      .from('rate_limit_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('bucket', 'sign-document')
+      .eq('key', userId)
+      .gte('created_at', since);
+    if (error) throw error;
+    if ((count || 0) >= SIGN_RATE_LIMIT.limit) return false;
+    const { error: insError } = await supabase
+      .from('rate_limit_events')
+      .insert({ bucket: 'sign-document', key: userId });
+    if (insError) throw insError;
+    // Occasional cleanup so the table stays small.
+    if (Math.random() < 0.02) {
+      await supabase
+        .from('rate_limit_events')
+        .delete()
+        .lt('created_at', new Date(Date.now() - 24 * 3600 * 1000).toISOString());
+    }
+    return true;
+  } catch (err) {
+    console.warn('[sign-document] rate limit unavailable; allowing request:', err);
+    return true;
+  }
+};
 
 // Decrypts a SAT FIEL .key (DER-encoded PKCS#8 EncryptedPrivateKeyInfo,
 // protected with PKCS#12 pbeWithSHA1And3-KeyTripleDES-CBC) using the
@@ -57,7 +125,59 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = (await req.json()) as SignRequest;
+    const env = Deno.env.toObject();
+
+    // ── AuthN: validate the caller's JWT ─────────────────────────
+    const authorization = req.headers.get('Authorization') || '';
+    const token = authorization.replace(/^Bearer\s+/i, '').trim();
+    if (!token) {
+      return jsonResponse({ error: 'No autorizado' }, 401);
+    }
+    const { data: userData, error: userError } = await supabaseAsUser(env, authorization)
+      .auth.getUser(token);
+    if (userError || !userData?.user) {
+      return jsonResponse({ error: 'No autorizado' }, 401);
+    }
+    const userId = userData.user.id;
+
+    const supabase = supabaseAdmin(env);
+
+    // ── AuthZ: only active doctors may sign (fail closed) ────────
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', userId)
+      .maybeSingle();
+    if (profileError) console.error('[sign-document] profiles lookup failed:', profileError);
+    if (profileError || !profile || profile.role !== 'doctor') {
+      return jsonResponse({ error: 'No autorizado' }, 403);
+    }
+
+    const { data: doctorProfile, error: doctorProfileError } = await supabase
+      .from('doctor_profiles')
+      .select('is_active')
+      .eq('profile_id', userId)
+      .maybeSingle();
+    if (doctorProfileError) console.error('[sign-document] doctor_profiles lookup failed:', doctorProfileError);
+    if (doctorProfileError || !doctorProfile || doctorProfile.is_active !== true) {
+      return jsonResponse({ error: 'No autorizado' }, 403);
+    }
+
+    // ── Per-user rate limit (fail open — see checkSignRateLimit) ─
+    const withinLimit = await checkSignRateLimit(supabase, userId);
+    if (!withinLimit) {
+      return jsonResponse(
+        { error: 'Demasiadas solicitudes. Espera unos minutos e intenta de nuevo.' },
+        429
+      );
+    }
+
+    let body: SignRequest;
+    try {
+      body = (await req.json()) as SignRequest;
+    } catch {
+      return jsonResponse({ error: 'Cuerpo de solicitud inválido' }, 400);
+    }
 
     if (!body.cer_base64 || !body.key_base64 || !body.password || !body.payload) {
       return jsonResponse(
@@ -80,13 +200,39 @@ Deno.serve(async (req) => {
       .map((a: { shortName?: string; name?: string; value?: string }) => `${a.shortName || a.name}=${a.value}`)
       .join(', ');
 
+    // ── Key binding: once the doctor has an e.firma on file, only that
+    //    certificate may be used with this account. No row = first-use
+    //    validation flow (the doctor portal validates files before saving).
+    const { data: efirma, error: efirmaError } = await supabase
+      .from('doctor_efirma')
+      .select('cer_base64, cert_serial')
+      .eq('profile_id', userId)
+      .maybeSingle();
+    if (efirmaError) {
+      // The binding cannot be evaluated — fail closed.
+      console.error('[sign-document] doctor_efirma lookup failed:', efirmaError);
+      return jsonResponse({ error: 'No se pudo validar la e.firma. Intenta de nuevo.' }, 500);
+    }
+    if (efirma) {
+      const storedCer = (efirma.cer_base64 || '').trim();
+      const storedSerial = (efirma.cert_serial || '').trim().toUpperCase();
+      const cerMatches = storedCer !== '' && storedCer === body.cer_base64.trim();
+      const serialMatches = storedSerial !== '' && storedSerial === certSerial;
+      if (!cerMatches && !serialMatches) {
+        console.warn('[sign-document] e.firma mismatch for doctor', userId);
+        return jsonResponse({ error: 'No autorizado' }, 403);
+      }
+    }
+
     // ── Private key (.key, DER, 3DES-encrypted PKCS#8) ─────────
     let privateKey;
     try {
       privateKey = decryptFielKey(forge.util.decode64(body.key_base64), body.password);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'No se pudo descifrar la llave privada';
-      return jsonResponse({ error: message }, 400);
+      // Wrong password, corrupt file, or forge ASN.1 garbage — one safe
+      // message either way; details stay in the server log.
+      console.warn('[sign-document] key decrypt failed:', err instanceof Error ? err.message : err);
+      return jsonResponse({ error: 'Contraseña incorrecta o archivo .key inválido' }, 400);
     }
 
     // ── Sign: RSA PKCS#1 v1.5 over SHA-256 of the UTF-8 payload ─
@@ -104,7 +250,6 @@ Deno.serve(async (req) => {
     );
   } catch (err) {
     console.error('[sign-document] error:', err);
-    const message = err instanceof Error ? err.message : 'Error desconocido';
-    return jsonResponse({ error: message }, 500);
+    return jsonResponse({ error: 'Error interno al firmar el documento' }, 500);
   }
 });

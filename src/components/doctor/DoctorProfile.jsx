@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { getDoctorProfile, upsertDoctorProfile } from '@/lib/db';
+import { getDoctorProfile, upsertDoctorProfile, getMyEfirma, saveMyEfirma, deleteMyEfirma } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { MX_TIMEZONES, DEFAULT_TZ } from '@/lib/timezone';
 import {
@@ -45,6 +45,7 @@ const DoctorProfile = () => {
   const [savingTz, setSavingTz] = useState(false);
   const [cerFile, setCerFile] = useState(null);
   const [keyFile, setKeyFile] = useState(null);
+  const [efirma, setEfirma] = useState(null); // doctor_efirma row (own row only)
   const [efirmaPw, setEfirmaPw] = useState('');
   const [savingEfirma, setSavingEfirma] = useState(false);
   const [showEfirmaForm, setShowEfirmaForm] = useState(false);
@@ -90,11 +91,7 @@ const DoctorProfile = () => {
         readFileAsBase64(keyFile),
       ]);
       const certSerial = await validateEfirma({ cer_base64, key_base64, password: efirmaPw });
-      await upsertDoctorProfile(user.id, {
-        efirma_cer_base64: cer_base64,
-        efirma_key_base64: key_base64,
-        efirma_cert_serial: certSerial || null,
-      });
+      await saveMyEfirma({ cer_base64, key_base64, cert_serial: certSerial || null });
       setEfirmaSessionPassword(user.id, efirmaPw);
       setEfirmaUnlocked(true);
       setShowEfirmaForm(false);
@@ -111,12 +108,12 @@ const DoctorProfile = () => {
   };
 
   const handleUnlockEfirma = async () => {
-    if (!efirmaPw || !user?.id || !profile) return;
+    if (!efirmaPw || !user?.id || !efirma) return;
     setSavingEfirma(true);
     try {
       await validateEfirma({
-        cer_base64: profile.efirma_cer_base64,
-        key_base64: profile.efirma_key_base64,
+        cer_base64: efirma.cer_base64,
+        key_base64: efirma.key_base64,
         password: efirmaPw,
       });
       setEfirmaSessionPassword(user.id, efirmaPw);
@@ -135,11 +132,7 @@ const DoctorProfile = () => {
     if (!confirm('¿Eliminar tu e.firma? Las recetas nuevas ya no se firmarán automáticamente.')) return;
     setSavingEfirma(true);
     try {
-      await upsertDoctorProfile(user.id, {
-        efirma_cer_base64: null,
-        efirma_key_base64: null,
-        efirma_cert_serial: null,
-      });
+      await deleteMyEfirma();
       clearEfirmaSessionPassword(user.id);
       setEfirmaUnlocked(false);
       toast.success('e.firma eliminada');
@@ -199,9 +192,13 @@ const DoctorProfile = () => {
     setLoading(true);
     try {
       console.log('[DoctorProfile] loading for user.id:', user.id);
-      const data = await getDoctorProfile(user.id);
+      const [data, efirmaRow] = await Promise.all([
+        getDoctorProfile(user.id),
+        getMyEfirma().catch(() => null),
+      ]);
       console.log('[DoctorProfile] loaded data:', JSON.stringify(data, null, 2));
       setProfile(data);
+      setEfirma(efirmaRow);
       setLicenseNumber(data?.license_number || '');
       setAvailability(
         data?.availability && typeof data.availability === 'object' && !Array.isArray(data.availability)
@@ -410,13 +407,13 @@ const DoctorProfile = () => {
               tu contraseña <strong>nunca se almacena</strong> — solo vive en esta sesión del navegador.
             </p>
 
-            {hasStoredEfirma(profile) && !showEfirmaForm ? (
+            {hasStoredEfirma(efirma) && !showEfirmaForm ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2 text-sm">
                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
                   <span className="font-medium text-slate-800">e.firma configurada</span>
-                  {profile?.efirma_cert_serial && (
-                    <span className="text-xs text-slate-400">cert {profile.efirma_cert_serial}</span>
+                  {efirma?.cert_serial && (
+                    <span className="text-xs text-slate-400">cert {efirma.cert_serial}</span>
                   )}
                 </div>
                 {efirmaUnlocked ? (

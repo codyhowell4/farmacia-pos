@@ -188,7 +188,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key-here
 1. Supabase Auth handles email/password.
 2. On login, `AuthContext` fetches the `profiles` row (with retry logic for trigger delays).
 3. `ProtectedRoute` guards routes by `user.role`.
-4. Admin PIN verification is used for sensitive operations (price overrides, voiding sales). The PIN is stored in `profiles.pin`.
+4. Admin PIN verification is used for sensitive operations (price overrides, voiding sales, returns). PINs are stored bcrypt-hashed in `profiles.pin_hash` and verified server-side via the `verify_admin_pin` RPC.
 
 ---
 
@@ -257,7 +257,7 @@ The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional m
 - **Teleconsulta (NOM-027):** `video-room` requires a registered customer with a signed `teleconsulta` consent before issuing a room (400/409 otherwise); Daily rooms are `private` with per-participant meeting tokens — patient URL in `appointments.meeting_url`, staff URL in `appointments.meeting_url_staff`. Video consulta notes require ubicación del paciente + identidad verificada (`consulta_notes.modality/tele_*`).
 - **Append-only clinical records:** both `consulta_notes` and `medical_notes` have DB triggers blocking UPDATE/DELETE; corrections are new versions/notes.
 - **Audit reliability:** `logAudit` retries once, then queues failures to localStorage `audit_failed_queue` and toasts app-wide (sonner `Toaster` is mounted in `App.jsx` — both toaster systems are live).
-- **Round-2 audit (2026-09-18):** `docs/GOVERNMENT_MOCK_AUDIT.md` — mock government inspection of POS/RLS/patient-app/SGSI. 44 NEW findings (11 críticos, mostly: signup trigger trusts client `role` metadata, org-wide RLS policies readable/writable by self-registered customers, plaintext `profiles.pin`, forgeable prescriptions, `customer-documents` storage open to any authenticated user). Findings are OPEN — not yet remediated.
+- **Round-2 audit (2026-09-18):** `docs/GOVERNMENT_MOCK_AUDIT.md` — mock government inspection of POS/RLS/patient-app/SGSI. 44 findings (11 críticos, 12 altos, 14 medios, 7 bajos). **The 11 críticos (+ R2-24) are REMEDIATED** (see the doc's resolution log): signup trigger forces `role='customer'` + `profiles_protect_privileged` trigger, PINs bcrypt-hashed with `verify_admin_pin`/`admin_set_profile_pin` RPCs, org-wide policies replaced with `is_org_staff()` on all operational tables, `audit_log` append-only (admin read), prescriptions content-frozen (sign once / void only), customer-documents storage path-scoped, e.firma keys in `doctor_efirma` (owner-only) + hardened `sign-document`, `paypal-subscription` activates only on ACTIVE subscriptions, returns route meds to merma with PIN+reason, `controlled_register` + POS foliada capture, `rx_number_counters` locked. 12 altos / 14 medios / 7 bajos remain OPEN per the doc's priority plan.
 
 ---
 
@@ -287,7 +287,7 @@ The frontend is fully static; Supabase does all backend work. See `docs/HOSTING.
 
 - **Never commit `.env`** — it is gitignored.
 - Supabase RLS policies enforce org isolation. Do not disable RLS.
-- Admin PIN is stored as plain text in `profiles.pin` (4-digit string). This is used for in-app approvals, not encryption.
+- Admin PINs are stored bcrypt-hashed in `profiles.pin_hash` (never plaintext). Set/clear them via the `admin_set_profile_pin` RPC (admin-only); verify via the `verify_admin_pin` RPC. The legacy `profiles.pin` column is always NULL.
 - All DB mutations go through `src/lib/db.js` which uses the authenticated Supabase client.
 - Price overrides, voids, and user management require admin PIN or admin role.
 

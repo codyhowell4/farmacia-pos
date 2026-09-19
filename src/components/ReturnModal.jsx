@@ -8,16 +8,20 @@ import { formatMXN } from '@/lib/currency';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
-import { getSales, getReturnsBySaleId, createReturn, incrementInventory } from '@/lib/db';
+import { getSales, createReturn, getInventoryFlags } from '@/lib/db';
 
 const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
-  const { user } = useAuth();
+  const { user, verifyAdminPin } = useAuth();
   const { toast } = useToast();
   const [searchId, setSearchId] = useState('');
   const [foundSale, setFoundSale] = useState(null);
   const [returnQtys, setReturnQtys] = useState({});
   const [step, setStep] = useState('search'); // 'search' | 'select' | 'confirm'
   const [notFound, setNotFound] = useState(false);
+  const [reason, setReason] = useState('');
+  const [adminPin, setAdminPin] = useState('');
+  const [processing, setProcessing] = useState(false);
+  const [flagsById, setFlagsById] = useState({}); // { [inventory_id]: { requires_prescription, controlled_group } }
 
   const handleSearch = async () => {
     try {
@@ -32,6 +36,14 @@ const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
       const qtys = {};
       (sale.sale_items || []).forEach(item => { qtys[item.id] = 0; });
       setReturnQtys(qtys);
+      // Flags for the "Merma" badges: Rx / controlled items never return to stock
+      try {
+        const ids = [...new Set((sale.sale_items || []).map(i => i.inventory_id).filter(Boolean))];
+        const flags = await getInventoryFlags(ids);
+        setFlagsById(Object.fromEntries(flags.map(f => [f.id, f])));
+      } catch {
+        setFlagsById({});
+      }
       setStep('select');
     } catch (e) {
       setNotFound(true);
@@ -41,6 +53,11 @@ const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
 
   const returnableItems = (foundSale?.sale_items || []).filter(item => item.quantity > 0);
 
+  const isMermaItem = (item) => {
+    const flags = item.inventory_id ? flagsById[item.inventory_id] : null;
+    return !!(flags && (flags.requires_prescription || flags.controlled_group));
+  };
+
   const refundTotal = (foundSale?.sale_items || []).reduce((sum, item) => {
     const qty = returnQtys[item.id] || 0;
     return sum + item.price * qty;
@@ -48,19 +65,38 @@ const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
 
   const hasSelection = Object.values(returnQtys).some(q => q > 0);
 
-  const handleConfirmReturn = async () => {
+  const handleGoToConfirm = () => {
     if (!hasSelection) { toast({ title: 'Selecciona al menos un artículo', variant: 'destructive' }); return; }
+    setStep('confirm');
+  };
 
-    const returnItems = (foundSale.sale_items || [])
-      .filter(item => returnQtys[item.id] > 0)
-      .map(item => ({
-        inventory_id: item.inventory_id,
-        name: item.name,
-        return_qty: returnQtys[item.id],
-        unit_price: item.price,
-      }));
+  const handleProcessReturn = async () => {
+    if (!reason.trim()) {
+      toast({ title: 'Motivo requerido', description: 'Ingresa el motivo de la devolución', variant: 'destructive' });
+      return;
+    }
+    if (!adminPin.trim()) {
+      toast({ title: 'PIN requerido', description: 'Ingresa el PIN de administrador para autorizar', variant: 'destructive' });
+      return;
+    }
 
+    setProcessing(true);
     try {
+      const adminUser = await verifyAdminPin(adminPin);
+      if (!adminUser) {
+        toast({ title: 'PIN inválido', variant: 'destructive' });
+        return;
+      }
+
+      const returnItems = (foundSale.sale_items || [])
+        .filter(item => returnQtys[item.id] > 0)
+        .map(item => ({
+          inventory_id: item.inventory_id,
+          name: item.name,
+          return_qty: returnQtys[item.id],
+          unit_price: item.price,
+        }));
+
       const returnRecord = {
         original_sale_id: foundSale.id,
         refund_total: refundTotal,
@@ -68,29 +104,36 @@ const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
         processed_by_name: user.name,
         location_id: user.locationId,
         timestamp: new Date().toISOString(),
+        reason: reason.trim(),
+        authorized_by: adminUser.full_name,
       };
-      await createReturn(returnRecord, returnItems);
-      
-      // Restore inventory
-      await incrementInventory(returnItems.map(i => ({ inventory_id: i.inventory_id, returnQty: i.return_qty })));
+      // createReturn also handles restocking (only 'restock' items go back to stock)
+      const result = await createReturn(returnRecord, returnItems);
 
       logAudit({
         action: AUDIT_ACTIONS.RETURN_PROCESSED,
         user,
-        details: `Devolución de venta #${foundSale.id.slice(-8).toUpperCase()} | Reembolso: ${formatMXN(refundTotal)}`,
+        details: `Devolución de venta #${foundSale.id.slice(-8).toUpperCase()} | Reembolso: ${formatMXN(refundTotal)} | Motivo: ${reason.trim()} | Autorizó: ${adminUser.full_name}`,
       });
 
-      toast({ title: 'Devolución procesada', description: `Reembolso: ${formatMXN(refundTotal)}` });
+      toast({
+        title: 'Devolución procesada',
+        description: `Reembolso: ${formatMXN(refundTotal)}` +
+          (result.mermaCount > 0 ? ` · ${result.mermaCount} artículo(s) a merma (no regresan a stock)` : ''),
+      });
       onReturnComplete?.();
       handleClose();
     } catch (err) {
       toast({ title: 'Error al procesar devolución', description: err.message, variant: 'destructive' });
+    } finally {
+      setProcessing(false);
     }
   };
 
   const handleClose = () => {
     setSearchId(''); setFoundSale(null); setReturnQtys({});
     setStep('search'); setNotFound(false);
+    setReason(''); setAdminPin(''); setProcessing(false); setFlagsById({});
     onOpenChange(false);
   };
 
@@ -142,7 +185,12 @@ const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
                 return (
                   <div key={item.id} className="flex items-center justify-between border border-slate-200 rounded-lg p-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{item.name}</p>
+                      <p className="text-sm font-medium truncate">
+                        {item.name}
+                        {isMermaItem(item) && (
+                          <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700" title="Este artículo se registra como merma y no regresa a stock">Merma</span>
+                        )}
+                      </p>
                       <p className="text-xs text-slate-500">{formatMXN(item.price)} × {item.quantity} vendidos</p>
                     </div>
                     <div className="flex items-center gap-2 ml-3">
@@ -173,9 +221,58 @@ const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
               <Button
                 className="flex-1 bg-orange-500 hover:bg-orange-600"
                 disabled={!hasSelection}
-                onClick={handleConfirmReturn}
+                onClick={handleGoToConfirm}
               >
                 <RotateCcw className="w-4 h-4 mr-2" />Confirmar devolución
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 'confirm' && foundSale && (
+          <div className="space-y-4">
+            <div className="bg-green-50 rounded-lg p-3 flex justify-between items-center border border-green-200">
+              <span className="text-sm font-medium text-green-800">Reembolso a devolver</span>
+              <span className="font-bold text-green-700 text-lg">{formatMXN(refundTotal)}</span>
+            </div>
+
+            {returnableItems.some(item => returnQtys[item.id] > 0 && isMermaItem(item)) && (
+              <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">
+                Los artículos marcados como "Merma" (controlados o con receta) no regresan a stock.
+              </p>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="return-reason">Motivo de la devolución *</Label>
+              <Input
+                id="return-reason"
+                placeholder="Ej. Producto en mal estado, error de captura…"
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+                autoFocus
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="return-pin">PIN de administrador para autorizar *</Label>
+              <Input
+                id="return-pin"
+                type="password"
+                placeholder="Ingresa el PIN de administrador"
+                value={adminPin}
+                onChange={e => setAdminPin(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !processing && handleProcessReturn()}
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setStep('select')} disabled={processing}>Atrás</Button>
+              <Button
+                className="flex-1 bg-orange-500 hover:bg-orange-600"
+                disabled={processing || !reason.trim() || !adminPin.trim()}
+                onClick={handleProcessReturn}
+              >
+                <RotateCcw className="w-4 h-4 mr-2" />{processing ? 'Procesando…' : 'Procesar devolución'}
               </Button>
             </div>
           </div>

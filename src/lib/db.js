@@ -90,6 +90,7 @@ export const createUser = async ({ email, password, full_name, role, location_id
   // Step 2: Upsert the profile row directly.
   // Using upsert handles both: the trigger already created a bare row OR it hasn't fired yet.
   // We use the admin's existing session which has permission via admin_profiles_all policy.
+  // NOTE: PINs never touch profiles (pin_hash only, via RPC) — set it below.
   const { data, error: profileError } = await supabase
     .from('profiles')
     .upsert({
@@ -99,12 +100,15 @@ export const createUser = async ({ email, password, full_name, role, location_id
       role,
       location_id: location_id || null,
       org_id: adminOrgId,
-      pin: pin || null,
     }, { onConflict: 'id' })
     .select()
     .single();
 
   if (profileError) throw profileError;
+
+  if (pin) {
+    await setProfilePin(newUserId, pin);
+  }
   return data;
 };
 
@@ -119,16 +123,22 @@ export const deleteProfile = async (id) => {
   if (error) throw error;
 };
 
+// PINs live hashed in profiles.pin_hash and are only comparable server-side.
+// The RPC returns a table of { id, full_name } — empty array means wrong PIN.
+// It also audit-logs attempts, so keep calling it instead of any local check.
 export const verifyAdminPin = async (pin) => {
-  const orgId = await getOrgId();
-  const { data } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('org_id', orgId)
-    .eq('role', 'admin')
-    .eq('pin', pin)
-    .single();
-  return data || null;
+  const { data, error } = await supabase.rpc('verify_admin_pin', { p_pin: pin });
+  if (error) {
+    console.error('[verifyAdminPin] RPC error:', error);
+    return null;
+  }
+  return data?.[0] || null;
+};
+
+// Admin-only: sets (or clears, when pin is empty/null) a user's PIN.
+export const setProfilePin = async (userId, pin) => {
+  const { error } = await supabase.rpc('admin_set_profile_pin', { p_user_id: userId, p_pin: pin || null });
+  if (error) throw error;
 };
 
 // ── INVENTORY ───────────────────────────────────────────────
@@ -761,6 +771,21 @@ export const deleteLostSale = async (id) => {
 
 // ── RETURNS ─────────────────────────────────────────────────
 
+// Flags used to decide return disposition (restock vs merma) and to badge
+// items in the returns UI before staff confirms.
+export const getInventoryFlags = async (ids) => {
+  if (!ids?.length) return [];
+  const { data, error } = await supabase
+    .from('inventory')
+    .select('id, requires_prescription, controlled_group')
+    .in('id', ids);
+  if (error) throw error;
+  return data || [];
+};
+
+// The ONLY place a return restocks inventory. Rx meds and controlled
+// substances (grupo II/III) never go back to sellable stock — they are
+// recorded with disposition 'merma' (COFEPRIS); everything else restocks.
 export const createReturn = async (returnRecord, items) => {
   const orgId = await getOrgId();
   const { data: ret, error } = await supabase
@@ -769,12 +794,41 @@ export const createReturn = async (returnRecord, items) => {
     .select().single();
   if (error) throw error;
 
-  if (items?.length) {
-    await supabase.from('return_items').insert(items.map(i => ({ ...i, return_id: ret.id })));
+  const inventoryIds = [...new Set((items || []).map(i => i.inventory_id).filter(Boolean))];
+  let flagsById = new Map();
+  if (inventoryIds.length > 0) {
+    const { data: invRows, error: invError } = await supabase
+      .from('inventory')
+      .select('id, requires_prescription, controlled_group, item_type')
+      .in('id', inventoryIds);
+    if (invError) throw invError;
+    flagsById = new Map((invRows || []).map(r => [r.id, r]));
   }
 
-  await incrementInventory(items || [], ret.id, 'return');
-  return ret;
+  const itemsWithDisposition = (items || []).map(i => {
+    const inv = i.inventory_id ? flagsById.get(i.inventory_id) : null;
+    const disposition = inv && (inv.requires_prescription || inv.controlled_group) ? 'merma' : 'restock';
+    return { ...i, disposition };
+  });
+
+  if (itemsWithDisposition.length) {
+    const { error: itemsError } = await supabase
+      .from('return_items')
+      .insert(itemsWithDisposition.map(i => ({ ...i, return_id: ret.id })));
+    if (itemsError) throw itemsError;
+  }
+
+  const restockItems = itemsWithDisposition.filter(i => i.disposition === 'restock');
+  if (restockItems.length) {
+    await incrementInventory(
+      restockItems.map(i => ({ inventory_id: i.inventory_id, returnQty: i.return_qty, name: i.name })),
+      ret.id,
+      'return'
+    );
+  }
+
+  const mermaCount = itemsWithDisposition.length - restockItems.length;
+  return { ...ret, mermaCount, restockCount: restockItems.length };
 };
 
 export const getReturnsBySaleId = async (saleId) => {
@@ -783,6 +837,21 @@ export const getReturnsBySaleId = async (saleId) => {
     .select('*, return_items(*)')
     .eq('original_sale_id', saleId);
   return data || [];
+};
+
+// ── CONTROLLED SUBSTANCES REGISTER (COFEPRIS foliada) ───────
+// One row per controlled item sold; staff-only via RLS. org_id is
+// stamped here so callers only pass the business fields.
+
+export const createControlledRegisterRows = async (rows) => {
+  if (!rows?.length) return [];
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('controlled_register')
+    .insert(rows.map(r => ({ ...r, org_id: orgId })))
+    .select();
+  if (error) throw error;
+  return data;
 };
 
 // ── SUPPLIERS ───────────────────────────────────────────────
@@ -2033,6 +2102,50 @@ export const signPrescription = async (id, { signed_payload, signature, signer_c
     .single();
   if (error) throw error;
   return data;
+};
+
+// ── DOCTOR E.FIRMA (FIEL) ───────────────────────────────────
+// The .cer/.key pair lives in doctor_efirma (RLS: each doctor sees only
+// their own row), kept apart from the broadly-readable doctor_profiles.
+
+export const getMyEfirma = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data, error } = await supabase
+    .from('doctor_efirma')
+    .select('*')
+    .eq('profile_id', user.id)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+};
+
+export const saveMyEfirma = async ({ cer_base64, key_base64, cert_serial }) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('No autenticado');
+  const { data, error } = await supabase
+    .from('doctor_efirma')
+    .upsert({
+      profile_id: user.id,
+      cer_base64,
+      key_base64,
+      cert_serial,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'profile_id' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteMyEfirma = async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('No autenticado');
+  const { error } = await supabase
+    .from('doctor_efirma')
+    .delete()
+    .eq('profile_id', user.id);
+  if (error) throw error;
 };
 
 

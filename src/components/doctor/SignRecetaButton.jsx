@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { PenLine } from 'lucide-react';
-import { getDoctorProfile } from '@/lib/db';
+import { getMyEfirma } from '@/lib/db';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import {
   hasStoredEfirma, signRecetaWithPassword, readFileAsBase64,
@@ -26,7 +26,7 @@ import { useAuth } from '@/contexts/AuthContext';
 const SignRecetaButton = ({ prescription, customer, onSigned }) => {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [doctorProfile, setDoctorProfile] = useState(null);
+  const [efirma, setEfirma] = useState(null); // doctor_efirma row (own row only)
   const [cerFile, setCerFile] = useState(null);
   const [keyFile, setKeyFile] = useState(null);
   const [password, setPassword] = useState('');
@@ -35,9 +35,9 @@ const SignRecetaButton = ({ prescription, customer, onSigned }) => {
 
   useEffect(() => {
     if (!open || !user?.id) return;
-    getDoctorProfile(user.id)
-      .then(setDoctorProfile)
-      .catch(() => setDoctorProfile(null));
+    getMyEfirma()
+      .then(setEfirma)
+      .catch(() => setEfirma(null));
   }, [open, user?.id]);
 
   if (!prescription) return null;
@@ -55,7 +55,7 @@ const SignRecetaButton = ({ prescription, customer, onSigned }) => {
     );
   }
 
-  const stored = hasStoredEfirma(doctorProfile);
+  const stored = hasStoredEfirma(efirma);
 
   const handleSign = async () => {
     if (!password) {
@@ -69,13 +69,13 @@ const SignRecetaButton = ({ prescription, customer, onSigned }) => {
 
     setSigning(true);
     try {
-      let files = doctorProfile;
+      let files = efirma;
       if (!stored) {
         const [cer_base64, key_base64] = await Promise.all([
           readFileAsBase64(cerFile),
           readFileAsBase64(keyFile),
         ]);
-        files = { efirma_cer_base64: cer_base64, efirma_key_base64: key_base64 };
+        files = { cer_base64, key_base64 };
       }
 
       const data = await signRecetaWithPassword(prescription, customer, files, password);
@@ -118,7 +118,7 @@ const SignRecetaButton = ({ prescription, customer, onSigned }) => {
                 <h4 className="text-sm font-semibold">Firmar con tu e.firma guardada</h4>
                 <p className="text-xs text-muted-foreground">
                   Usando los archivos .cer/.key de tu perfil
-                  {doctorProfile?.efirma_cert_serial ? ` (cert ${doctorProfile.efirma_cert_serial})` : ''}.
+                  {efirma?.cert_serial ? ` (cert ${efirma.cert_serial})` : ''}.
                 </p>
                 <div>
                   <Label htmlFor="sign-password-stored">Contraseña de la llave privada</Label>

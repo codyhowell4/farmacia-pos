@@ -331,7 +331,7 @@ window.FarmaciaAPI = (function () {
 
       try {
         const { data, error } = await sb
-          .from('inventory')
+          .from('inventory_catalog')
           .select('id, name, "use", price, quantity, requires_prescription, category, image_url, barcode, low_stock_threshold')
           .gt('quantity', 0)
           .order('name');
@@ -536,16 +536,31 @@ window.FarmaciaAPI = (function () {
         const prescriptions = [];
 
         if (!docsRes.error && docsRes.data) {
-          docsRes.data.forEach(doc => {
-            prescriptions.push({
+          // file_url now stores the storage PATH (private bucket), so mint a
+          // short-lived signed URL per document for display. Legacy absolute
+          // URLs and the 'pending' placeholder pass through untouched.
+          const docs = await Promise.all(docsRes.data.map(async (doc) => {
+            let fileUrl = doc.file_url;
+            if (fileUrl && !fileUrl.startsWith('http') && fileUrl !== 'pending') {
+              try {
+                const { data: signed, error: signErr } = await sb.storage
+                  .from('customer-documents')
+                  .createSignedUrl(fileUrl, 3600);
+                fileUrl = (!signErr && signed?.signedUrl) ? signed.signedUrl : null;
+              } catch {
+                fileUrl = null;
+              }
+            }
+            return {
               id:        doc.id,
               type:      'document',
-              fileUrl:   doc.file_url,
+              fileUrl:   fileUrl,
               notes:     doc.notes,
               createdAt: doc.created_at,
               source:    'supabase'
-            });
-          });
+            };
+          }));
+          docs.forEach(d => prescriptions.push(d));
         }
 
         if (!notesRes.error && notesRes.data) {
@@ -982,7 +997,7 @@ window.FarmaciaAPI = (function () {
       if (!sb) return 100;
       try {
         const { data, error } = await sb
-          .from('inventory')
+          .from('inventory_catalog')
           .select('price')
           .eq('name', 'CONSULTA MEDICA MEMBRESIA')
           .maybeSingle();
@@ -1070,10 +1085,9 @@ window.FarmaciaAPI = (function () {
           if (uploadErr) {
             console.warn('[uploadPrescription] Storage upload failed:', uploadErr.message);
           } else {
-            const { data: urlData } = sb.storage
-              .from('customer-documents')
-              .getPublicUrl(filePath);
-            fileUrl = urlData?.publicUrl || null;
+            // The bucket is private: store the storage path — signed URLs are
+            // minted at display time (getPrescriptions).
+            fileUrl = filePath;
           }
         }
 
