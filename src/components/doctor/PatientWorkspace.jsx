@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getCustomerById, getDoctorPrescriptions, createDoctorPrescription,
-  getAppointmentsByDoctor, createAppointment, updateAppointment, deleteAppointment,
+  createAppointment, updateAppointment, deleteAppointment,
   getCustomerPurchaseHistory, getMedicalNotesByCustomer, createMedicalNote,
   getInventoryForDoctor, updateCustomer,
   cancelDoctorPrescription, getDoctorProfile, getConsultaNotesByCustomer, getConsentDocuments,
@@ -187,65 +187,66 @@ const PatientWorkspace = () => {
       return;
     }
 
-    // Secondary data — load independently so one failure doesn't break everything
+    // Secondary data — all independent queries fire in parallel and each
+    // fails soft (empty state) so one error doesn't break the whole page.
     const loadSecondary = async () => {
-      const rxs = await getDoctorPrescriptions(customerId).catch(e => {
-        console.error('getDoctorPrescriptions failed:', e);
-        return [];
-      });
+      const [rxs, appts, docProfile, hist, meds, historiaRow, missing, inv] = await Promise.all([
+        getDoctorPrescriptions(customerId).catch(e => {
+          console.error('getDoctorPrescriptions failed:', e);
+          return [];
+        }),
+        getAppointmentsByCustomer(customerId).catch(e => {
+          console.error('getAppointmentsByCustomer failed:', e);
+          return [];
+        }),
+        user?.id
+          ? getDoctorProfile(user.id).catch(e => {
+              console.error('getDoctorProfile failed:', e);
+              return null;
+            })
+          : Promise.resolve(null),
+        getCustomerPurchaseHistory(customerId).catch(e => {
+          console.error('getCustomerPurchaseHistory failed:', e);
+          return [];
+        }),
+        getMedicalNotesByCustomer(customerId).catch(e => {
+          console.error('getMedicalNotesByCustomer failed:', e);
+          return [];
+        }),
+        getHistoriaClinica(customerId).catch(e => {
+          console.error('getHistoriaClinica failed:', e);
+          return null;
+        }),
+        needsHistoriaClinica(customerId).catch(e => {
+          console.error('needsHistoriaClinica failed:', e);
+          return false;
+        }),
+        getInventoryForDoctor().catch(e => {
+          console.error('getInventoryForDoctor failed:', e);
+          return [];
+        }),
+      ]);
       setPrescriptions(Array.isArray(rxs) ? rxs : []);
+      // getAppointmentsByCustomer returns newest-first; the upcoming/past
+      // sections below expect chronological (oldest-first) order.
+      const sortedAppts = Array.isArray(appts)
+        ? [...appts].sort((a, b) => new Date(a?.appointment_date) - new Date(b?.appointment_date))
+        : [];
+      setAppointments(sortedAppts);
+      setDoctorProfile(docProfile);
+      setPurchases(Array.isArray(hist) ? hist : []);
+      setNotes(Array.isArray(meds) ? meds : []);
+      // NOM-004 6.1: historia clínica de primera vez + first-note gate state
+      setHistoria(historiaRow);
+      setNeedsHistoria(missing);
+      setInventory(Array.isArray(inv) ? inv : []);
 
       if (user?.id) {
-        const appts = await getAppointmentsByDoctor(user.id).catch(e => {
-          console.error('getAppointmentsByDoctor failed:', e);
-          return [];
-        });
-        const customerAppts = Array.isArray(appts)
-          ? appts.filter(a => a.customer_id === customerId)
-          : [];
-        setAppointments(customerAppts);
-
-        const docProfile = await getDoctorProfile(user.id).catch(e => {
-          console.error('getDoctorProfile failed:', e);
-          return null;
-        });
-        setDoctorProfile(docProfile);
-
         getActiveDoctorShift(user.id).then(setActiveShift).catch(() => {});
         supabase.from('profiles').select('timezone').eq('id', user.id).single()
           .then(({ data }) => { if (data?.timezone) setTimezone(data.timezone); })
           .catch(() => {});
       }
-
-      const hist = await getCustomerPurchaseHistory(customerId).catch(e => {
-        console.error('getCustomerPurchaseHistory failed:', e);
-        return [];
-      });
-      setPurchases(Array.isArray(hist) ? hist : []);
-
-      const meds = await getMedicalNotesByCustomer(customerId).catch(e => {
-        console.error('getMedicalNotesByCustomer failed:', e);
-        return [];
-      });
-      setNotes(Array.isArray(meds) ? meds : []);
-
-      // NOM-004 6.1: historia clínica de primera vez + first-note gate state
-      const historiaRow = await getHistoriaClinica(customerId).catch(e => {
-        console.error('getHistoriaClinica failed:', e);
-        return null;
-      });
-      setHistoria(historiaRow);
-      const missing = await needsHistoriaClinica(customerId).catch(e => {
-        console.error('needsHistoriaClinica failed:', e);
-        return false;
-      });
-      setNeedsHistoria(missing);
-
-      const inv = await getInventoryForDoctor().catch(e => {
-        console.error('getInventoryForDoctor failed:', e);
-        return [];
-      });
-      setInventory(Array.isArray(inv) ? inv : []);
     };
 
     try {

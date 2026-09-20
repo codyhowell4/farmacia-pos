@@ -25,7 +25,7 @@ import {
   getCustomersForDoctor, confirmVideoAppointment, createMedicalNote,
   getActiveDoctorShift, getClockedInDoctorIds, getOrgDoctorNames,
   getOrgAppointmentsForDate, startConsulta, claimAppointment,
-  takeoverAppointment, cancelAppointmentStaff, clockInDoctor
+  takeoverAppointment, cancelAppointmentStaff, clockInDoctor, getMyOrgId
 } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { dayKeyInTz, dateInTz, timeInTz, DEFAULT_TZ } from '@/lib/timezone';
@@ -173,6 +173,50 @@ const DoctorAppointments = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Silent refresh of just the cita lists (no loading spinner) — used by
+  // the realtime subscription and the window-focus refetch below.
+  const refreshAppointments = useCallback(async () => {
+    if (!user?.id) return;
+    const [appts, today] = await Promise.all([
+      getAppointmentsByDoctor(user.id).catch(() => null),
+      getOrgAppointmentsForDate().catch(() => null),
+    ]);
+    if (appts) setAppointments(appts);
+    if (today) setOrgToday(today);
+  }, [user?.id]);
+
+  // Live citas: when anyone books/changes/cancels a cita in this org
+  // (recepción, kiosko de consentimiento, customer app, otro doctor), the
+  // list updates by itself — no manual refresh. The window-focus refetch
+  // covers returning to the tab even if a realtime event was missed.
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    let timer = null;
+    let channel = null;
+    let cancelled = false;
+    const scheduleRefresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => { if (!cancelled) refreshAppointments(); }, 400);
+    };
+    getMyOrgId().then((orgId) => {
+      if (cancelled) return;
+      channel = supabase
+        .channel('doctor-citas-rt')
+        .on('postgres_changes', {
+          event: '*', schema: 'public', table: 'appointments',
+          ...(orgId ? { filter: `org_id=eq.${orgId}` } : {}),
+        }, scheduleRefresh)
+        .subscribe();
+    }).catch(() => {});
+    window.addEventListener('focus', scheduleRefresh);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      window.removeEventListener('focus', scheduleRefresh);
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [user?.id, refreshAppointments]);
 
   const filtered = safeAppointments.filter(a => {
     // Unpaid pending video consultas stay hidden — the patient hasn't paid

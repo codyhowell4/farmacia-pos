@@ -8,12 +8,27 @@ import { createClient } from '@supabase/supabase-js';
 
 // ── helpers ─────────────────────────────────────────────────
 
+// org_id never changes for a signed-in user, so cache it module-wide.
+// Before this, every db call did auth.getUser() (a network JWT validation)
+// plus a profiles lookup — two extra round trips per call that serialized
+// into 10s+ page loads. getSession() reads the local session (no network).
+let _orgIdCache = null; // { userId, orgId }
+supabase.auth.onAuthStateChange((event) => {
+  if (event === 'SIGNED_OUT') _orgIdCache = null;
+});
+
 const getOrgId = async () => {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) throw new Error('No autenticado');
+  if (_orgIdCache?.userId === user.id) return _orgIdCache.orgId;
   const { data } = await supabase.from('profiles').select('org_id').eq('id', user.id).single();
+  _orgIdCache = { userId: user.id, orgId: data?.org_id };
   return data?.org_id;
 };
+
+// Public accessor (e.g. realtime filters) — same cached value.
+export const getMyOrgId = () => getOrgId();
 
 // ── AUTH ────────────────────────────────────────────────────
 
