@@ -541,10 +541,10 @@
           });
           state.printData = { p: p, signedAt: new Date().toLocaleString('es-MX') };
           var details = [];
-          details.push('<strong>' + p.name + '</strong>');
-          if (p.minor) details.push('Tutor: ' + p.guardian);
+          details.push('<strong>' + esc(p.name) + '</strong>');
+          if (p.minor) details.push('Tutor: ' + esc(p.guardian));
           details.push(p.minor ? 'Consentimientos firmados por el tutor ✓' : 'Consentimientos firmados ✓');
-          if (result.doctor_assigned) details.push('🩺 Doctor asignado: <strong>' + result.doctor_assigned + '</strong>');
+          if (result.doctor_assigned) details.push('🩺 Doctor asignado: <strong>' + esc(result.doctor_assigned) + '</strong>');
           showSuccess('¡Registro completo!', details);
         } catch (err) {
           showError(err.message || 'Error de conexión. Intenta de nuevo o avisa al personal.');
@@ -589,12 +589,12 @@
             state.printData = { p: p, signedAt: new Date().toLocaleString('es-MX') };
           }
           var details = [];
-          details.push('<strong>' + p.name + '</strong>');
-          if (p.minor) details.push('Tutor: ' + p.guardian);
+          details.push('<strong>' + esc(p.name) + '</strong>');
+          if (p.minor) details.push('Tutor: ' + esc(p.guardian));
           if (state.pendingConsentDocs) details.push(p.minor ? 'Consentimientos firmados por el tutor ✓' : 'Consentimientos firmados ✓');
           details.push('Check-in recibido ✓');
           details.push('El personal confirmará tu identidad antes de la consulta.');
-          if (result.doctor_assigned) details.push('🩺 Doctor asignado: <strong>' + result.doctor_assigned + '</strong>');
+          if (result.doctor_assigned) details.push('🩺 Doctor asignado: <strong>' + esc(result.doctor_assigned) + '</strong>');
           showSuccess('¡Check-in listo!', details);
         } catch (err) {
           showError(err.message || 'Error de conexión. Intenta de nuevo o avisa al personal.');

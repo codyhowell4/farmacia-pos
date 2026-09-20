@@ -54,20 +54,31 @@ window.FarmaciaAPI = (function () {
   // ------------------------------------------------------------------
   // Auth helpers
   // ------------------------------------------------------------------
+  // Session cache: getSession() reads the locally persisted session (no
+  // network — supabase-js refreshes the token only when it's expired),
+  // replacing the old getUser() JWT-validation round trip that ran before
+  // every API method. RLS still authorizes every query server-side.
   async function getAuthUser() {
     if (!sb) return null;
     try {
-      const { data, error } = await sb.auth.getUser();
+      const { data, error } = await sb.auth.getSession();
       if (error) throw error;
-      return data.user || null;
+      return data.session?.user || null;
     } catch (err) {
       return null;
     }
   }
 
+  // The customers-row id never changes for a signed-in user, so resolve it
+  // once per user instead of re-querying before every API method. Only
+  // positive hits are cached: a "no row yet" result must stay uncached so
+  // ensureCustomerProfile's freshly created row is seen. Cleared on signOut.
+  let _customerIdCache = null; // { userId, customerId }
+
   async function getCustomerId() {
     const user = await getAuthUser();
     if (!user) return null;
+    if (_customerIdCache?.userId === user.id) return _customerIdCache.customerId;
     try {
       const { data, error } = await sb
         .from('customers')
@@ -78,6 +89,7 @@ window.FarmaciaAPI = (function () {
         if (error.code === 'PGRST116') return null; // no rows
         throw error;
       }
+      if (data) _customerIdCache = { userId: user.id, customerId: data.id };
       return data ? data.id : null;
     } catch (err) {
       console.warn('[FarmaciaAPI] getCustomerId failed:', err.message);
@@ -220,6 +232,7 @@ window.FarmaciaAPI = (function () {
       try {
         const { error } = await sb.auth.signOut();
         if (error) throw error;
+        _customerIdCache = null;
         console.log('[FarmaciaAPI] User signed out');
         return { error: null };
       } catch (err) {

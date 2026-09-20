@@ -28,6 +28,14 @@ export const enqueueRxJob = (job) => {
 
 export const getRxQueueSize = () => readQueue().length;
 
+// Vacía la cola sin reintentar (LFPDPPP): los payloads contienen datos de
+// pacientes (nombre, folio) y no deben quedar en localStorage del equipo
+// compartido después del cierre de turno. Se llama solo tras un cierre
+// exitoso; durante el turno la cola sigue reintentándose con normalidad.
+export const clearRxQueue = () => {
+  try { localStorage.removeItem(QUEUE_KEY); } catch { /* storage no disponible */ }
+};
+
 // Reintenta toda la cola; los éxitos salen y los fallos se quedan para el
 // próximo intento. Un folio duplicado (23505) es error de captura, no un
 // fallo transitorio: se descarta en vez de reintentarse para siempre.

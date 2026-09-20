@@ -1,13 +1,16 @@
 // Supabase Edge Function: verify-receta
 // Public prescription (receta) verification for pharmacists — LGS art.
 // 42 Bis: any pharmacy must be able to confirm an e-signed receta is
-// genuine. POST {folio, sig?} returns a minimal, non-clinical payload:
-// existence, signature status, doctor identity, and a signature prefix
-// the caller compares client-side against the code printed on the
-// receta. It NEVER returns medications, signed_payload, the full
-// signature, or any other clinical content. The response is identical
-// whether or not a guessed sig matches — the comparison happens on the
-// page, so this endpoint leaks nothing beyond the payload itself.
+// genuine. POST {folio, sig} returns a minimal, non-clinical payload:
+// existence, signature status, doctor identity. It NEVER returns
+// medications, signed_payload, the full signature, or any other clinical
+// content.
+// Folio + sig are a COMPOUND KEY (pen-test fix): folios are sequential,
+// so the detail payload is released only when the presented sig matches
+// the stored signature prefix (the fragment printed next to the QR and
+// encoded in it). A missing/wrong sig returns the exact same
+// {"found":false} body as an unknown folio — indistinguishable, so the
+// endpoint cannot be used to enumerate folios.
 // Public (verify_jwt = false, see config.toml); abuse is bounded by a
 // per-IP sliding-window rate limit (fail-open, like tablet-checkin).
 
@@ -83,7 +86,8 @@ Deno.serve(async (req) => {
     const payload = (await req.json()) as { folio?: string; sig?: string };
 
     const folio = (payload.folio || '').trim().toUpperCase();
-    if (!folio) {
+    const sig = (payload.sig || '').trim();
+    if (!folio || !sig) {
       return jsonResponse({ found: false }, 200);
     }
 
@@ -116,9 +120,20 @@ Deno.serve(async (req) => {
       return jsonResponse({ found: false }, 200);
     }
 
+    // Compound key: the detail payload is released only when the presented
+    // sig matches the stored signature prefix (the fragment encoded in the
+    // receta's QR and printed next to it). A wrong sig returns the exact
+    // same {"found":false} as an unknown folio — indistinguishable — so
+    // sequential folios cannot be enumerated. An unsigned receta has no
+    // prefix to match and also reports not-found.
+    const sigPrefix = rx.signature ? rx.signature.slice(0, 32) : null;
+    if (!sigPrefix || sig !== sigPrefix) {
+      return jsonResponse({ found: false }, 200);
+    }
+
     // Minimal verification payload only — no medications, no
-    // signed_payload, no full signature. `sig` is intentionally unused:
-    // the page compares it against sig_prefix client-side.
+    // signed_payload, and no signature material at all (not even the
+    // prefix: the caller already proved knowledge of it).
     return jsonResponse(
       {
         found: true,
@@ -130,13 +145,14 @@ Deno.serve(async (req) => {
         doctor_license_number: rx.doctor_license_number,
         signed_at: rx.signed_at,
         signer_cert_serial: rx.signer_cert_serial,
-        sig_prefix: rx.signature ? rx.signature.slice(0, 32) : null,
       },
       200
     );
   } catch (err) {
+    // Full detail stays in the server log; the client gets a generic body
+    // (same pattern as paypal-webhook) — PostgREST/misconfiguration
+    // messages must never leak through a public endpoint.
     console.error('[verify-receta] error:', err);
-    const message = err instanceof Error ? err.message : 'Error desconocido';
-    return jsonResponse({ error: message }, 400);
+    return jsonResponse({ error: 'No se pudo completar la verificación. Intenta de nuevo.' }, 400);
   }
 });

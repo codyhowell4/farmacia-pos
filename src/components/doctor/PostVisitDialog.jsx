@@ -12,7 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   updateAppointment, createDoctorPrescription,
   createConsultaNote, getConsultaNotesByAppointment, getDoctorProfile,
-  getInventoryForDoctor, needsHistoriaClinica, getCustomerById, hasAllConsentsSigned
+  getDoctorInventoryCached, needsHistoriaClinica, getCustomerById, hasAllConsentsSigned
 } from '@/lib/db';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { findControlledMed, controlledMedMessage, CONTROLLED_MED_MESSAGE } from '@/lib/controlledMeds';
@@ -170,8 +170,9 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
         .then(setDoctorProfile)
         .catch(err => console.error('getDoctorProfile failed:', err));
     }
-    // Inventory for the medication autocomplete (stock badges included)
-    getInventoryForDoctor()
+    // Inventory for the medication autocomplete (stock badges included) —
+    // shared 5-minute module cache, so re-opening the dialog doesn't refetch
+    getDoctorInventoryCached()
       .then(rows => setInventory(Array.isArray(rows) ? rows : []))
       .catch(err => console.error('getInventoryForDoctor failed:', err));
     // Re-opening a completed consulta: preload the latest note version so the

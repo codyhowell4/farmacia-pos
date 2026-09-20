@@ -45,7 +45,7 @@ const CLINIC_TZ = 'America/Mexico_City';
 // limits leave room for walk-in bursts while still blocking scripted probing.
 const RATE_LIMITS: Record<string, { limit: number; windowMs: number }> = {
   lookup: { limit: 15, windowMs: 10 * 60 * 1000 },
-  register: { limit: 10, windowMs: 10 * 60 * 1000 },
+  register: { limit: 6, windowMs: 10 * 60 * 1000 },
   checkin: { limit: 30, windowMs: 10 * 60 * 1000 },
 };
 
@@ -74,7 +74,7 @@ interface RequestPayload {
   guardian_relationship?: string; // padre | madre | tutor — required for minors on kiosk writes
   guardian_id_ref?: string; // last 4 of guardian INE — evidence for parental consent
   sexo?: string; // 'M' | 'H' — NOM-024 Tabla 1
-  curp?: string; // optional, 18 chars when present
+  curp?: string; // optional; RENAPO 18-char format + verification digit validated when present
   reason?: string;
   password?: string; // required when registering without an email
   date_of_birth?: string; // YYYY-MM-DD — required for lookup/guest/matched-checkin
@@ -272,11 +272,56 @@ const findMatch = <T extends { full_name: string }>(candidates: T[], target: str
   return null;
 };
 
+// Register-mode reuse guard (pen-test C1): a customers row found by email or
+// phone is reused ONLY when the presented name AND date of birth match it —
+// the same normalized name matching the anonymous flows use. Otherwise a
+// stranger could register with someone else's phone/email and get a portal
+// account provisioned onto that person's expediente (full takeover). A
+// mismatch falls through to creating a NEW customer row; a legacy NULL-DOB
+// row also fails closed here (never "verified" by the presented DOB).
+const identityVerified = (
+  row: { full_name: string; date_of_birth: string | null },
+  name: string,
+  dob: string
+) => !!dob && row.date_of_birth === dob && matchName(row.full_name, name) !== null;
+
 const isValidDob = (d: string) =>
   /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) && new Date(d) < new Date();
 
 const ageFromDob = (d: string) =>
   Math.floor((Date.now() - new Date(d).getTime()) / (365.25 * 86400000));
+
+// CURP validation (RENAPO, NOM-024): 18-char official format + verification
+// digit. Ported from src/lib/curp.js (dependency-free) — the kiosk's old
+// loose regex accepted any 18 alphanumeric characters.
+const CURP_REGEX =
+  /^[A-Z][AEIOUX][A-Z]{2}\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[HM](AS|BC|BS|CC|CL|CM|CS|CH|DF|DG|GT|GR|HG|JC|MC|MN|MS|NT|NL|OC|PL|QT|QR|SP|SL|SR|TC|TS|TL|VZ|YN|ZS|NE)[BCDFGHJKLMNÑOPQRSTVWXYZ]{3}[0-9A-Z]\d$/;
+const CURP_CHECKSUM_CHARS = '0123456789ABCDEFGHIJKLMNÑOPQRSTUVWXYZ';
+
+const isValidCurp = (curp: string) => {
+  const normalized = (curp || '').trim().toUpperCase();
+  if (!CURP_REGEX.test(normalized)) return false;
+  let sum = 0;
+  for (let i = 0; i < 17; i++) {
+    sum += CURP_CHECKSUM_CHARS.indexOf(normalized[i]) * (18 - i);
+  }
+  const expected = (10 - (sum % 10)) % 10;
+  return expected === Number(normalized[17]);
+};
+
+// Junk-registration filter (pen-test): the public kiosk must not seed
+// customers/citas with garbage. A plausible full name is 2+ words of 2+
+// letters each (accents fold via normalizeName), with no keyboard-mash (same
+// character repeated 4+ times) and no 'test'/'pentest' markers.
+const isPlausibleFullName = (s: string) => {
+  const words = normalizeName(s).split(' ').filter(Boolean);
+  if (words.length < 2) return false;
+  if (!words.every((w) => /^[a-z]{2,}$/.test(w))) return false;
+  const flat = words.join('');
+  if (/(.)\1{3,}/.test(flat)) return false;
+  if (/test/.test(flat)) return false;
+  return true;
+};
 
 // Inserts signed consent rows with e-signature attribution; retries without
 // the attribution columns when an older schema is missing them.
@@ -409,6 +454,17 @@ Deno.serve(async (req) => {
     if ((anonymous || mode === 'register') && !isValidDob(dob)) {
       return jsonResponse({ error: 'Fecha de nacimiento inválida (AAAA-MM-DD)' }, 400);
     }
+    // Junk-registration sanity (pen-test): register mode is the only flow
+    // that can create a customer + cita out of thin air, so the filter is
+    // scoped to it — guest register, check-in and lookup are untouched.
+    if (mode === 'register') {
+      if (!isPlausibleFullName(patientName)) {
+        return jsonResponse({ error: 'Captura el nombre completo del paciente (nombre y apellidos, solo letras)' }, 400);
+      }
+      if (dobAge !== null && dobAge > 110) {
+        return jsonResponse({ error: 'Fecha de nacimiento inválida (AAAA-MM-DD)' }, 400);
+      }
+    }
     if (!anonymous && !email && !phone) {
       return jsonResponse({ error: 'Captura el correo electrónico o el teléfono (al menos uno)' }, 400);
     }
@@ -418,8 +474,10 @@ Deno.serve(async (req) => {
     if (sexo && !['M', 'H'].includes(sexo)) {
       return jsonResponse({ error: 'Sexo inválido (M o H)' }, 400);
     }
-    if (curp && !/^[A-Z0-9]{18}$/.test(curp)) {
-      return jsonResponse({ error: 'CURP inválido (debe tener 18 caracteres)' }, 400);
+    // CURP stays optional; when present it must pass the full RENAPO format
+    // + verification-digit check (NOM-024).
+    if (curp && !isValidCurp(curp)) {
+      return jsonResponse({ error: 'CURP inválido' }, 400);
     }
     // Guest registration (consentimiento kiosk) must capture the NOM-024
     // Tabla 1 minimum: sexo. The in-store tablet flow is untouched.
@@ -514,9 +572,12 @@ Deno.serve(async (req) => {
     }
 
     // 1. Customer row: a matched check-in re-verifies customer_id against
-    //    name+DOB; otherwise reuse by email (or by phone when no email); a
-    //    guest registration reuses a name+DOB match so a returning patient who
-    //    picks "Primera vez" doesn't fork their record; else create.
+    //    name+DOB; otherwise reuse by email (or by phone when no email) —
+    //    in register mode ONLY when name+DOB also match the row (pen-test
+    //    C1: reusing by phone/email alone let a caller provision an account
+    //    with a caller-chosen password onto any walk-in's expediente); a
+    //    guest registration reuses a name+DOB match so a returning patient
+    //    who picks "Primera vez" doesn't fork their record; else create.
     const customerSelect =
       'id, full_name, phone, email, profile_id, date_of_birth, sexo, curp, guardian_name, guardian_relationship, guardian_id_ref';
     let customer = null;
@@ -542,6 +603,14 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (error) throw error;
       customer = data;
+      // Register provisions a portal account onto the matched row, so the
+      // row's identity must be proven first (identityVerified). Check-in
+      // never provisions accounts and the customer-app flow sends no DOB,
+      // so its looser email/phone match stays.
+      if (mode === 'register' && customer && !identityVerified(customer, patientName, dob)) {
+        console.warn('[tablet-checkin] register: email match failed the name+DOB identity check; creating a new customer instead');
+        customer = null;
+      }
     } else if (phone) {
       const { data, error } = await supabase
         .from('customers')
@@ -553,6 +622,10 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (error) throw error;
       customer = data;
+      if (mode === 'register' && customer && !identityVerified(customer, patientName, dob)) {
+        console.warn('[tablet-checkin] register: phone match failed the name+DOB identity check; creating a new customer instead');
+        customer = null;
+      }
     }
 
     if (!customer && guest) {
@@ -769,8 +842,10 @@ Deno.serve(async (req) => {
       doctor_on_shift: scheduled,
     }, 200);
   } catch (err) {
+    // Full detail stays in the server log; the client gets a generic body
+    // (same pattern as paypal-webhook) — PostgREST/GoTrue messages must
+    // never leak through a public endpoint.
     console.error('[tablet-checkin] error:', err);
-    const message = err instanceof Error ? err.message : 'Error desconocido';
-    return jsonResponse({ error: message }, 400);
+    return jsonResponse({ error: 'No se pudo procesar la solicitud. Inténtalo de nuevo o avisa al personal.' }, 400);
   }
 });

@@ -1222,8 +1222,21 @@ const PoSDashboard = () => {
         // Reintenta registros sanitarios pendientes de ventas anteriores
         retryRxQueue();
 
-        // Refresh local inventory from DB
-        const updatedInventory = await getInventory(user.locationId);
+        // Apply the sold quantities to local inventory state (the DB rows
+        // were already decremented inside createSaleWithPayments) instead of
+        // refetching the whole catalog. Services don't track stock — same
+        // skip as decrementInventory.
+        const soldById = new Map();
+        cart.forEach(item => {
+          if (isServiceItem(item)) return;
+          soldById.set(item.id, (soldById.get(item.id) || 0) + item.quantity);
+        });
+        const updatedInventory = inventory.map(i => {
+          const sold = soldById.get(i.id);
+          return sold
+            ? { ...i, quantity: Math.max(0, (i.quantity || 0) - sold), sales_count: (i.sales_count || 0) + sold }
+            : i;
+        });
         setInventory(updatedInventory);
         setDisplayItems(
           updatedInventory.filter(i => i.quantity > 0)

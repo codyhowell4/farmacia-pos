@@ -17,9 +17,13 @@
 // account and the portal can find their parent membership.
 //
 // birth_date (YYYY-MM-DD) is required (R2-21): it is persisted on the
-// membership_members row and the member's customers row. When the member
-// row already carries a date_of_birth, the presented DOB must match it
-// (R2-30 second factor); legacy rows with a NULL DOB capture it here.
+// membership_members row and the member's customers row. The presented DOB
+// must match the one stored on the member row (R2-30 second factor). A
+// member row with a NULL date_of_birth can NO LONGER be claimed here
+// (pen-test fix: the presented DOB used to be accepted as proof and
+// written at claim time, so anyone who knew the name + guessable sub_id
+// could claim the account) — those members must activate in person at
+// the pharmacy, where staff verifies identity.
 // For minors the guardian defaults to the plan titular
 // (guardian_relationship 'familiar titular') unless the caller passes
 // guardian data explicitly.
@@ -236,14 +240,22 @@ Deno.serve(async (req) => {
       return validationError();
     }
 
-    // Second factor (R2-30): once the member row carries a date_of_birth,
-    // the presented DOB must match it — the rejection is the same generic
-    // body as every other failure, so the caller can't tell which check
-    // failed. Legacy rows with a NULL DOB capture the presented one at
-    // claim time below (mirrored onto the customers row as before).
+    // Second factor (R2-30): the presented DOB must match the one stored on
+    // the member row — the rejection is the same generic body as every
+    // other failure, so the caller can't tell which check failed.
     const storedDob = (member.date_of_birth || '').trim();
     if (storedDob && storedDob !== birthDate) {
       return validationError();
+    }
+    // Fail closed on a NULL stored DOB (pen-test fix): the presented DOB
+    // used to be accepted as proof and written at claim time, so anyone who
+    // knew the registered name + guessable sub_id could claim the account.
+    // These members must activate in person at the pharmacy, where staff
+    // verifies identity.
+    if (!storedDob) {
+      return jsonResponse({
+        error: 'Por tu seguridad, la activación de tu cuenta debe completarse en la farmacia. Acude con una identificación oficial y el personal verificará tu identidad.',
+      }, 400);
     }
 
     if (member.claimed_user_id || member.email) {
@@ -295,9 +307,9 @@ Deno.serve(async (req) => {
     }
 
     // Claim the member row. Guarded to still-unclaimed rows so a concurrent
-    // activation can't overwrite an existing claim. The DOB is persisted on
-    // the member row here (R2-21) — for legacy rows whose date_of_birth was
-    // still NULL this is also the R2-30 second-factor capture.
+    // activation can't overwrite an existing claim. The DOB write is a
+    // same-value stamp (R2-21): rows with a NULL date_of_birth are refused
+    // above, so the stored DOB always equals the presented one here.
     const { data: claimed, error: claimError } = await supabase
       .from('membership_members')
       .update({ email, claimed_user_id: userId, date_of_birth: birthDate })

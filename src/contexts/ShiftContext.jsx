@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { getOpenShift, createShift, closeShiftDb, getShiftSales } from '@/lib/db';
+import { clearRxQueue } from '@/lib/rxQueue';
 import { formatMXN } from '@/lib/currency';
 
 const ShiftContext = createContext(null);
@@ -67,6 +68,9 @@ export const ShiftProvider = ({ children }) => {
     });
 
     setActiveShift(null);
+    // LFPDPPP: la cola de reintento de recetas (rx_failed_queue) guarda
+    // datos de pacientes en localStorage — se vacía al cerrar el turno.
+    clearRxQueue();
     logAudit({
       action: AUDIT_ACTIONS.SHIFT_CLOSE,
       user,

@@ -13,8 +13,13 @@ import { createClient } from '@supabase/supabase-js';
 // plus a profiles lookup — two extra round trips per call that serialized
 // into 10s+ page loads. getSession() reads the local session (no network).
 let _orgIdCache = null; // { userId, orgId }
+// Doctor med-autocomplete catalog cache (see getDoctorInventoryCached below).
+let _doctorInventoryCache = { at: 0, rows: null };
 supabase.auth.onAuthStateChange((event) => {
-  if (event === 'SIGNED_OUT') _orgIdCache = null;
+  if (event === 'SIGNED_OUT') {
+    _orgIdCache = null;
+    _doctorInventoryCache = { at: 0, rows: null };
+  }
 });
 
 const getOrgId = async () => {
@@ -301,14 +306,20 @@ export const buildLinkedStockMap = (inventory, links) => {
   return map;
 };
 
-export const logInventoryMovement = async (movement) => {
+// sessionUser: pass the already-resolved session user (or null) to skip the
+// remote auth.getUser() call; when omitted the legacy remote lookup runs.
+export const logInventoryMovement = async (movement, sessionUser = undefined) => {
   try {
     const orgId = await getOrgId();
-    const { data: { user } } = await supabase.auth.getUser();
+    let userEmail = sessionUser?.email;
+    if (sessionUser === undefined && !movement.user_name) {
+      const { data: { user } } = await supabase.auth.getUser();
+      userEmail = user?.email;
+    }
     const { error } = await supabase.from('inventory_movements').insert({
       ...movement,
       org_id: orgId,
-      user_name: movement.user_name || user?.email,
+      user_name: movement.user_name || userEmail,
     });
     if (error) {
       console.error('[logInventoryMovement] insert error:', error);
@@ -330,64 +341,110 @@ export const getInventoryMovements = async (inventoryId) => {
   return data || [];
 };
 
-export const decrementInventory = async (items, referenceId = null, referenceType = 'sale') => {
+export const decrementInventory = async (items, referenceId = null, referenceType = 'sale', sessionUser = undefined) => {
   // items: [{ inventory_id, quantity, name }] - inventory_id is the FK to inventory table
-  for (const item of items) {
-    const inventoryId = item.inventory_id || item.id;
-    if (!inventoryId) {
-      console.error('[decrementInventory] No inventory_id found for item:', item);
+  const entries = (items || [])
+    .map(item => ({ item, inventoryId: item.inventory_id || item.id }))
+    .filter(({ item, inventoryId }) => {
+      if (!inventoryId) {
+        console.error('[decrementInventory] No inventory_id found for item:', item);
+        return false;
+      }
+      return true;
+    });
+  if (entries.length === 0) return;
+
+  // Resolve the movement author once per batch: the sale flow passes the
+  // session user down (getSession is a local read); other callers fall back
+  // to a single remote getUser() instead of one per movement row.
+  let batchUser = sessionUser;
+  if (batchUser === undefined) {
+    const { data: { user } } = await supabase.auth.getUser();
+    batchUser = user || null;
+  }
+
+  // One batched read of every item's pre-decrement state (movement rows need
+  // previous/new quantity; service detection comes from here too). When the
+  // read fails we can't decrement safely — same as the old per-item fetch
+  // failure, which skipped the item.
+  const ids = [...new Set(entries.map(e => e.inventoryId))];
+  const { data: currentRows, error: fetchError } = await supabase
+    .from('inventory')
+    .select('id, quantity, sales_count, item_type')
+    .in('id', ids);
+  if (fetchError) {
+    console.error('[decrementInventory] Failed to fetch current inventory:', fetchError);
+    return;
+  }
+  const currentById = new Map((currentRows || []).map(r => [r.id, r]));
+
+  const decrements = [];
+  for (const { item, inventoryId } of entries) {
+    const current = currentById.get(inventoryId);
+    if (!current) {
+      console.error('[decrementInventory] Failed to fetch current inventory for id:', inventoryId);
       continue;
     }
-
-    // Get current quantity before decrementing
-    const { data: current, error: fetchError } = await supabase.from('inventory').select('quantity, sales_count, item_type').eq('id', inventoryId).single();
-    if (fetchError) {
-      console.error('[decrementInventory] Failed to fetch current inventory:', fetchError);
-      continue;
-    }
-
     // Services don't track stock — nothing to decrement
     if (isServiceItem(current)) continue;
-
     const prevQty = current?.quantity || 0;
-    let newQty = Math.max(0, prevQty - item.quantity);
+    decrements.push({ item, inventoryId, current, prevQty, newQty: Math.max(0, prevQty - item.quantity) });
+  }
 
+  // Decrement everything in parallel; an RPC failure falls back to a manual
+  // update (same as before). An item whose decrement fails entirely gets no
+  // movement row, matching the old continue-on-error behavior.
+  const succeeded = await Promise.all(decrements.map(async (d) => {
     const { error } = await supabase.rpc('decrement_inventory', {
-      p_id: inventoryId,
-      p_qty: item.quantity,
+      p_id: d.inventoryId,
+      p_qty: d.item.quantity,
     });
-
     if (error) {
       console.error('[decrementInventory] RPC decrement_inventory failed:', error);
       // Fallback: manual update
       const { error: updateError } = await supabase.from('inventory').update({
-        quantity: newQty,
-        sales_count: (current?.sales_count || 0) + item.quantity,
+        quantity: d.newQty,
+        sales_count: (d.current?.sales_count || 0) + d.item.quantity,
         updated_at: new Date().toISOString(),
-      }).eq('id', inventoryId);
+      }).eq('id', d.inventoryId);
       if (updateError) {
         console.error('[decrementInventory] Failed to update inventory:', updateError);
-        continue;
+        return null;
       }
     }
-    
-    // Log movement
-    console.log('[decrementInventory] Logging movement:', { inventoryId, referenceType, referenceId, qty: item.quantity });
-    try {
-      await logInventoryMovement({
-        inventory_id: inventoryId,
-        type: referenceType,
-        quantity_change: -item.quantity,
-        previous_quantity: prevQty,
-        new_quantity: newQty,
-        reference_id: referenceId,
-        reference_type: referenceType,
-        reason: item.name || referenceType,
-      });
-      console.log('[decrementInventory] Movement logged successfully');
-    } catch (logErr) {
-      console.error('[decrementInventory] Failed to log movement:', logErr);
-      // Do not throw — sale should succeed even if audit logging fails
+    return d;
+  }));
+
+  // One batched insert for the whole NOM audit trail — same fields as the
+  // old per-item logInventoryMovement calls.
+  const movementRows = succeeded.filter(Boolean).map(d => ({
+    inventory_id: d.inventoryId,
+    type: referenceType,
+    quantity_change: -d.item.quantity,
+    previous_quantity: d.prevQty,
+    new_quantity: d.newQty,
+    reference_id: referenceId,
+    reference_type: referenceType,
+    reason: d.item.name || referenceType,
+  }));
+  if (movementRows.length === 0) return;
+  console.log('[decrementInventory] Logging movements:', { count: movementRows.length, referenceType, referenceId });
+  try {
+    const orgId = await getOrgId();
+    const rows = movementRows.map(m => ({ ...m, org_id: orgId, user_name: batchUser?.email }));
+    const { error } = await supabase.from('inventory_movements').insert(rows);
+    if (error) throw error;
+    console.log('[decrementInventory] Movements logged successfully');
+  } catch (batchErr) {
+    // One bad row must not drop the rest of the trail — retry row by row.
+    // Never throws: the sale succeeds even if audit logging fails.
+    console.error('[decrementInventory] Batched movement insert failed, retrying row by row:', batchErr);
+    for (const row of movementRows) {
+      try {
+        await logInventoryMovement(row, batchUser);
+      } catch (logErr) {
+        console.error('[decrementInventory] Failed to log movement:', logErr);
+      }
     }
   }
 };
@@ -1258,7 +1315,11 @@ export const deleteBankAccount = async (id) => {
 
 export const createSaleWithPayments = async (sale, items, payments) => {
   const orgId = await getOrgId();
-  
+  // Resolve the session user once up front (getSession is a local read) and
+  // pass it down so the inventory work doesn't re-resolve auth per item.
+  const { data: { session } } = await supabase.auth.getSession();
+  const sessionUser = session?.user || null;
+
   // Create the sale
   const { data: saleRow, error } = await supabase
     .from('sales')
@@ -1283,8 +1344,8 @@ export const createSaleWithPayments = async (sale, items, payments) => {
   }
 
   // Update inventory
-  await decrementInventory(items || [], saleRow.id, 'sale');
-  
+  await decrementInventory(items || [], saleRow.id, 'sale', sessionUser);
+
   return saleRow;
 };
 
@@ -2007,39 +2068,41 @@ export const getDoctorDashboardStats = async (doctorId) => {
   const orgId = await getOrgId();
   const today = new Date().toISOString().split('T')[0];
 
-  const { count: apptCount } = await supabase
-    .from('appointments')
-    .select('*', { count: 'exact', head: true })
-    .eq('org_id', orgId)
-    .eq('doctor_id', doctorId)
-    .gte('appointment_date', `${today}T00:00:00`)
-    .lte('appointment_date', `${today}T23:59:59`);
-
-  const { count: customerCount } = await supabase
-    .from('customers')
-    .select('*', { count: 'exact', head: true })
-    .eq('org_id', orgId);
-
-  const { count: rxCount } = await supabase
-    .from('prescriptions')
-    .select('*', { count: 'exact', head: true })
-    .eq('org_id', orgId)
-    .eq('doctor_id', doctorId)
-    .eq('status', 'active');
-
-  const { count: upcomingCount } = await supabase
-    .from('appointments')
-    .select('*', { count: 'exact', head: true })
-    .eq('org_id', orgId)
-    .eq('doctor_id', doctorId)
-    .gte('appointment_date', `${today}T00:00:00`)
-    .in('status', ['pending', 'confirmed']);
+  // Independent count queries — fire in parallel. Supabase resolves with
+  // { count, error } (never rejects), so a failed count degrades to 0
+  // exactly like the old sequential version.
+  const [apptRes, customerRes, rxRes, upcomingRes] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select('*', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .eq('doctor_id', doctorId)
+      .gte('appointment_date', `${today}T00:00:00`)
+      .lte('appointment_date', `${today}T23:59:59`),
+    supabase
+      .from('customers')
+      .select('*', { count: 'exact', head: true })
+      .eq('org_id', orgId),
+    supabase
+      .from('prescriptions')
+      .select('*', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .eq('doctor_id', doctorId)
+      .eq('status', 'active'),
+    supabase
+      .from('appointments')
+      .select('*', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .eq('doctor_id', doctorId)
+      .gte('appointment_date', `${today}T00:00:00`)
+      .in('status', ['pending', 'confirmed']),
+  ]);
 
   return {
-    appointmentsToday: apptCount || 0,
-    totalCustomers: customerCount || 0,
-    activePrescriptions: rxCount || 0,
-    upcomingAppointments: upcomingCount || 0,
+    appointmentsToday: apptRes.count || 0,
+    totalCustomers: customerRes.count || 0,
+    activePrescriptions: rxRes.count || 0,
+    upcomingAppointments: upcomingRes.count || 0,
   };
 };
 
@@ -2576,6 +2639,20 @@ export const getInventoryForDoctor = async () => {
     .order('name');
   if (error) throw error;
   return data || [];
+};
+
+// The doctor catalog (~whole org inventory) is only needed once the Rx /
+// post-visit dialogs open — cache it module-wide for 5 minutes so neither
+// the expediente mount nor repeated dialog opens refetch it. Pass
+// { force: true } to bypass the TTL.
+const DOCTOR_INVENTORY_TTL = 5 * 60 * 1000;
+export const getDoctorInventoryCached = async ({ force = false } = {}) => {
+  if (!force && _doctorInventoryCache.rows && Date.now() - _doctorInventoryCache.at < DOCTOR_INVENTORY_TTL) {
+    return _doctorInventoryCache.rows;
+  }
+  const rows = await getInventoryForDoctor();
+  _doctorInventoryCache = { at: Date.now(), rows };
+  return rows;
 };
 
 // ── CUSTOMER DOCUMENTS (PRESCRIPTIONS) ──────────────────────

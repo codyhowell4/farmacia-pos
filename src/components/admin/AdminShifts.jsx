@@ -9,7 +9,7 @@ import { Search } from 'lucide-react';
 import { exportShiftsSummaryCSV, printReport } from '@/lib/exportUtils';
 import { useToast } from '@/components/ui/use-toast';
 
-import { getShifts, getSales, getSalesSince, closeShiftDb, updateShift, updateSale, createShift } from '@/lib/db';
+import { getShifts, getShiftSales, getSalesSince, closeShiftDb, updateShift, updateSale, createShift } from '@/lib/db';
 
 const formatShiftDate = (value) => {
   if (!value) return '-';
@@ -126,8 +126,9 @@ const AdminShifts = () => {
 
     setClosingId(shift.id);
     try {
-      const allSales = await getSales();
-      const shiftSales = allSales.filter(s => !s.voided && s.shift_id === shift.id);
+      // Scoped to this shift (and non-voided) server-side — no full-table
+      // getSales() + client-side filter.
+      const shiftSales = await getShiftSales(shift.id);
 
       let totalCash = 0, totalCard = 0, totalInsurance = 0, totalTransferencia = 0;
       shiftSales.forEach(sale => {

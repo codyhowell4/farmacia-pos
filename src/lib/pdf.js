@@ -352,6 +352,18 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
   setFont('bold', 11);
   txt(prescription.prescription_number || '', FOLIO_X, FOOTER_Y + 0.18 * scale, { align: 'center' });
 
+  // Firma electrónica: the same 32-char fragment encoded in the QR, printed
+  // so a pharmacist can also verify manually (folio + fragment on /verifica).
+  if (prescription.signature) {
+    setFont('normal', 5.5);
+    txt(
+      `Verifique en app.apolofarmacia.com.mx/verifica — Folio: ${prescription.prescription_number || ''} · Fragmento de firma: ${prescription.signature.slice(0, 32)}`,
+      bL + bW / 2,
+      FOOTER_Y + 0.62 * scale,
+      { align: 'center' }
+    );
+  }
+
   // ── Save ──
   pdf.save(filename);
 };

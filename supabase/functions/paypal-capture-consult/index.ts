@@ -10,6 +10,13 @@
 // Rooms are 'private': joining requires a Daily meeting token. The
 // patient token is embedded in appointments.meeting_url, the staff
 // (owner) token in appointments.meeting_url_staff.
+//
+// Because this endpoint is anonymous it never returns the meeting URL —
+// the patient reaches it through the authenticated portal. The PayPal
+// order must be bound to the appointment (every purchase_units.custom_id
+// = appointment id, stamped by the portal at order creation) and the
+// NOM-027 teleconsulta consent gate (same as video-room) must pass
+// before any money is captured or room created.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
@@ -79,6 +86,26 @@ const getPayPalAccessToken = async (env: Record<string, string>) => {
 
   const data = await res.json();
   return data.access_token as string;
+};
+
+// Fetches the order so the handler can verify it was created for THIS
+// appointment (the portal stamps purchase_units.custom_id with the
+// appointment id) before any money is captured.
+const getPayPalOrder = async (env: Record<string, string>, orderId: string) => {
+  const token = await getPayPalAccessToken(env);
+  const res = await fetch(`${paypalBaseUrl(env)}/v2/checkout/orders/${orderId}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`PayPal order lookup failed: ${res.status} ${text}`);
+  }
+
+  return (await res.json()) as Record<string, any>;
 };
 
 const startsAtSec = (iso: string) => Math.floor(new Date(iso).getTime() / 1000);
@@ -226,6 +253,41 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Esta cita ya está pagada' }, 400);
     }
 
+    // NOM-027 teleconsulta consent gate (mirrors video-room): every
+    // appointment paid through this function is a video consult, so a
+    // registered patient with a signed teleconsulta consent on file is
+    // required BEFORE any money is captured or room created.
+    if (!appointment.customer_id) {
+      return jsonResponse(
+        {
+          error:
+            'Las teleconsultas requieren un paciente registrado. Registre al paciente y capture su consentimiento de teleconsulta antes de confirmar.',
+        },
+        400
+      );
+    }
+
+    const { data: teleConsent, error: consentError } = await supabase
+      .from('consent_documents')
+      .select('id')
+      .eq('customer_id', appointment.customer_id)
+      .eq('type', 'teleconsulta')
+      .eq('status', 'signed')
+      .limit(1)
+      .maybeSingle();
+
+    if (consentError) throw consentError;
+
+    if (!teleConsent) {
+      return jsonResponse(
+        {
+          error:
+            'El paciente no tiene firmado el consentimiento de teleconsulta (NOM-027). Puede firmarlo en la app del paciente o en el kiosco de consentimiento, o capturarlo en papel desde la pestaña Consentimientos del expediente.',
+        },
+        409
+      );
+    }
+
     // Expected amount: the org's consult product price (full for 'unpaid',
     // half for 'membership_half'). Anything else does not require payment.
     const { data: consultProduct, error: productError } = await supabase
@@ -250,6 +312,33 @@ Deno.serve(async (req) => {
       expected = consultPrice;
     } else {
       return jsonResponse({ error: 'Esta cita no requiere pago' }, 400);
+    }
+
+    // Order↔appointment binding: the order must have been created for
+    // THIS appointment (the portal stamps purchase_units.custom_id with
+    // the appointment id). Verified before capture so a foreign order —
+    // anyone can create a PayPal order for the right amount — is never
+    // charged against this cita. PayPal internals are only logged.
+    let order: Record<string, any>;
+    try {
+      order = await getPayPalOrder(env, payload.order_id);
+    } catch (orderLookupError) {
+      console.error('[paypal-capture-consult] order lookup failed:', orderLookupError);
+      return jsonResponse({ error: 'Pago no completado o monto incorrecto' }, 402);
+    }
+
+    const purchaseUnits = Array.isArray(order?.purchase_units) ? order.purchase_units : [];
+    const orderBoundToAppointment =
+      purchaseUnits.length > 0 &&
+      purchaseUnits.every(
+        (unit: Record<string, any>) => String(unit?.custom_id || '') === payload.appointment_id
+      );
+    if (!orderBoundToAppointment) {
+      console.warn('[paypal-capture-consult] order does not belong to appointment:', {
+        order_id: payload.order_id,
+        appointment_id: payload.appointment_id,
+      });
+      return jsonResponse({ error: 'La orden de pago no corresponde a esta cita' }, 400);
     }
 
     // Capture the PayPal order. PayPal internals are only logged — the
@@ -361,7 +450,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    return jsonResponse({ meeting_url: meetingUrl, status: 'confirmed' }, 200);
+    // Anonymous endpoint: the meeting URL is never returned here. The
+    // patient reaches it through the authenticated portal (Mis Citas) and
+    // staff through the appointments panels.
+    return jsonResponse({ status: 'confirmed' }, 200);
   } catch (err) {
     if (err instanceof DailyApiError) {
       return jsonResponse({ error: err.message }, 502);

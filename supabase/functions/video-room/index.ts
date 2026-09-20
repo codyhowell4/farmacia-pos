@@ -1,7 +1,8 @@
 // Supabase Edge Function: video-room
 // Creates (or reuses) the Daily.co room for a video consultation and
 // confirms the appointment. JWT verification stays ON (default): the
-// caller must be an authenticated admin, pos, or doctor user.
+// caller must be an authenticated admin, pos, or doctor user whose
+// profile is not deactivated (profiles.deactivated_at, NOM-024 6.6.3).
 //
 // NOM-027: a signed teleconsulta consent (consent_documents type
 // 'teleconsulta', status 'signed') is required before any payment or
@@ -188,13 +189,21 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'No autorizado' }, 401);
     }
 
+    // Deactivated staff (profiles.deactivated_at not null, NOM-024
+    // 6.6.3 / SGSI) fail closed with the same body as an insufficient
+    // role — the deactivation must not reveal itself.
     const { data: callerProfile, error: callerError } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, deactivated_at')
       .eq('id', userData.user.id)
       .single();
 
-    if (callerError || !callerProfile || !['admin', 'pos', 'doctor'].includes(callerProfile.role)) {
+    if (
+      callerError ||
+      !callerProfile ||
+      callerProfile.deactivated_at !== null ||
+      !['admin', 'pos', 'doctor'].includes(callerProfile.role)
+    ) {
       return jsonResponse(
         { error: 'Solo el personal puede confirmar consultas por video' },
         403
@@ -360,8 +369,9 @@ Deno.serve(async (req) => {
     if (err instanceof DailyApiError) {
       return jsonResponse({ error: err.message }, 502);
     }
+    // Generic client body; the real error (PostgREST details, stack
+    // traces) stays in the server log — same pattern as paypal-webhook.
     console.error('[video-room] error:', err);
-    const message = err instanceof Error ? err.message : 'Error desconocido';
-    return jsonResponse({ error: message }, 500);
+    return jsonResponse({ error: 'Error al confirmar la consulta por video' }, 500);
   }
 });

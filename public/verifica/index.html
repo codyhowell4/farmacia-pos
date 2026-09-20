@@ -57,10 +57,10 @@
       <label for="f-folio">Folio de la receta *</label>
       <input type="text" id="f-folio" autocomplete="off" placeholder="Ej. RX-2026-000123">
 
-      <label for="f-sig">Fragmento de firma (opcional)</label>
-      <input type="text" id="f-sig" autocomplete="off" placeholder="Primeros caracteres de la firma impresos junto al QR">
+      <label for="f-sig">Fragmento de firma *</label>
+      <input type="text" id="f-sig" autocomplete="off" placeholder="Fragmento impreso en la receta, junto al código QR">
 
-      <p class="hint">Portal público para que las farmacias verifiquen recetas electrónicas expedidas por el consultorio (LGS, art. 42 Bis). Si llegó aquí escaneando el código QR de una receta, la verificación se realiza automáticamente.</p>
+      <p class="hint">Portal público para que las farmacias verifiquen recetas electrónicas expedidas por el consultorio (LGS, art. 42 Bis). Se requiere el folio Y el fragmento de firma impresos en la receta. Si llegó aquí escaneando el código QR de una receta, la verificación se realiza automáticamente.</p>
       <button class="btn" id="btn-verify">Verificar</button>
     </div>
 
@@ -143,13 +143,15 @@
         banner.textContent = text;
       }
 
-      function renderResult(d, providedSig) {
+      function renderResult(d) {
         resultView.style.display = 'block';
         sigWarning.style.display = 'none';
         detailCard.style.display = 'none';
 
         if (!d || !d.found) {
-          setBanner('red', 'Receta no encontrada — verifique el folio o no surta esta receta.');
+          // El servidor responde found:false tanto para folio desconocido
+          // como para fragmento incorrecto (folio + firma = llave compuesta).
+          setBanner('red', 'Receta no encontrada — verifique que el folio y el fragmento de firma coincidan con lo impreso en la receta; si son correctos, no surta esta receta.');
           return;
         }
         if (d.status === 'cancelled') {
@@ -163,16 +165,12 @@
           return;
         }
         setBanner('green', 'Receta válida — firma electrónica registrada.');
-        if (providedSig) {
-          sigWarning.style.display = 'block';
-          if (providedSig === d.sig_prefix) {
-            sigWarning.className = 'banner banner-green';
-            sigWarning.textContent = 'La firma del código QR coincide con la registrada ✓';
-          } else {
-            sigWarning.className = 'banner banner-amber';
-            sigWarning.textContent = 'El fragmento de firma del QR NO coincide — posible alteración, no surtir.';
-          }
-        }
+        // El servidor solo devuelve los datos cuando el fragmento presentado
+        // coincide con la firma registrada, así que llegar aquí ya confirma
+        // la coincidencia.
+        sigWarning.style.display = 'block';
+        sigWarning.className = 'banner banner-green';
+        sigWarning.textContent = 'El fragmento de firma coincide con la firma registrada ✓';
         renderDetails(d);
       }
 
@@ -185,8 +183,14 @@
           folioEl.focus();
           return;
         }
-        var payload = { folio: folio };
-        if (sig) payload.sig = sig;
+        // Llave compuesta: sin el fragmento de firma el servidor responde
+        // "no encontrada" aunque el folio exista.
+        if (!sig) {
+          showError('Capture el fragmento de firma impreso en la receta, junto al código QR.');
+          sigEl.focus();
+          return;
+        }
+        var payload = { folio: folio, sig: sig };
 
         btn.disabled = true;
         btn.textContent = 'Verificando...';
@@ -206,7 +210,7 @@
             showError((data && data.error) || 'No se pudo completar la verificación (código ' + res.status + ') — intente más tarde.');
             return;
           }
-          renderResult(data || { found: false }, sig);
+          renderResult(data || { found: false });
           resultView.scrollIntoView({ behavior: 'smooth', block: 'start' });
         } catch (err) {
           showError('No se pudo conectar con el servidor de verificación — compruebe su conexión a internet e intente de nuevo.');

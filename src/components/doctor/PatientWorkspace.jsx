@@ -20,10 +20,10 @@ import {
   getCustomerById, getDoctorPrescriptions, createDoctorPrescription,
   createAppointment, updateAppointment, deleteAppointment,
   getCustomerPurchaseHistory, getMedicalNotesByCustomer, createMedicalNote,
-  getInventoryForDoctor, updateCustomer,
+  getDoctorInventoryCached, updateCustomer,
   cancelDoctorPrescription, getDoctorProfile, getConsultaNotesByCustomer, getConsentDocuments,
   confirmVideoAppointment, startConsulta, clockInDoctor, getActiveDoctorShift,
-  getCustomerDocuments, getHistoriaClinica, needsHistoriaClinica, getAppointmentsByCustomer,
+  getCustomerDocuments, getHistoriaClinica, getAppointmentsByCustomer,
   hasAllConsentsSigned,
 } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
@@ -157,8 +157,24 @@ const PatientWorkspace = () => {
       })()
     : null;
 
+  // The full doctor catalog (~whole org inventory) only loads the first
+  // time a dialog needs it — module-level 5-min cache in db.js — instead of
+  // firing with the expediente mount batch.
+  const ensureDoctorInventory = async () => {
+    try {
+      const rows = await getDoctorInventoryCached();
+      const list = Array.isArray(rows) ? rows : [];
+      setInventory(list);
+      return list;
+    } catch (e) {
+      console.error('getInventoryForDoctor failed:', e);
+      return inventory;
+    }
+  };
+
   // Open the Nueva Receta dialog, pre-filling allergies from the history (if empty)
   const openRxDialog = () => {
+    ensureDoctorInventory();
     setRxForm((prev) => ({
       ...prev,
       alergias: prev.alergias || historyAllergies,
@@ -177,20 +193,14 @@ const PatientWorkspace = () => {
     }
     setLoading(true);
     try {
-      // Load customer first — this must succeed
-      const cust = await getCustomerById(customerId);
-      setCustomer(cust);
-    } catch (err) {
-      console.error('getCustomerById failed:', err);
-      toast.error('Error cargando datos del paciente');
-      setLoading(false);
-      return;
-    }
-
-    // Secondary data — all independent queries fire in parallel and each
-    // fails soft (empty state) so one error doesn't break the whole page.
-    const loadSecondary = async () => {
-      const [rxs, appts, docProfile, hist, meds, historiaRow, missing, inv] = await Promise.all([
+      // One parallel batch. The customer row is the only fatal query — when
+      // it rejects, Promise.all rejects and we stop with the same toast as
+      // before. Every secondary slice fails soft (empty state) so one error
+      // doesn't break the whole page. The doctor inventory catalog is NOT
+      // part of this batch: only the Rx / post-visit dialogs use it, so it
+      // lazy-loads on first dialog open (see ensureDoctorInventory).
+      const [cust, rxs, appts, docProfile, hist, meds, historiaRes, consultaRes] = await Promise.all([
+        getCustomerById(customerId),
         getDoctorPrescriptions(customerId).catch(e => {
           console.error('getDoctorPrescriptions failed:', e);
           return [];
@@ -213,19 +223,33 @@ const PatientWorkspace = () => {
           console.error('getMedicalNotesByCustomer failed:', e);
           return [];
         }),
-        getHistoriaClinica(customerId).catch(e => {
-          console.error('getHistoriaClinica failed:', e);
-          return null;
-        }),
-        needsHistoriaClinica(customerId).catch(e => {
-          console.error('needsHistoriaClinica failed:', e);
-          return false;
-        }),
-        getInventoryForDoctor().catch(e => {
-          console.error('getInventoryForDoctor failed:', e);
-          return [];
-        }),
+        // NOM-004 6.1: historia clínica de primera vez + first-note gate.
+        // needsHistoria = no consulta notes AND no historia row — computed
+        // client-side from these two queries (same check as the
+        // needsHistoriaClinica helper, without its duplicate historia_clinica
+        // read). `ok: false` marks a failed query so the gate fails soft
+        // (no badge) like the old .catch(() => false) did.
+        getHistoriaClinica(customerId).then(
+          row => ({ ok: true, row }),
+          e => {
+            console.error('getHistoriaClinica failed:', e);
+            return { ok: false, row: null };
+          }
+        ),
+        supabase
+          .from('consulta_notes')
+          .select('*', { count: 'exact', head: true })
+          .eq('customer_id', customerId)
+          .then(({ count, error }) => {
+            if (error) throw error;
+            return { ok: true, count: count || 0 };
+          })
+          .catch(e => {
+            console.error('consulta_notes count failed:', e);
+            return { ok: false, count: 0 };
+          }),
       ]);
+      setCustomer(cust);
       setPrescriptions(Array.isArray(rxs) ? rxs : []);
       // getAppointmentsByCustomer returns newest-first; the upcoming/past
       // sections below expect chronological (oldest-first) order.
@@ -236,10 +260,12 @@ const PatientWorkspace = () => {
       setDoctorProfile(docProfile);
       setPurchases(Array.isArray(hist) ? hist : []);
       setNotes(Array.isArray(meds) ? meds : []);
-      // NOM-004 6.1: historia clínica de primera vez + first-note gate state
-      setHistoria(historiaRow);
-      setNeedsHistoria(missing);
-      setInventory(Array.isArray(inv) ? inv : []);
+      setHistoria(historiaRes.row);
+      setNeedsHistoria(
+        historiaRes.ok && consultaRes.ok
+          ? consultaRes.count === 0 && !historiaRes.row
+          : false
+      );
 
       if (user?.id) {
         getActiveDoctorShift(user.id).then(setActiveShift).catch(() => {});
@@ -247,12 +273,9 @@ const PatientWorkspace = () => {
           .then(({ data }) => { if (data?.timezone) setTimezone(data.timezone); })
           .catch(() => {});
       }
-    };
-
-    try {
-      await loadSecondary();
     } catch (err) {
-      console.error('Unexpected secondary load error:', err);
+      console.error('getCustomerById failed:', err);
+      toast.error('Error cargando datos del paciente');
     } finally {
       setLoading(false);
     }
@@ -261,6 +284,89 @@ const PatientWorkspace = () => {
   useEffect(() => {
     loadAll();
   }, [loadAll]);
+
+  // ── Targeted refetches (post-mutation) ──
+  // Each mutation refetches only the slice it touched instead of re-running
+  // the whole loadAll batch.
+  const refetchCustomer = useCallback(async () => {
+    try {
+      setCustomer(await getCustomerById(customerId));
+    } catch (e) {
+      console.error('getCustomerById failed:', e);
+    }
+  }, [customerId]);
+
+  const refetchPrescriptions = useCallback(async () => {
+    try {
+      const rxs = await getDoctorPrescriptions(customerId);
+      setPrescriptions(Array.isArray(rxs) ? rxs : []);
+    } catch (e) {
+      console.error('getDoctorPrescriptions failed:', e);
+    }
+  }, [customerId]);
+
+  const refetchAppointments = useCallback(async () => {
+    try {
+      const appts = await getAppointmentsByCustomer(customerId);
+      // Same chronological (oldest-first) order as the initial load.
+      const sortedAppts = Array.isArray(appts)
+        ? [...appts].sort((a, b) => new Date(a?.appointment_date) - new Date(b?.appointment_date))
+        : [];
+      setAppointments(sortedAppts);
+    } catch (e) {
+      console.error('getAppointmentsByCustomer failed:', e);
+    }
+  }, [customerId]);
+
+  const refetchNotes = useCallback(async () => {
+    try {
+      const meds = await getMedicalNotesByCustomer(customerId);
+      setNotes(Array.isArray(meds) ? meds : []);
+    } catch (e) {
+      console.error('getMedicalNotesByCustomer failed:', e);
+    }
+  }, [customerId]);
+
+  // NOM-004 6.1 first-note gate: refresh the historia row and recompute
+  // needsHistoria from a fresh historia + consulta-count pair (same logic
+  // as the initial load).
+  const refetchHistoriaGate = useCallback(async () => {
+    const [historiaRes, consultaRes] = await Promise.all([
+      getHistoriaClinica(customerId).then(
+        row => ({ ok: true, row }),
+        e => {
+          console.error('getHistoriaClinica failed:', e);
+          return { ok: false, row: null };
+        }
+      ),
+      supabase
+        .from('consulta_notes')
+        .select('*', { count: 'exact', head: true })
+        .eq('customer_id', customerId)
+        .then(({ count, error }) => {
+          if (error) throw error;
+          return { ok: true, count: count || 0 };
+        })
+        .catch(e => {
+          console.error('consulta_notes count failed:', e);
+          return { ok: false, count: 0 };
+        }),
+    ]);
+    setHistoria(historiaRes.row);
+    setNeedsHistoria(
+      historiaRes.ok && consultaRes.ok
+        ? consultaRes.count === 0 && !historiaRes.row
+        : false
+    );
+  }, [customerId]);
+
+  // A saved post-visit note touches the cita status, may add a receta, and
+  // adds a consulta note (which can flip the NOM-004 historia gate).
+  const refetchAfterConsulta = useCallback(() => {
+    refetchAppointments();
+    refetchPrescriptions();
+    refetchHistoriaGate();
+  }, [refetchAppointments, refetchPrescriptions, refetchHistoriaGate]);
 
   const formatDate = (ts) => {
     if (!ts) return '-';
@@ -316,8 +422,11 @@ const PatientWorkspace = () => {
       toast.error(`Faltan datos en "${incompleteMed.medication.trim()}" (${missing}) — dosis, vía y frecuencia son obligatorias para emitir la receta.`);
       return;
     }
-    // LGS 245-255: los controlados nunca salen en receta electrónica
-    const controlledHit = findControlledMed(validMeds.map(m => m.medication), inventory);
+    // LGS 245-255: los controlados nunca salen en receta electrónica.
+    // The catalog lazy-loads with the dialog — await it here so this check
+    // never runs against an empty list on a slow first load.
+    const inv = await ensureDoctorInventory();
+    const controlledHit = findControlledMed(validMeds.map(m => m.medication), inv);
     if (controlledHit) {
       toast.error(controlledMedMessage(controlledHit));
       return;
@@ -413,7 +522,7 @@ const PatientWorkspace = () => {
         edad: '', temperatura: '', ta: '', fc: '', fr: '', so2: '', glicemia: '', alergias: '',
         next_appointment: '',
       });
-      loadAll();
+      refetchPrescriptions();
     } catch (err) {
       toast.error(err.message || 'Error creando receta');
     }
@@ -432,7 +541,7 @@ const PatientWorkspace = () => {
         details: `Receta ${rx.prescription_number || rx.id} cancelada — paciente ${customer?.full_name || ''} — estado anterior: ${rx.status || 'activa'} — meds: ${rxMeds || '-'}`,
       });
       toast.success('Receta cancelada');
-      loadAll();
+      refetchPrescriptions();
     } catch (err) {
       toast.error(err.message || 'Error cancelando receta');
     }
@@ -526,7 +635,7 @@ const PatientWorkspace = () => {
       }
       setApptDialogOpen(false);
       setApptForm({ appointment_date: '', status: 'pending', notes: '', type: 'in_person' });
-      loadAll();
+      refetchAppointments();
     } catch (err) {
       toast.error(err.message || 'Error creando cita');
     }
@@ -563,7 +672,7 @@ const PatientWorkspace = () => {
         await updateAppointment(id, { status });
       }
       toast.success('Cita actualizada');
-      loadAll();
+      refetchAppointments();
     } catch (err) {
       toast.error('Error actualizando cita');
     }
@@ -584,7 +693,7 @@ const PatientWorkspace = () => {
       toast.success('Consulta iniciada');
       setPostVisitAppt({ ...appt, ...updated });
       setPostVisitOpen(true);
-      loadAll();
+      refetchAppointments();
     } catch (err) {
       console.error(err);
       toast.error(`No se pudo iniciar la consulta: ${err?.message || 'error desconocido'}`);
@@ -598,7 +707,7 @@ const PatientWorkspace = () => {
     try {
       await deleteAppointment(id);
       toast.success('Cita eliminada');
-      loadAll();
+      refetchAppointments();
     } catch (err) {
       toast.error('Error eliminando cita');
     }
@@ -637,7 +746,7 @@ const PatientWorkspace = () => {
       });
       toast.success('Información del paciente actualizada');
       setPatientEditOpen(false);
-      loadAll();
+      refetchCustomer();
     } catch (err) {
       toast.error('Error actualizando paciente');
       console.error(err);
@@ -665,7 +774,8 @@ const PatientWorkspace = () => {
       toast.success('Nota creada');
       setNoteDialogOpen(false);
       setNoteForm({ note: '' });
-      loadAll();
+      refetchNotes();
+      refetchHistoriaGate();
     } catch (err) {
       toast.error('Error guardando nota');
     }
@@ -914,7 +1024,7 @@ const PatientWorkspace = () => {
             </div>
           </div>
 
-          <PatientMedicalHistory customer={customer} onSaved={loadAll} />
+          <PatientMedicalHistory customer={customer} onSaved={refetchCustomer} />
         </TabsContent>
 
         {/* NOTAS CONSULTA TAB (structured NOM-004 notes) */}
@@ -982,7 +1092,7 @@ const PatientWorkspace = () => {
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
                         {!isNurse && (
-                          <SignRecetaButton prescription={rx} customer={customer} onSigned={loadAll} />
+                          <SignRecetaButton prescription={rx} customer={customer} onSigned={refetchPrescriptions} />
                         )}
                         <Button size="sm" variant="ghost" className="text-slate-500" title="Imprimir" onClick={() => setPrintRx(rx)}>
                           <Printer className="w-4 h-4" />
@@ -1603,7 +1713,7 @@ const PatientWorkspace = () => {
         open={postVisitOpen}
         onOpenChange={setPostVisitOpen}
         appointment={postVisitAppt}
-        onSaved={loadAll}
+        onSaved={refetchAfterConsulta}
         onGoToConsents={() => setActiveTab('consent')}
       />
 
@@ -1619,7 +1729,7 @@ const PatientWorkspace = () => {
         open={historiaOpen}
         onOpenChange={setHistoriaOpen}
         customer={customer}
-        onSaved={() => { setNeedsHistoria(false); loadAll(); }}
+        onSaved={() => { setNeedsHistoria(false); refetchHistoriaGate(); }}
       />
       <HistoriaClinicaModal
         open={historiaViewOpen}

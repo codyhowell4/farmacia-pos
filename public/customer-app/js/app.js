@@ -194,6 +194,7 @@ async function initAuth() {
             renderCheckinForm();
           } else {
             renderPage(currentPage);
+            scheduleMisDatosPrompt();
           }
         }
       }
@@ -338,6 +339,7 @@ async function handleLogin() {
   navItems.forEach(nav => nav.classList.remove('active'));
   document.querySelector('[data-page="consulta"]')?.classList.add('active');
   renderPage('consulta');
+  scheduleMisDatosPrompt();
   showToast('Bienvenido de vuelta, ' + (currentCustomerProfile?.name || currentAuthUser.email), 'success');
 }
 
@@ -2564,6 +2566,17 @@ function updateMenuActiveState(page) {
   });
 }
 
+// Programmatic navigation that mirrors a menu tap (for inline onclick handlers).
+window.goPage = function(page) {
+  currentPage = page;
+  updateMenuActiveState(page);
+  navItems.forEach(nav => nav.classList.remove('active'));
+  const matchingNav = document.querySelector(`.bottom-nav .nav-item[data-page="${page}"]`);
+  if (matchingNav) matchingNav.classList.add('active');
+  closeMenu();
+  renderPage(page);
+};
+
 function renderPage(page) {
   // Consent gate: while the standard documents are pending (or their
   // verification failed — fail closed, R2-32), the full-screen consent
@@ -2610,6 +2623,7 @@ function renderPage(page) {
     case 'shop': renderShop(); break;
     case 'orders': renderOrders(); break;
     case 'settings': renderSettings(); break;
+    case 'mis-datos': renderMisDatos(); break;
     case 'emergency-id': renderEmergencyID(); break;
     case 'guides': renderHealthGuides(); break;
     case 'login': renderLogin(); break;
@@ -3734,19 +3748,11 @@ function renderSettings() {
     <div style="padding: 0 16px 12px;">
       <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 8px; padding-left: 4px;">Perfil</div>
       <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 20px; box-shadow: 0 6px 20px rgba(20,27,94,0.08); overflow: hidden;">
-        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="showMyDataModal()">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="goPage('mis-datos')">
           <div style="width: 40px; height: 40px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">📋</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Mis datos del expediente</div>
-            <div style="font-size: 0.8rem; color: #64748b;">Nombre, teléfono, CURP, sexo, nacimiento, talla y peso</div>
-          </div>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-        </div>
-        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="showHistoryModal()">
-          <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #0ea5e9, #0369a1); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🩺</div>
-          <div style="flex: 1;">
-            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Mi historia clínica</div>
-            <div style="font-size: 0.8rem; color: #64748b;">Alergias, enfermedades, hábitos, familia y vacunas — prellena tu expediente</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Mis datos e historia clínica</div>
+            <div style="font-size: 0.8rem; color: #64748b;">Ahora en su propia sección — Menú → Mis Datos</div>
           </div>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
@@ -3821,7 +3827,7 @@ function renderSettings() {
           </div>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
         </div>
-        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="navigateTo('emergency-id')">
+        <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="goPage('emergency-id')">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #ef4444, #dc2626); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🆔</div>
           <div style="flex: 1;">
             <div style="font-weight: 600; color: #fca5a5; font-size: 0.95rem;">ID Médico de Emergencia</div>
@@ -4826,6 +4832,190 @@ window.saveProfile = function(modal) {
   showToast('Perfil actualizado', 'success');
 };
 
+// ---- Mis Datos (own section) + monthly completeness prompt ----
+// NOM-004/NOM-024 need a complete identification block in every expediente,
+// but app signup only asks name + contact, so CURP/sexo/DOB are often
+// missing. This page shows what is on file and what is missing, and a
+// monthly (30-day), dismissible prompt nudges the patient to complete it.
+// The patient always chooses what to share (LFPDPPP): the prompt explains
+// the purpose, is voluntary, and never blocks the app.
+
+const MISDATOS_CORE_FIELDS = [
+  { key: 'phone', label: 'Teléfono' },
+  { key: 'curp', label: 'CURP' },
+  { key: 'sexo', label: 'Sexo' },
+  { key: 'date_of_birth', label: 'Fecha de nacimiento' },
+];
+
+function misDatosMissing(data) {
+  return MISDATOS_CORE_FIELDS.filter((f) => !data || !data[f.key]).map((f) => f.label);
+}
+
+// CURP validation (RENAPO: 18-char format + verification digit) — same rule
+// as the POS/doctor portal (src/lib/curp.js), ported since this app is plain
+// JS. NOM-024 6.5.1: validated, never auto-generated.
+const CURP_REGEX_APP = /^[A-Z][AEIOUX][A-Z]{2}\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[HM](AS|BC|BS|CC|CL|CM|CS|CH|DF|DG|GT|GR|HG|JC|MC|MN|MS|NT|NL|OC|PL|QT|QR|SP|SL|SR|TC|TS|TL|VZ|YN|ZS|NE)[BCDFGHJKLMNÑOPQRSTVWXYZ]{3}[0-9A-Z]\d$/;
+const CURP_CHECKSUM_CHARS_APP = '0123456789ABCDEFGHIJKLMNÑOPQRSTUVWXYZ';
+function isValidCurpApp(curp) {
+  if (typeof curp !== 'string') return false;
+  const normalized = curp.trim().toUpperCase();
+  if (!CURP_REGEX_APP.test(normalized)) return false;
+  let sum = 0;
+  for (let i = 0; i < 17; i++) sum += CURP_CHECKSUM_CHARS_APP.indexOf(normalized[i]) * (18 - i);
+  return (10 - (sum % 10)) % 10 === Number(normalized[17]);
+}
+
+async function renderMisDatos() {
+  const headerHtml = `
+    <div class="date-header">
+      <div class="day">expediente</div>
+      <div class="title">📋 Mis Datos</div>
+      <div class="subtitle">Datos de tu expediente clínico</div>
+    </div>
+  `;
+
+  if (!currentAuthUser) {
+    mainContent.innerHTML = headerHtml + `
+      <div style="padding: 0 16px 24px;">
+        <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 20px; padding: 24px 20px; text-align: center; box-shadow: 0 6px 20px rgba(20,27,94,0.08);">
+          <div style="font-size: 2rem; margin-bottom: 8px;">🔒</div>
+          <div style="font-weight: 600; color: #1a1a2e; margin-bottom: 6px;">Inicia sesión para ver tus datos</div>
+          <div style="font-size: 0.85rem; color: #64748b; margin-bottom: 16px;">Tus datos del expediente están protegidos; solo tú y tu médico pueden verlos.</div>
+          <button onclick="goPage('login')" style="padding: 0.75rem 2rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Iniciar sesión</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  mainContent.innerHTML = headerHtml + `
+    <div id="misdatos-body" style="padding: 0 16px 24px; text-align: center; color: #64748b;">Cargando…</div>
+  `;
+
+  const body = document.getElementById('misdatos-body');
+  const { data, error } = await FarmaciaAPI.getMyCustomerDetails();
+  if (error || !data) {
+    body.innerHTML = 'No pudimos cargar tus datos. Intenta de nuevo.';
+    return;
+  }
+
+  const missing = misDatosMissing(data);
+  const allergyCount = Array.isArray(data.medical_history?.alergias)
+    ? data.medical_history.alergias.filter((a) => a.status !== 'denied').length
+    : 0;
+  const dobDisplay = data.date_of_birth ? String(data.date_of_birth).split('-').reverse().join('/') : '';
+  const rows = [
+    { label: 'Nombre', value: data.full_name },
+    { label: 'Correo', value: data.email },
+    { label: 'Teléfono', value: data.phone },
+    { label: 'CURP', value: data.curp },
+    { label: 'Sexo', value: data.sexo === 'M' ? 'Mujer' : data.sexo === 'H' ? 'Hombre' : '' },
+    { label: 'Fecha de nacimiento', value: dobDisplay },
+    { label: 'Entidad de nacimiento', value: data.birth_state },
+    { label: 'Talla', value: data.height ? data.height + ' cm' : '' },
+    { label: 'Peso', value: data.weight ? data.weight + ' kg' : '' },
+    { label: 'Alergias', value: allergyCount > 0 ? allergyCount + ' registrada(s)' : '' },
+  ];
+  const chevron = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>';
+
+  body.style.textAlign = 'initial';
+  body.innerHTML = `
+    <div style="background: ${missing.length === 0 ? 'rgba(70,172,120,0.08)' : '#FFFBEB'}; border: 1px solid ${missing.length === 0 ? 'rgba(70,172,120,0.35)' : '#FDE68A'}; border-radius: 16px; padding: 14px 16px; margin-bottom: 12px;">
+      <div style="font-weight: 600; color: ${missing.length === 0 ? '#359268' : '#92400E'}; font-size: 0.9rem;">
+        ${missing.length === 0 ? '✅ Tu expediente está completo' : '⚠️ Faltan datos en tu expediente'}
+      </div>
+      <div style="font-size: 0.8rem; color: ${missing.length === 0 ? '#359268' : '#B45309'}; margin-top: 2px; line-height: 1.4;">
+        ${missing.length === 0
+          ? 'Gracias — con tus datos completos tu médico puede atenderte mejor.'
+          : 'Nos falta: <b>' + missing.join(' · ') + '</b>. Tu médico los necesita para tu expediente clínico y tus recetas.'}
+      </div>
+    </div>
+
+    <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 20px; box-shadow: 0 6px 20px rgba(20,27,94,0.08); overflow: hidden; margin-bottom: 12px;">
+      ${rows.map((r, i) => `
+        <div style="padding: 11px 16px; display: flex; justify-content: space-between; gap: 12px; ${i < rows.length - 1 ? 'border-bottom: 1px solid #F1F5F9;' : ''}">
+          <span style="font-size: 0.85rem; color: #64748b;">${r.label}</span>
+          <span style="font-size: 0.85rem; font-weight: 600; color: ${r.value ? '#1a1a2e' : '#F59E0B'}; text-align: right; word-break: break-word;">${r.value ? escapeHtml(String(r.value)) : 'Falta'}</span>
+        </div>`).join('')}
+    </div>
+
+    <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 20px; box-shadow: 0 6px 20px rgba(20,27,94,0.08); overflow: hidden; margin-bottom: 12px;">
+      <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="showMyDataModal()">
+        <div style="width: 40px; height: 40px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">✏️</div>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Editar mis datos</div>
+          <div style="font-size: 0.8rem; color: #64748b;">Nombre, teléfono, CURP, sexo, nacimiento, talla y peso</div>
+        </div>
+        ${chevron}
+      </div>
+      <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer;" onclick="showHistoryModal()">
+        <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #0ea5e9, #0369a1); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">🩺</div>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">Mi historia clínica</div>
+          <div style="font-size: 0.8rem; color: #64748b;">Alergias, enfermedades, hábitos, familia y vacunas — prellena tu expediente</div>
+        </div>
+        ${chevron}
+      </div>
+    </div>
+
+    <div style="font-size: 0.75rem; color: #94a3b8; line-height: 1.4; padding: 0 4px;">
+      Estos datos forman parte de tu expediente clínico y aparecen en tus recetas. Puedes ejercer tus derechos ARCO (acceso, rectificación, cancelación u oposición) desde
+      <a href="#" onclick="goPage('privacidad-datos'); return false;" style="color: #1E2A8A;">Aviso de privacidad → tus datos</a>.
+    </div>
+  `;
+}
+
+// Monthly "completa tus datos" prompt: at most once every 30 days, only
+// while core expediente fields are missing, only for signed-in users, and
+// never during the consent gate / password recovery / check-in flows.
+const MISDATOS_PROMPT_KEY = 'misdatosPromptLastV1';
+const MISDATOS_PROMPT_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function scheduleMisDatosPrompt() {
+  setTimeout(() => { maybePromptMisDatos().catch(() => {}); }, 1500);
+}
+
+async function maybePromptMisDatos() {
+  if (!currentAuthUser || consentGateActive || isPasswordRecovery || pendingCheckin) return;
+  let last = 0;
+  try { last = Number(localStorage.getItem(MISDATOS_PROMPT_KEY) || 0); } catch (e) { return; }
+  if (Date.now() - last < MISDATOS_PROMPT_INTERVAL_MS) return;
+  const { data, error } = await FarmaciaAPI.getMyCustomerDetails();
+  if (error || !data) return;
+  const missing = misDatosMissing(data);
+  if (missing.length === 0) return;
+  try { localStorage.setItem(MISDATOS_PROMPT_KEY, String(Date.now())); } catch (e) { /* ignore */ }
+
+  const existing = document.querySelector('.modal-overlay.misdatos-prompt');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay misdatos-prompt';
+  modal.style.cssText = 'position: fixed; inset: 0; background: rgba(20,27,94,0.45); display: flex; justify-content: center; align-items: center; z-index: 1100; padding: 1rem;';
+  modal.innerHTML = `
+    <div style="background: white; border-radius: 20px; width: 100%; max-width: 400px; box-shadow: 0 20px 50px rgba(20,27,94,0.3); overflow: hidden;">
+      <div style="padding: 1.25rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%);">
+        <h3 style="margin: 0; font-size: 1.1rem; color: white;">Completa tu expediente 📋</h3>
+      </div>
+      <div style="padding: 1.25rem;">
+        <p style="margin: 0 0 0.75rem; font-size: 0.9rem; color: #334155; line-height: 1.5;">
+          Para que tu médico tenga tu expediente clínico completo y tus recetas salgan con tus datos correctos, nos falta:
+        </p>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem;">
+          ${missing.map((m) => `<span style="background: #FEF3C7; color: #92400E; font-size: 0.8rem; font-weight: 600; padding: 0.3rem 0.7rem; border-radius: 999px;">${m}</span>`).join('')}
+        </div>
+        <p style="margin: 0 0 1rem; font-size: 0.75rem; color: #94a3b8; line-height: 1.4;">
+          Es voluntario; puedes actualizarlo cuando quieras desde Menú → Mis Datos. Te lo recordaremos una vez al mes.
+        </p>
+        <div style="display: flex; gap: 0.75rem;">
+          <button onclick="this.closest('.modal-overlay').remove()" style="flex: 1; padding: 0.875rem; border: 1.5px solid #E3E8F2; background: white; color: #475569; border-radius: 12px; font-weight: 600; cursor: pointer;">Ahora no</button>
+          <button onclick="this.closest('.modal-overlay').remove(); showMyDataModal();" style="flex: 1; padding: 0.875rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Completar ahora</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
 // ---- Mis datos del expediente (customers row, via RPC) ----
 window.showMyDataModal = async function() {
   const existing = document.querySelector('.modal-overlay.mydata');
@@ -4929,8 +5119,8 @@ window.showMyDataModal = async function() {
 window.saveMyData = async function(modal) {
   const val = (id) => modal.querySelector(id)?.value.trim() || '';
   const curp = val('#mydata-curp').toUpperCase();
-  if (curp && curp.length !== 18) {
-    showToast('El CURP debe tener 18 caracteres', 'error');
+  if (curp && !isValidCurpApp(curp)) {
+    showToast('Revisa el CURP — no coincide con el formato oficial (18 caracteres y dígito verificador)', 'error');
     return;
   }
   const fields = {
@@ -4957,6 +5147,7 @@ window.saveMyData = async function(modal) {
   }
   modal.remove();
   showToast('Datos actualizados ✓', 'success');
+  if (currentPage === 'mis-datos') renderMisDatos();
 };
 
 window.addMyAllergy = async function(btn) {
@@ -8977,7 +9168,8 @@ function loadPayPalSdk() {
 }
 
 // Capture a PayPal order for a consult via the edge function.
-// Returns { meeting_url, status: 'confirmed' } or throws with the function's error.
+// Returns { status: 'confirmed' } — the meeting URL is never returned to
+// this anonymous call; the patient joins from Mis Citas in the portal.
 async function captureConsultPayment(orderId, appointmentId) {
   const cfg = window.farmaciaSupabaseConfig || {};
   const res = await fetch(cfg.URL + '/functions/v1/paypal-capture-consult', {
@@ -9478,7 +9670,10 @@ async function mountVideoPayPalButtons() {
       createOrder: (data, actions) => actions.order.create({
         purchase_units: [{
           amount: { value: ctx.amount.toFixed(2), currency_code: 'MXN' },
-          description: 'Video consulta médica - Farmacia Apolo'
+          description: 'Video consulta médica - Farmacia Apolo',
+          // Binds the order to this appointment — paypal-capture-consult
+          // rejects orders whose custom_id does not match the cita.
+          custom_id: ctx.appointmentId
         }]
       }),
       onApprove: async (data) => {

@@ -97,32 +97,36 @@ const InventoryDashboard = () => {
   };
 
   const loadInventory = async () => {
-    try {
+    // Independent queries — fire in parallel; each keeps its old fail-soft
+    // behavior (a failed slice leaves its previous state untouched, except
+    // links which default to []).
+    const [items, batches, links] = await Promise.all([
       // Load the full org catalog (no location filter): the management
       // view must find every product, including items with no/other location.
-      const items = await getInventoryWithSupplier();
-      setInventory(items);
-    } catch (e) {
-      console.error(e);
-    }
-    try {
-      const batches = await getAllInventoryBatches();
+      getInventoryWithSupplier().catch(e => {
+        console.error(e);
+        return null;
+      }),
+      getAllInventoryBatches().catch(e => {
+        console.error('Could not load inventory batches:', e);
+        return null;
+      }),
+      // product_links table may not exist yet (migration pending) — links are optional
+      getAllProductLinks().catch(e => {
+        console.warn('Could not load product links:', e?.message);
+        return [];
+      }),
+    ]);
+    if (items) setInventory(items);
+    if (batches) {
       const map = {};
       for (const b of batches) {
         if (!map[b.inventory_id]) map[b.inventory_id] = [];
         map[b.inventory_id].push(b);
       }
       setBatchesByItem(map);
-    } catch (e) {
-      console.error('Could not load inventory batches:', e);
     }
-    try {
-      setAllLinks(await getAllProductLinks());
-    } catch (e) {
-      // product_links table may not exist yet (migration pending) — links are optional
-      console.warn('Could not load product links:', e?.message);
-      setAllLinks([]);
-    }
+    setAllLinks(links || []);
   };
 
   const handleLogout = () => { logout(); navigate('/login'); };

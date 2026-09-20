@@ -17,14 +17,26 @@ const supabaseAdmin = (env: Record<string, string>) => {
   return createClient(url, serviceKey, { auth: { persistSession: false } });
 };
 
+// Errors whose message is safe to show the caller (auth and payload
+// validation). Everything else (PayPal API payloads, PostgREST details,
+// stack traces) is logged server-side and answered with a generic
+// message — same pattern as paypal-webhook / paypal-subscription.
+class ClientError extends Error {
+  status: number;
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
 // Validates the caller's JWT and requires an admin/pos profile.
 const requireStaffUser = async (env: Record<string, string>, req: Request) => {
   const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
-  if (!token) throw new Error('No autorizado');
+  if (!token) throw new ClientError('No autorizado');
 
   const supabase = supabaseAdmin(env);
   const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) throw new Error('No autorizado');
+  if (error || !user) throw new ClientError('No autorizado');
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -33,7 +45,7 @@ const requireStaffUser = async (env: Record<string, string>, req: Request) => {
     .maybeSingle();
 
   if (!profile || !['admin', 'pos'].includes(profile.role as string)) {
-    throw new Error('Solo el personal puede gestionar suscripciones');
+    throw new ClientError('Solo el personal puede gestionar suscripciones');
   }
 };
 
@@ -114,10 +126,10 @@ Deno.serve(async (req) => {
     };
 
     if (!payload.subscription_id) {
-      throw new Error('subscription_id requerido');
+      throw new ClientError('subscription_id requerido');
     }
     if (!payload.action || !['suspend', 'activate', 'cancel'].includes(payload.action)) {
-      throw new Error('action inválida. Usa suspend, activate o cancel.');
+      throw new ClientError('action inválida. Usa suspend, activate o cancel.');
     }
 
     await callPayPalSubscriptionAction(
@@ -132,11 +144,21 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (err) {
+    if (err instanceof ClientError) {
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: err.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     console.error('[paypal-subscription-status] error:', err);
-    const message = err instanceof Error ? err.message : 'Error desconocido';
-    return new Response(JSON.stringify({ error: message }), {
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({
+        error: 'No se pudo actualizar la suscripción con PayPal. Intenta de nuevo.',
+      }),
+      {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      }
+    );
   }
 });

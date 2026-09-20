@@ -15,6 +15,11 @@
 //   account_exists and the user is told to log in / reset their password.
 // - The PayPal plan_id on the subscription must match the configured plan
 //   env var for the claimed plan_type (mandatory, fails closed).
+// - One paid PayPal subscription activates exactly ONE membership: any
+//   memberships row already carrying the same processor_subscription_id
+//   for a DIFFERENT customer rejects the signup with 409. The partial
+//   unique index on processor_subscription_id is the hard backstop, and
+//   unique-violation races on the insert are also answered with 409.
 // - Client-facing errors are generic; details are logged server-side only.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
@@ -188,6 +193,24 @@ const findMembershipByCustomer = async (
   return data?.[0] || null;
 };
 
+// Finds ANY membership row carrying this PayPal subscription id,
+// regardless of the customer — the cross-customer replay guard (one paid
+// subscription must only ever activate one membership).
+const findMembershipBySubscriptionId = async (
+  supabase: ReturnType<typeof supabaseAdmin>,
+  subscriptionId: string
+) => {
+  const { data, error } = await supabase
+    .from('memberships')
+    .select('id, customer_id')
+    .eq('processor_subscription_id', subscriptionId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+};
+
 const addMonthsWithLastDayRule = (start: Date, months: number) => {
   const d = new Date(start);
   const day = d.getDate();
@@ -234,7 +257,18 @@ const createMembership = async (
     p_terms_accepted_at: payload.terms_accepted_at || null,
   });
 
-  if (error) throw error;
+  if (error) {
+    // Unique-violation race with the partial unique index on
+    // memberships.processor_subscription_id: a concurrent signup with the
+    // same PayPal subscription won — answer 409, not 500.
+    if (error.code === '23505' || /duplicate key/i.test(error.message || '')) {
+      throw new ClientError(
+        'Esta suscripción de PayPal ya está asociada a una membresía. Si crees que es un error, contacta a la farmacia.',
+        409
+      );
+    }
+    throw error;
+  }
   return (data as { membership: Record<string, unknown> }).membership;
 };
 
@@ -563,6 +597,33 @@ Deno.serve(async (req) => {
           'Ya existe una membresía activa o pausada para este correo. Usa el panel de administración para gestionarla.'
         );
       }
+    }
+
+    // Cross-customer replay guard: a paid PayPal subscription activates
+    // exactly ONE membership. Any memberships row already carrying this
+    // processor_subscription_id that belongs to a DIFFERENT customer
+    // means the caller is reusing a subscription already consumed under
+    // another email — refuse with a generic 409. Same-customer cases
+    // never reach this check: the idempotent replay path above already
+    // returned for them. The partial unique index on
+    // processor_subscription_id is the hard backstop for the remaining
+    // race (see createMembership).
+    const consumedMembership = await findMembershipBySubscriptionId(
+      supabase,
+      payload.subscription_id
+    );
+    if (consumedMembership && consumedMembership.customer_id !== existingCustomer?.id) {
+      console.warn(
+        '[paypal-subscription] subscription id already consumed by another customer:',
+        { subscription_id: payload.subscription_id }
+      );
+      return jsonResponse(
+        {
+          error:
+            'Esta suscripción de PayPal ya está asociada a una membresía. Si crees que es un error, contacta a la farmacia.',
+        },
+        409
+      );
     }
 
     // Account-takeover guard: when a portal account already exists for this

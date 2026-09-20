@@ -9,6 +9,9 @@
 // - per-IP sliding-window rate limiting (rate_limit_events table, same
 //   helper pattern as tablet-checkin — fails open so a rate-limit infra
 //   hiccup never locks patients out of the login page);
+// - per-identifier sliding-window rate limiting (3 per 10 min per
+//   normalized identifier) so a distributed spray against one victim's
+//   phone/email/sub_id stops even when it comes from many IPs;
 // - a minimal response: { email } only — no matched-via, no hints.
 //
 // Body: { identifier: string, org_id: string } — identifier may be an email,
@@ -27,6 +30,10 @@ const corsHeaders = {
 // window only has to absorb typos, not bursts (unlike the shared-IP kiosk).
 const RATE_LIMIT = { limit: 10, windowMs: 10 * 60 * 1000 };
 const RATE_BUCKET = 'lookup-login-email';
+// Per-identifier cap (pen-test): same mechanism, keyed on the normalized
+// identifier, so targeted probing of one victim stops even from many IPs.
+const IDENTIFIER_RATE_LIMIT = { limit: 3, windowMs: 10 * 60 * 1000 };
+const IDENTIFIER_RATE_BUCKET = 'lookup-login-email:identifier';
 
 interface RequestPayload {
   identifier?: string;
@@ -45,26 +52,28 @@ const jsonResponse = (body: Record<string, unknown>, status: number) =>
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 
-// Sliding-window per-IP rate limit. Fails open (with a warning) if the
-// rate_limit_events table is unreachable — login must keep working.
+// Sliding-window rate limit on a bucket+key pair (per-IP and
+// per-identifier). Fails open (with a warning) if the rate_limit_events
+// table is unreachable — login must keep working.
 const checkRateLimit = async (
   supabase: ReturnType<typeof supabaseAdmin>,
-  ip: string | null
+  bucket: string,
+  key: string,
+  cfg: { limit: number; windowMs: number }
 ): Promise<boolean> => {
-  const key = ip || 'unknown';
   try {
-    const since = new Date(Date.now() - RATE_LIMIT.windowMs).toISOString();
+    const since = new Date(Date.now() - cfg.windowMs).toISOString();
     const { count, error } = await supabase
       .from('rate_limit_events')
       .select('id', { count: 'exact', head: true })
-      .eq('bucket', RATE_BUCKET)
+      .eq('bucket', bucket)
       .eq('key', key)
       .gte('created_at', since);
     if (error) throw error;
-    if ((count || 0) >= RATE_LIMIT.limit) return false;
+    if ((count || 0) >= cfg.limit) return false;
     const { error: insError } = await supabase
       .from('rate_limit_events')
-      .insert({ bucket: RATE_BUCKET, key });
+      .insert({ bucket, key });
     if (insError) throw insError;
     // Occasional cleanup so the table stays small.
     if (Math.random() < 0.02) {
@@ -106,8 +115,18 @@ Deno.serve(async (req) => {
 
     const supabase = supabaseAdmin(env);
 
-    const withinLimit = await checkRateLimit(supabase, ip);
+    const withinLimit = await checkRateLimit(supabase, RATE_BUCKET, ip || 'unknown', RATE_LIMIT);
     if (!withinLimit) {
+      return jsonResponse({ error: 'Demasiados intentos' }, 429);
+    }
+
+    // Per-identifier cap, keyed on the normalized identifier (lowercase,
+    // whitespace-free — the resolver itself is case-insensitive). The 429
+    // body is identical to the per-IP one, so the caps are
+    // indistinguishable from the outside.
+    const identifierKey = identifier.toLowerCase().replace(/\s+/g, '');
+    const withinIdentifierLimit = await checkRateLimit(supabase, IDENTIFIER_RATE_BUCKET, identifierKey, IDENTIFIER_RATE_LIMIT);
+    if (!withinIdentifierLimit) {
       return jsonResponse({ error: 'Demasiados intentos' }, 429);
     }
 

@@ -152,6 +152,12 @@
       var guardianRelEl = document.getElementById('guardian_relationship');
       var emailHint = document.getElementById('email-hint');
 
+      // Escape user-entered / server values before they go into innerHTML
+      function esc(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+
       // ---- Fecha de nacimiento: dd/mm/aaaa (máscara + validación de calendario) ----
       dobEl.addEventListener('input', function () {
         var digits = dobEl.value.replace(/\D/g, '').slice(0, 8);
@@ -207,14 +213,14 @@
       docs.forEach(function (doc) {
         var details = document.createElement('details');
         details.innerHTML =
-          '<summary>' + doc.title + '</summary>' +
+          '<summary>' + esc(doc.title) + '</summary>' +
           '<div class="doc-body">' +
-            (doc.summary ? '<div class="doc-summary">' + doc.summary + '</div>' : '') +
+            (doc.summary ? '<div class="doc-summary">' + esc(doc.summary) + '</div>' : '') +
             '<div class="doc-content"></div>' +
           '</div>' +
           '<label class="accept-row">' +
             '<input type="checkbox" class="accept-check" data-type="' + doc.type + '">' +
-            '<span>He leído y acepto: ' + doc.title + '</span>' +
+            '<span>He leído y acepto: ' + esc(doc.title) + '</span>' +
           '</label>';
         details.querySelector('.doc-content').textContent = doc.content;
         container.appendChild(details);
@@ -341,11 +347,11 @@
           }
 
           var details = [];
-          details.push('<strong>' + (isMinor ? guardianName : patientName) + '</strong>');
-          if (isMinor) details.push('Paciente: ' + patientName + ' (menor de edad)');
+          details.push('<strong>' + esc(isMinor ? guardianName : patientName) + '</strong>');
+          if (isMinor) details.push('Paciente: ' + esc(patientName) + ' (menor de edad)');
           details.push('Consentimientos firmados ✓');
           if (result.account === 'created' && result.recovery_email_sent) {
-            details.push('📧 Te enviamos un correo a <strong>' + email + '</strong> para crear la contraseña de tu app.');
+            details.push('📧 Te enviamos un correo a <strong>' + esc(email) + '</strong> para crear la contraseña de tu app.');
           } else if (result.account === 'created' && !email) {
             details.push('📱 Entra a la app con tu teléfono y la contraseña que creaste.');
           } else if (result.account === 'existed') {

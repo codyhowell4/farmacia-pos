@@ -196,6 +196,14 @@ const PrintablePrescription = ({ prescription, customer }) => {
           max-width: 0.9in;
           line-height: 1.25;
         }
+        .rx-qr-fragment {
+          font-size: 5pt;
+          font-family: monospace;
+          text-align: center;
+          max-width: 1.1in;
+          line-height: 1.3;
+          word-break: break-all;
+        }
         .rx-body {
           display: flex;
           gap: 0.14in;
@@ -392,6 +400,9 @@ const PrintablePrescription = ({ prescription, customer }) => {
                 <div className="rx-qr-block">
                   <img src={qrUrl} alt="QR de verificación de firma electrónica" />
                   <div className="rx-qr-caption">Firma electrónica — Verifique la firma escaneando el código o en app.apolofarmacia.com.mx/verifica</div>
+                  {/* Same 32-char fragment encoded in the QR, printed so a
+                      pharmacist can also verify manually (folio + fragment). */}
+                  <div className="rx-qr-fragment">Fragmento de firma: {prescription.signature.slice(0, 32)}</div>
                 </div>
               )}
               <svg className="rx-caduceus" viewBox="0 0 48 64" fill="none" stroke={NAVY} strokeWidth="2" strokeLinecap="round">

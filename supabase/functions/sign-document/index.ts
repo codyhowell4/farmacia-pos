@@ -10,7 +10,8 @@
 //
 // Access control (verify_jwt = true at the gateway, re-validated here):
 // the caller must be an active doctor (profiles.role = 'doctor' AND
-// doctor_profiles.is_active = true) — these checks fail closed. When the
+// profiles.deactivated_at IS NULL AND doctor_profiles.is_active = true)
+// — these checks fail closed. When the
 // doctor already has an e.firma registered in doctor_efirma, the presented
 // certificate must be that same one (base64 equality or cert-serial
 // match); with no row on file the first-use validation flow is allowed
@@ -143,13 +144,15 @@ Deno.serve(async (req) => {
     const supabase = supabaseAdmin(env);
 
     // ── AuthZ: only active doctors may sign (fail closed) ────────
+    // profiles.deactivated_at (baja de personal, NOM-024 6.6.3 / SGSI)
+    // is treated exactly like a non-doctor role: same 403 body.
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, deactivated_at')
       .eq('id', userId)
       .maybeSingle();
     if (profileError) console.error('[sign-document] profiles lookup failed:', profileError);
-    if (profileError || !profile || profile.role !== 'doctor') {
+    if (profileError || !profile || profile.role !== 'doctor' || profile.deactivated_at !== null) {
       return jsonResponse({ error: 'No autorizado' }, 403);
     }
 
