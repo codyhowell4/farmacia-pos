@@ -35,6 +35,25 @@ window.FarmaciaAPI = (function () {
     return typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
   }
 
+  // Helper: fetch every page of a PostgREST query. PostgREST silently
+  // truncates responses at ~1000 rows, so large reads (catalog, order
+  // history) loop .range() until a short page arrives. `buildQuery`
+  // returns a fresh query builder per page (builders are single-use).
+  // Throws on error.
+  async function _fetchAllPages(buildQuery, pageSize = 1000) {
+    const all = [];
+    let from = 0;
+    for (;;) {
+      const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+      if (error) throw error;
+      const rows = data || [];
+      all.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return all;
+  }
+
   if (!isSupabaseAvailable) {
     console.log('[FarmaciaAPI] Fallback mode active - Supabase not available');
   }
@@ -353,7 +372,10 @@ window.FarmaciaAPI = (function () {
     },
 
     /**
-     * Get the product catalog (inventory).
+     * Get the product catalog (inventory) for the online store.
+     * Only OTC products: Rx-only rows are excluded here (null counts as
+     * OTC) and the place_store_order RPC rejects them server-side anyway.
+     * Paginates past PostgREST's 1000-row cap via _fetchAllPages.
      * Falls back to localStorage apollo_medicines.
      */
     async getProducts() {
@@ -365,13 +387,12 @@ window.FarmaciaAPI = (function () {
       }
 
       try {
-        const { data, error } = await sb
+        const data = await _fetchAllPages(() => sb
           .from('inventory_catalog')
           .select('id, name, "use", price, quantity, requires_prescription, category, image_url, barcode, low_stock_threshold')
           .gt('quantity', 0)
-          .order('name');
-
-        if (error) throw error;
+          .or('requires_prescription.is.null,requires_prescription.eq.false')
+          .order('name'));
 
         if (data && data.length > 0) {
           console.log('[FarmaciaAPI] Products loaded from Supabase:', data.length);
@@ -417,14 +438,12 @@ window.FarmaciaAPI = (function () {
           return fallback();
         }
 
-        const { data, error } = await sb
+        const data = await _fetchAllPages(() => sb
           .from('sales')
           .select('*, sale_items(*)')
           .eq('customer_id', customerId)
           .eq('voided', false)
-          .order('timestamp', { ascending: false });
-
-        if (error) throw error;
+          .order('timestamp', { ascending: false }));
 
         if (data && data.length > 0) {
           console.log('[FarmaciaAPI] Orders loaded from Supabase:', data.length);
@@ -1232,6 +1251,16 @@ window.FarmaciaAPI = (function () {
       }
     },
 
+    /**
+     * Place a store order via the security-definer RPC place_store_order.
+     * The server validates stock atomically, rejects Rx-only products, and
+     * computes every price itself (member discount included) — the client
+     * sends only { inventory_id, quantity } items, so there is no
+     * client-side price to tamper with. The returned `total` is
+     * authoritative; any client-side total is a display estimate only.
+     * On failure, `error.message` is one of our own user-safe Spanish
+     * strings (shown to the shopper by the caller).
+     */
     async placeOrder(cartItems, checkoutData) {
       if (!sb) {
         console.log('[FarmaciaAPI] placeOrder fallback - Supabase not available');
@@ -1244,134 +1273,46 @@ window.FarmaciaAPI = (function () {
         return { order: null, error: new Error('Not authenticated') };
       }
 
+      // Map the cart to the RPC shape. Every item must carry a real
+      // inventory uuid — no partial orders.
+      const pItems = [];
+      for (const item of cartItems || []) {
+        const inventoryId = item.medicineId || item.id;
+        if (!isValidUuid(inventoryId)) {
+          console.warn('[FarmaciaAPI] placeOrder - invalid cart item id:', inventoryId);
+          return { order: null, error: new Error('Artículo inválido en el carrito') };
+        }
+        pItems.push({ inventory_id: inventoryId, quantity: item.quantity });
+      }
+
       try {
-        // 1. Get customer record
-        const { data: customer, error: custErr } = await sb
-          .from('customers')
-          .select('id, org_id, full_name, curp')
-          .eq('profile_id', user.id)
-          .single();
+        const { data, error } = await sb.rpc('place_store_order', {
+          p_items: pItems,
+          p_patient_name: checkoutData.patientName || 'Paciente',
+          p_payment_method: checkoutData.paymentMethod || 'cash'
+        });
 
-        if (custErr) throw custErr;
-        if (!customer) throw new Error('Customer record not found');
-
-        const orgId = customer.org_id || (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
-        if (!orgId) throw new Error('org_id not available');
-
-        // 2. Build sale header
-        const sale = {
-          org_id: orgId,
-          customer_id: customer.id,
-          patient_name: checkoutData.patientName || customer.full_name || 'Paciente',
-          patient_curp: checkoutData.patientCurp || customer.curp || null,
-          payment_method: checkoutData.paymentMethod || 'cash',
-          subtotal: checkoutData.total || 0,
-          total: checkoutData.total || 0,
-          status: 'processing',
-          voided: false,
-          timestamp: new Date().toISOString()
-        };
-
-        // 3. Insert sale header
-        const { data: saleRow, error: saleErr } = await sb
-          .from('sales')
-          .insert(sale)
-          .select()
-          .single();
-
-        if (saleErr) throw saleErr;
-
-        // 4. Build sale_items
-        const saleItems = cartItems.map(item => ({
-          sale_id: saleRow.id,
-          inventory_id: isValidUuid(item.medicineId || item.id) ? (item.medicineId || item.id) : null,
-          name: item.name,
-          quantity: item.quantity,
-          price: item.price
-        }));
-
-        const { error: itemsErr } = await sb
-          .from('sale_items')
-          .insert(saleItems);
-
-        if (itemsErr) {
-          // Try to void the orphaned sale header
-          console.warn('[placeOrder] sale_items insert failed, voiding sale header:', itemsErr.message);
-          await sb.from('sales').update({ voided: true, voided_by: 'system', voided_at: new Date().toISOString() }).eq('id', saleRow.id);
-          throw itemsErr;
+        if (error) {
+          console.warn('[FarmaciaAPI] placeOrder RPC rejected:', error.message, error.details || '', error.hint || '');
+          return { order: null, error };
         }
 
-        // 5. Deduct inventory for items with valid inventory_id
-        let inventorySuccess = 0;
-        let inventoryFail = 0;
-        for (const item of cartItems) {
-          const invId = item.medicineId || item.id;
-          if (!isValidUuid(invId)) continue;
-
-          try {
-            const { error: rpcErr } = await sb.rpc('decrement_inventory', {
-              p_id: invId,
-              p_qty: item.quantity
-            });
-
-            if (rpcErr) {
-              // Fallback: manual update
-              const { data: currentInv } = await sb
-                .from('inventory')
-                .select('quantity, sales_count')
-                .eq('id', invId)
-                .single();
-
-              if (currentInv) {
-                const { error: updErr } = await sb.from('inventory').update({
-                  quantity: currentInv.quantity - item.quantity,
-                  sales_count: currentInv.sales_count + item.quantity,
-                  updated_at: new Date().toISOString()
-                }).eq('id', invId);
-
-                if (updErr) {
-                  console.warn('[placeOrder] Inventory fallback failed for', invId, updErr.message);
-                  inventoryFail++;
-                } else {
-                  console.log('[placeOrder] Inventory deducted (fallback) for', invId);
-                  inventorySuccess++;
-                }
-              } else {
-                console.warn('[placeOrder] Inventory not found for', invId);
-                inventoryFail++;
-              }
-            } else {
-              console.log('[placeOrder] Inventory deducted (RPC) for', invId);
-              inventorySuccess++;
-            }
-          } catch (invErr) {
-            console.warn('[placeOrder] Inventory deduction error for', invId, invErr.message);
-            inventoryFail++;
-          }
-        }
-
-        if (inventoryFail > 0) {
-          console.warn(`[placeOrder] Inventory: ${inventorySuccess} succeeded, ${inventoryFail} failed`);
-        } else {
-          console.log('[placeOrder] All inventory deductions succeeded');
-        }
-
-        console.log('[placeOrder] Supabase order created:', saleRow.id);
+        console.log('[FarmaciaAPI] placeOrder created server-side:', data.sale_id);
         return {
           order: {
-            id: saleRow.id,
-            date: saleRow.timestamp ? saleRow.timestamp.split('T')[0] : new Date().toISOString().split('T')[0],
-            status: 'Procesando',
-            total: parseFloat(saleRow.total) || 0,
-            items: cartItems,
-            payment: checkoutData.paymentMethod === 'card' ? 'Tarjeta' : 'Efectivo',
+            id:       data.sale_id,
+            date:     new Date().toISOString().split('T')[0],
+            status:   'Procesando',
+            total:    parseFloat(data.total) || 0,
+            items:    cartItems,
+            payment:  mapPaymentMethod(checkoutData.paymentMethod),
             delivery: 'Recogida en tienda',
-            source: 'supabase'
+            source:   'supabase'
           },
           error: null
         };
       } catch (err) {
-        console.error('[FarmaciaAPI] placeOrder failed:', err.message);
+        console.warn('[FarmaciaAPI] placeOrder RPC failed:', err.message);
         return { order: null, error: err };
       }
     },
@@ -1628,10 +1569,12 @@ window.FarmaciaAPI = (function () {
     /**
      * Sign consent documents for the current customer via the
      * security-definer RPC sign_consent_documents (consent-onboarding
-     * gate). Each doc: { type, title, content }. The server derives the
-     * customer row from auth.uid(), validates each type, and forces
-     * status 'signed' / signed_at now() — clients can no longer insert
-     * consent rows directly (INSERT policy revoked, R2-31).
+     * gate). Each doc: { type }. The server is authoritative for the
+     * document text (D-N3): it substitutes the canonical title/content
+     * from the consent_texts table, so the client no longer sends them.
+     * The server derives the customer row from auth.uid(), validates each
+     * type, and forces status 'signed' / signed_at now() — clients can no
+     * longer insert consent rows directly (INSERT policy revoked, R2-31).
      * `opts.signerRelationship` (padre/madre/tutor) is recorded for a
      * MINOR patient: the guardian signs, so the row must carry the
      * parentesco alongside signer_name (parental consent, R2-21).
@@ -1651,8 +1594,6 @@ window.FarmaciaAPI = (function () {
         const signerUserAgent = (typeof navigator !== 'undefined' && navigator.userAgent) || null;
         const pDocs = (docs || []).map(doc => ({
           type:        doc.type,
-          title:       doc.title,
-          content:     doc.content,
           signer_name: signerName,
           ...(signerRelationship ? { signer_relationship: signerRelationship } : {}),
           ...(signerUserAgent ? { signer_user_agent: signerUserAgent } : {})

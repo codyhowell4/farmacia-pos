@@ -35,6 +35,21 @@ const getOrgId = async () => {
 // Public accessor (e.g. realtime filters) — same cached value.
 export const getMyOrgId = () => getOrgId();
 
+// PostgREST caps responses (~1000 rows). Page through with .range() so
+// large tables never silently truncate. buildQuery must return a FRESH
+// query builder each call (supabase builders are mutable).
+const PAGE_SIZE = 1000;
+export const fetchAllPages = async (buildQuery, pageSize = PAGE_SIZE) => {
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await buildQuery().range(from, from + pageSize - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+  return rows;
+};
+
 // ── AUTH ────────────────────────────────────────────────────
 
 export const signIn = async (email, password) => {
@@ -77,12 +92,12 @@ export const getLocations = async () => {
 // ── PROFILES / USERS ─────────────────────────────────────────
 
 export const getUsers = async () => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*, locations(name)')
-    .order('full_name');
-  if (error) throw error;
-  return data;
+  return fetchAllPages(() =>
+    supabase
+      .from('profiles')
+      .select('*, locations(name)')
+      .order('full_name')
+  );
 };
 
 export const createUser = async ({ email, password, full_name, role, location_id, pin }) => {
@@ -164,11 +179,11 @@ export const setProfilePin = async (userId, pin) => {
 // ── INVENTORY ───────────────────────────────────────────────
 
 export const getInventory = async (locationId = null) => {
-  let query = supabase.from('inventory').select('*').order('name');
-  if (locationId) query = query.or(`location_id.eq.${locationId},location_id.is.null`);
-  const { data, error } = await query;
-  if (error) throw error;
-  return data;
+  return fetchAllPages(() => {
+    let query = supabase.from('inventory').select('*').order('name');
+    if (locationId) query = query.or(`location_id.eq.${locationId},location_id.is.null`);
+    return query;
+  });
 };
 
 export const upsertInventoryItem = async (item) => {
@@ -332,13 +347,13 @@ export const logInventoryMovement = async (movement, sessionUser = undefined) =>
 };
 
 export const getInventoryMovements = async (inventoryId) => {
-  const { data, error } = await supabase
-    .from('inventory_movements')
-    .select('*')
-    .eq('inventory_id', inventoryId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('inventory_movements')
+      .select('*')
+      .eq('inventory_id', inventoryId)
+      .order('created_at', { ascending: false })
+  );
 };
 
 export const decrementInventory = async (items, referenceId = null, referenceType = 'sale', sessionUser = undefined) => {
@@ -573,27 +588,26 @@ export const updateSale = async (id, updates) => {
 };
 
 export const getShifts = async () => {
-  const { data, error } = await supabase.from('shifts').select('*, locations(name)').order('opened_at', { ascending: false });
-  if (error) throw error;
-  return data;
+  return fetchAllPages(() =>
+    supabase.from('shifts').select('*, locations(name)').order('opened_at', { ascending: false })
+  );
 };
 
 // ── EXPENSES ────────────────────────────────────────────────
 
 export const getExpenses = async (startDate = null, endDate = null) => {
   const orgId = await getOrgId();
-  let query = supabase
-    .from('expenses')
-    .select('*')
-    .eq('org_id', orgId)
-    .order('date', { ascending: false });
+  return fetchAllPages(() => {
+    let query = supabase
+      .from('expenses')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('date', { ascending: false });
 
-  if (startDate) query = query.gte('date', startDate);
-  if (endDate) query = query.lte('date', endDate);
-
-  const { data, error } = await query;
-  if (error) throw error;
-  return data || [];
+    if (startDate) query = query.gte('date', startDate);
+    if (endDate) query = query.lte('date', endDate);
+    return query;
+  });
 };
 
 export const createExpense = async (expense) => {
@@ -628,18 +642,17 @@ export const deleteExpense = async (id) => {
 
 export const getManualRevenue = async (startDate = null, endDate = null) => {
   const orgId = await getOrgId();
-  let query = supabase
-    .from('manual_revenue')
-    .select('*')
-    .eq('org_id', orgId)
-    .order('date', { ascending: false });
+  return fetchAllPages(() => {
+    let query = supabase
+      .from('manual_revenue')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('date', { ascending: false });
 
-  if (startDate) query = query.gte('date', startDate);
-  if (endDate) query = query.lte('date', endDate);
-
-  const { data, error } = await query;
-  if (error) throw error;
-  return data || [];
+    if (startDate) query = query.gte('date', startDate);
+    if (endDate) query = query.lte('date', endDate);
+    return query;
+  });
 };
 
 export const createManualRevenue = async (entry) => {
@@ -692,25 +705,25 @@ export const createSale = async (sale, items) => {
 };
 
 export const getSales = async () => {
-  const { data, error } = await supabase
-    .from('sales')
-    .select('*, sale_items(*), sale_payments(*), customers(id, full_name, phone, curp, email, profile_id)')
-    .order('timestamp', { ascending: false });
-  if (error) throw error;
-  return data;
+  return fetchAllPages(() =>
+    supabase
+      .from('sales')
+      .select('*, sale_items(*), sale_payments(*), customers(id, full_name, phone, curp, email, profile_id)')
+      .order('timestamp', { ascending: false })
+  );
 };
 
 // POS-safe shift sales for the close-shift flow: no customers embed
 // (pos/inventory roles cannot read the customers table).
 export const getShiftSales = async (shiftId) => {
-  const { data, error } = await supabase
-    .from('sales')
-    .select('*, sale_items(*), sale_payments(*)')
-    .eq('shift_id', shiftId)
-    .eq('voided', false)
-    .order('timestamp', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('sales')
+      .select('*, sale_items(*), sale_payments(*)')
+      .eq('shift_id', shiftId)
+      .eq('voided', false)
+      .order('timestamp', { ascending: false })
+  );
 };
 
 // Recent sale ids for the returns folio lookup (pos-safe: no joins).
@@ -738,25 +751,25 @@ export const getRecentSales = async (locationId, limit = 10) => {
 };
 
 export const getSalesInRange = async (startDate, endDate) => {
-  const { data, error } = await supabase
-    .from('sales')
-    .select('*, sale_items(*)')
-    .eq('voided', false)
-    .gte('timestamp', startDate)
-    .lte('timestamp', endDate + 'T23:59:59')
-    .order('timestamp', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('sales')
+      .select('*, sale_items(*)')
+      .eq('voided', false)
+      .gte('timestamp', startDate)
+      .lte('timestamp', endDate + 'T23:59:59')
+      .order('timestamp', { ascending: false })
+  );
 };
 
 export const getSalesSince = async (since) => {
-  const { data, error } = await supabase
-    .from('sales')
-    .select('*, sale_payments(*)')
-    .gte('timestamp', since)
-    .order('timestamp', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('sales')
+      .select('*, sale_payments(*)')
+      .gte('timestamp', since)
+      .order('timestamp', { ascending: false })
+  );
 };
 
 export const voidSale = async (saleId, voidedByName, reason = null) => {
@@ -854,15 +867,15 @@ export const logLostSale = async ({ itemName, note = null, locationId = null }) 
 };
 
 export const getLostSales = async ({ since, locationId } = {}) => {
-  let q = supabase
-    .from('lost_sales')
-    .select('*, profiles(full_name), locations(name)')
-    .order('created_at', { ascending: false });
-  if (since) q = q.gte('created_at', since);
-  if (locationId) q = q.eq('location_id', locationId);
-  const { data, error } = await q;
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() => {
+    let q = supabase
+      .from('lost_sales')
+      .select('*, profiles(full_name), locations(name)')
+      .order('created_at', { ascending: false });
+    if (since) q = q.gte('created_at', since);
+    if (locationId) q = q.eq('location_id', locationId);
+    return q;
+  });
 };
 
 export const deleteLostSale = async (id) => {
@@ -958,9 +971,7 @@ export const createControlledRegisterRows = async (rows) => {
 // ── SUPPLIERS ───────────────────────────────────────────────
 
 export const getSuppliers = async () => {
-  const { data, error } = await supabase.from('suppliers').select('*').order('name');
-  if (error) throw error;
-  return data;
+  return fetchAllPages(() => supabase.from('suppliers').select('*').order('name'));
 };
 
 export const upsertSupplier = async (supplier) => {
@@ -981,12 +992,12 @@ export const deleteSupplier = async (id) => {
 // ── PURCHASE ORDERS ─────────────────────────────────────────
 
 export const getPurchaseOrders = async () => {
-  const { data, error } = await supabase
-    .from('purchase_orders')
-    .select('*, purchase_order_items(*), suppliers(name)')
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data;
+  return fetchAllPages(() =>
+    supabase
+      .from('purchase_orders')
+      .select('*, purchase_order_items(*), suppliers(name)')
+      .order('created_at', { ascending: false })
+  );
 };
 
 export const createPurchaseOrder = async (po, items) => {
@@ -1103,17 +1114,16 @@ export const getAuditLog = async () => {
 // ── INVENTORY BATCH MANAGEMENT ───────────────────────────────
 
 export const getInventoryWithBatches = async (locationId = null) => {
-  let query = supabase
-    .from('inventory')
-    .select('*, suppliers(name)')
-    .order('expiration_date', { ascending: true })
-    .order('created_at', { ascending: true });
-  
-  if (locationId) query = query.eq('location_id', locationId);
-  
-  const { data, error } = await query;
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() => {
+    let query = supabase
+      .from('inventory')
+      .select('*, suppliers(name)')
+      .order('expiration_date', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (locationId) query = query.eq('location_id', locationId);
+    return query;
+  });
 };
 
 export const addInventoryBatch = async (batch) => {
@@ -1221,16 +1231,15 @@ export const createStockAdjustment = async (adjustment) => {
 };
 
 export const getStockAdjustments = async (inventoryId = null) => {
-  let query = supabase
-    .from('stock_adjustments')
-    .select('*')
-    .order('created_at', { ascending: false });
-  
-  if (inventoryId) query = query.eq('inventory_id', inventoryId);
-  
-  const { data, error } = await query;
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() => {
+    let query = supabase
+      .from('stock_adjustments')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (inventoryId) query = query.eq('inventory_id', inventoryId);
+    return query;
+  });
 };
 
 // ── TAX SETTINGS ─────────────────────────────────────────────
@@ -1368,24 +1377,23 @@ export const createPrescription = async (prescription) => {
 };
 
 export const getPrescriptions = async (filters = {}) => {
-  let query = supabase
-    .from('prescriptions')
-    .select('*, sales(timestamp, total)')
-    .order('created_at', { ascending: false });
-  
-  if (filters.startDate) {
-    query = query.gte('prescription_date', filters.startDate);
-  }
-  if (filters.endDate) {
-    query = query.lte('prescription_date', filters.endDate);
-  }
-  if (filters.isVoided !== undefined) {
-    query = query.eq('is_voided', filters.isVoided);
-  }
-  
-  const { data, error } = await query;
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() => {
+    let query = supabase
+      .from('prescriptions')
+      .select('*, sales(timestamp, total)')
+      .order('created_at', { ascending: false });
+
+    if (filters.startDate) {
+      query = query.gte('prescription_date', filters.startDate);
+    }
+    if (filters.endDate) {
+      query = query.lte('prescription_date', filters.endDate);
+    }
+    if (filters.isVoided !== undefined) {
+      query = query.eq('is_voided', filters.isVoided);
+    }
+    return query;
+  });
 };
 
 export const voidPrescription = async (prescriptionId, voidedBy) => {
@@ -1434,13 +1442,13 @@ export const saveAkauntingSettings = async (settings) => {
 // ── AKAUNTING MAPPINGS ───────────────────────────────────────
 
 export const getCustomerProfiles = async () => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*, locations(name)')
-    .eq('role', 'customer')
-    .order('full_name');
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('profiles')
+      .select('*, locations(name)')
+      .eq('role', 'customer')
+      .order('full_name')
+  );
 };
 
 export const getAkauntingMapping = async (entityType, farmaciaId) => {
@@ -1483,12 +1491,12 @@ export const deleteAkauntingMapping = async (entityType, farmaciaId) => {
 // ── AKAUNTING SYNC HELPERS ───────────────────────────────────
 
 export const getInventoryForSync = async () => {
-  const { data, error } = await supabase
-    .from('inventory')
-    .select('*, suppliers(name)')
-    .order('name');
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('inventory')
+      .select('*, suppliers(name)')
+      .order('name')
+  );
 };
 
 export const getUnsyncedSales = async (limit = 50) => {
@@ -1560,13 +1568,13 @@ export const getSaleById = async (saleId) => {
 
 export const getCustomers = async () => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('customers')
-    .select('*')
-    .eq('org_id', orgId)
-    .order('full_name');
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('customers')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('full_name')
+  );
 };
 
 export const getCustomerById = async (id) => {
@@ -1623,13 +1631,13 @@ export const deleteCustomer = async (id) => {
 
 export const getCustomersForSync = async () => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('customers')
-    .select('*')
-    .eq('org_id', orgId)
-    .order('full_name');
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('customers')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('full_name')
+  );
 };
 
 // ── POS SELF-SERVICE RPCs (R2-14) ────────────────────────────
@@ -1701,13 +1709,13 @@ export const getSaleForReturnPos = async (saleId) => {
 
 export const getArcoRequests = async () => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('arco_requests')
-    .select('*, customers(full_name, email, phone)')
-    .eq('org_id', orgId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('arco_requests')
+      .select('*, customers(full_name, email, phone)')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+  );
 };
 
 export const updateArcoRequest = async (id, updates) => {
@@ -1734,38 +1742,38 @@ const getUserId = async () => {
 
 export const getAppointments = async () => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('appointments')
-    .select('*, customers(id, full_name, phone, curp, date_of_birth, profile_id), profiles!appointments_doctor_id_fkey(full_name)')
-    .eq('org_id', orgId)
-    .order('appointment_date', { ascending: true });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('appointments')
+      .select('*, customers(id, full_name, phone, curp, date_of_birth, profile_id), profiles!appointments_doctor_id_fkey(full_name)')
+      .eq('org_id', orgId)
+      .order('appointment_date', { ascending: true })
+  );
 };
 
 export const getAppointmentsByDoctor = async (doctorId) => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('appointments')
-    .select('*, customers(full_name, phone, curp, date_of_birth)')
-    .eq('org_id', orgId)
-    .eq('doctor_id', doctorId)
-    .order('appointment_date', { ascending: true });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('appointments')
+      .select('*, customers(full_name, phone, curp, date_of_birth)')
+      .eq('org_id', orgId)
+      .eq('doctor_id', doctorId)
+      .order('appointment_date', { ascending: true })
+  );
 };
 
 // Full agenda of one patient across all doctors (expediente export, NOM-024 6.6.6)
 export const getAppointmentsByCustomer = async (customerId) => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('appointments')
-    .select('*, profiles!appointments_doctor_id_fkey(full_name)')
-    .eq('org_id', orgId)
-    .eq('customer_id', customerId)
-    .order('appointment_date', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('appointments')
+      .select('*, profiles!appointments_doctor_id_fkey(full_name)')
+      .eq('org_id', orgId)
+      .eq('customer_id', customerId)
+      .order('appointment_date', { ascending: false })
+  );
 };
 
 export const createAppointment = async (appointment) => {
@@ -1936,25 +1944,25 @@ export const cancelAppointmentStaff = async (id, reason) => {
 
 export const getPreorders = async () => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('preorders')
-    .select('*, customers(id, full_name, profile_id), inventory(name, price, quantity)')
-    .eq('org_id', orgId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('preorders')
+      .select('*, customers(id, full_name, profile_id), inventory(name, price, quantity)')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+  );
 };
 
 export const getPreordersByDoctor = async (doctorId) => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('preorders')
-    .select('*, customers(full_name), inventory(name, price, quantity)')
-    .eq('org_id', orgId)
-    .eq('doctor_id', doctorId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('preorders')
+      .select('*, customers(full_name), inventory(name, price, quantity)')
+      .eq('org_id', orgId)
+      .eq('doctor_id', doctorId)
+      .order('created_at', { ascending: false })
+  );
 };
 
 export const createPreorder = async (preorder) => {
@@ -1983,26 +1991,26 @@ export const updatePreorderStatus = async (id, status) => {
 
 export const getMedicalNotesByCustomer = async (customerId) => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('medical_notes')
-    .select('*, profiles(full_name)')
-    .eq('org_id', orgId)
-    .eq('customer_id', customerId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('medical_notes')
+      .select('*, profiles(full_name)')
+      .eq('org_id', orgId)
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+  );
 };
 
 export const getMedicalNotesByDoctor = async (doctorId) => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('medical_notes')
-    .select('*, customers(full_name)')
-    .eq('org_id', orgId)
-    .eq('doctor_id', doctorId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('medical_notes')
+      .select('*, customers(full_name)')
+      .eq('org_id', orgId)
+      .eq('doctor_id', doctorId)
+      .order('created_at', { ascending: false })
+  );
 };
 
 export const getMedicalNoteByAppointment = async (appointmentId) => {
@@ -2032,13 +2040,13 @@ export const createMedicalNote = async (note) => {
 
 export const getCustomersForDoctor = async () => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('customers')
-    .select('*')
-    .eq('org_id', orgId)
-    .order('full_name');
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('customers')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('full_name')
+  );
 };
 
 export const getCustomerPurchaseHistory = async (customerId) => {
@@ -2134,14 +2142,14 @@ export const getConsultaNotesByAppointment = async (appointmentId) => {
 
 export const getConsultaNotesByCustomer = async (customerId) => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('consulta_notes')
-    .select('*, profiles:doctor_id(full_name)')
-    .eq('org_id', orgId)
-    .eq('customer_id', customerId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('consulta_notes')
+      .select('*, profiles:doctor_id(full_name)')
+      .eq('org_id', orgId)
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+  );
 };
 
 // ── HISTORIA CLÍNICA DE PRIMERA VEZ (NOM-004 6.1, append-only) ──
@@ -2192,17 +2200,17 @@ export const needsHistoriaClinica = async (customerId) => {
 
 export const getConsultaNotesByDoctor = async (doctorId, { from = null, to = null } = {}) => {
   const orgId = await getOrgId();
-  let query = supabase
-    .from('consulta_notes')
-    .select('*')
-    .eq('org_id', orgId)
-    .eq('doctor_id', doctorId)
-    .order('created_at', { ascending: false });
-  if (from) query = query.gte('created_at', from);
-  if (to) query = query.lte('created_at', to);
-  const { data, error } = await query;
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() => {
+    let query = supabase
+      .from('consulta_notes')
+      .select('*')
+      .eq('org_id', orgId)
+      .eq('doctor_id', doctorId)
+      .order('created_at', { ascending: false });
+    if (from) query = query.gte('created_at', from);
+    if (to) query = query.lte('created_at', to);
+    return query;
+  });
 };
 
 // ── CIE-10 CATALOG ──────────────────────────────────────────
@@ -2292,13 +2300,13 @@ export const hasAllConsentsSigned = async (customerId) => {
 // Org-wide list for the admin "Consentimientos" page (staff RLS policy).
 export const getAllConsentDocuments = async () => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('consent_documents')
-    .select('*, customers(full_name, email)')
-    .eq('org_id', orgId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('consent_documents')
+      .select('*, customers(full_name, email)')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+  );
 };
 
 export const updateConsentStatus = async (id, { status, signer_name = null, recorded_by_name = null }) => {
@@ -2519,14 +2527,14 @@ export const upsertDoctorProfile = async (profileId, data) => {
 // ── SUPPLIER PRODUCTS ───────────────────────────────────────
 
 export const getSupplierProducts = async (supplierId = null) => {
-  let query = supabase
-    .from('supplier_products')
-    .select('*, suppliers(name), inventory(name, barcode)')
-    .order('created_at', { ascending: false });
-  if (supplierId) query = query.eq('supplier_id', supplierId);
-  const { data, error } = await query;
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() => {
+    let query = supabase
+      .from('supplier_products')
+      .select('*, suppliers(name), inventory(name, barcode)')
+      .order('created_at', { ascending: false });
+    if (supplierId) query = query.eq('supplier_id', supplierId);
+    return query;
+  });
 };
 
 export const upsertSupplierProduct = async (sp) => {
@@ -2576,12 +2584,12 @@ export const updateInventoryBatch = async (id, updates) => {
 };
 
 export const getAllInventoryBatches = async () => {
-  const { data, error } = await supabase
-    .from('inventory_batches')
-    .select('*')
-    .order('expiration_date', { ascending: true });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('inventory_batches')
+      .select('*')
+      .order('expiration_date', { ascending: true })
+  );
 };
 
 // Register a purchase/restock: creates a batch record (with its own cost,
@@ -2632,13 +2640,13 @@ export const restockInventoryItem = async ({ inventoryId, quantityAdded, expirat
 
 export const getInventoryForDoctor = async () => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('inventory')
-    .select('id, name, quantity, price, requires_prescription, controlled_group, barcode')
-    .eq('org_id', orgId)
-    .order('name');
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('inventory')
+      .select('id, name, quantity, price, requires_prescription, controlled_group, barcode')
+      .eq('org_id', orgId)
+      .order('name')
+  );
 };
 
 // The doctor catalog (~whole org inventory) is only needed once the Rx /
@@ -2720,51 +2728,52 @@ export const getCustomerPrescriptions = async (customerId) => {
     .single();
   if (custError || !customer) return [];
 
-  const { data, error } = await supabase
-    .from('prescriptions')
-    .select('*, profiles:doctor_id(full_name)')
-    .eq('customer_id', customerId)
-    .eq('org_id', orgId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  const data = await fetchAllPages(() =>
+    supabase
+      .from('prescriptions')
+      .select('*, profiles:doctor_id(full_name)')
+      .eq('customer_id', customerId)
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+  );
+  return data;
 };
 
 export const getCustomerPreorders = async (customerId) => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('preorders')
-    .select('*, inventory(name, price)')
-    .eq('customer_id', customerId)
-    .eq('org_id', orgId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('preorders')
+      .select('*, inventory(name, price)')
+      .eq('customer_id', customerId)
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+  );
 };
 
 export const getCustomerAppointments = async (customerId) => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('appointments')
-    .select('*, profiles!appointments_doctor_id_fkey(full_name)')
-    .eq('customer_id', customerId)
-    .eq('org_id', orgId)
-    .order('appointment_date', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('appointments')
+      .select('*, profiles!appointments_doctor_id_fkey(full_name)')
+      .eq('customer_id', customerId)
+      .eq('org_id', orgId)
+      .order('appointment_date', { ascending: false })
+  );
 };
 
 export const getCustomerOrders = async (customerId) => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('sales')
-    .select('*, sale_items(*)')
-    .eq('customer_id', customerId)
-    .eq('voided', false)
-    .eq('org_id', orgId)
-    .order('timestamp', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('sales')
+      .select('*, sale_items(*)')
+      .eq('customer_id', customerId)
+      .eq('voided', false)
+      .eq('org_id', orgId)
+      .order('timestamp', { ascending: false })
+  );
 };
 
 // ── NOTIFICATIONS ───────────────────────────────────────────
@@ -2841,13 +2850,14 @@ export const decrementInventoryItem = async (inventoryId, quantity) => {
 
 export const getInventoryLowStock = async () => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('inventory')
-    .select('*, suppliers(name)')
-    .eq('org_id', orgId)
-    .order('quantity', { ascending: true });
-  if (error) throw error;
-  return (data || []).filter(item =>
+  const data = await fetchAllPages(() =>
+    supabase
+      .from('inventory')
+      .select('*, suppliers(name)')
+      .eq('org_id', orgId)
+      .order('quantity', { ascending: true })
+  );
+  return data.filter(item =>
     item.quantity <= (item.low_stock_threshold ?? 0) || item.quantity === 0
   );
 };
@@ -2875,20 +2885,19 @@ export const createDoctorPrescription = async (prescription) => {
 
 export const getDoctorPrescriptions = async (customerId = null) => {
   const orgId = await getOrgId();
-  let query = supabase
-    .from('prescriptions')
-    .select('*, customers(full_name), profiles:doctor_id(full_name)')
-    .eq('org_id', orgId)
-    .not('doctor_id', 'is', null)
-    .order('created_at', { ascending: false });
-  
-  if (customerId) {
-    query = query.eq('customer_id', customerId);
-  }
-  
-  const { data, error } = await query;
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() => {
+    let query = supabase
+      .from('prescriptions')
+      .select('*, customers(full_name), profiles:doctor_id(full_name)')
+      .eq('org_id', orgId)
+      .not('doctor_id', 'is', null)
+      .order('created_at', { ascending: false });
+
+    if (customerId) {
+      query = query.eq('customer_id', customerId);
+    }
+    return query;
+  });
 };
 
 export const getPrescriptionByNumber = async (number) => {
@@ -3057,14 +3066,14 @@ export const registerCustomer = async ({ email, password, fullName, phone }) => 
 // ── INVENTORY WITH SUPPLIER ──────────────────────────────────
 
 export const getInventoryWithSupplier = async (locationId = null) => {
-  let query = supabase
-    .from('inventory')
-    .select('*, suppliers(id, name)')
-    .order('name');
-  if (locationId) query = query.eq('location_id', locationId);
-  const { data, error } = await query;
-  if (error) throw error;
-  return data;
+  return fetchAllPages(() => {
+    let query = supabase
+      .from('inventory')
+      .select('*, suppliers(id, name)')
+      .order('name');
+    if (locationId) query = query.eq('location_id', locationId);
+    return query;
+  });
 };
 
 
@@ -3118,13 +3127,17 @@ export const getInventoryIntelligence = async (locationId = null) => {
 // so analytics views can exclude services from stock/alert logic.
 export const getServiceItemIds = async () => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('inventory')
-    .select('id')
-    .eq('org_id', orgId)
-    .eq('item_type', 'service');
-  if (error) throw error;
-  return (data || []).map(r => r.id);
+  // .order('id') added: offset pagination needs a deterministic order; callers
+  // only consume the id list, whose order was previously unspecified anyway.
+  const data = await fetchAllPages(() =>
+    supabase
+      .from('inventory')
+      .select('id')
+      .eq('org_id', orgId)
+      .eq('item_type', 'service')
+      .order('id')
+  );
+  return data.map(r => r.id);
 };
 
 export const getReorderRecommendations = async (locationId = null) => {
@@ -3373,27 +3386,28 @@ export const createMembership = async ({
 
 export const getMemberships = async () => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('memberships')
-    .select('*, customers(*), membership_members(*)')
-    .eq('org_id', orgId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('memberships')
+      .select('*, customers(*), membership_members(*)')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+  );
 };
 
 export const searchMemberships = async (searchTerm) => {
   const orgId = await getOrgId();
   const term = (searchTerm || '').trim().toLowerCase();
-  const { data, error } = await supabase
-    .from('memberships')
-    .select('*, customers(*), membership_members(*)')
-    .eq('org_id', orgId)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  if (!term) return data || [];
+  const data = await fetchAllPages(() =>
+    supabase
+      .from('memberships')
+      .select('*, customers(*), membership_members(*)')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+  );
+  if (!term) return data;
 
-  return (data || []).filter((m) => {
+  return data.filter((m) => {
     const inMembership =
       (m.plan_id || '').toLowerCase().includes(term) ||
       (m.status || '').toLowerCase().includes(term);
@@ -3610,15 +3624,16 @@ export const fulfillMembershipTrackers = async (membershipId, qty) => {
 
 export const getTrackerFulfillments = async () => {
   const orgId = await getOrgId();
-  const { data, error } = await supabase
-    .from('memberships')
-    .select('id, plan_id, plan_type, status, basic_trackers_included, basic_trackers_fulfilled, created_at, customers(full_name, phone)')
-    .eq('org_id', orgId)
-    .gt('basic_trackers_included', 0)
-    .order('created_at', { ascending: true });
-  if (error) throw error;
+  const data = await fetchAllPages(() =>
+    supabase
+      .from('memberships')
+      .select('id, plan_id, plan_type, status, basic_trackers_included, basic_trackers_fulfilled, created_at, customers(full_name, phone)')
+      .eq('org_id', orgId)
+      .gt('basic_trackers_included', 0)
+      .order('created_at', { ascending: true })
+  );
 
-  return (data || [])
+  return data
     .map((m) => ({
       ...m,
       trackers_pending: Math.max(0, (m.basic_trackers_included || 0) - (m.basic_trackers_fulfilled || 0)),

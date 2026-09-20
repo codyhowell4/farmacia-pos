@@ -143,13 +143,22 @@ const checkRateLimit = async (
 // Creates (or reuses) the portal auth account and links it to the customers
 // row. Phone-only registrations use a synthetic internal email plus the
 // password chosen on the tablet (no real email exists to send a recovery to).
+// Already-registered fallback (pen-test gate): when createUser fails because
+// the email is already registered, linking the row to that existing account
+// is allowed ONLY when allowReuseLink is true — i.e. the register flow
+// adopted the row via the email-match branch, where name+DOB were verified
+// against the row that itself carried that email. For any other customer
+// source the email came from the caller's payload, so the fallback would
+// attach the email owner's account to a stranger's row (and delete their
+// own shell row): report the collision and link nothing.
 const provisionAccount = async (
   supabase: ReturnType<typeof supabaseAdmin>,
   customer: { id: string; email: string; profile_id: string | null },
   orgId: string,
-  password?: string
-) => {
-  if (customer.profile_id) return { accountExisted: true };
+  password: string | undefined,
+  allowReuseLink: boolean
+): Promise<{ accountExisted: boolean; linked: boolean }> => {
+  if (customer.profile_id) return { accountExisted: true, linked: true };
 
   let userId: string | null = null;
   let accountExisted = false;
@@ -163,6 +172,11 @@ const provisionAccount = async (
 
   if (createError) {
     if (!isAlreadyRegisteredError(createError)) throw createError;
+
+    if (!allowReuseLink) {
+      console.warn('[tablet-checkin] provisionAccount: email already registered and reuse-link not allowed for this customer source; leaving the account unlinked');
+      return { accountExisted: true, linked: false };
+    }
 
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
@@ -206,7 +220,7 @@ const provisionAccount = async (
     .eq('id', customer.id);
   if (linkError) throw linkError;
 
-  return { accountExisted };
+  return { accountExisted, linked: true };
 };
 
 // Current time in the clinic timezone as { dayKey, minutes }.
@@ -325,6 +339,12 @@ const isPlausibleFullName = (s: string) => {
 
 // Inserts signed consent rows with e-signature attribution; retries without
 // the attribution columns when an older schema is missing them.
+// D-N3: title/content come ONLY from the canonical public.consent_texts
+// table (highest active version per type) — the client-supplied title and
+// content are ignored entirely. The client must still SEND an entry for
+// every required type: its presence proves the user was shown the document.
+// Fails closed — a required type with no active canonical text aborts the
+// insert; a consent row with unverifiable text must never be written.
 const insertConsentDocs = async (
   supabase: ReturnType<typeof supabaseAdmin>,
   orgId: string,
@@ -337,15 +357,48 @@ const insertConsentDocs = async (
   signerRelationship: string | null = null,
   signerIdRef: string | null = null
 ) => {
+  // Presence check only — the payload entry's title/content are never used.
+  for (const type of types) {
+    if (!docs.find((d) => d.type === type)) {
+      throw new Error(`Documento de consentimiento faltante: ${type}`);
+    }
+  }
+
+  const { data: canonicalRows, error: canonicalError } = await supabase
+    .from('consent_texts')
+    .select('type, version, title, content')
+    .in('type', types)
+    .eq('active', true);
+  if (canonicalError) throw canonicalError;
+
+  // Highest active version per type.
+  const canonical = new Map<string, { version: number; title: string; content: string }>();
+  for (const row of canonicalRows || []) {
+    const prev = canonical.get(row.type as string);
+    if (!prev || (row.version as number) > prev.version) {
+      canonical.set(row.type as string, {
+        version: row.version as number,
+        title: row.title as string,
+        content: row.content as string,
+      });
+    }
+  }
+
+  const withoutText = types.filter((t) => !canonical.has(t));
+  if (withoutText.length > 0) {
+    console.error('[tablet-checkin] no active canonical consent text for:', withoutText.join(', '));
+    throw new Error(`Sin texto canónico activo para los consentimientos: ${withoutText.join(', ')}`);
+  }
+
   const signedAt = new Date().toISOString();
   const rows = types.map((type) => {
-    const doc = docs.find((d) => d.type === type)!;
+    const text = canonical.get(type)!;
     return {
       org_id: orgId,
       customer_id: customerId,
-      type: doc.type,
-      title: doc.title,
-      content: doc.content,
+      type,
+      title: text.title,
+      content: text.content,
       status: 'signed',
       signer_name: signerName,
       signed_at: signedAt,
@@ -581,6 +634,11 @@ Deno.serve(async (req) => {
     const customerSelect =
       'id, full_name, phone, email, profile_id, date_of_birth, sexo, curp, guardian_name, guardian_relationship, guardian_id_ref';
     let customer = null;
+    // How the row was obtained. Only the 'email' branch proves the person at
+    // the kiosk owns both the row and the email on it (name+DOB verified
+    // against the row carrying that email), so it alone may relink an
+    // already-registered portal account — see the step 2 gate.
+    let customerSource: 'email' | 'phone' | 'guest' | 'created' | 'checkin' | null = null;
     if (mode === 'checkin' && customerId) {
       const { data, error } = await supabase
         .from('customers')
@@ -593,6 +651,7 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: 'No encontramos un expediente con ese nombre y fecha de nacimiento' }, 404);
       }
       customer = data;
+      customerSource = 'checkin';
     } else if (email) {
       const { data, error } = await supabase
         .from('customers')
@@ -611,6 +670,7 @@ Deno.serve(async (req) => {
         console.warn('[tablet-checkin] register: email match failed the name+DOB identity check; creating a new customer instead');
         customer = null;
       }
+      if (customer) customerSource = 'email';
     } else if (phone) {
       const { data, error } = await supabase
         .from('customers')
@@ -626,6 +686,7 @@ Deno.serve(async (req) => {
         console.warn('[tablet-checkin] register: phone match failed the name+DOB identity check; creating a new customer instead');
         customer = null;
       }
+      if (customer) customerSource = 'phone';
     }
 
     if (!customer && guest) {
@@ -637,6 +698,7 @@ Deno.serve(async (req) => {
         .limit(50);
       if (error) throw error;
       customer = findMatch(candidates || [], patientName);
+      if (customer) customerSource = 'guest';
     }
 
     if (!customer) {
@@ -661,6 +723,7 @@ Deno.serve(async (req) => {
         .single();
       if (createCustomerError) throw createCustomerError;
       customer = createdCustomer;
+      customerSource = 'created';
     } else {
       // Backfill identification data on matched records that never captured
       // it — one update so a DOB that reveals a minor never lands without
@@ -688,7 +751,12 @@ Deno.serve(async (req) => {
     //    Phone-only: the tablet collected a password; the account gets a
     //    synthetic internal email (login resolves phone -> that email via
     //    lookup_login_email). The synthetic address never touches the
-    //    customers row.
+    //    customers row. Already-registered email (pen-test gate): relinking
+    //    the row to the existing account is allowed only when the row came
+    //    from the email-match branch (customerSource === 'email'). Any other
+    //    source leaves the account unlinked (account: 'none') — and the
+    //    recovery email below is never sent for an account we refused to
+    //    link, since it stays conditioned on !accountExisted.
     let account: 'created' | 'existed' | 'none' = 'none';
     let recoveryEmailSent = false;
     if (mode === 'register' && (email || password)) {
@@ -701,13 +769,14 @@ Deno.serve(async (req) => {
         accountEmail = `tel${digits}@telefono.apolofarmacia.com.mx`;
       }
 
-      const { accountExisted } = await provisionAccount(
+      const { accountExisted, linked } = await provisionAccount(
         supabase,
         { id: customer.id, email: customer.email || accountEmail, profile_id: customer.profile_id },
         orgId,
-        email ? undefined : password
+        email ? undefined : password,
+        customerSource === 'email'
       );
-      account = accountExisted ? 'existed' : 'created';
+      account = accountExisted ? (linked ? 'existed' : 'none') : 'created';
 
       if (!accountExisted && email) {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {

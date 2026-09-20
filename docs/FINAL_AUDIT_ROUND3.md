@@ -116,15 +116,23 @@ footer) so manual verification keeps working.
 | M9 | PII in POS localStorage retry queue (`rx_failed_queue`) | queue cleared on shift close. Trade accepted: jobs still queued at close (chronically-failed COFEPRIS writes) are discarded instead of retaining patient PII at rest on shared terminals; the queue still flushes on POS mount, after each sale, and on reconnect during the shift, and `auditLog` toasts on failure |
 
 ### Deferred (documented, low severity)
-- **D-N3 (medio-bajo):** `sign_consent_documents` still trusts client-supplied
-  consent text (hash-pinned on insert, so the forgery would be preserved
-  faithfully). Proper fix = `consent_texts` table with versions + RPC reads
-  canonical text server-side. Deferred to avoid touching the launch-critical
-  consent gate days before launch; plan is ready.
+- **D-N3 (medio-bajo):** ~~`sign_consent_documents` still trusts client-supplied
+  consent text~~ **FIXED 2026-09-22** — `consent_texts` versioned table (seeded
+  verbatim from `consentDocs.js`, definer-only reads); the RPC and
+  `tablet-checkin` now substitute the canonical latest-active text by type and
+  ignore client title/content entirely (old deployed clients keep working).
+  Migration `20260922000000_consent_texts_and_store_order.sql`.
 - **D-S1 (bajo):** PostgREST PGRST205 errors leak table-name hints. Platform
   behavior; mitigated by everything above being locked.
 - **D-S2 (info):** CORS reflects any Origin on REST/edge (tolerable: auth is
   JWT-not-cookie); Envoy `Server` headers (platform).
+- **provisionAccount residual (noted during round-3 edge review):** ~~the
+  already-registered fallback could link an existing auth account to a
+  freshly-created row carrying someone else's email~~ **FIXED 2026-09-22** —
+  `provisionAccount` now gates that fallback behind `allowReuseLink`
+  (`customerSource === 'email'` only, i.e. the row itself carried the email and
+  passed the name+DOB identity check); otherwise the account stays unlinked and
+  no recovery email is sent.
 
 ---
 
@@ -152,14 +160,20 @@ round trips in 3 waves and re-fetched EVERYTHING after every save.
 `consulta_notes(customer_id, created_at desc)`
 
 ### Still recommended (not done, by design)
-- `getSales()` (admin) is still unbounded — fine at 829 rows, add
-  `.range()` pagination before ~10k sales. Same for `getAppointments`,
-  `getPreorders`, `getCustomers`, `getAllConsentDocuments`, `getShifts`.
+- ~~`getSales()` (admin) is still unbounded~~ **FIXED 2026-09-22** —
+  `fetchAllPages` (`src/lib/db.js:42`, exported) pages every unbounded list
+  query via `.range()` (sales, appointments, preorders, customers, consents,
+  shifts + ~40 more across db.js and both report services; customer-app
+  `api.js` got `_fetchAllPages` for `getProducts`/`getCustomerOrders`).
+  Intentional `.limit(N)` recency queries stay as-is.
 - Citas realtime handler could patch state from `payload.new` instead of
   refetching; current debounce is acceptable at this volume.
 - Bulk inventory edit/delete loops (≈5 RTs/item) — add a `bulkUpdateInventory`
   helper when bulk ops become routine.
 - Attachments tab signs one URL per thumbnail; sign on click instead.
+- `getControlledSubstancesSales`: `.in('sale_id', …)` URL can exceed PostgREST
+  limits once a range holds thousands of Rx sales — chunk saleIds when that
+  becomes realistic.
 
 ---
 
@@ -193,6 +207,14 @@ round trips in 3 waves and re-fetched EVERYTHING after every save.
 7. SGSI Anexo A signature; e.firma end-to-end retest once Dra. Castillo
    uploads her key; backup/DR evidence collection.
 8. TOTP MFA for staff (documented pending in SGSI §4).
-9. When the online store reopens: route member-discount pricing through a
-   server-side validation RPC (M1 note) and re-grant `inventory_catalog` to
-   anon (or publish an anon-safe view without `quantity`).
+9. ~~When the online store reopens: route member-discount pricing through a
+   server-side validation RPC (M1 note)~~ **DONE 2026-09-22 — store REOPENED**:
+   `place_store_order` definer RPC (server-side member pricing incl. claimed
+   family memberships, FOR UPDATE stock locking, Rx/controlled products
+   rejected online, atomic sale+items+decrement+movements; authenticated only,
+   anon 42501-verified). Customer-app `placeOrder` fails closed (no
+   localStorage phantom orders) and renders the server total. Decision: NO
+   anon catalog grant — the store sits behind login+consent, so
+   `inventory_catalog` stays authenticated-only and no anon-safe view was
+   needed. Note: refill requests / chat add-to-cart / receta "Ordenar" /
+   "Reordenar" stay compliance-paused (separate features).

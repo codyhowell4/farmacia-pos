@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { fetchAllPages } from '../lib/db';
 
 /**
  * Get prescription-required medications sold in a date range.
@@ -10,14 +11,14 @@ import { supabase } from '../lib/supabase';
  * dropped.
  */
 export async function getControlledSubstancesSales(startDate, endDate) {
-  const { data, error } = await supabase
-    .from('sales')
-    .select('*, sale_items(*, inventory:inventory_id(name, requires_prescription, barcode))')
-    .gte('timestamp', startDate)
-    .lte('timestamp', endDate + 'T23:59:59')
-    .order('timestamp', { ascending: false });
-
-  if (error) throw error;
+  const data = await fetchAllPages(() =>
+    supabase
+      .from('sales')
+      .select('*, sale_items(*, inventory:inventory_id(name, requires_prescription, barcode))')
+      .gte('timestamp', startDate)
+      .lte('timestamp', endDate + 'T23:59:59')
+      .order('timestamp', { ascending: false })
+  );
 
   // Only sales containing at least one Rx-required item contribute rows
   const rxSales = (data || []).filter(sale =>
@@ -28,11 +29,15 @@ export async function getControlledSubstancesSales(startDate, endDate) {
   const saleIds = rxSales.map(sale => sale.id);
   let rxBySaleId = {};
   if (saleIds.length > 0) {
-    const { data: prescriptions, error: rxError } = await supabase
-      .from('prescriptions')
-      .select('sale_id, patient_name, patient_curp, doctor_name, doctor_license_number, prescription_number, prescription_date')
-      .in('sale_id', saleIds);
-    if (rxError) throw rxError;
+    // .order('sale_id') added: offset pagination needs a deterministic order;
+    // rows only feed the sale_id map below, so the order is unobservable.
+    const prescriptions = await fetchAllPages(() =>
+      supabase
+        .from('prescriptions')
+        .select('sale_id, patient_name, patient_curp, doctor_name, doctor_license_number, prescription_number, prescription_date')
+        .in('sale_id', saleIds)
+        .order('sale_id')
+    );
     rxBySaleId = Object.fromEntries((prescriptions || []).map(p => [p.sale_id, p]));
   }
 
@@ -62,15 +67,14 @@ export async function getControlledSubstancesSales(startDate, endDate) {
  * Queries inventory_movements table (unified: sales, returns, adjustments, purchases, voids, edits).
  */
 export async function getInventoryMovement(startDate, endDate) {
-  const { data, error } = await supabase
-    .from('inventory_movements')
-    .select('*, inventory:inventory_id(name, barcode)')
-    .gte('created_at', startDate)
-    .lte('created_at', endDate + 'T23:59:59')
-    .order('created_at', { ascending: false });
-
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('inventory_movements')
+      .select('*, inventory:inventory_id(name, barcode)')
+      .gte('created_at', startDate)
+      .lte('created_at', endDate + 'T23:59:59')
+      .order('created_at', { ascending: false })
+  );
 }
 
 /**
@@ -82,14 +86,14 @@ export async function getExpiringItems(days = 90) {
   cutoff.setDate(cutoff.getDate() + days);
   const cutoffStr = cutoff.toISOString().split('T')[0];
 
-  const { data, error } = await supabase
-    .from('inventory')
-    .select('*')
-    .not('expiration_date', 'is', null)
-    .lte('expiration_date', cutoffStr)
-    .order('expiration_date', { ascending: true });
-
-  if (error) throw error;
+  const data = await fetchAllPages(() =>
+    supabase
+      .from('inventory')
+      .select('*')
+      .not('expiration_date', 'is', null)
+      .lte('expiration_date', cutoffStr)
+      .order('expiration_date', { ascending: true })
+  );
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -112,14 +116,15 @@ export async function getExpiringItems(days = 90) {
 export async function getExpiredItems() {
   const today = new Date().toISOString().split('T')[0];
 
-  const { data, error } = await supabase
-    .from('inventory')
-    .select('*')
-    .not('expiration_date', 'is', null)
-    .lt('expiration_date', today)
-    .order('expiration_date', { ascending: true });
+  const data = await fetchAllPages(() =>
+    supabase
+      .from('inventory')
+      .select('*')
+      .not('expiration_date', 'is', null)
+      .lt('expiration_date', today)
+      .order('expiration_date', { ascending: true })
+  );
 
-  if (error) throw error;
   return (data || []).map(item => ({ ...item, days_until_expiry: -1, status: 'EXPIRED' }));
 }
 

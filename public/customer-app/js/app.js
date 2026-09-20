@@ -61,6 +61,14 @@ let currentCustomerProfile = null;
 // Defaults to 'free' (fail closed) while loading or for guests.
 let membershipTier = 'free';
 
+// Store member pricing: the signed-in user's active membership (carries
+// discount_percent), cached on first store render so cart re-renders don't
+// refetch. Reset wherever membershipTier is re-resolved (login/logout).
+// The server recomputes the authoritative discount inside place_store_order
+// — client-side member prices are display estimates only.
+let storeMembership = null;
+let storeMembershipResolved = false;
+
 // True while handling a Supabase password-recovery link (type=recovery in URL hash)
 let isPasswordRecovery = false;
 
@@ -180,6 +188,8 @@ async function initAuth() {
       
       // Resolve membership tier for page gating
       membershipTier = await FarmaciaAPI.getMembershipTier();
+      storeMembership = null;
+      storeMembershipResolved = false;
       updateTierBadges();
       
       updateMenuUserInfo();
@@ -322,6 +332,8 @@ async function handleLogin() {
   
   // Resolve membership tier for page gating
   membershipTier = await FarmaciaAPI.getMembershipTier();
+  storeMembership = null;
+  storeMembershipResolved = false;
   updateTierBadges();
   
   updateMenuUserInfo();
@@ -455,6 +467,8 @@ async function handleFamilyActivation() {
   await FarmaciaAPI.ensureCustomerProfile(currentCustomerProfile?.name || name);
 
   membershipTier = await FarmaciaAPI.getMembershipTier();
+  storeMembership = null;
+  storeMembershipResolved = false;
   updateTierBadges();
   updateMenuUserInfo();
 
@@ -1842,6 +1856,10 @@ async function renderMembresias() {
   } catch (e) {
     console.warn('[renderMembresias] lookup failed:', e);
   }
+  // Keep the store's member-pricing cache in sync with this fresh lookup
+  // (covers mid-session activations and cancellations).
+  storeMembership = (membership && membership.status === 'active') ? membership : null;
+  storeMembershipResolved = true;
   // Bail out if the user navigated away while loading
   if (currentPage !== 'membresias') return;
   const statusEl = document.getElementById('membresias-status');
@@ -2196,6 +2214,8 @@ async function handleLogout() {
   currentAuthUser = null;
   currentCustomerProfile = null;
   membershipTier = 'free';
+  storeMembership = null;
+  storeMembershipResolved = false;
   updateTierBadges();
 
   // Reset the consent gate so a gated session can't stick to the next one
@@ -2588,17 +2608,6 @@ function renderPage(page) {
       renderConsentOnboarding();
     }
     return;
-  }
-
-  // Oculto por cumplimiento — restaurar cuando se habilite venta en línea.
-  // La tienda y el catálogo en línea están pausados: cualquier navegación
-  // hacia ellos (menú, deep-link o llamada directa) cae en Consulta.
-  if (page === 'shop' || page === 'store') {
-    showToast('La tienda en línea no está disponible por el momento. Visítanos en sucursal.', 'info');
-    page = 'consulta';
-    currentPage = 'consulta';
-    navItems.forEach(nav => nav.classList.remove('active'));
-    document.querySelector('.bottom-nav .nav-item[data-page="consulta"]')?.classList.add('active');
   }
 
   // Clear any running intervals
@@ -11435,6 +11444,34 @@ window.saveNewFamilyMember = function() {
 // SHOPPING / COMPRAS - Full e-commerce flow
 // ============================================
 
+// Resolve (and cache) the shopper's active membership for store pricing.
+// Guests and failed lookups resolve to null (list prices); only active
+// memberships and known non-members are cached — a guest who later signs
+// in still gets a fresh lookup.
+async function getStoreMembership() {
+  if (storeMembership) return storeMembership;
+  if (!FarmaciaAPI.isSupabaseAvailable() || !currentAuthUser) return null;
+  if (storeMembershipResolved) return null;
+  storeMembershipResolved = true;
+  try {
+    const m = await FarmaciaAPI.getMembershipDetails();
+    if (m && m.status === 'active') storeMembership = m;
+  } catch (e) {
+    console.warn('[Store] Membership lookup failed:', e);
+    storeMembershipResolved = false; // transient error — retry next render
+  }
+  return storeMembership;
+}
+
+// Percent off list price for the current shopper: the member discount
+// (default 10% when the active row carries no explicit percent, same as
+// renderMembresias), 0 for guests and non-members.
+function getStoreDiscountPercent() {
+  if (!storeMembership || storeMembership.status !== 'active') return 0;
+  const pct = Number(storeMembership.discount_percent);
+  return pct > 0 ? pct : 10;
+}
+
 // Helper function to get cart count
 function getCartCount() {
   return Store.getCartCount();
@@ -11442,7 +11479,10 @@ function getCartCount() {
 
 async function renderShop() {
   const cart = Store.getCart();
+  await getStoreMembership();
+  const discountPct = getStoreDiscountPercent();
   const cartTotal = Store.getCartTotal();
+  const cartDisplayTotal = discountPct > 0 ? cartTotal * (1 - discountPct / 100) : cartTotal;
   const cartCount = Store.getCartCount();
   
   // Categories
@@ -11512,7 +11552,7 @@ async function renderShop() {
       <div style="position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); width: calc(100% - 2rem); max-width: 400px; background: linear-gradient(135deg, rgba(30,42,138,0.92), rgba(20,27,94,0.95)); backdrop-filter: blur(20px); color: white; border-radius: 16px; padding: 1rem; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.1); z-index: 90;">
         <div>
           <div style="font-size: 0.8rem; opacity: 0.9;">${cartCount} producto${cartCount > 1 ? 's' : ''}</div>
-          <div style="font-weight: 700; font-size: 1.1rem; color: #c0c0c0;">$${cartTotal.toFixed(2)}</div>
+          <div style="font-weight: 700; font-size: 1.1rem; color: #c0c0c0;">$${cartDisplayTotal.toFixed(2)}${discountPct > 0 ? ' <span style="font-size: 0.7rem; font-weight: 600; color: #46AC78;">miembro</span>' : ''}</div>
         </div>
         <button onclick="showCart()" style="background: #46AC78; color: white; border: none; padding: 0.625rem 1.25rem; border-radius: 10px; font-weight: 600; cursor: pointer;">Ver carrito →</button>
       </div>
@@ -11560,7 +11600,14 @@ async function renderShop() {
           <div style="font-size: 0.65rem; color: ${med.category === 'prescription' ? '#5B68C4' : med.category === 'vitamins' ? '#46AC78' : 'rgba(255,255,255,0.6)'}; margin-bottom: 0.25rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.03em;">${med.category === 'prescription' ? 'Con receta' : med.category === 'vitamins' ? 'Vitamina' : 'Sin receta'}</div>
           <div style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.25rem; line-height: 1.3; color: white;">${med.name}</div>
           <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin-bottom: 0.5rem;">${med.brand}</div>
-          <div style="font-size: 1.1rem; font-weight: 700; color: #c0c0c0;">$${med.price.toFixed(2)}</div>
+          ${discountPct > 0 ? `
+            <div style="display: flex; align-items: baseline; gap: 0.4rem;">
+              <div style="font-size: 1.1rem; font-weight: 700; color: #46AC78;">$${(med.price * (1 - discountPct / 100)).toFixed(2)}</div>
+              <div style="font-size: 0.8rem; color: rgba(255,255,255,0.5); text-decoration: line-through;">$${med.price.toFixed(2)}</div>
+            </div>
+          ` : `
+            <div style="font-size: 1.1rem; font-weight: 700; color: #c0c0c0;">$${med.price.toFixed(2)}</div>
+          `}
         </div>
         <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem;">
           <button onclick="showProductDetail('${med.id}')" style="flex: 1; padding: 0.5rem; background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; font-size: 0.8rem; cursor: pointer;">Ver</button>
@@ -11614,10 +11661,14 @@ window.filterShopProducts = function() {
   document.getElementById('no-products').style.display = visibleCount === 0 ? 'block' : 'none';
 };
 
-window.showProductDetail = function(medicineId) {
+window.showProductDetail = async function(medicineId) {
   const medicines = window.__shopProducts || Store.getMedicines() || [];
   const med = medicines.find(m => m.id === medicineId);
   if (!med) return;
+
+  await getStoreMembership();
+  const discountPct = getStoreDiscountPercent();
+  const memberPrice = med.price * (1 - discountPct / 100);
   
   const modal = document.createElement('div');
   modal.className = 'modal-overlay';
@@ -11638,7 +11689,15 @@ window.showProductDetail = function(medicineId) {
         <h2 style="margin: 0 0 0.5rem; font-size: 1.25rem;">${med.name}</h2>
         <div style="color: var(--text-muted); margin-bottom: 0.75rem; font-size: 0.9rem;">${med.brand}</div>
         
-        <div style="font-size: 1.5rem; font-weight: 700; color: #1E2A8A; margin-bottom: 1rem;">$${med.price.toFixed(2)}</div>
+        ${discountPct > 0 ? `
+          <div style="display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 1rem;">
+            <div style="font-size: 1.5rem; font-weight: 700; color: #46AC78;">$${memberPrice.toFixed(2)}</div>
+            <div style="font-size: 1rem; color: var(--text-muted); text-decoration: line-through;">$${med.price.toFixed(2)}</div>
+            <div style="font-size: 0.75rem; font-weight: 600; color: #46AC78;">Precio de miembro</div>
+          </div>
+        ` : `
+          <div style="font-size: 1.5rem; font-weight: 700; color: #1E2A8A; margin-bottom: 1rem;">$${med.price.toFixed(2)}</div>
+        `}
         
         ${med.category === 'prescription' ? `
           <div style="background: #fef3c7; border-radius: 12px; padding: 0.875rem; margin-bottom: 1rem;">
@@ -11656,7 +11715,7 @@ window.showProductDetail = function(medicineId) {
         </div>
         
         <button onclick="addToCartFromDetail('${med.id}')" style="width: 100%; padding: 1rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;">
-          🛒 Agregar $${med.price.toFixed(2)}
+          🛒 Agregar $${(discountPct > 0 ? memberPrice : med.price).toFixed(2)}
         </button>
       </div>
     </div>
@@ -11693,9 +11752,12 @@ window.quickAddToCart = function(medicineId) {
   setTimeout(() => toast.remove(), 1000);
 };
 
-window.showCart = function() {
+window.showCart = async function() {
   const cart = Store.getCart();
   const total = Store.getCartTotal();
+  await getStoreMembership();
+  const discountPct = getStoreDiscountPercent();
+  const memberTotal = total * (1 - discountPct / 100);
   
   if (cart.length === 0) {
     showToast('Tu carrito está vacío', 'info');
@@ -11743,10 +11805,21 @@ window.showCart = function() {
         <span style="color: var(--text-muted);">Subtotal</span>
         <span>$${total.toFixed(2)}</span>
       </div>
-      <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; font-size: 1.1rem; font-weight: 700;">
-        <span>Total</span>
-        <span style="color: #1E2A8A;">$${total.toFixed(2)}</span>
-      </div>
+      ${discountPct > 0 ? `
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; color: #46AC78;">
+          <span>Ahorro de miembro (−${discountPct}%)</span>
+          <span>−$${(total - memberTotal).toFixed(2)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; font-size: 1.1rem; font-weight: 700;">
+          <span>Total de miembro</span>
+          <span style="color: #1E2A8A;">$${memberTotal.toFixed(2)}</span>
+        </div>
+      ` : `
+        <div style="display: flex; justify-content: space-between; margin-bottom: 1rem; font-size: 1.1rem; font-weight: 700;">
+          <span>Total</span>
+          <span style="color: #1E2A8A;">$${total.toFixed(2)}</span>
+        </div>
+      `}
       <button onclick="showCheckout()" style="width: 100%; padding: 1rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;">Proceder al pago →</button>
     </div>
   `;
@@ -11777,9 +11850,13 @@ window.removeCartItem = function(medicineId) {
   updateCartBadge(); // Update nav badge
 };
 
-window.showCheckout = function() {
+window.showCheckout = async function() {
   const cart = Store.getCart();
   const total = Store.getCartTotal();
+  await getStoreMembership();
+  const discountPct = getStoreDiscountPercent();
+  const memberTotal = total * (1 - discountPct / 100);
+  const displayTotal = discountPct > 0 ? memberTotal : total;
   
   const modal = document.querySelector('.modal-overlay');
   modal.innerHTML = `
@@ -11811,9 +11888,26 @@ window.showCheckout = function() {
                 <span>$${(item.price * item.quantity).toFixed(2)}</span>
               </div>
             `).join('')}
-            <div style="border-top: 1px solid var(--border-color); margin-top: 0.75rem; padding-top: 0.75rem; display: flex; justify-content: space-between; font-weight: 700; font-size: 1.1rem;">
-              <span>Total</span>
-              <span style="color: #1E2A8A;">$${total.toFixed(2)}</span>
+            <div style="border-top: 1px solid var(--border-color); margin-top: 0.75rem; padding-top: 0.75rem;">
+              ${discountPct > 0 ? `
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 0.9rem;">
+                  <span style="color: var(--text-muted);">Subtotal</span>
+                  <span>$${total.toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem; font-size: 0.9rem; color: #46AC78;">
+                  <span>Ahorro de miembro (−${discountPct}%)</span>
+                  <span>−$${(total - memberTotal).toFixed(2)}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-weight: 700; font-size: 1.1rem;">
+                  <span>Total de miembro</span>
+                  <span style="color: #1E2A8A;">$${memberTotal.toFixed(2)}</span>
+                </div>
+              ` : `
+                <div style="display: flex; justify-content: space-between; font-weight: 700; font-size: 1.1rem;">
+                  <span>Total</span>
+                  <span style="color: #1E2A8A;">$${total.toFixed(2)}</span>
+                </div>
+              `}
             </div>
           </div>
         </div>
@@ -11862,7 +11956,7 @@ window.showCheckout = function() {
       
       <!-- Footer -->
       <div style="background: white; border-top: 1px solid var(--border-color); padding: 1rem; flex-shrink: 0;">
-        <button onclick="processOrder()" style="width: 100%; padding: 1rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;">Pagar $${total.toFixed(2)}</button>
+        <button onclick="processOrder()" style="width: 100%; padding: 1rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;">Pagar $${displayTotal.toFixed(2)}</button>
       </div>
     </div>
   `;
@@ -11870,62 +11964,49 @@ window.showCheckout = function() {
 
 window.processOrder = async function() {
   const cart = Store.getCart();
-  const total = Store.getCartTotal();
   const paymentMethod = document.querySelector('input[name="payment"]:checked')?.value || 'cash';
-  
-  let order = null;
-  let useSupabase = false;
-  
-  // Try Supabase if available and user is authenticated
-  if (FarmaciaAPI.isSupabaseAvailable() && currentAuthUser) {
-    try {
-      const { order: supabaseOrder, error } = await FarmaciaAPI.placeOrder(cart, {
-        total: total,
-        patientName: currentCustomerProfile?.name || Store.getProfile()?.name || 'Paciente',
-        paymentMethod: paymentMethod
-      });
-      
-      if (!error && supabaseOrder) {
-        order = supabaseOrder;
-        useSupabase = true;
-        Store.clearCart();
-        console.log('[placeOrder] Supabase order created');
-      } else {
-        throw error || new Error('Unknown error');
-      }
-    } catch (e) {
-      console.warn('[placeOrder] Supabase order failed, falling back:', e.message);
-    }
+
+  // Fail closed: the order only exists when the server confirms it. A
+  // localStorage-only "order" is a phantom the pharmacy never sees — the
+  // patient would show up expecting medicine.
+  if (!FarmaciaAPI.isSupabaseAvailable() || !currentAuthUser) {
+    showToast('No pudimos registrar tu pedido. Intenta de nuevo.', 'error');
+    return;
   }
-  
-  // Fallback to localStorage
-  if (!order) {
-    order = Store.placeOrder({
-      items: cart,
-      total: total,
-      patientName: Store.getProfile()?.name || 'Paciente',
-      payment: paymentMethod === 'card' ? 'Tarjeta' : 'Efectivo',
-      delivery: 'Recogida en tienda'
-    });
-    console.log('[placeOrder] Fallback localStorage order created');
+
+  const { order, error } = await FarmaciaAPI.placeOrder(cart, {
+    patientName: currentCustomerProfile?.name || Store.getProfile()?.name || 'Paciente',
+    paymentMethod: paymentMethod
+  });
+
+  if (error || !order) {
+    console.warn('[placeOrder] Server order failed:', error?.message);
+    showToast(error?.message || 'No pudimos registrar tu pedido. Intenta de nuevo.', 'error');
+    return;
   }
-  
+
+  Store.clearCart();
   updateCartBadge();
-  
+  console.log('[placeOrder] Supabase order created');
+
   const modal = document.querySelector('.modal-overlay');
   modal.innerHTML = `
     <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; text-align: center;">
       <div style="font-size: 3rem; margin-bottom: 1rem;">✅</div>
       <h2 style="color: #46AC78; margin: 0 0 0.5rem;">¡Orden confirmada!</h2>
       <p style="color: var(--text-muted); margin-bottom: 1.5rem;">Pedido #${order.id}</p>
-      ${useSupabase ? `<p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Guardado en tu historial</p>` : ''}
-      
+      <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">Guardado en tu historial</p>
+
       <div style="background: #F2FBF6; border-radius: 16px; padding: 1.5rem; margin-bottom: 1.5rem; width: 100%; max-width: 300px;">
         <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Estado</div>
         <div style="font-weight: 600; color: #46AC78;">Procesando</div>
         <div style="font-size: 0.8rem; color: #46AC78; margin-top: 0.5rem;">✓ Listo para recoger en ~30 min</div>
+        <div style="border-top: 1px solid rgba(70,172,120,0.25); margin-top: 1rem; padding-top: 1rem;">
+          <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.25rem;">Total</div>
+          <div style="font-size: 1.5rem; font-weight: 700; color: #1E2A8A;">$${order.total.toFixed(2)}</div>
+        </div>
       </div>
-      
+
       <button onclick="this.closest('.modal-overlay').remove(); renderShop();" class="btn-modal-primary">Seguir comprando</button>
     </div>
   `;
@@ -12018,7 +12099,7 @@ async function renderOrders() {
           <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📦</div>
           <div style="color: #1a1a2e; font-size: 1rem; margin-bottom: 0.25rem;">No tienes pedidos aún</div>
           <div style="color: #64748b; font-size: 0.85rem;">Tus compras aparecerán aquí</div>
-          <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea: botón "Ir a la tienda" -->
+          <button onclick="goPage('shop')" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer;">🛒 Ir a la tienda</button>
         </div>
       ` : `
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">
@@ -12068,8 +12149,11 @@ async function renderOrders() {
     
     <!-- Quick Actions -->
     <div style="padding: 0 1rem 2rem;">
-      <!-- Oculto por cumplimiento — restaurar cuando se habilite venta en línea: tarjeta "Comprar" que abría la tienda -->
-      <div style="display: grid; grid-template-columns: 1fr; gap: 0.75rem;">
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem;">
+        <button onclick="goPage('shop')" class="glass-card" style="padding: 1rem; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 0.5rem;">
+          <div style="font-size: 1.75rem;">🛒</div>
+          <div style="font-size: 0.85rem; font-weight: 600; color: #1a1a2e;">Comprar</div>
+        </button>
         <button onclick="renderPrescripciones()" class="glass-card" style="padding: 1rem; border: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 0.5rem;">
           <div style="font-size: 1.75rem;">📄</div>
           <div style="font-size: 0.85rem; font-weight: 600; color: #1a1a2e;">Mis Recetas</div>

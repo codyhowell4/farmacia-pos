@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { fetchAllPages } from '../lib/db';
 
 /**
  * Get daily sales summary for date range
@@ -6,15 +7,14 @@ import { supabase } from '../lib/supabase';
  * @param {string} endDate - ISO date string
  */
 export async function getDailySalesSummary(startDate, endDate) {
-  const { data, error } = await supabase
-    .from('daily_sales_summary')
-    .select('*')
-    .gte('date', startDate)
-    .lte('date', endDate)
-    .order('date', { ascending: false });
-  
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('daily_sales_summary')
+      .select('*')
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: false })
+  );
 }
 
 /**
@@ -35,13 +35,12 @@ export async function getTopProducts(limit = 20) {
  * Get dead stock items (not sold in 90+ days)
  */
 export async function getDeadStock() {
-  const { data, error } = await supabase
-    .from('dead_stock')
-    .select('*')
-    .order('days_since_last_sale', { ascending: false, nullsFirst: true });
-  
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('dead_stock')
+      .select('*')
+      .order('days_since_last_sale', { ascending: false, nullsFirst: true })
+  );
 }
 
 /**
@@ -62,28 +61,26 @@ export async function getInventoryValuation() {
  * @param {string} endDate - ISO date string
  */
 export async function getProfitReport(startDate, endDate) {
-  const { data, error } = await supabase
-    .from('profit_report')
-    .select('*')
-    .gte('date', startDate)
-    .lte('date', endDate)
-    .order('date', { ascending: false });
-  
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('profit_report')
+      .select('*')
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('date', { ascending: false })
+  );
 }
 
 /**
  * Get shift report with payment breakdowns
  */
 export async function getShiftReport() {
-  const { data, error } = await supabase
-    .from('shift_report')
-    .select('*')
-    .order('start_time', { ascending: false });
-  
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('shift_report')
+      .select('*')
+      .order('start_time', { ascending: false })
+  );
 }
 
 /**
@@ -92,15 +89,14 @@ export async function getShiftReport() {
  * @param {string} endDate - ISO date string
  */
 export async function getSalesByShift(startDate, endDate) {
-  const { data, error } = await supabase
-    .from('sales_by_shift')
-    .select('*')
-    .gte('closed_at', `${startDate}T00:00:00`)
-    .lte('closed_at', `${endDate}T23:59:59`)
-    .order('closed_at', { ascending: false });
-  
-  if (error) throw error;
-  return data || [];
+  return fetchAllPages(() =>
+    supabase
+      .from('sales_by_shift')
+      .select('*')
+      .gte('closed_at', `${startDate}T00:00:00`)
+      .lte('closed_at', `${endDate}T23:59:59`)
+      .order('closed_at', { ascending: false })
+  );
 }
 
 /**
