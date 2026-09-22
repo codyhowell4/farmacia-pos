@@ -3,9 +3,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
-export const IDLE_TIMEOUT_MINUTES = 15;
+export const IDLE_TIMEOUT_MINUTES = 30;
+export const IDLE_TIMEOUT_MINUTES_DOCTOR = 60;
 
 const IDLE_TIMEOUT_MS = IDLE_TIMEOUT_MINUTES * 60 * 1000;
+const IDLE_TIMEOUT_DOCTOR_MS = IDLE_TIMEOUT_MINUTES_DOCTOR * 60 * 1000;
 const ACTIVITY_THROTTLE_MS = 1000;
 const ACTIVITY_EVENTS = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'];
 
@@ -17,9 +19,10 @@ const isPublicPath = (pathname) =>
     path === '/' ? pathname === '/' : pathname === path || pathname.startsWith(`${path}/`)
   );
 
-// Closes the session after IDLE_TIMEOUT_MINUTES without user activity.
-// Activity re-arms the timer, throttled to one reset per second. Only runs
-// with a logged-in user on internal views.
+// Closes the session after a period without user activity: 60 minutes in the
+// doctor portal (/doctor), 30 minutes everywhere else. Activity re-arms the
+// timer, throttled to one reset per second. Only runs with a logged-in user
+// on internal views.
 const useIdleLogout = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -33,6 +36,7 @@ const useIdleLogout = () => {
   useEffect(() => { logoutRef.current = logout; }, [logout]);
 
   const enabled = Boolean(user) && !isPublicPath(pathname);
+  const idleTimeoutMs = pathname.startsWith('/doctor') ? IDLE_TIMEOUT_DOCTOR_MS : IDLE_TIMEOUT_MS;
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -45,7 +49,7 @@ const useIdleLogout = () => {
 
     const arm = () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(expire, IDLE_TIMEOUT_MS);
+      timerRef.current = setTimeout(expire, idleTimeoutMs);
     };
 
     const onActivity = () => {
@@ -62,7 +66,7 @@ const useIdleLogout = () => {
       if (timerRef.current) clearTimeout(timerRef.current);
       ACTIVITY_EVENTS.forEach((eventName) => window.removeEventListener(eventName, onActivity));
     };
-  }, [enabled, navigate]);
+  }, [enabled, idleTimeoutMs, navigate]);
 };
 
 export default useIdleLogout;

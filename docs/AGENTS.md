@@ -81,7 +81,7 @@ pharmacy-pos/
 │   └── hooks/
 │       ├── use-mobile.jsx
 │       ├── use-toast.js
-│       └── useIdleLogout.js      # 15-min inactivity auto-logout (mounted in App.jsx)
+│       └── useIdleLogout.js      # Idle auto-logout: 60 min in /doctor, 30 min elsewhere (mounted in App.jsx)
 ├── tools/
 │   ├── generate-llms.js        # Build-time script generating public/llms.txt from Helmet metadata
 │   └── install-missing-components.js
