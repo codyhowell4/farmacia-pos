@@ -18,7 +18,7 @@ The apex domain (`apolofarmacia.com.mx` / `www`) is attached to the Pages projec
 
 `formularios.apolofarmacia.com.mx` is a Pages custom domain on the same project; a Redirect Rule sends its root to `/registro/` (`public/registro/index.html`, self-contained). Staff pin the in-store tablet to that URL.
 
-Flow: patient/guardian fills name + **email OR phone** (one required; + guardian for minors) → accepts the 3 standard consent documents → optional reason for visit → the `tablet-checkin` edge function (public, service-role) creates/reuses the customer, provisions the app account when an email is given (password arrives via auth recovery email — template is in Spanish), stores the signed consents (clears the app's consent gate), adds a **confirmed walk-in cita**, and writes a **medical note** labeled as customer self-report.
+Flow: patient/guardian fills name + **email OR phone** (one required; + guardian for minors) → accepts the 4 standard consent documents → optional reason for visit → the `tablet-checkin` edge function (public, service-role) creates/reuses the customer, provisions the app account when an email is given (password arrives via auth recovery email — template is in Spanish), stores the signed consents (clears the app's consent gate), adds a **confirmed walk-in cita**, and writes a **medical note** labeled as customer self-report.
 
 Walk-in citas are assigned to the **doctor on shift**: `tablet-checkin` matches the current time (America/Mexico_City) against each active doctor's `doctor_profiles.availability` weekly windows and falls back to the first active doctor.
 
