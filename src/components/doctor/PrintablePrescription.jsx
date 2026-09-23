@@ -423,16 +423,15 @@ const PrintablePrescription = ({ prescription, customer }) => {
           <div className="rx-body">
             {/* Vitals column */}
             <div className="rx-vitals">
-              <div><label>EDAD:</label><span className="vline">{vitals.edad}</span></div>
-              <div><label>PESO:</label><span className="vline">{vitals.peso}</span></div>
-              <div><label>TALLA:</label><span className="vline">{vitals.talla}</span></div>
-              <div><label>TEMP:</label><span className="vline">{vitals.temp}</span></div>
-              <div><label>T/A:</label><span className="vline">{vitals.ta}</span></div>
-              <div><label>FC:</label><span className="vline">{vitals.fc}</span></div>
-              <div><label>FR:</label><span className="vline">{vitals.fr}</span></div>
-              <div><label>SO2%:</label><span className="vline">{vitals.so2}</span></div>
-              <div><label>GLICEMIA:</label><span className="vline">{vitals.glicemia}</span></div>
-              <div><label>ALERGIAS:</label><span className="vline">{vitals.alergias}</span></div>
+              {[
+                ['EDAD:', vitals.edad], ['PESO:', vitals.peso], ['TALLA:', vitals.talla],
+                ['TEMP:', vitals.temp], ['T/A:', vitals.ta], ['FC:', vitals.fc],
+                ['FR:', vitals.fr], ['SO2%:', vitals.so2], ['GLICEMIA:', vitals.glicemia],
+                ['ALERGIAS:', vitals.alergias],
+              ].filter(([, value]) => value !== '' && value !== null && value !== undefined)
+                .map(([label, value]) => (
+                  <div key={label}><label>{label}</label><span className="vline">{value}</span></div>
+                ))}
             </div>
 
             {/* Main area with statue watermark */}

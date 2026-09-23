@@ -195,7 +195,7 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
     ['TEMP:', vitals.temp], ['T/A:', vitals.ta], ['FC:', vitals.fc],
     ['FR:', vitals.fr], ['So2%:', vitals.so2], ['GLICEMIA:', vitals.glicemia],
     ['ALERGIAS:', vitals.alergias],
-  ];
+  ].filter(([, value]) => value !== '' && value !== null && value !== undefined);
 
   vitalsList.forEach(([label, value], i) => {
     const y = BODY_Y + i * VIT_GAP * scale;

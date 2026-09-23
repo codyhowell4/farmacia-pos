@@ -99,7 +99,7 @@ Botón **Nueva cita**: selecciona el **paciente registrado** (obligatorio — "L
 **Crear:** desde el expediente (pestaña **Recetas** → **Nueva Receta**) o dentro de la consulta.
 
 - Agrega medicamentos con **Agregar medicamento**. Cada uno lleva: **Nombre** * (autocompletado del inventario con existencia en vivo; también puedes escribirlo manual), **Dosis** *, **Vía** *, **Frecuencia** *, Duración y Notas.
-- Bloque de signos/antropometría (precargado del historial) y fecha de **Próxima cita**.
+- Bloque de signos/antropometría (todos opcionales; las alergias vienen precargadas del historial) y fecha de **Próxima cita**. En la receta impresa/PDF solo aparecen los signos que captures — los que dejes vacíos se omiten.
 - **Guardar Receta** → el folio se genera solo: `RX-AAAAMMDD-NNNNN-XXXXXX`.
 
 **Reglas:**

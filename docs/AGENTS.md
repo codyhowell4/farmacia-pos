@@ -298,6 +298,12 @@ The frontend is fully static; Supabase does all backend work. See `docs/HOSTING.
 
 ---
 
+## Compliance (Normas)
+
+Every change request must be checked against the normas before implementing (NOM-004, NOM-024, NOM-027, LFPDPPP, LGS arts. 42 Bis & 245–255, RIS — see `docs/NORMAS_REFERENCIAS.md`, `docs/LAUNCH_COMPLIANCE_GAPS.md`, `docs/GOVERNMENT_MOCK_AUDIT.md`, `docs/SGSI.md`). If a requested change conflicts with a norma, do not implement it: double-check the conflict and flag it to the user explicitly. (Standing instruction, 2026-09-22.)
+
+---
+
 ## Important Files for Agents
 
 | File | Purpose |
