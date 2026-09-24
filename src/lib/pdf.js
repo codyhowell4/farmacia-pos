@@ -76,40 +76,58 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
   // Base elements height
   const HEADER_H = 0.95;   // logo + doctor info
   const BODY_GAP = 0.15;   // gap after header
-  const FOOTER_H = 0.90;   // footer + padding
+  const FOOTER_H_FULL = 0.90; // footer + padding
   const PATIENT_HDR_H = 0.35;
   const NEXT_APPT_H = 0.30;
 
-  // Medication block height per med
-  const medCount = meds.length;
-  let MED_NAME_SIZE = 12;
-  let MED_DETAIL_SIZE = 10;
-  let MED_GAP = 0.10;
+  // Medication block height per med (detail fields joined on one wrapped
+  // line, same as the print template)
+  const MED_NAME_SIZE = 12;
+  const MED_DETAIL_SIZE = 10;
+  const MED_GAP = 0.10;
+  const DETAIL_CHARS_PER_LINE = 75;
   let MED_BLOCK_H = 0;
 
   meds.forEach((med) => {
     let h = 0.20; // name line
-    if (med.dosage) h += 0.15;
-    if (med.via) h += 0.15;
-    if (med.frequency) h += 0.15;
-    if (med.duration) h += 0.15;
+    const detail = [med.dosage, med.via, med.frequency, med.duration].filter(Boolean).join(' · ');
+    if (detail) h += Math.max(1, Math.ceil(detail.length / DETAIL_CHARS_PER_LINE)) * 0.15;
     if (med.notes) h += 0.15;
     MED_BLOCK_H += h + MED_GAP;
   });
 
-  // If too many meds, shrink font
+  // Indicaciones box: always printed (blank room lets the doctor hand-write
+  // on the printed sheet); grows with the typed text
+  const indicaciones = (prescription.indicaciones || '').trim();
+  const INDIC_MIN_H = 0.55;
+  const indicEstLines = indicaciones ? Math.ceil(indicaciones.length / 80) : 0;
+  const INDIC_BOX_H = Math.max(INDIC_MIN_H, 0.24 + indicEstLines * 0.16) + 0.10;
+
+  // The receta must always fit a half letter sheet (media carta, 5.5in).
+  // When content runs long, the footer (address / horario / contacto) is
+  // compressed first; only if that alone is not enough, the body text
+  // shrinks too. The sheet never grows past BASE_SHEET_H.
   const BASE_SHEET_H = 5.5;
   const SIG_H = 0.60;      // firma del médico block (line + name + cédula)
-  const neededH = HEADER_H + BODY_GAP + PATIENT_HDR_H + MED_BLOCK_H + NEXT_APPT_H + SIG_H + FOOTER_H + 0.2;
-  let sheetH = Math.max(BASE_SHEET_H, neededH);
+  const FOOTER_H_MIN = 0.52;
+  const neededBodyH = HEADER_H + BODY_GAP + PATIENT_HDR_H + MED_BLOCK_H + INDIC_BOX_H + NEXT_APPT_H + SIG_H + 0.2;
 
-  // Scale down if still too tall for letter page (11in - 2*margin = 10.3in usable)
-  const MAX_H = 10.0;
   let scale = 1;
-  if (sheetH > MAX_H) {
-    scale = MAX_H / sheetH;
-    sheetH = MAX_H;
+  let footerScale = 1;
+  let footerH = FOOTER_H_FULL;
+  const availFooter = BASE_SHEET_H - neededBodyH;
+  if (availFooter < FOOTER_H_FULL) {
+    if (availFooter >= FOOTER_H_MIN) {
+      footerScale = availFooter / FOOTER_H_FULL;
+      footerH = availFooter;
+    } else {
+      footerScale = FOOTER_H_MIN / FOOTER_H_FULL;
+      footerH = FOOTER_H_MIN;
+      scale = (BASE_SHEET_H - FOOTER_H_MIN - HEADER_H - BODY_GAP - PATIENT_HDR_H)
+        / (neededBodyH - HEADER_H - BODY_GAP - PATIENT_HDR_H);
+    }
   }
+  const sheetH = BASE_SHEET_H;
 
   // ── Page setup ────────────────────────────────────────────────────
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'in', format: 'letter' });
@@ -254,32 +272,39 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
     txt((med.medication || '').toUpperCase(), MAIN_X, medY);
     medY += 0.22 * scale;
 
-    // Details on separate lines
-    setFont('normal', MED_DETAIL_SIZE);
-    if (med.dosage) {
-      txt(med.dosage, MAIN_X + 0.15, medY);
-      medY += 0.16 * scale;
-    }
-    if (med.via) {
-      txt(med.via, MAIN_X + 0.15, medY);
-      medY += 0.16 * scale;
-    }
-    if (med.frequency) {
-      txt(med.frequency, MAIN_X + 0.15, medY);
-      medY += 0.16 * scale;
-    }
-    if (med.duration) {
-      txt(med.duration, MAIN_X + 0.15, medY);
-      medY += 0.16 * scale;
+    // Detail fields joined on one wrapped line (mirrors the print template)
+    const detail = [med.dosage, med.via, med.frequency, med.duration].filter(Boolean).join(' · ');
+    if (detail) {
+      setFont('normal', MED_DETAIL_SIZE);
+      const detailLines = pdf.splitTextToSize(detail, MAIN_R - MAIN_X - 0.15);
+      txt(detailLines, MAIN_X + 0.15, medY);
+      medY += detailLines.length * 0.16 * scale;
     }
     if (med.notes) {
       setFont('italic', MED_DETAIL_SIZE);
-      txt(med.notes, MAIN_X + 0.15, medY);
-      setFont('normal', MED_DETAIL_SIZE);
-      medY += 0.16 * scale;
+      const noteLines = pdf.splitTextToSize(med.notes, MAIN_R - MAIN_X - 0.15);
+      txt(noteLines, MAIN_X + 0.15, medY);
+      medY += noteLines.length * 0.16 * scale;
     }
     medY += MED_GAP * scale;
   });
+
+  // ── Indicaciones: always-printed box (typed text or room to hand-write) ──
+  medY += 0.05 * scale;
+  const INDIC_X = MAIN_X;
+  const INDIC_W = MAIN_R - MAIN_X;
+  setFont('normal', 9);
+  const indicWrapped = indicaciones ? pdf.splitTextToSize(indicaciones, INDIC_W - 0.20) : [];
+  const indicBoxH = Math.max(INDIC_MIN_H, 0.24 + indicWrapped.length * 0.16) * scale;
+  pdf.setLineWidth((1 / INCH) * scale);
+  pdf.rect(INDIC_X, medY - 0.12 * scale, INDIC_W, indicBoxH);
+  setFont('bold', 9);
+  txt('INDICACIONES:', INDIC_X + 0.08, medY);
+  if (indicWrapped.length > 0) {
+    setFont('normal', 9);
+    txt(indicWrapped, INDIC_X + 0.10, medY + 0.18 * scale);
+  }
+  medY += indicBoxH;
 
   // ── Next appointment ──
   medY += 0.12 * scale;
@@ -299,7 +324,7 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
   line(ax, medY + 0.07 * scale, ax + 0.35, medY + 0.07 * scale);
 
   // ── Signature block (mirrors PrintablePrescription) ──
-  const FOOTER_Y = bT + bH - 0.85;
+  const FOOTER_Y = bT + bH - footerH + 0.05;
   const SIG_W = 2.0;
   const SIG_X = MAIN_R - SIG_W;
   const SIG_CX = SIG_X + SIG_W / 2;
@@ -317,7 +342,8 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
   txt(prescription.doctor_name || '', SIG_CX, SIG_LINE_Y + 0.22 * scale, { align: 'center' });
   txt(`Céd. Prof. ${prescription.doctor_license_number || ''}`, SIG_CX, SIG_LINE_Y + 0.33 * scale, { align: 'center' });
 
-  // ── FOOTER ──
+  // ── FOOTER (compresses first when the receta runs long) ──
+  const setFontF = (style, size) => { pdf.setFont('times', style); pdf.setFontSize(size * footerScale); };
 
   pdf.setDrawColor(180, 180, 180);
   pdf.setLineWidth((1 / INCH) * scale);
@@ -325,41 +351,43 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
   pdf.setDrawColor(26, 26, 26);
 
   const F1_X = CONTENT_L;
-  setFont('bold', 7.5);
+  setFontF('bold', 7.5);
   txt('AV. CENTENARIO 169, ESQ. COMETA 4,', F1_X, FOOTER_Y);
-  setFont('normal', 7.5);
-  txt('SAN ANTONIO ZOMEYUCAN, 53750,', F1_X, FOOTER_Y + 0.11 * scale);
-  txt('NAUCALPAN DE JUÁREZ, MÉX.', F1_X, FOOTER_Y + 0.22 * scale);
+  setFontF('normal', 7.5);
+  txt('SAN ANTONIO ZOMEYUCAN, 53750,', F1_X, FOOTER_Y + 0.11 * footerScale);
+  txt('NAUCALPAN DE JUÁREZ, MÉX.', F1_X, FOOTER_Y + 0.22 * footerScale);
 
   const F2_X = CONTENT_L + 2.2;
-  setFont('bold', 7.5);
+  setFontF('bold', 7.5);
   txt('HORARIO:', F2_X, FOOTER_Y);
-  setFont('normal', 7.5);
-  txt('LUNES A VIERNES', F2_X, FOOTER_Y + 0.11 * scale);
-  txt('10 A 20 HRS.', F2_X, FOOTER_Y + 0.22 * scale);
-  txt('SÁBADO', F2_X, FOOTER_Y + 0.33 * scale);
-  txt('11 A 19 HRS.', F2_X, FOOTER_Y + 0.44 * scale);
+  setFontF('normal', 7.5);
+  txt('LUNES A VIERNES', F2_X, FOOTER_Y + 0.11 * footerScale);
+  txt('10 A 20 HRS.', F2_X, FOOTER_Y + 0.22 * footerScale);
+  txt('SÁBADO', F2_X, FOOTER_Y + 0.33 * footerScale);
+  txt('11 A 19 HRS.', F2_X, FOOTER_Y + 0.44 * footerScale);
 
   const F3_X = CONTENT_L + 4.1;
-  setFont('bold', 7.5);
+  setFontF('bold', 7.5);
   txt('CONTACTO:', F3_X, FOOTER_Y);
-  setFont('normal', 7.5);
-  txt('55-2483-7003', F3_X, FOOTER_Y + 0.11 * scale);
+  setFontF('normal', 7.5);
+  txt('55-2483-7003', F3_X, FOOTER_Y + 0.11 * footerScale);
 
+  // Folio + verification fragment stay full size so they remain readable
+  // for manual verification (folio + fragment on /verifica).
   const FOLIO_X = CONTENT_R - 0.4;
-  setFont('bold', 9);
+  pdf.setFont('times', 'bold'); pdf.setFontSize(9);
   txt('FOLIO No.', FOLIO_X, FOOTER_Y, { align: 'center' });
-  setFont('bold', 11);
-  txt(prescription.prescription_number || '', FOLIO_X, FOOTER_Y + 0.18 * scale, { align: 'center' });
+  pdf.setFont('times', 'bold'); pdf.setFontSize(11);
+  txt(prescription.prescription_number || '', FOLIO_X, FOOTER_Y + 0.18, { align: 'center' });
 
   // Firma electrónica: the same 32-char fragment encoded in the QR, printed
   // so a pharmacist can also verify manually (folio + fragment on /verifica).
   if (prescription.signature) {
-    setFont('normal', 5.5);
+    pdf.setFont('times', 'normal'); pdf.setFontSize(5.5);
     txt(
       `Verifique en app.apolofarmacia.com.mx/verifica — Folio: ${prescription.prescription_number || ''} · Fragmento de firma: ${prescription.signature.slice(0, 32)}`,
       bL + bW / 2,
-      FOOTER_Y + 0.62 * scale,
+      FOOTER_Y + 0.62 * footerScale,
       { align: 'center' }
     );
   }

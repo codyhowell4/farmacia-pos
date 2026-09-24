@@ -122,7 +122,7 @@ const PatientWorkspace = () => {
     useInventory: false, inventoryId: '',
     height_cm: '', weight_kg: '',
     edad: '', temperatura: '', ta: '', fc: '', fr: '', so2: '', glicemia: '', alergias: '',
-    next_appointment: '',
+    next_appointment: '', indicaciones: '',
   });
   // Conflictos med↔alergia pendientes de confirmación y errores de captura
   const [allergyConflicts, setAllergyConflicts] = useState([]);
@@ -489,6 +489,7 @@ const PatientWorkspace = () => {
         so2: rxForm.so2.trim() || null,
         glicemia: rxForm.glicemia.trim() || null,
         alergias: rxForm.alergias.trim() || null,
+        indicaciones: rxForm.indicaciones.trim() || null,
         next_appointment: rxForm.next_appointment || null,
       };
       const createdRx = await createDoctorPrescription(payload);
@@ -520,7 +521,7 @@ const PatientWorkspace = () => {
         useInventory: false, inventoryId: '',
         height_cm: '', weight_kg: '',
         edad: '', temperatura: '', ta: '', fc: '', fr: '', so2: '', glicemia: '', alergias: '',
-        next_appointment: '',
+        next_appointment: '', indicaciones: '',
       });
       refetchPrescriptions();
     } catch (err) {
@@ -1448,6 +1449,15 @@ const PatientWorkspace = () => {
                 </div>
               ))}
             </div>
+
+            {/* Indicaciones extras — se imprimen en el recuadro INDICACIONES de la receta */}
+            <Textarea
+              placeholder="Indicaciones extras (opcional) — ej. Evitar grasas, tomar después de los alimentos…"
+              value={rxForm.indicaciones}
+              onChange={(e) => setRxForm({ ...rxForm, indicaciones: e.target.value })}
+              rows={2}
+              className="text-sm"
+            />
 
             {/* Vitals */}
             <div className="space-y-2">

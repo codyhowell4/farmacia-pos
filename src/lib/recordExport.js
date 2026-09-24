@@ -312,6 +312,7 @@ export const buildPatientRecordPdf = ({
         if (m.notes) line(`  ${m.notes}`, { indent: 6, size: 9 });
       });
       if (rx.alergias) field('Alergias', rx.alergias);
+      if (rx.indicaciones) field('Indicaciones', rx.indicaciones);
       if (rx.signed_at) {
         field(
           'Firma electrónica',

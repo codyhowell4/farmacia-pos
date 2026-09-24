@@ -100,6 +100,8 @@ Botón **Nueva cita**: selecciona el **paciente registrado** (obligatorio — "L
 
 - Agrega medicamentos con **Agregar medicamento**. Cada uno lleva: **Nombre** * (autocompletado del inventario con existencia en vivo; también puedes escribirlo manual), **Dosis** *, **Vía** *, **Frecuencia** *, Duración y Notas.
 - Bloque de signos/antropometría (todos opcionales; las alergias vienen precargadas del historial) y fecha de **Próxima cita**. En la receta impresa/PDF solo aparecen los signos que captures — los que dejes vacíos se omiten.
+- **Indicaciones extras (opcional):** instrucciones generales para el paciente ("Evitar grasas", "Tomar después de los alimentos"…). Se imprimen en el recuadro **INDICACIONES** debajo de los medicamentos. El recuadro **siempre se imprime, aunque quede vacío**, para que puedas escribir a mano sobre la hoja impresa si el paciente pregunta después.
+- La receta **siempre cabe en media carta**: si el contenido es largo (muchos medicamentos o indicaciones extensas), el pie de página (dirección, horario, contacto) se hace más chico automáticamente y, en casos extremos, también la letra de los medicamentos. Nunca pasa a una segunda hoja.
 - **Guardar Receta** → el folio se genera solo: `RX-AAAAMMDD-NNNNN-XXXXXX`.
 
 **Reglas:**

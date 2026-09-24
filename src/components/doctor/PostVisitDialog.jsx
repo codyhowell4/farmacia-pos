@@ -91,6 +91,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
   const [doctorProfile, setDoctorProfile] = useState(null);
   const [showRx, setShowRx] = useState(false);
   const [medications, setMedications] = useState([emptyMed()]);
+  const [rxIndicaciones, setRxIndicaciones] = useState('');
   const [inventory, setInventory] = useState([]);
   const [medSearchOpen, setMedSearchOpen] = useState({});
   // NOM-027 teleconsulta record-keeping (video citas only)
@@ -131,6 +132,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
     setDoctorProfile(null);
     setShowRx(false);
     setMedications([emptyMed()]);
+    setRxIndicaciones('');
     setTeleLocation('');
     setTeleIdentity(false);
     setNeedsHistoria(false);
@@ -431,6 +433,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
           so2: vitals.so2.trim() || null,
           glicemia: vitals.glicemia.trim() || null,
           alergias: vitals.alergias.trim() || null,
+          indicaciones: rxIndicaciones.trim() || null,
           next_appointment: null,
         });
         // NOM-024 audit: prescribing despite a recorded allergy is always logged
@@ -774,6 +777,13 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
                     onClick={() => setMedications([...medications, emptyMed()])}>
                     <Plus className="w-3 h-3 mr-1" /> Agregar medicamento
                   </Button>
+                  <Textarea
+                    placeholder="Indicaciones extras para la receta (opcional) — ej. Evitar grasas, tomar después de los alimentos…"
+                    value={rxIndicaciones}
+                    onChange={(e) => setRxIndicaciones(e.target.value)}
+                    rows={2}
+                    className="text-sm"
+                  />
                 </div>
               )}
             </div>

@@ -31,6 +31,17 @@ const PrintablePrescription = ({ prescription, customer }) => {
       ? [{ medication: prescription.medication, dosage: prescription.dosage, frequency: prescription.frequency, duration: prescription.duration, notes: prescription.notes }]
       : [];
 
+  // The receta must always fit a half sheet (media carta). Estimate the
+  // printed line count; long recetas compact the footer first (then the
+  // meds block) instead of overflowing the sheet.
+  const estMedLines = meds.reduce((n, med) => {
+    const detail = [med.dosage, med.via, med.frequency, med.duration].filter(Boolean).join(' · ');
+    return n + 1 + (detail ? Math.max(1, Math.ceil(detail.length / 65)) : 0) + (med.notes ? 1 : 0);
+  }, 0);
+  const indicLen = (prescription.indicaciones || '').trim().length;
+  const contentLines = estMedLines + (indicLen ? Math.ceil(indicLen / 70) : 0);
+  const compactClass = contentLines > 9 ? ' rx-xcompact' : contentLines > 5 ? ' rx-compact' : '';
+
   const formatDateMX = (d) => {
     if (!d) return { day: '__', month: '__', year: '____' };
     const date = new Date(d);
@@ -287,6 +298,24 @@ const PrintablePrescription = ({ prescription, customer }) => {
           font-size: 10pt;
           padding-left: 0.15in;
         }
+        .rx-indicaciones {
+          border: 1px solid ${NAVY};
+          border-radius: 2pt;
+          margin: 0.05in 0.1in 0;
+          padding: 0.05in 0.08in 0.08in;
+          min-height: 0.5in;
+          flex-shrink: 0;
+          position: relative;
+        }
+        .rx-indicaciones label {
+          font-weight: 700;
+          font-size: 9pt;
+        }
+        .rx-indicaciones .indicaciones-text {
+          font-size: 10pt;
+          white-space: pre-wrap;
+          margin-top: 0.03in;
+        }
         .rx-next-appointment {
           margin-top: 0.1in;
           font-size: 9pt;
@@ -378,9 +407,26 @@ const PrintablePrescription = ({ prescription, customer }) => {
           font-weight: 700;
           font-family: monospace;
         }
+        /* Long recetas still fit the half sheet: compact footer first,
+           then a smaller meds block. */
+        .rx-compact .rx-footer { font-size: 6pt; line-height: 1.3; margin-top: 0.06in; padding-top: 0.05in; }
+        .rx-compact .rx-footer strong { font-size: 6pt; }
+        .rx-compact .rx-footer-icon { width: 12px; height: 12px; }
+        .rx-compact .rx-folio { font-size: 8pt; }
+        .rx-compact .rx-folio .folio-number { font-size: 9.5pt; }
+        .rx-xcompact .rx-footer { font-size: 5.5pt; line-height: 1.2; margin-top: 0.04in; padding-top: 0.04in; }
+        .rx-xcompact .rx-footer strong { font-size: 5.5pt; }
+        .rx-xcompact .rx-footer-icon { width: 11px; height: 11px; }
+        .rx-xcompact .rx-folio { font-size: 7.5pt; }
+        .rx-xcompact .rx-folio .folio-number { font-size: 8.5pt; }
+        .rx-xcompact .rx-medications { font-size: 9.5pt; line-height: 1.35; }
+        .rx-xcompact .rx-med-item { margin-bottom: 0.05in; }
+        .rx-xcompact .rx-med-detail { font-size: 8.5pt; }
+        .rx-xcompact .rx-indicaciones { min-height: 0.4in; }
+        .rx-xcompact .rx-indicaciones .indicaciones-text { font-size: 9pt; }
       `}</style>
 
-      <div className="prescription-sheet">
+      <div className={`prescription-sheet${compactClass}`}>
         <img className="rx-frame-img" src="/brand/receta-frame.png" alt="" />
         <div className="rx-content">
           {/* Header */}
@@ -462,6 +508,11 @@ const PrintablePrescription = ({ prescription, customer }) => {
                     {med.notes && <div className="rx-med-detail" style={{ fontStyle: 'italic' }}>{med.notes}</div>}
                   </div>
                 ))}
+              </div>
+
+              <div className="rx-indicaciones">
+                <label>INDICACIONES:</label>
+                {prescription.indicaciones && <div className="indicaciones-text">{prescription.indicaciones}</div>}
               </div>
 
               <div className="rx-bottom-row">
