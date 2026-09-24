@@ -23,7 +23,7 @@ import {
   getDoctorInventoryCached, updateCustomer,
   cancelDoctorPrescription, getDoctorProfile, getConsultaNotesByCustomer, getConsentDocuments,
   confirmVideoAppointment, startConsulta, clockInDoctor, getActiveDoctorShift,
-  getCustomerDocuments, getHistoriaClinica, getAppointmentsByCustomer,
+  getCustomerDocuments, getHistoriaClinicaVersions, getAppointmentsByCustomer,
   hasAllConsentsSigned,
 } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
@@ -107,11 +107,16 @@ const PatientWorkspace = () => {
   const tz = timezone || DEFAULT_TZ;
   const [justificanteOpen, setJustificanteOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
-  // Historia clínica de primera vez (NOM-004 6.1) — one per patient, append-only
+  // Historia clínica de primera vez (NOM-004 6.1) — versioned and
+  // append-only: `historia` is the current (latest) version; updates add
+  // new versions and every version is preserved.
   const [historia, setHistoria] = useState(null);
+  const [historiaVersions, setHistoriaVersions] = useState([]);
   const [needsHistoria, setNeedsHistoria] = useState(false);
   const [historiaOpen, setHistoriaOpen] = useState(false);
-  const [historiaViewOpen, setHistoriaViewOpen] = useState(false);
+  const [historiaEditOpen, setHistoriaEditOpen] = useState(false);
+  const [historiaViewVersion, setHistoriaViewVersion] = useState(null);
+  const [versionsListOpen, setVersionsListOpen] = useState(false);
   // R2-35: consent gate — the required documents must be signed before
   // saving any nota médica or receta from this expediente
   const [missingConsents, setMissingConsents] = useState([]);
@@ -229,11 +234,11 @@ const PatientWorkspace = () => {
         // needsHistoriaClinica helper, without its duplicate historia_clinica
         // read). `ok: false` marks a failed query so the gate fails soft
         // (no badge) like the old .catch(() => false) did.
-        getHistoriaClinica(customerId).then(
-          row => ({ ok: true, row }),
+        getHistoriaClinicaVersions(customerId).then(
+          versions => ({ ok: true, row: versions?.[0] || null, versions: versions || [] }),
           e => {
-            console.error('getHistoriaClinica failed:', e);
-            return { ok: false, row: null };
+            console.error('getHistoriaClinicaVersions failed:', e);
+            return { ok: false, row: null, versions: [] };
           }
         ),
         supabase
@@ -261,6 +266,7 @@ const PatientWorkspace = () => {
       setPurchases(Array.isArray(hist) ? hist : []);
       setNotes(Array.isArray(meds) ? meds : []);
       setHistoria(historiaRes.row);
+      setHistoriaVersions(historiaRes.versions || []);
       setNeedsHistoria(
         historiaRes.ok && consultaRes.ok
           ? consultaRes.count === 0 && !historiaRes.row
@@ -332,11 +338,11 @@ const PatientWorkspace = () => {
   // as the initial load).
   const refetchHistoriaGate = useCallback(async () => {
     const [historiaRes, consultaRes] = await Promise.all([
-      getHistoriaClinica(customerId).then(
-        row => ({ ok: true, row }),
+      getHistoriaClinicaVersions(customerId).then(
+        versions => ({ ok: true, row: versions?.[0] || null, versions: versions || [] }),
         e => {
-          console.error('getHistoriaClinica failed:', e);
-          return { ok: false, row: null };
+          console.error('getHistoriaClinicaVersions failed:', e);
+          return { ok: false, row: null, versions: [] };
         }
       ),
       supabase
@@ -353,6 +359,7 @@ const PatientWorkspace = () => {
         }),
     ]);
     setHistoria(historiaRes.row);
+    setHistoriaVersions(historiaRes.versions || []);
     setNeedsHistoria(
       historiaRes.ok && consultaRes.ok
         ? consultaRes.count === 0 && !historiaRes.row
@@ -553,7 +560,7 @@ const PatientWorkspace = () => {
     if (!customer) return;
     setExporting(true);
     try {
-      const [consultaNotes, consents, documents, historiaRow, customerAppts] = await Promise.all([
+      const [consultaNotes, consents, documents, historiaVers, customerAppts] = await Promise.all([
         getConsultaNotesByCustomer(customerId).catch(e => {
           console.error('getConsultaNotesByCustomer failed:', e);
           return [];
@@ -566,9 +573,9 @@ const PatientWorkspace = () => {
           console.error('getCustomerDocuments failed:', e);
           return [];
         }),
-        getHistoriaClinica(customerId).catch(e => {
-          console.error('getHistoriaClinica failed:', e);
-          return null;
+        getHistoriaClinicaVersions(customerId).catch(e => {
+          console.error('getHistoriaClinicaVersions failed:', e);
+          return [];
         }),
         getAppointmentsByCustomer(customerId).catch(e => {
           console.error('getAppointmentsByCustomer failed:', e);
@@ -578,7 +585,8 @@ const PatientWorkspace = () => {
       const doc = buildPatientRecordPdf({
         customer,
         history: customer.medical_history || {},
-        historia: historiaRow,
+        historia: historiaVers?.[0] || null,
+        historiaVersions: Array.isArray(historiaVers) ? historiaVers : [],
         medicalNotes: Array.isArray(notes) ? notes : [],
         consultaNotes: Array.isArray(consultaNotes) ? consultaNotes : [],
         prescriptions,
@@ -982,7 +990,7 @@ const PatientWorkspace = () => {
 
         {/* HISTORIA CLÍNICA TAB */}
         <TabsContent value="historia" className="space-y-4">
-          {/* Historia clínica de primera vez (NOM-004 6.1) — one per patient */}
+          {/* Historia clínica de primera vez (NOM-004 6.1) — versioned document */}
           <div className={`rounded-xl border p-6 ${historia ? 'bg-white border-slate-200' : 'bg-amber-50 border-amber-200'}`}>
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2 min-w-0">
@@ -991,7 +999,7 @@ const PatientWorkspace = () => {
                   <h3 className="font-semibold text-slate-900">Historia clínica de primera vez</h3>
                   {historia ? (
                     <p className="text-sm text-slate-500">
-                      Registrada el {formatDate(historia.created_at)}
+                      Versión {historia.version || 1} — registrada el {formatDate(historia.created_at)}
                       {historia.profiles?.full_name ? ` por ${historia.profiles.full_name}` : ''}
                     </p>
                   ) : (
@@ -1005,9 +1013,14 @@ const PatientWorkspace = () => {
                 {historia ? (
                   <>
                     <Badge className="bg-green-100 text-green-800 border-green-200">Registrada</Badge>
-                    <Button size="sm" variant="outline" onClick={() => setHistoriaViewOpen(true)}>
+                    <Button size="sm" variant="outline" onClick={() => setHistoriaViewVersion(historia)}>
                       Ver
                     </Button>
+                    {!isNurse && (
+                      <Button size="sm" className="bg-gradient-to-r from-teal-500 to-emerald-600" onClick={() => setHistoriaEditOpen(true)}>
+                        <Edit2 className="w-3 h-3 mr-1" /> Actualizar historia
+                      </Button>
+                    )}
                   </>
                 ) : (
                   <>
@@ -1023,6 +1036,42 @@ const PatientWorkspace = () => {
                 )}
               </div>
             </div>
+            {historia && (
+              <div className="mt-3 border-t border-slate-100 pt-3">
+                <p className="text-xs text-slate-500">
+                  Documento vivo: las actualizaciones se guardan como versiones nuevas con autor y fecha;
+                  las versiones anteriores se conservan íntegras en el expediente (NOM-024).
+                </p>
+                {historiaVersions.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      className="mt-2 text-xs font-medium text-teal-700 hover:underline"
+                      onClick={() => setVersionsListOpen(!versionsListOpen)}
+                    >
+                      {versionsListOpen
+                        ? 'Ocultar versiones anteriores'
+                        : `Ver versiones anteriores (${historiaVersions.length - 1})`}
+                    </button>
+                    {versionsListOpen && (
+                      <ul className="mt-2 space-y-1.5">
+                        {historiaVersions.slice(1).map((v) => (
+                          <li key={v.id} className="flex items-center justify-between gap-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
+                            <span className="text-slate-600">
+                              Versión {v.version || 1} — {formatDate(v.created_at)}
+                              {v.profiles?.full_name ? ` por ${v.profiles.full_name}` : ''}
+                            </span>
+                            <Button size="sm" variant="ghost" className="h-6 px-2 text-teal-700" onClick={() => setHistoriaViewVersion(v)}>
+                              Ver
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           <PatientMedicalHistory customer={customer} onSaved={refetchCustomer} />
@@ -1734,7 +1783,8 @@ const PatientWorkspace = () => {
         customer={customer}
       />
 
-      {/* Historia clínica de primera vez (NOM-004 6.1): capture + read-only view */}
+      {/* Historia clínica de primera vez (NOM-004 6.1): capture, version edit,
+          and read-only view of any version */}
       <HistoriaClinicaModal
         open={historiaOpen}
         onOpenChange={setHistoriaOpen}
@@ -1742,11 +1792,18 @@ const PatientWorkspace = () => {
         onSaved={() => { setNeedsHistoria(false); refetchHistoriaGate(); }}
       />
       <HistoriaClinicaModal
-        open={historiaViewOpen}
-        onOpenChange={setHistoriaViewOpen}
+        open={historiaEditOpen}
+        onOpenChange={setHistoriaEditOpen}
+        customer={customer}
+        historia={historia}
+        onSaved={() => refetchHistoriaGate()}
+      />
+      <HistoriaClinicaModal
+        open={!!historiaViewVersion}
+        onOpenChange={(o) => { if (!o) setHistoriaViewVersion(null); }}
         customer={customer}
         readOnly
-        historia={historia}
+        historia={historiaViewVersion}
       />
 
       {/* Print Prescription Dialog */}

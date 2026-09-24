@@ -25,7 +25,8 @@ import {
   getCustomersForDoctor, confirmVideoAppointment, createMedicalNote,
   getActiveDoctorShift, getClockedInDoctorIds, getOrgDoctorNames,
   getOrgAppointmentsForDate, startConsulta, claimAppointment,
-  takeoverAppointment, cancelAppointmentStaff, clockInDoctor, getMyOrgId
+  takeoverAppointment, cancelAppointmentStaff, clockInDoctor, getMyOrgId,
+  getConsultaDraftsMap
 } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { dayKeyInTz, dateInTz, timeInTz, DEFAULT_TZ } from '@/lib/timezone';
@@ -88,6 +89,7 @@ const DoctorAppointments = () => {
   const { user } = useAuth();
   const [appointments, setAppointments] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [draftsMap, setDraftsMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -144,13 +146,14 @@ const DoctorAppointments = () => {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const [appts, custs, shift, clocked, names, today] = await Promise.all([
+      const [appts, custs, shift, clocked, names, today, drafts] = await Promise.all([
         getAppointmentsByDoctor(user.id),
         getCustomersForDoctor(),
         getActiveDoctorShift(user.id).catch(() => null),
         getClockedInDoctorIds().catch(() => []),
         getOrgDoctorNames().catch(() => ({})),
         getOrgAppointmentsForDate().catch(() => []),
+        getConsultaDraftsMap().catch(() => ({})),
       ]);
       setAppointments(appts);
       setCustomers(custs);
@@ -158,6 +161,7 @@ const DoctorAppointments = () => {
       setClockedInIds(clocked);
       setDoctorNames(names);
       setOrgToday(today);
+      setDraftsMap(drafts);
       // Doctor's local timezone for all times on this page
       supabase.from('profiles').select('timezone').eq('id', user.id).single()
         .then(({ data }) => { if (data?.timezone) setTimezone(data.timezone); })
@@ -178,12 +182,14 @@ const DoctorAppointments = () => {
   // the realtime subscription and the window-focus refetch below.
   const refreshAppointments = useCallback(async () => {
     if (!user?.id) return;
-    const [appts, today] = await Promise.all([
+    const [appts, today, drafts] = await Promise.all([
       getAppointmentsByDoctor(user.id).catch(() => null),
       getOrgAppointmentsForDate().catch(() => null),
+      getConsultaDraftsMap().catch(() => null),
     ]);
     if (appts) setAppointments(appts);
     if (today) setOrgToday(today);
+    if (drafts) setDraftsMap(drafts);
   }, [user?.id]);
 
   // Live citas: when anyone books/changes/cancels a cita in this org
@@ -774,6 +780,14 @@ const DoctorAppointments = () => {
                       {appt?.nurse_vitals && (
                         <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200">
                           ✓ Signos
+                        </Badge>
+                      )}
+                      {draftsMap[appt?.id] && (
+                        <Badge
+                          className="bg-amber-100 text-amber-800 border-amber-200"
+                          title="Borrador de nota en curso — se cierra automáticamente a las 24 h del primer guardado"
+                        >
+                          📝 Borrador
                         </Badge>
                       )}
                     </div>

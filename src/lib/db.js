@@ -2156,14 +2156,29 @@ export const getConsultaNotesByCustomer = async (customerId) => {
 // One row per patient; a DB trigger rejects the first nota de evolución
 // when neither this nor a prior consulta note exists.
 
+// The historia is versioned (append-only): updates insert a new row with
+// replaces_id pointing at the previous version. The "current" historia is
+// the latest version.
 export const getHistoriaClinica = async (customerId) => {
   const { data, error } = await supabase
     .from('historia_clinica')
     .select('*, profiles:doctor_id(full_name)')
     .eq('customer_id', customerId)
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (error) throw error;
   return data || null;
+};
+
+export const getHistoriaClinicaVersions = async (customerId) => {
+  const { data, error } = await supabase
+    .from('historia_clinica')
+    .select('*, profiles:doctor_id(full_name)')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
 };
 
 export const createHistoriaClinica = async (historia) => {
@@ -2191,11 +2206,105 @@ export const needsHistoriaClinica = async (customerId) => {
       .from('historia_clinica')
       .select('id')
       .eq('customer_id', customerId)
+      .limit(1)
       .maybeSingle(),
   ]);
   if (notesRes.error) throw notesRes.error;
   if (historiaRes.error) throw historiaRes.error;
   return (notesRes.count || 0) === 0 && !historiaRes.data;
+};
+
+// ── BORRADORES (consulta / historia) ─────────────────────────────────────
+// Working copies while a consulta or historia capture is in progress. They
+// are NOT part of the legal expediente: mutable, excluded from exports, and
+// deleted on finalize. A pg_cron job finalizes consulta drafts 24 h after
+// the first save (finalize_expired_consulta_drafts).
+
+export const getConsultaDraft = async (appointmentId) => {
+  const { data, error } = await supabase
+    .from('consulta_drafts')
+    .select('*')
+    .eq('appointment_id', appointmentId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+};
+
+export const saveConsultaDraft = async ({ appointmentId, customerId, doctorId, payload }) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('consulta_drafts')
+    .upsert({
+      appointment_id: appointmentId,
+      customer_id: customerId,
+      doctor_id: doctorId,
+      org_id: orgId,
+      payload,
+      // A human touch clears a previous auto-finalize failure so the cron
+      // retries on its next run.
+      finalize_error: null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'appointment_id' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteConsultaDraft = async (appointmentId) => {
+  const { error } = await supabase
+    .from('consulta_drafts')
+    .delete()
+    .eq('appointment_id', appointmentId);
+  if (error) throw error;
+};
+
+// appointment_id → draft row, for the "Borrador" badge on the citas list
+export const getConsultaDraftsMap = async () => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('consulta_drafts')
+    .select('appointment_id, created_at, updated_at, finalize_error')
+    .eq('org_id', orgId);
+  if (error) throw error;
+  const map = {};
+  (data || []).forEach((r) => { map[r.appointment_id] = r; });
+  return map;
+};
+
+export const getHistoriaDraft = async (customerId) => {
+  const { data, error } = await supabase
+    .from('historia_drafts')
+    .select('*')
+    .eq('customer_id', customerId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+};
+
+export const saveHistoriaDraft = async ({ customerId, doctorId, payload }) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('historia_drafts')
+    .upsert({
+      customer_id: customerId,
+      doctor_id: doctorId,
+      org_id: orgId,
+      payload,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'customer_id' })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+};
+
+export const deleteHistoriaDraft = async (customerId) => {
+  const { error } = await supabase
+    .from('historia_drafts')
+    .delete()
+    .eq('customer_id', customerId);
+  if (error) throw error;
 };
 
 export const getConsultaNotesByDoctor = async (doctorId, { from = null, to = null } = {}) => {

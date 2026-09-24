@@ -23,24 +23,24 @@ const formatLongDate = (d) =>
   });
 
 /**
- * Justificante médico (medical excuse note) generator.
- * Prints a letterhead document with patient name, rest days and doctor data.
+ * Justificante médico (comprobante de atención) generator.
+ * Prints a letterhead document with patient name and doctor data.
+ *
+ * Por indicación del equipo médico (2026-09): el reposo se sugiere solo de
+ * forma CUALITATIVA ("reposo relativo") como sugerencia terapéutica. Nunca se
+ * cuantifican días de descanso con fines de ausentismo laboral — el
+ * justificante es un comprobante de atención, no una incapacidad; los
+ * certificados de incapacidad corresponden a la seguridad social (ej. IMSS).
  */
 const JustificanteDialog = ({ open, onOpenChange, customer }) => {
   const { user } = useAuth();
   const [fecha, setFecha] = useState(() => new Date().toISOString().split('T')[0]);
-  const [dias, setDias] = useState('1');
   const [diagnostico, setDiagnostico] = useState('');
   const [generating, setGenerating] = useState(false);
 
   const handleGenerate = async () => {
-    const diasNum = parseInt(dias, 10);
     if (!fecha) {
       toast.error('La fecha es obligatoria');
-      return;
-    }
-    if (!Number.isFinite(diasNum) || diasNum < 1) {
-      toast.error('Los días de reposo deben ser al menos 1');
       return;
     }
     setGenerating(true);
@@ -64,7 +64,8 @@ const JustificanteDialog = ({ open, onOpenChange, customer }) => {
     h2 { text-align: center; font-size: 16px; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 32px; }
     .date { text-align: right; font-size: 13px; margin-bottom: 24px; }
     .body { font-size: 14px; line-height: 1.9; text-align: justify; }
-    .sig { margin-top: 96px; text-align: center; }
+    .note { font-size: 11.5px; color: #444; border-top: 1px solid #ccc; margin-top: 28px; padding-top: 10px; line-height: 1.6; }
+    .sig { margin-top: 80px; text-align: center; }
     .sig-line { border-top: 1px solid #111; width: 320px; margin: 0 auto 6px; }
     .sig p { margin: 2px 0; font-size: 12px; }
     @media print { body { margin: 0; } }
@@ -80,9 +81,13 @@ const JustificanteDialog = ({ open, onOpenChange, customer }) => {
   <div class="body">
     <p>Por medio del presente se hace constar que el(la) paciente <strong>${escapeHtml(patientName)}</strong>
     fue valorado(a) en este consultorio en la fecha señalada${diagnostico.trim() ? `, con diagnóstico de <strong>${escapeHtml(diagnostico.trim())}</strong>` : ''}.</p>
-    <p>Por lo anterior, se ameritan <strong>${diasNum} día${diasNum !== 1 ? 's' : ''}</strong> de reposo a partir del
-    ${escapeHtml(formatLongDate(fecha))}.</p>
+    <p>Como parte integral del tratamiento, se sugiere <strong>reposo relativo</strong> a partir del
+    ${escapeHtml(formatLongDate(fecha))}, como sugerencia terapéutica.</p>
     <p>Se extiende el presente justificante a petición del interesado para los usos que a su conveniencia convengan.</p>
+    <p class="note">El presente documento es un comprobante de atención médica y no constituye una
+    incapacidad laboral; su validez como justificante de inasistencia queda a discreción del empleador
+    o de la institución educativa. Los certificados de incapacidad corresponden a la institución de
+    seguridad social correspondiente (ej. IMSS), ante quien deberá gestionarse dicho trámite.</p>
   </div>
   <div class="sig">
     <div class="sig-line"></div>
@@ -109,7 +114,7 @@ const JustificanteDialog = ({ open, onOpenChange, customer }) => {
           const copy = new File([html], `justificante_${fecha}.html`, { type: 'text/html' });
           await uploadPatientDocument(customer.id, copy, {
             documentType: 'justificante',
-            notes: `Reposo ${diasNum} día${diasNum !== 1 ? 's' : ''} a partir del ${formatLongDate(fecha)} — ${doctorName}`,
+            notes: `Reposo relativo sugerido a partir del ${formatLongDate(fecha)} — ${doctorName}`,
           });
         } catch (copyErr) {
           console.error('Justificante copy save failed:', copyErr);
@@ -120,7 +125,7 @@ const JustificanteDialog = ({ open, onOpenChange, customer }) => {
       logAudit({
         action: AUDIT_ACTIONS.RECORD_EXPORT,
         user,
-        details: `Justificante médico generado (${diasNum} día${diasNum !== 1 ? 's' : ''}) — paciente ${patientName}`,
+        details: `Justificante médico generado (reposo relativo, sin días cuantificados) — paciente ${patientName}`,
       });
       onOpenChange(false);
     } catch (err) {
@@ -138,20 +143,9 @@ const JustificanteDialog = ({ open, onOpenChange, customer }) => {
           <DialogTitle>Justificante médico — {customer?.full_name}</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Fecha *</Label>
-              <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Días de reposo *</Label>
-              <Input
-                type="number"
-                min="1"
-                value={dias}
-                onChange={(e) => setDias(e.target.value)}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label>Fecha *</Label>
+            <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>Diagnóstico (opcional)</Label>
@@ -162,6 +156,12 @@ const JustificanteDialog = ({ open, onOpenChange, customer }) => {
               rows={3}
             />
           </div>
+          <p className="text-xs text-slate-500">
+            El justificante sugiere <strong>reposo relativo</strong> de forma cualitativa, como
+            sugerencia terapéutica. No cuantifica días de descanso ni sustituye una incapacidad
+            del IMSS: es un comprobante de atención cuya validez como justificante de inasistencia
+            queda a discreción del empleador o escuela.
+          </p>
           <div className="flex gap-3">
             <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={generating}>
               Cancelar

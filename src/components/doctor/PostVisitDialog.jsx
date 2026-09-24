@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Pill, Activity, FileText, Search, ShieldAlert, FileSignature, UserPlus } from 'lucide-react';
+import { Plus, Trash2, Pill, Activity, FileText, Search, ShieldAlert, FileSignature, UserPlus, Printer, FileDown, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,13 +12,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   updateAppointment, createDoctorPrescription,
   createConsultaNote, getConsultaNotesByAppointment, getDoctorProfile,
-  getDoctorInventoryCached, needsHistoriaClinica, getCustomerById, hasAllConsentsSigned
+  getDoctorInventoryCached, needsHistoriaClinica, getCustomerById, hasAllConsentsSigned,
+  getConsultaDraft, saveConsultaDraft, deleteConsultaDraft, getPrescriptionById
 } from '@/lib/db';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { findControlledMed, controlledMedMessage, CONTROLLED_MED_MESSAGE } from '@/lib/controlledMeds';
 import { findAllergyConflicts, summarizeAllergies, allergyOverrideNote } from '@/lib/allergyCheck';
 import Cie10Search from './Cie10Search';
 import HistoriaClinicaModal from './HistoriaClinicaModal';
+import PrintablePrescription from './PrintablePrescription';
+import { downloadPrescriptionPDF } from '@/lib/pdf';
 import { tryAutoSignReceta } from '@/lib/efirma';
 import { toast } from 'sonner';
 
@@ -70,6 +73,19 @@ const mergeVitals = (stored) => {
  * Walk-in citas (no customer_id) cannot save notes — the patient must be
  * registered first, and registered patients need the required consent
  * documents signed (hasAllConsentsSigned).
+ *
+ * BORRADOR: while the consulta is unfinished (and the patient is registered)
+ * the working copy autosaves to consulta_drafts, so the dialog can be closed
+ * — to update the historia, check the expediente, or attend another patient —
+ * and reopened with «Continuar consulta» without losing anything. Drafts are
+ * not part of the legal expediente; a pg_cron job finalizes them
+ * automatically 24 h after the first save (NOM-004 expects the note after
+ * each attention). Finalizing here deletes the draft.
+ *
+ * RECETA: «Guardar e imprimir receta» issues + signs the receta and opens the
+ * print preview without finishing the consulta; finishing the consulta with
+ * medications also opens the preview automatically. A signed receta is final
+ * (sign-once / void-only).
  */
 const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConsents }) => {
   const { user } = useAuth();
@@ -108,12 +124,26 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
   // R2-35 gates: walk-ins cannot save notes; registered patients need consents
   const [walkinBlockOpen, setWalkinBlockOpen] = useState(false);
   const [missingConsents, setMissingConsents] = useState([]);
+  // Borrador (consulta_drafts) + receta print preview
+  const [draft, setDraft] = useState(null);
+  const [draftSaving, setDraftSaving] = useState(false);
+  const [rxPrinting, setRxPrinting] = useState(false);
+  const [printRx, setPrintRx] = useState(null);
+  const draftLoadedRef = useRef(false);
+  // Set when the allergy-override dialog was triggered by «Guardar e imprimir
+  // receta» — "Continuar de todas formas" reroutes to the rx-print flow.
+  const rxPrintPendingRef = useRef(false);
 
   const patientName = appointment?.customers?.full_name || appointment?.walkin_name || 'Paciente';
   const hasCustomer = !!appointment?.customer_id;
   const alreadyCompleted = appointment?.status === 'completed';
   const inConsulta = appointment?.status === 'in_consulta';
   const isVideoVisit = appointment?.type === 'video';
+
+  // Hours left before the borrador auto-finalizes (24 h from first save)
+  const draftHoursLeft = draft?.created_at
+    ? Math.max(0, Math.ceil((new Date(draft.created_at).getTime() + 24 * 3600 * 1000 - Date.now()) / 3600000))
+    : null;
 
   useEffect(() => {
     if (!open || !appointment?.id) return;
@@ -142,6 +172,12 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
     setShowMedErrors(false);
     setWalkinBlockOpen(false);
     setMissingConsents([]);
+    setDraft(null);
+    setDraftSaving(false);
+    setRxPrinting(false);
+    setPrintRx(null);
+    rxPrintPendingRef.current = false;
+    draftLoadedRef.current = false;
     // NOM-004 6.1 gate: no prior consulta notes and no historia clínica →
     // the historia must be captured before the first nota de evolución.
     // Walk-ins (no customer_id) never reach this gate — they are blocked
@@ -177,6 +213,40 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
     getDoctorInventoryCached()
       .then(rows => setInventory(Array.isArray(rows) ? rows : []))
       .catch(err => console.error('getInventoryForDoctor failed:', err));
+    // Borrador: restore the autosaved working copy for unfinished consultas.
+    // It is newer than any prefill above, so it wins on every field.
+    if (appointment.customer_id && appointment.status !== 'completed') {
+      getConsultaDraft(appointment.id)
+        .then((d) => {
+          setDraft(d);
+          const p = d?.payload;
+          if (!p) return;
+          setPadecimiento(p.padecimiento || '');
+          setExploracion(p.exploracion || '');
+          setResultados(p.resultados || '');
+          setDiagnostico(p.diagnostico || '');
+          setCie10(Array.isArray(p.cie10) ? p.cie10 : []);
+          setPronostico(p.pronostico || '');
+          setPlan(p.plan || '');
+          setNoExploracion(!!p.noExploracion);
+          setNoResultados(!!p.noResultados);
+          setNoVitals(!!p.noVitals);
+          if (p.vitals && typeof p.vitals === 'object') setVitals(mergeVitals(p.vitals));
+          const draftMeds = Array.isArray(p.medications) && p.medications.length > 0
+            ? p.medications.map(m => ({ ...emptyMed(), ...m }))
+            : null;
+          if (draftMeds) setMedications(draftMeds);
+          setRxIndicaciones(p.rxIndicaciones || '');
+          setTeleLocation(p.teleLocation || '');
+          setTeleIdentity(!!p.teleIdentity);
+          const hasMeds = draftMeds?.some(m => Object.values(m).some(v => (v || '').trim()));
+          if (hasMeds || (p.rxIndicaciones || '').trim()) setShowRx(true);
+        })
+        .catch(err => console.error('getConsultaDraft failed:', err))
+        .finally(() => { draftLoadedRef.current = true; });
+    } else {
+      draftLoadedRef.current = true;
+    }
     // Re-opening a completed consulta: preload the latest note version so the
     // doctor can correct it — saving inserts a new version (append-only).
     if (appointment.status === 'completed') {
@@ -247,6 +317,200 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
     return { ...base, ...meta };
   };
 
+  // ── BORRADOR (consulta_drafts) ─────────────────────────────────────────
+  const buildDraftPayload = () => ({
+    padecimiento, exploracion, resultados, diagnostico, cie10, pronostico, plan,
+    noExploracion, noResultados, noVitals, vitals,
+    medications, rxIndicaciones, teleLocation, teleIdentity,
+    modality: isVideoVisit ? 'video' : 'in_person',
+  });
+
+  // Vitals alone don't make a draft: they come prefilled from the nurse
+  // capture / patient history, so checking them would create a borrador for
+  // every dialog that is merely opened and closed.
+  const draftHasContent = () =>
+    [padecimiento, exploracion, resultados, diagnostico, pronostico, plan, teleLocation, rxIndicaciones]
+      .some(v => (v || '').trim())
+    || cie10.length > 0
+    || noExploracion || noResultados || noVitals
+    || medications.some(m => [m.medication, m.dosage, m.via, m.frequency, m.duration, m.notes].some(v => (v || '').trim()));
+
+  // Autosave the working copy (debounced). Never autosaves a pristine,
+  // untouched form, and never for completed consultas (those version directly).
+  useEffect(() => {
+    if (!open || alreadyCompleted || !hasCustomer || !appointment?.id || !user?.id) return undefined;
+    if (!draftLoadedRef.current) return undefined;
+    if (!draftHasContent()) return undefined;
+    const timer = setTimeout(() => {
+      saveConsultaDraft({
+        appointmentId: appointment.id,
+        customerId: appointment.customer_id,
+        doctorId: user.id,
+        payload: buildDraftPayload(),
+      })
+        .then(setDraft)
+        .catch(err => console.error('consulta draft autosave failed:', err));
+    }, 1500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, appointment?.id, user?.id, padecimiento, exploracion, resultados, diagnostico, cie10, pronostico, plan, noExploracion, noResultados, noVitals, vitals, medications, rxIndicaciones, teleLocation, teleIdentity]);
+
+  // «Guardar progreso»: persist the borrador and close — the cita stays
+  // En consulta and «Continuar consulta» reopens everything as left.
+  const handleSaveProgress = async () => {
+    if (!hasCustomer || alreadyCompleted || !appointment?.id || !user?.id) return;
+    if (!draftHasContent()) {
+      toast.info('Aún no has capturado nada en esta consulta');
+      return;
+    }
+    setDraftSaving(true);
+    try {
+      const row = await saveConsultaDraft({
+        appointmentId: appointment.id,
+        customerId: appointment.customer_id,
+        doctorId: user.id,
+        payload: buildDraftPayload(),
+      });
+      setDraft(row);
+      toast.success('Progreso guardado — puedes cerrar y continuar después. El borrador se cierra automáticamente a las 24 h del primer guardado.');
+      onOpenChange(false);
+    } catch (err) {
+      console.error('saveConsultaDraft failed:', err);
+      toast.error('No se pudo guardar el progreso');
+    } finally {
+      setDraftSaving(false);
+    }
+  };
+
+  // ── Receta gates (shared by "Guardar y terminar" and "Guardar e imprimir") ──
+
+  // LGS 42 Bis + LGS 245-255: cédula, dosis/vía/frecuencia completas, y
+  // ningún controlado (esos van en receta foliada COFEPRIS, nunca aquí).
+  const validateRecetaMeds = (validMeds) => {
+    if (!doctorProfile?.license_number?.trim()) {
+      toast.error('Capture su cédula profesional en su perfil antes de emitir recetas (LGS 42 Bis).');
+      return false;
+    }
+    const incompleteMed = validMeds.find(m => !m.dosage.trim() || !m.via.trim() || !m.frequency.trim());
+    if (incompleteMed) {
+      setShowMedErrors(true);
+      const missing = [
+        !incompleteMed.dosage.trim() && 'dosis',
+        !incompleteMed.via.trim() && 'vía',
+        !incompleteMed.frequency.trim() && 'frecuencia',
+      ].filter(Boolean).join(', ');
+      toast.error(`Faltan datos en "${incompleteMed.medication.trim()}" (${missing}) — dosis, vía y frecuencia son obligatorias para emitir la receta.`);
+      return false;
+    }
+    const controlledHit = findControlledMed(validMeds.map(m => m.medication), inventory);
+    if (controlledHit) {
+      toast.error(controlledMedMessage(controlledHit));
+      return false;
+    }
+    return true;
+  };
+
+  // R2-35: the required consent documents must be signed before any nota or receta
+  const checkConsentsGate = async () => {
+    try {
+      const missing = await hasAllConsentsSigned(appointment.customer_id);
+      if (missing.length > 0) {
+        setMissingConsents(missing);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('hasAllConsentsSigned failed:', err);
+      toast.error('No se pudo verificar los consentimientos del paciente');
+      return false;
+    }
+  };
+
+  // NOM-004 6.2 / patient safety: a med matching a recorded allergy stops the
+  // flow until the doctor confirms the override in the dialog.
+  const checkAllergyGate = (validMeds, allergyOverride) => {
+    if (validMeds.length > 0 && hasCustomer && !allergyOverride) {
+      const conflicts = findAllergyConflicts(validMeds.map(m => m.medication), patientAllergies, vitals.alergias);
+      if (conflicts.length > 0) {
+        setAllergyConflicts(conflicts);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // Creates the receta (with the allergy-override note printed on it when
+  // applicable), auto-signs it with the doctor's e.firma when the session is
+  // unlocked, and returns the fresh row for the print preview.
+  const createAndSignReceta = async (validMeds, doctorName, allergyOverride) => {
+    // On an allergy override the decision is printed on the receta itself
+    const medsToSave = allergyOverride && allergyConflicts.length > 0
+      ? validMeds.map(m => {
+          const lines = allergyConflicts
+            .filter(c => c.medication === m.medication.trim())
+            .map(c => allergyOverrideNote(c.medication, c.allergy));
+          return lines.length > 0
+            ? { ...m, notes: [m.notes.trim(), ...lines].filter(Boolean).join('\n') }
+            : m;
+        })
+      : validMeds;
+    const first = medsToSave[0];
+    const createdRx = await createDoctorPrescription({
+      customer_id: appointment.customer_id,
+      patient_name: patientName,
+      patient_curp: appointment?.customers?.curp || null,
+      doctor_name: doctorName,
+      doctor_license_number: doctorProfile?.license_number || '',
+      medication: first.medication.trim(),
+      dosage: first.dosage.trim() || null,
+      frequency: first.frequency.trim() || null,
+      duration: first.duration.trim() || null,
+      notes: first.notes.trim() || null,
+      prescription_date: new Date().toISOString().split('T')[0],
+      height_cm: vitals.height_cm ? parseFloat(vitals.height_cm) : null,
+      weight_kg: vitals.weight_kg ? parseFloat(vitals.weight_kg) : null,
+      medications: medsToSave.map(m => ({
+        medication: m.medication.trim(),
+        dosage: m.dosage.trim() || null,
+        via: m.via.trim() || null,
+        frequency: m.frequency.trim() || null,
+        duration: m.duration.trim() || null,
+        notes: m.notes.trim() || null,
+      })),
+      edad: vitals.edad ? parseInt(vitals.edad) : null,
+      temperatura: vitals.temperatura.trim() || null,
+      ta: vitals.ta.trim() || null,
+      fc: vitals.fc.trim() || null,
+      fr: vitals.fr.trim() || null,
+      so2: vitals.so2.trim() || null,
+      glicemia: vitals.glicemia.trim() || null,
+      alergias: vitals.alergias.trim() || null,
+      indicaciones: rxIndicaciones.trim() || null,
+      next_appointment: null,
+    });
+    // NOM-024 audit: prescribing despite a recorded allergy is always logged
+    if (allergyOverride && allergyConflicts.length > 0) {
+      await logAudit({
+        action: AUDIT_ACTIONS.PRESCRIPTION_ALLERGY_OVERRIDE,
+        user,
+        details: `Receta emitida pese a alergia registrada — médico ${doctorName} (céd. ${doctorProfile?.license_number || '-'}) — paciente ${patientName} — ${allergyConflicts.map(c => `${c.medication} ↔ ${c.allergy}`).join('; ')}`,
+      });
+    }
+    // Auto-sign with the doctor's stored e.firma when the session is unlocked
+    let previewRx = createdRx;
+    try {
+      const signed = await tryAutoSignReceta(createdRx, appointment?.customers, doctorProfile, user.id);
+      if (signed) {
+        toast.success('Receta firmada electrónicamente con tu e.firma');
+        // Refetch so the preview shows the signature + verification QR
+        previewRx = await getPrescriptionById(createdRx.id).catch(() => createdRx);
+      }
+    } catch (signErr) {
+      toast.error(`Receta creada, pero no se pudo firmar: ${signErr.message}`);
+    }
+    return previewRx;
+  };
+
   // skipHistoriaGate: set when handleHistoriaSaved re-invokes the pending save —
   // the setNeedsHistoria(false) state update hasn't flushed yet in that call.
   // allergyOverride: set when the doctor confirms prescribing despite a
@@ -300,45 +564,9 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
       return;
     }
     const validMeds = medications.filter(m => m.medication.trim());
-    // LGS 42 Bis + LGS 245-255 guards on the receta (before touching the note)
-    if (validMeds.length > 0 && hasCustomer) {
-      if (!doctorProfile?.license_number?.trim()) {
-        toast.error('Capture su cédula profesional en su perfil antes de emitir recetas (LGS 42 Bis).');
-        return;
-      }
-      // LGS 42/42 Bis: dosis, vía y frecuencia son obligatorias por medicamento
-      const incompleteMed = validMeds.find(m => !m.dosage.trim() || !m.via.trim() || !m.frequency.trim());
-      if (incompleteMed) {
-        setShowMedErrors(true);
-        const missing = [
-          !incompleteMed.dosage.trim() && 'dosis',
-          !incompleteMed.via.trim() && 'vía',
-          !incompleteMed.frequency.trim() && 'frecuencia',
-        ].filter(Boolean).join(', ');
-        toast.error(`Faltan datos en "${incompleteMed.medication.trim()}" (${missing}) — dosis, vía y frecuencia son obligatorias para emitir la receta.`);
-        return;
-      }
-      const controlledHit = findControlledMed(validMeds.map(m => m.medication), inventory);
-      if (controlledHit) {
-        toast.error(controlledMedMessage(controlledHit));
-        return;
-      }
-    }
+    if (validMeds.length > 0 && hasCustomer && !validateRecetaMeds(validMeds)) return;
     if (!appointment?.id || !user?.id) return;
-    // R2-35: in-person consent enforcement — the required consent documents
-    // (aviso de privacidad, consentimiento general/teleconsulta, firma
-    // electrónica) must be signed before any nota or receta is saved.
-    try {
-      const missing = await hasAllConsentsSigned(appointment.customer_id);
-      if (missing.length > 0) {
-        setMissingConsents(missing);
-        return;
-      }
-    } catch (err) {
-      console.error('hasAllConsentsSigned failed:', err);
-      toast.error('No se pudo verificar los consentimientos del paciente');
-      return;
-    }
+    if (!(await checkConsentsGate())) return;
     // NOM-004 6.1: capture the historia clínica de primera vez before the
     // first nota de evolución; the pending note save proceeds on onSaved.
     if (hasCustomer && needsHistoria && !skipHistoriaGate) {
@@ -346,15 +574,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
       setHistoriaOpen(true);
       return;
     }
-    // NOM-004 6.2 / patient safety: when a medication matches a recorded
-    // allergy the save stops until the doctor confirms the override.
-    if (validMeds.length > 0 && hasCustomer && !allergyOverride) {
-      const conflicts = findAllergyConflicts(validMeds.map(m => m.medication), patientAllergies, vitals.alergias);
-      if (conflicts.length > 0) {
-        setAllergyConflicts(conflicts);
-        return;
-      }
-    }
+    if (!checkAllergyGate(validMeds, allergyOverride)) return;
     setSaving(true);
     try {
       if (!alreadyCompleted) {
@@ -390,71 +610,20 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
           (previousNote?.id ? ` — reemplaza nota ${previousNote.id}` : ''),
       });
 
+      let createdRx = null;
       if (validMeds.length > 0 && hasCustomer) {
-        // On an allergy override the decision is printed on the receta itself
-        const medsToSave = allergyOverride && allergyConflicts.length > 0
-          ? validMeds.map(m => {
-              const lines = allergyConflicts
-                .filter(c => c.medication === m.medication.trim())
-                .map(c => allergyOverrideNote(c.medication, c.allergy));
-              return lines.length > 0
-                ? { ...m, notes: [m.notes.trim(), ...lines].filter(Boolean).join('\n') }
-                : m;
-            })
-          : validMeds;
-        const first = medsToSave[0];
-        const createdRx = await createDoctorPrescription({
-          customer_id: appointment.customer_id,
-          patient_name: patientName,
-          patient_curp: appointment?.customers?.curp || null,
-          doctor_name: doctorName,
-          doctor_license_number: doctorProfile?.license_number || '',
-          medication: first.medication.trim(),
-          dosage: first.dosage.trim() || null,
-          frequency: first.frequency.trim() || null,
-          duration: first.duration.trim() || null,
-          notes: first.notes.trim() || null,
-          prescription_date: new Date().toISOString().split('T')[0],
-          height_cm: vitals.height_cm ? parseFloat(vitals.height_cm) : null,
-          weight_kg: vitals.weight_kg ? parseFloat(vitals.weight_kg) : null,
-          medications: medsToSave.map(m => ({
-            medication: m.medication.trim(),
-            dosage: m.dosage.trim() || null,
-            via: m.via.trim() || null,
-            frequency: m.frequency.trim() || null,
-            duration: m.duration.trim() || null,
-            notes: m.notes.trim() || null,
-          })),
-          edad: vitals.edad ? parseInt(vitals.edad) : null,
-          temperatura: vitals.temperatura.trim() || null,
-          ta: vitals.ta.trim() || null,
-          fc: vitals.fc.trim() || null,
-          fr: vitals.fr.trim() || null,
-          so2: vitals.so2.trim() || null,
-          glicemia: vitals.glicemia.trim() || null,
-          alergias: vitals.alergias.trim() || null,
-          indicaciones: rxIndicaciones.trim() || null,
-          next_appointment: null,
-        });
-        // NOM-024 audit: prescribing despite a recorded allergy is always logged
-        if (allergyOverride && allergyConflicts.length > 0) {
-          await logAudit({
-            action: AUDIT_ACTIONS.PRESCRIPTION_ALLERGY_OVERRIDE,
-            user,
-            details: `Receta emitida pese a alergia registrada — médico ${doctorName} (céd. ${doctorProfile?.license_number || '-'}) — paciente ${patientName} — ${allergyConflicts.map(c => `${c.medication} ↔ ${c.allergy}`).join('; ')}`,
-          });
-        }
-        // Auto-sign with the doctor's stored e.firma when the session is unlocked
-        try {
-          const signedRx = await tryAutoSignReceta(createdRx, appointment?.customers, doctorProfile, user.id);
-          if (signedRx) toast.success('Receta firmada electrónicamente con tu e.firma');
-        } catch (signErr) {
-          toast.error(`Receta creada, pero no se pudo firmar: ${signErr.message}`);
-        }
+        createdRx = await createAndSignReceta(validMeds, doctorName, allergyOverride);
       }
+
+      // The note is final — the borrador has served its purpose
+      deleteConsultaDraft(appointment.id)
+        .catch(err => console.error('deleteConsultaDraft failed:', err));
+      setDraft(null);
 
       toast.success(alreadyCompleted ? 'Nota guardada (nueva versión)' : 'Consulta terminada');
       setAllergyConflicts([]);
+      // Auto-open the receta preview (firma + print) when a receta was issued
+      if (createdRx) setPrintRx(createdRx);
       onOpenChange(false);
       onSaved?.();
     } catch (err) {
@@ -462,6 +631,41 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
       console.error(err);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // «Guardar e imprimir receta»: issues + signs the receta and opens the
+  // print preview WITHOUT finishing the consulta — the note stays a borrador.
+  // The receta is a legal document from this moment (sign-once / void-only).
+  const handleRxPrint = async (allergyOverride = false) => {
+    if (!hasCustomer || alreadyCompleted || !appointment?.id || !user?.id) return;
+    const validMeds = medications.filter(m => m.medication.trim());
+    if (validMeds.length === 0) {
+      toast.error('Agrega al menos un medicamento para emitir la receta');
+      return;
+    }
+    if (!validateRecetaMeds(validMeds)) return;
+    if (!(await checkConsentsGate())) return;
+    if (!checkAllergyGate(validMeds, allergyOverride)) {
+      rxPrintPendingRef.current = true;
+      return;
+    }
+    setRxPrinting(true);
+    try {
+      const doctorName = doctorProfile?.profiles?.full_name || user?.name || user?.email || '';
+      const previewRx = await createAndSignReceta(validMeds, doctorName, allergyOverride);
+      setAllergyConflicts([]);
+      setPrintRx(previewRx);
+      // The receta is issued — clear the med form so finishing the consulta
+      // later doesn't prescribe the same meds twice.
+      setMedications([emptyMed()]);
+      setRxIndicaciones('');
+      toast.success('Receta emitida — la consulta sigue en curso (borrador)');
+    } catch (err) {
+      console.error('handleRxPrint failed:', err);
+      toast.error(err.message || 'Error emitiendo la receta');
+    } finally {
+      setRxPrinting(false);
     }
   };
 
@@ -491,6 +695,24 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
             <Button size="sm" variant="outline" className="border-amber-300 text-amber-800" onClick={() => setHistoriaOpen(true)}>
               Capturar historia
             </Button>
+          </div>
+        )}
+
+        {!alreadyCompleted && hasCustomer && draft && (
+          <div className={`rounded-lg border px-3 py-2 text-xs ${draft.finalize_error ? 'border-red-200 bg-red-50 text-red-800' : 'border-cyan-200 bg-cyan-50 text-cyan-800'}`}>
+            {draft.finalize_error ? (
+              <span>
+                <strong>El cierre automático del borrador falló.</strong> Motivo: {draft.finalize_error}.{' '}
+                Termina la consulta manualmente (captura la historia clínica si se solicita).
+              </span>
+            ) : (
+              <span>
+                <strong>Borrador en curso.</strong> Tu trabajo se guarda automáticamente — puedes
+                cerrar esta ventana, actualizar la historia o revisar el expediente, y continuar
+                después con «Continuar consulta». El borrador se cierra automáticamente a las 24 h
+                del primer guardado{draftHoursLeft != null ? ` (quedan ~${draftHoursLeft} h)` : ''}.
+              </span>
+            )}
           </div>
         )}
 
@@ -784,6 +1006,24 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
                     rows={2}
                     className="text-sm"
                   />
+                  {!alreadyCompleted && (
+                    <div className="pt-1 border-t border-slate-100">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="border-teal-300 text-teal-700 hover:bg-teal-50"
+                        onClick={() => handleRxPrint(false)}
+                        disabled={saving || rxPrinting || draftSaving}
+                      >
+                        <Printer className="w-3.5 h-3.5 mr-1" />
+                        {rxPrinting ? 'Emitiendo...' : 'Guardar e imprimir receta'}
+                      </Button>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        Emite y firma la receta ahora y abre la vista de impresión, sin terminar
+                        la consulta. Una vez firmada, la receta ya no puede editarse (solo cancelarse).
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -794,10 +1034,21 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
           )}
 
           <div className="flex gap-3 pt-2">
-            <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={saving}>
+            <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={saving || rxPrinting}>
               Cancelar
             </Button>
-            <Button className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600" onClick={() => handleSave()} disabled={saving}>
+            {!alreadyCompleted && hasCustomer && (
+              <Button
+                variant="outline"
+                className="flex-1 border-cyan-300 text-cyan-700 hover:bg-cyan-50"
+                onClick={handleSaveProgress}
+                disabled={saving || draftSaving || rxPrinting}
+              >
+                <Save className="w-4 h-4 mr-1" />
+                {draftSaving ? 'Guardando...' : 'Guardar progreso'}
+              </Button>
+            )}
+            <Button className="flex-1 bg-gradient-to-r from-teal-500 to-emerald-600" onClick={() => handleSave()} disabled={saving || rxPrinting}>
               {saving ? 'Guardando...' : alreadyCompleted ? 'Guardar nueva versión' : 'Guardar y terminar consulta'}
             </Button>
           </div>
@@ -806,7 +1057,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
     </Dialog>
 
     {/* Bloqueo por posible alergia — requiere confirmación explícita del médico */}
-    <Dialog open={allergyConflicts.length > 0} onOpenChange={(o) => { if (!o) setAllergyConflicts([]); }}>
+    <Dialog open={allergyConflicts.length > 0} onOpenChange={(o) => { if (!o) { setAllergyConflicts([]); rxPrintPendingRef.current = false; } }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-red-700">
@@ -830,11 +1081,20 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
             Si continúa, la prescripción quedará anotada en la receta y en la bitácora (NOM-024).
           </p>
           <div className="flex gap-3 pt-1">
-            <Button variant="outline" className="flex-1" onClick={() => setAllergyConflicts([])} disabled={saving}>
+            <Button variant="outline" className="flex-1" onClick={() => { setAllergyConflicts([]); rxPrintPendingRef.current = false; }} disabled={saving || rxPrinting}>
               Volver y corregir
             </Button>
-            <Button className="flex-1 bg-red-600 hover:bg-red-700" onClick={() => handleSave(false, true)} disabled={saving}>
-              {saving ? 'Guardando...' : 'Continuar de todas formas'}
+            <Button
+              className="flex-1 bg-red-600 hover:bg-red-700"
+              onClick={() => {
+                const forRxPrint = rxPrintPendingRef.current;
+                rxPrintPendingRef.current = false;
+                if (forRxPrint) handleRxPrint(true);
+                else handleSave(false, true);
+              }}
+              disabled={saving || rxPrinting}
+            >
+              {saving || rxPrinting ? 'Guardando...' : 'Continuar de todas formas'}
             </Button>
           </div>
         </div>
@@ -931,6 +1191,31 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
         : null}
       onSaved={handleHistoriaSaved}
     />
+
+    {/* Vista previa de receta (firma + impresión): se abre al emitir la receta
+        desde la consulta o al terminar la consulta con medicamentos */}
+    <Dialog open={!!printRx} onOpenChange={(o) => { if (!o) setPrintRx(null); }}>
+      <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Vista previa de receta</DialogTitle>
+        </DialogHeader>
+        {printRx && (
+          <PrintablePrescription
+            prescription={printRx}
+            customer={printRx?.customers || appointment?.customers}
+          />
+        )}
+        <div className="flex justify-end gap-2 no-print">
+          <Button variant="outline" onClick={() => setPrintRx(null)}>Cerrar</Button>
+          <Button variant="outline" onClick={() => downloadPrescriptionPDF(printRx, printRx?.customers || appointment?.customers, `Receta_${printRx?.prescription_number || 'sinfolio'}.pdf`)}>
+            <FileDown className="w-4 h-4 mr-2" /> Descargar PDF
+          </Button>
+          <Button onClick={() => window.print()}>
+            <Printer className="w-4 h-4 mr-2" /> Imprimir
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
     </>
   );
 };

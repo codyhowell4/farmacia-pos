@@ -43,7 +43,7 @@ En el encabezado hay un botón **Iniciar turno**:
 Es la pantalla de trabajo principal. Se **actualiza en vivo**: cuando recepción, la tableta o la app registran un paciente, la cita aparece sola.
 
 - **Filtros:** buscar por nombre de paciente, por estado (Pendiente / Confirmada / En consulta / Completada / Cancelada) y por periodo (**Hoy / Próximos 7 días / Todas**). La lista se agrupa por día.
-- **Cada cita muestra:** estado, modalidad (📹 Video / 🏥 Presencial), estado de pago en teleconsultas, ✓ Signos (si enfermería ya capturó signos), y para registros de kiosco: la fuente ("Registro en tableta" / "Check-in en línea") y **"✓ Consentimientos firmados"**.
+- **Cada cita muestra:** estado, modalidad (📹 Video / 🏥 Presencial), estado de pago en teleconsultas, ✓ Signos (si enfermería ya capturó signos), **📝 Borrador** (si la consulta tiene una nota en curso con guardado automático — ver 1.4), y para registros de kiosco: la fuente ("Registro en tableta" / "Check-in en línea") y **"✓ Consentimientos firmados"**.
 
 ### Fila del consultorio (walk-ins)
 
@@ -83,7 +83,16 @@ Botón **Nueva cita**: selecciona el **paciente registrado** (obligatorio — "L
    - **Plan / indicación terapéutica** *
    - **Solo teleconsultas (NOM-027):** ubicación declarada del paciente * y la casilla "Verifiqué la identidad del paciente al inicio de la teleconsulta" *.
    - **Receta (opcional):** sección plegable para emitir la receta en el mismo paso.
-3. Presiona **Guardar y terminar consulta**. La cita queda **Completada**.
+3. Presiona **Guardar y terminar consulta**. La cita queda **Completada**. Si la consulta incluyó medicamentos, la **vista previa de la receta se abre sola** al terminar (ya firmada si tu e.firma está desbloqueada) para imprimirla o descargar el PDF en el momento.
+
+**¿No alcanzas a terminar la nota? Borrador con guardado automático (24 h):**
+
+- Todo lo que escribes en la consulta se **guarda solo** como **borrador** (también con el botón **Guardar progreso**, que guarda y cierra la ventana).
+- Puedes **cerrar la consulta en cualquier momento** — para actualizar la historia clínica, revisar el expediente o atender a otro paciente — y retomarla con **Continuar consulta**: todo queda como lo dejaste. La cita muestra el distintivo **📝 Borrador** en la agenda.
+- El borrador **no es parte del expediente legal** hasta que termines la consulta. La NOM-004 exige la nota después de cada atención, así que el borrador **se cierra automáticamente a las 24 horas del primer guardado**: la nota se asienta con lo que haya (las secciones vacías quedan marcadas como "no capturadas al cierre automático" y se completan después como nueva versión) y la cita pasa a Completada. **Los medicamentos del borrador NO se recetan automáticamente** — si el borrador se cierra solo, re-emite la receta manualmente.
+- Si el cierre automático falla (por ejemplo, falta la historia clínica de primera vez), la consulta muestra un aviso rojo con el motivo: termínala manualmente.
+
+**Imprimir la receta sin terminar la consulta:** dentro de la sección **Receta (opcional)**, el botón **Guardar e imprimir receta** emite y firma la receta en el momento y abre la vista de impresión, sin cerrar la nota. Ojo: desde ese momento la receta es un documento final (no se puede editar, solo cancelar), y el formulario de medicamentos se limpia para no recetar dos veces lo mismo.
 
 **Bloqueos que pueden aparecer antes de guardar (en este orden):**
 
@@ -124,12 +133,12 @@ Botón **Nueva cita**: selecciona el **paciente registrado** (obligatorio — "L
 
 ## 1.6 El expediente del paciente (Pacientes → clic en el nombre)
 
-Encabezado: datos de contacto, botón **Justificante** (justificante médico: fecha, días de reposo, diagnóstico opcional → **Generar e imprimir**; se guarda copia en Adjuntos), botón **Exportar expediente** (PDF completo, NOM-024 6.6.6) y, si faltan datos, la alerta **"Datos NOM-024 incompletos — captura sexo y CURP"**.
+Encabezado: datos de contacto, botón **Justificante** (comprobante de atención: fecha y diagnóstico opcional → **Generar e imprimir**; sugiere **reposo relativo** solo de forma cualitativa — nunca días de descanso cuantificados — y aclara en el propio documento que no es una incapacidad del IMSS; se guarda copia en Adjuntos), botón **Exportar expediente** (PDF completo, NOM-024 6.6.6) y, si faltan datos, la alerta **"Datos NOM-024 incompletos — captura sexo y CURP"**.
 
 Nueve pestañas:
 
 1. **Resumen** — contadores (recetas, citas, compras, notas), aviso rojo de **Alergias** y tarjeta "Información del paciente" con **Editar** (CURP —se valida el dígito verificador—, sexo, entidad de nacimiento, talla, peso, notas).
-2. **Historia** — historia clínica de primera vez (Capturar/Ver) y los antecedentes estructurados: Alergias, Patológicos, No Patológicos, Heredofamiliares, Gineco-Obstétricos, Vacunación y Perinatales. Cada entrada tiene Etiqueta, Estado (Presente/Negado) y Detalle; todo cambio queda en el **Historial de cambios**.
+2. **Historia** — historia clínica de primera vez: **Capturar** la primera vez; después **Ver** la versión vigente y **Actualizar historia** para registrar cambios. Es un **documento vivo versionado**: cada actualización crea una **versión nueva** con autor y fecha, y las **versiones anteriores se conservan** íntegras (botón "Ver versiones anteriores") — la versión original nunca se edita ni se borra (NOM-024). La captura y la actualización tienen **guardado automático de borrador**, así que puedes cerrar la ventana a la mitad y continuar después. Debajo están los antecedentes estructurados: Alergias, Patológicos, No Patológicos, Heredofamiliares, Gineco-Obstétricos, Vacunación y Perinatales. Cada entrada tiene Etiqueta, Estado (Presente/Negado) y Detalle; todo cambio queda en el **Historial de cambios**.
 3. **Notas consulta** — las notas de evolución estructuradas, con autor, versión y botón **Exportar CDA** (XML) por nota.
 4. **Recetas** — Nueva Receta, Firmar, Imprimir, Cancelar.
 5. **Citas** — próximas y anteriores, con las mismas acciones de la agenda.

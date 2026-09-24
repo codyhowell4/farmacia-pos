@@ -114,6 +114,7 @@ export const buildPatientRecordPdf = ({
   customer,
   history = null,
   historia = null,
+  historiaVersions = [],
   medicalNotes = [],
   consultaNotes = [],
   prescriptions = [],
@@ -198,20 +199,25 @@ export const buildPatientRecordPdf = ({
   if (customer?.weight) field('Peso', `${customer.weight} kg`);
   if (customer?.notes) field('Notas', customer.notes);
 
-  // ── Historia clínica de primera vez (NOM-004 6.1) ───────────────────
+  // ── Historia clínica de primera vez (NOM-004 6.1, versionada) ──────
   heading('Historia clínica de primera vez (NOM-004 6.1)');
-  if (!historia) {
+  const versionsToRender = historiaVersions.length > 0
+    ? historiaVersions
+    : (historia ? [historia] : []);
+  if (versionsToRender.length === 0) {
     line('Sin historia clínica de primera vez registrada.', { indent: 2 });
   } else {
-    line(
-      `Registrada: ${formatDateTime(historia.created_at)}${historia.profiles?.full_name ? ` — ${historia.profiles.full_name}` : ''}`,
-      { bold: true, size: 11 }
-    );
-    field('Padecimiento actual', historia.padecimiento_actual);
-    field('Interrogatorio por aparatos y sistemas', historia.interrogatorio_aparatos);
-    field('Exploración física', historia.exploracion_fisica);
-    field('Antecedentes (resumen)', historia.antecedentes_resumen);
-    field('Diagnóstico', historia.diagnostico);
+    versionsToRender.forEach((v, i) => {
+      line(
+        `Versión ${v.version || (versionsToRender.length - i)} — Registrada: ${formatDateTime(v.created_at)}${v.profiles?.full_name ? ` — ${v.profiles.full_name}` : ''}${i === 0 ? ' (vigente)' : ''}`,
+        { bold: true, size: 11 }
+      );
+      field('Padecimiento actual', v.padecimiento_actual);
+      field('Interrogatorio por aparatos y sistemas', v.interrogatorio_aparatos);
+      field('Exploración física', v.exploracion_fisica);
+      field('Antecedentes (resumen)', v.antecedentes_resumen);
+      field('Diagnóstico', v.diagnostico);
+    });
   }
 
   // ── Antecedentes (historial médico) ─────────────────────────────────
