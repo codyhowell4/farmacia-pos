@@ -718,7 +718,12 @@ const PatientWorkspace = () => {
       toast.success('Cita eliminada');
       refetchAppointments();
     } catch (err) {
-      toast.error('Error eliminando cita');
+      // NOM-004: una cita con nota clínica ligada no se puede eliminar — el
+      // FK set-null choca con el trigger append-only de medical_notes (P0001).
+      const blocked = err?.code === 'P0001' || err?.code === '23503' || String(err?.message || '').includes('solo anexar');
+      toast.error(blocked
+        ? 'Esta cita tiene notas clínicas y no se puede eliminar (NOM-004). Usa Cancelar.'
+        : 'Error eliminando cita');
     }
   };
 

@@ -306,6 +306,9 @@ The frontend is fully static; Supabase does all backend work. See `docs/HOSTING.
 
 Every change request must be checked against the normas before implementing (NOM-004, NOM-024, NOM-027, LFPDPPP, LGS arts. 42 Bis & 245–255, RIS — see `docs/NORMAS_REFERENCIAS.md`, `docs/LAUNCH_COMPLIANCE_GAPS.md`, `docs/GOVERNMENT_MOCK_AUDIT.md`, `docs/SGSI.md`). If a requested change conflicts with a norma, do not implement it: double-check the conflict and flag it to the user explicitly. (Standing instruction, 2026-09-22.)
 
+- **Citas with linked clinical notes cannot be hard-deleted** — the `medical_notes.appointment_id` FK (`on delete set null`) fires an UPDATE that the append-only trigger (`medical_notes_no_update`, NOM-024 6.6.2) rejects with P0001. This is intended NOM-004 behavior (expediente must be conserved ≥5 years); the portal's "Eliminar" catches it and tells the user to Cancelar instead. Same append-only triggers: `consulta_notes_no_update`, `historia_clinica_append_only`.
+- **Purging TEST data** (names containing "prueba"/"test" or known test names): use `tools/clear-test-data.sql` in the Supabase SQL Editor. Dry-run by default (`v_execute := false` previews); flip to `true` to delete. Disables the append-only triggers only inside its own transaction. Never run it with a pattern that could match a real patient.
+
 ---
 
 ## Important Files for Agents
