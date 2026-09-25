@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import {
   Calendar, CalendarPlus, Plus, Search, Clock, Phone, Check, Trash2, Edit2, Video, FileText, Activity,
-  FolderOpen, StickyNote, MoreVertical, Play, UserCheck, XCircle
+  FolderOpen, StickyNote, MoreVertical, Play, UserCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -256,19 +256,18 @@ const DoctorAppointments = () => {
     return new Date(k + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'short', timeZone: tz });
   };
 
-  // Coverage view (salon-style): only relevant when I'm clocked in.
-  // - queueAppts: unassigned in-person citas — free to grab
-  // - coverableAppts: citas whose doctor is NOT clocked in — takeover with
-  //   acknowledgement, reschedule, or cancel (membership visits refunded)
+  // One general consultorio queue (only relevant when I'm clocked in):
+  // unassigned in-person citas plus citas assigned to doctors who haven't
+  // clocked in (shown with a yellow "assigned to Dr. X" note and takeover
+  // confirmation). Citas with a borrador or already in_consulta hold
+  // captured work pending the 24 h auto-close — never offer them here.
   const queueAppts = (canConsult && activeShift)
-    ? orgToday.filter(a => !a?.doctor_id && a?.type !== 'video' && !isUnpaidPendingVideo(a))
-    : [];
-  const coverableAppts = (canConsult && activeShift)
-    ? orgToday.filter(a =>
-        a?.doctor_id &&
-        a.doctor_id !== user?.id &&
-        !clockedInIds.includes(a.doctor_id) &&
-        !isUnpaidPendingVideo(a))
+    ? orgToday.filter(a => {
+        if (isUnpaidPendingVideo(a)) return false;
+        if (draftsMap[a?.id] || a?.status === 'in_consulta') return false;
+        if (!a?.doctor_id) return a?.type !== 'video';
+        return a.doctor_id !== user?.id && !clockedInIds.includes(a.doctor_id);
+      })
     : [];
 
   const openCreate = () => {
@@ -659,71 +658,58 @@ const DoctorAppointments = () => {
         ))}
       </div>
 
-      {/* Coverage: cola sin asignar + citas de médicos no disponibles */}
-      {(queueAppts.length > 0 || coverableAppts.length > 0) && (
-        <div className="space-y-3">
-          {queueAppts.length > 0 && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-              <h3 className="font-semibold text-emerald-900 mb-1 flex items-center gap-2">
-                <UserCheck className="w-4 h-4" /> Fila del consultorio ({queueAppts.length})
-              </h3>
-              <p className="text-xs text-emerald-700 mb-3">Citas sin médico asignado — tómalas para atenderlas tú.</p>
-              <div className="space-y-2">
-                {queueAppts.map(a => (
-                  <div key={a?.id || Math.random()} className="bg-white rounded-lg border border-emerald-100 p-3 flex items-center justify-between gap-3">
+      {/* Fila del consultorio: citas sin asignar + citas de médicos que no han iniciado turno */}
+      {queueAppts.length > 0 && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+          <h3 className="font-semibold text-emerald-900 mb-1 flex items-center gap-2">
+            <UserCheck className="w-4 h-4" /> Fila del consultorio ({queueAppts.length})
+          </h3>
+          <p className="text-xs text-emerald-700 mb-3">Citas sin médico asignado o cuyo médico no ha iniciado turno — tómalas para atenderlas tú.</p>
+          <div className="space-y-2">
+            {queueAppts.map(a => {
+              const assignedTo = a?.doctor_id ? (doctorNames[a.doctor_id] || 'Otro médico') : null;
+              return (
+                <div key={a?.id || Math.random()} className="bg-white rounded-lg border border-emerald-100 p-3">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="min-w-0">
                       <p className="font-medium text-slate-900 truncate">
                         {a?.customers?.full_name || a?.walkin_name || 'Paciente'}
                       </p>
                       <p className="text-xs text-slate-500">
-                        {formatDisplayTime(a?.appointment_date, tz)}
+                        {formatDisplayTime(a?.appointment_date, tz)} · {a?.type === 'video' ? '📹 Video' : '🏥 Presencial'}
                         {(a?.customers?.phone || a?.walkin_phone) ? ` · ${a?.customers?.phone || a?.walkin_phone}` : ''}
                         {' · '}{statusLabels[a?.status] || a?.status}
                       </p>
+                      {assignedTo && (
+                        <p className="text-xs font-medium text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 mt-1 inline-block">
+                          ⚠ Cita agendada con {assignedTo} — no ha iniciado turno
+                        </p>
+                      )}
                     </div>
-                    <Button size="sm" disabled={busyAction} className="bg-emerald-600 hover:bg-emerald-700 shrink-0" onClick={() => handleClaim(a)}>
-                      Tomar cita
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {coverableAppts.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <h3 className="font-semibold text-amber-900 mb-1 flex items-center gap-2">
-                <XCircle className="w-4 h-4" /> Citas de médicos no disponibles ({coverableAppts.length})
-              </h3>
-              <p className="text-xs text-amber-700 mb-3">Estas citas pertenecen a médicos que no han iniciado turno. Puedes cubrirlas, reagendarlas o cancelarlas.</p>
-              <div className="space-y-2">
-                {coverableAppts.map(a => (
-                  <div key={a?.id || Math.random()} className="bg-white rounded-lg border border-amber-100 p-3">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div className="min-w-0">
-                        <p className="font-medium text-slate-900 truncate">
-                          {a?.customers?.full_name || a?.walkin_name || 'Paciente'}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {formatDisplayTime(a?.appointment_date, tz)} · {a?.type === 'video' ? '📹 Video' : '🏥 Presencial'} · Cita con: <span className="font-medium">{doctorNames[a?.doctor_id] || 'Otro médico'}</span>
-                        </p>
-                      </div>
-                      <div className="flex gap-2 shrink-0">
-                        <Button size="sm" disabled={busyAction} className="bg-amber-600 hover:bg-amber-700" onClick={() => { setCoverAppt(a); setCoverOpen(true); }}>
-                          Cubrir
+                    <div className="flex gap-2 shrink-0">
+                      {assignedTo ? (
+                        <>
+                          <Button size="sm" disabled={busyAction} className="bg-amber-600 hover:bg-amber-700" onClick={() => { setCoverAppt(a); setCoverOpen(true); }}>
+                            Cubrir
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={busyAction} onClick={() => openEdit(a)}>
+                            Reagendar
+                          </Button>
+                          <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" disabled={busyAction} onClick={() => { setCancelAppt(a); setCancelReason(''); setCancelOpen(true); }}>
+                            Cancelar
+                          </Button>
+                        </>
+                      ) : (
+                        <Button size="sm" disabled={busyAction} className="bg-emerald-600 hover:bg-emerald-700" onClick={() => handleClaim(a)}>
+                          Tomar cita
                         </Button>
-                        <Button size="sm" variant="outline" disabled={busyAction} onClick={() => openEdit(a)}>
-                          Reagendar
-                        </Button>
-                        <Button size="sm" variant="outline" className="text-red-600 border-red-200 hover:bg-red-50" disabled={busyAction} onClick={() => { setCancelAppt(a); setCancelReason(''); setCancelOpen(true); }}>
-                          Cancelar
-                        </Button>
-                      </div>
+                      )}
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

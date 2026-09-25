@@ -45,12 +45,14 @@ Es la pantalla de trabajo principal. Se **actualiza en vivo**: cuando recepción
 - **Filtros:** buscar por nombre de paciente, por estado (Pendiente / Confirmada / En consulta / Completada / Cancelada) y por periodo (**Hoy / Próximos 7 días / Todas**). La lista se agrupa por día.
 - **Cada cita muestra:** estado, modalidad (📹 Video / 🏥 Presencial), estado de pago en teleconsultas, ✓ Signos (si enfermería ya capturó signos), **📝 Borrador** (si la consulta tiene una nota en curso con guardado automático — ver 1.4), y para registros de kiosco: la fuente ("Registro en tableta" / "Check-in en línea") y **"✓ Consentimientos firmados"**.
 
-### Fila del consultorio (walk-ins)
+### Fila del consultorio
 
-Cuando estás en turno verás hasta dos recuadros sobre la lista:
+Estando en turno verás un solo recuadro verde — **"Fila del consultorio (N)"** — sobre la lista. Junta todo lo que puedes atender:
 
-- **Recuadro verde — "Fila del consultorio (N)":** citas presenciales sin médico asignado (incluye todos los registros de tableta/kiosco/app). Presiona **Tomar cita** para asignártela.
-- **Recuadro ámbar — "Citas de médicos no disponibles (N)":** citas de un médico que no está en turno. Puedes **Cubrir** (queda registrado en auditoría), **Reagendar** o **Cancelar** (requiere motivo; si era cita de membresía, la visita se devuelve automáticamente al paciente).
+- **Citas sin médico asignado** (incluye todos los registros de tableta/kiosco/app): presiona **Tomar cita** para asignártela directamente.
+- **Citas de un médico que no ha iniciado turno:** llevan una **nota amarilla** — "⚠ Cita agendada con Dr(a). X — no ha iniciado turno". El botón **Cubrir** abre una confirmación ("¿Seguro que quieres tomar la cita de este médico?") antes de reasignártela (queda registrado en auditoría). También puedes **Reagendar** o **Cancelar** (requiere motivo; si era cita de membresía, la visita se devuelve automáticamente al paciente).
+
+> Las citas que ya tienen trabajo capturado **no aparecen en la fila**: si una cita está *En consulta* o tiene un **📝 Borrador** (nota en curso esperando el cierre automático de 24 h), se considera en proceso y nadie más puede tomarla. Las citas **Completadas** tampoco aparecen.
 
 > No hay botón de "llamar al siguiente paciente": el flujo es tomar la cita de la fila y llamar al paciente verbalmente en sala de espera.
 
