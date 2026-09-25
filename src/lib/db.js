@@ -1905,6 +1905,23 @@ export const getOrgAppointmentsForDate = async (day = new Date()) => {
   return data || [];
 };
 
+// Safety net: consultas abandoned in_consulta > 24 h (any date). Draftless
+// ones never auto-finalize, so the citas queue surfaces them for recovery.
+export const getStuckConsultas = async () => {
+  const orgId = await getOrgId();
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('*, customers(full_name, phone)')
+    .eq('org_id', orgId)
+    .eq('status', 'in_consulta')
+    .not('consulta_started_at', 'is', null)
+    .lt('consulta_started_at', cutoff)
+    .order('consulta_started_at', { ascending: true });
+  if (error) throw error;
+  return data || [];
+};
+
 // Empezar Consulta: confirmed → in_consulta (two-step; ends in PostVisitDialog)
 export const startConsulta = async (id) => {
   return updateAppointment(id, {

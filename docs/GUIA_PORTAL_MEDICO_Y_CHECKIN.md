@@ -53,6 +53,8 @@ Estando en turno verás un solo recuadro verde — **"Fila del consultorio (N)"*
 - **Citas de un médico que no ha iniciado turno:** llevan una **nota amarilla** — "⚠ Cita agendada con Dr(a). X — no ha iniciado turno". El botón **Cubrir** abre una confirmación ("¿Seguro que quieres tomar la cita de este médico?") antes de reasignártela (queda registrado en auditoría). También puedes **Reagendar** o **Cancelar** (requiere motivo; si era cita de membresía, la visita se devuelve automáticamente al paciente).
 
 > Las citas que ya tienen trabajo capturado **no aparecen en la fila**: si una cita está *En consulta* o tiene un **📝 Borrador** (nota en curso esperando el cierre automático de 24 h), se considera en proceso y nadie más puede tomarla. Las citas **Completadas** tampoco aparecen.
+>
+> **Excepción — consultas abandonadas:** si una consulta queda *En consulta* más de 24 h **sin** borrador guardado (el médico la abrió y nunca escribió la nota), reaparece en la fila — de cualquier fecha — con una **nota roja** "🔴 Consulta abierta hace más de 24 h…" para que alguien avise al médico tratante: la NOM-004 exige la nota de cada atención. Cubrirla sirve para recuperarla o cancelarla (si no hubo atención); la nota la debe escribir el médico que atendió. En la propia agenda del médico la cita muestra el distintivo **🔴 Abierta +24 h**.
 
 > No hay botón de "llamar al siguiente paciente": el flujo es tomar la cita de la fila y llamar al paciente verbalmente en sala de espera.
 

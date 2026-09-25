@@ -25,6 +25,7 @@ import {
   getCustomersForDoctor, confirmVideoAppointment, createMedicalNote,
   getActiveDoctorShift, getClockedInDoctorIds, getOrgDoctorNames,
   getOrgAppointmentsForDate, startConsulta, claimAppointment,
+  getStuckConsultas,
   takeoverAppointment, cancelAppointmentStaff, clockInDoctor, getMyOrgId,
   getConsultaDraftsMap
 } from '@/lib/db';
@@ -114,6 +115,7 @@ const DoctorAppointments = () => {
   const [clockedInIds, setClockedInIds] = useState([]);
   const [doctorNames, setDoctorNames] = useState({});
   const [orgToday, setOrgToday] = useState([]);
+  const [stuckConsultas, setStuckConsultas] = useState([]);
   const [coverAppt, setCoverAppt] = useState(null);
   const [coverOpen, setCoverOpen] = useState(false);
   const [cancelAppt, setCancelAppt] = useState(null);
@@ -146,7 +148,7 @@ const DoctorAppointments = () => {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const [appts, custs, shift, clocked, names, today, drafts] = await Promise.all([
+      const [appts, custs, shift, clocked, names, today, drafts, stuck] = await Promise.all([
         getAppointmentsByDoctor(user.id),
         getCustomersForDoctor(),
         getActiveDoctorShift(user.id).catch(() => null),
@@ -154,6 +156,7 @@ const DoctorAppointments = () => {
         getOrgDoctorNames().catch(() => ({})),
         getOrgAppointmentsForDate().catch(() => []),
         getConsultaDraftsMap().catch(() => ({})),
+        getStuckConsultas().catch(() => []),
       ]);
       setAppointments(appts);
       setCustomers(custs);
@@ -162,6 +165,7 @@ const DoctorAppointments = () => {
       setDoctorNames(names);
       setOrgToday(today);
       setDraftsMap(drafts);
+      setStuckConsultas(stuck);
       // Doctor's local timezone for all times on this page
       supabase.from('profiles').select('timezone').eq('id', user.id).single()
         .then(({ data }) => { if (data?.timezone) setTimezone(data.timezone); })
@@ -182,14 +186,16 @@ const DoctorAppointments = () => {
   // the realtime subscription and the window-focus refetch below.
   const refreshAppointments = useCallback(async () => {
     if (!user?.id) return;
-    const [appts, today, drafts] = await Promise.all([
+    const [appts, today, drafts, stuck] = await Promise.all([
       getAppointmentsByDoctor(user.id).catch(() => null),
       getOrgAppointmentsForDate().catch(() => null),
       getConsultaDraftsMap().catch(() => null),
+      getStuckConsultas().catch(() => null),
     ]);
     if (appts) setAppointments(appts);
     if (today) setOrgToday(today);
     if (drafts) setDraftsMap(drafts);
+    if (stuck) setStuckConsultas(stuck);
   }, [user?.id]);
 
   // Live citas: when anyone books/changes/cancels a cita in this org
@@ -269,6 +275,24 @@ const DoctorAppointments = () => {
         return a.doctor_id !== user?.id && !clockedInIds.includes(a.doctor_id);
       })
     : [];
+  // Safety net: a consulta left in_consulta > 24 h with NO borrador is
+  // abandoned work (auto-finalize only covers drafts) — surface it (any
+  // date, red note) so the treating doctor is told to close it. Skip when
+  // the treating doctor is clocked in: it's already on her own list.
+  const isStuckConsulta = (a) =>
+    a?.status === 'in_consulta' &&
+    !draftsMap[a?.id] &&
+    !!a?.consulta_started_at &&
+    (Date.now() - new Date(a.consulta_started_at).getTime()) > 24 * 60 * 60 * 1000;
+  const queueRows = [...queueAppts];
+  if (canConsult && activeShift) {
+    stuckConsultas.forEach(a => {
+      if (!a?.id || queueRows.some(q => q.id === a.id)) return;
+      if (draftsMap[a.id] || isUnpaidPendingVideo(a)) return;
+      if (a.doctor_id === user?.id || clockedInIds.includes(a.doctor_id)) return;
+      queueRows.push(a);
+    });
+  }
 
   const openCreate = () => {
     setEditing(null);
@@ -658,18 +682,19 @@ const DoctorAppointments = () => {
         ))}
       </div>
 
-      {/* Fila del consultorio: citas sin asignar + citas de médicos que no han iniciado turno */}
-      {queueAppts.length > 0 && (
+      {/* Fila del consultorio: citas sin asignar + citas de médicos que no han iniciado turno + consultas abandonadas (+24 h) */}
+      {queueRows.length > 0 && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
           <h3 className="font-semibold text-emerald-900 mb-1 flex items-center gap-2">
-            <UserCheck className="w-4 h-4" /> Fila del consultorio ({queueAppts.length})
+            <UserCheck className="w-4 h-4" /> Fila del consultorio ({queueRows.length})
           </h3>
           <p className="text-xs text-emerald-700 mb-3">Citas sin médico asignado o cuyo médico no ha iniciado turno — tómalas para atenderlas tú.</p>
           <div className="space-y-2">
-            {queueAppts.map(a => {
+            {queueRows.map(a => {
               const assignedTo = a?.doctor_id ? (doctorNames[a.doctor_id] || 'Otro médico') : null;
+              const stuck = isStuckConsulta(a);
               return (
-                <div key={a?.id || Math.random()} className="bg-white rounded-lg border border-emerald-100 p-3">
+                <div key={a?.id || Math.random()} className={`bg-white rounded-lg border p-3 ${stuck ? 'border-red-200' : 'border-emerald-100'}`}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="min-w-0">
                       <p className="font-medium text-slate-900 truncate">
@@ -680,7 +705,12 @@ const DoctorAppointments = () => {
                         {(a?.customers?.phone || a?.walkin_phone) ? ` · ${a?.customers?.phone || a?.walkin_phone}` : ''}
                         {' · '}{statusLabels[a?.status] || a?.status}
                       </p>
-                      {assignedTo && (
+                      {stuck && (
+                        <p className="text-xs font-medium text-red-800 bg-red-100 border border-red-200 rounded px-1.5 py-0.5 mt-1 inline-block">
+                          🔴 Consulta abierta hace más de 24 h sin guardar la nota — el médico tratante debe cerrarla (o cancelarla si no hubo atención)
+                        </p>
+                      )}
+                      {assignedTo && !stuck && (
                         <p className="text-xs font-medium text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 mt-1 inline-block">
                           ⚠ Cita agendada con {assignedTo} — no ha iniciado turno
                         </p>
@@ -774,6 +804,14 @@ const DoctorAppointments = () => {
                           title="Borrador de nota en curso — se cierra automáticamente a las 24 h del primer guardado"
                         >
                           📝 Borrador
+                        </Badge>
+                      )}
+                      {isStuckConsulta(appt) && (
+                        <Badge
+                          className="bg-red-100 text-red-800 border-red-200"
+                          title="Consulta abierta hace más de 24 h sin guardar la nota — ciérrala cuanto antes: la NOM-004 exige la nota de cada atención"
+                        >
+                          🔴 Abierta +24 h
                         </Badge>
                       )}
                     </div>
