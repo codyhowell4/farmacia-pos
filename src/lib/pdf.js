@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 import { buildRecetaQrText } from './cda';
+import { formatAge } from './age';
 
 const INCH = 72;
 
@@ -12,16 +13,6 @@ function formatDateMX(d) {
     month: String(date.getMonth() + 1).padStart(2, '0'),
     year: String(date.getFullYear()),
   };
-}
-
-function calculateAge(dob) {
-  if (!dob) return '';
-  const birth = new Date(dob);
-  const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const m = today.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-  return String(age);
 }
 
 /**
@@ -44,7 +35,7 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
   const nextDate = formatDateMX(prescription.next_appointment);
 
   const vitals = {
-    edad: prescription.edad || (customer?.date_of_birth ? calculateAge(customer.date_of_birth) : ''),
+    edad: prescription.edad || formatAge(customer?.date_of_birth),
     peso: prescription.weight_kg || customer?.weight || '',
     talla: prescription.height_cm || customer?.height || '',
     temp: prescription.temperatura || '',

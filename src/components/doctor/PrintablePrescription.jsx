@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { buildRecetaQrText } from '@/lib/cda';
+import { formatAge } from '@/lib/age';
 
 const NAVY = '#1E2A8A';
 const GREEN = '#2E9E7B';
@@ -56,7 +57,7 @@ const PrintablePrescription = ({ prescription, customer }) => {
   const nextDate = formatDateMX(prescription.next_appointment);
 
   const vitals = {
-    edad: prescription.edad || (customer?.date_of_birth ? calculateAge(customer.date_of_birth) : ''),
+    edad: prescription.edad || formatAge(customer?.date_of_birth),
     peso: prescription.weight_kg || customer?.weight || '',
     talla: prescription.height_cm || customer?.height || '',
     temp: prescription.temperatura || '',
@@ -569,15 +570,5 @@ const PrintablePrescription = ({ prescription, customer }) => {
     </div>
   );
 };
-
-function calculateAge(dob) {
-  if (!dob) return '';
-  const birth = new Date(dob);
-  const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const m = today.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
-  return String(age);
-}
 
 export default PrintablePrescription;

@@ -39,6 +39,7 @@ import ConsentTab from './ConsentTab';
 import JustificanteDialog from './JustificanteDialog';
 import HistoriaClinicaModal from './HistoriaClinicaModal';
 import { downloadPrescriptionPDF } from '@/lib/pdf';
+import { formatAge } from '@/lib/age';
 import { buildPatientRecordPdf, triggerDownload } from '@/lib/recordExport';
 import { isValidCurp } from '@/lib/curp';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
@@ -151,16 +152,7 @@ const PatientWorkspace = () => {
   const effWeight = customer?.weight || latestRxWith('weight_kg')?.weight_kg || null;
   const heightSrc = !customer?.height && effHeight ? ' (última receta)' : '';
   const weightSrc = !customer?.weight && effWeight ? ' (última receta)' : '';
-  const patientAge = customer?.date_of_birth
-    ? (() => {
-        const b = new Date(customer.date_of_birth);
-        const t = new Date();
-        let a = t.getFullYear() - b.getFullYear();
-        const m = t.getMonth() - b.getMonth();
-        if (m < 0 || (m === 0 && t.getDate() < b.getDate())) a--;
-        return a >= 0 && a < 130 ? a : null;
-      })()
-    : null;
+  const patientAge = formatAge(customer?.date_of_birth);
 
   // The full doctor catalog (~whole org inventory) only loads the first
   // time a dialog needs it — module-level 5-min cache in db.js — instead of
@@ -983,7 +975,7 @@ const PatientWorkspace = () => {
               <div><span className="text-slate-500">Teléfono:</span> {customer.phone || '-'}</div>
               <div><span className="text-slate-500">CURP:</span> {customer.curp || '-'}</div>
               <div><span className="text-slate-500">Sexo:</span> {customer.sexo === 'M' ? 'Mujer' : customer.sexo === 'H' ? 'Hombre' : '-'}</div>
-              <div><span className="text-slate-500">Nacimiento:</span> {formatDate(customer.date_of_birth)}{patientAge !== null ? ` (${patientAge} años)` : ''}</div>
+              <div><span className="text-slate-500">Nacimiento:</span> {formatDate(customer.date_of_birth)}{patientAge ? ` (${patientAge})` : ''}</div>
               <div><span className="text-slate-500">Entidad de nacimiento:</span> {customer.birth_state || '-'}</div>
               <div><span className="text-slate-500">Registro:</span> {formatDate(customer.created_at)}</div>
               <div><span className="text-slate-500">Talla:</span> {effHeight ? `${effHeight} cm` : '-'}<span className="text-slate-400 text-xs">{heightSrc}</span></div>
