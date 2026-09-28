@@ -95,7 +95,7 @@ const PatientWorkspace = () => {
   const [apptDialogOpen, setApptDialogOpen] = useState(false);
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
   const [patientEditOpen, setPatientEditOpen] = useState(false);
-  const [patientForm, setPatientForm] = useState({ height: '', weight: '', notes: '', curp: '', sexo: '', birth_state: '' });
+  const [patientForm, setPatientForm] = useState({ full_name: '', height: '', weight: '', notes: '', curp: '', sexo: '', birth_state: '' });
   const [curpError, setCurpError] = useState('');
   const [savingPatient, setSavingPatient] = useState(false);
   const [printRx, setPrintRx] = useState(null);
@@ -722,6 +722,7 @@ const PatientWorkspace = () => {
   // ── PATIENT INFO HANDLERS ──
   const openPatientEdit = () => {
     setPatientForm({
+      full_name: customer?.full_name || '',
       height: customer?.height || '',
       weight: customer?.weight || '',
       notes: customer?.notes || '',
@@ -734,6 +735,11 @@ const PatientWorkspace = () => {
   };
 
   const handleUpdatePatient = async () => {
+    const fullName = patientForm.full_name.trim();
+    if (!fullName) {
+      toast.error('El nombre no puede estar vacío');
+      return;
+    }
     const curp = patientForm.curp.trim().toUpperCase();
     if (curp && !isValidCurp(curp)) {
       setCurpError('CURP inválida: revisa el formato y el dígito verificador');
@@ -743,6 +749,7 @@ const PatientWorkspace = () => {
     setSavingPatient(true);
     try {
       await updateCustomer(customerId, {
+        full_name: fullName,
         height: patientForm.height ? parseFloat(patientForm.height) : null,
         weight: patientForm.weight ? parseFloat(patientForm.weight) : null,
         notes: patientForm.notes.trim() || null,
@@ -892,7 +899,16 @@ const PatientWorkspace = () => {
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">{customer.full_name}</h2>
+            <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+              {customer.full_name}
+              <button
+                onClick={openPatientEdit}
+                className="text-slate-400 hover:text-teal-600 transition-colors"
+                title="Corregir nombre del paciente"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+            </h2>
             <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
               {customer.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{customer.phone}</span>}
               {customer.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{customer.email}</span>}
@@ -1683,6 +1699,14 @@ const PatientWorkspace = () => {
             <DialogTitle>Editar información del paciente</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nombre completo</Label>
+              <Input
+                placeholder="Nombre del paciente (así se imprime en la receta)"
+                value={patientForm.full_name}
+                onChange={(e) => setPatientForm({ ...patientForm, full_name: e.target.value })}
+              />
+            </div>
             <div className="space-y-2">
               <Label>CURP</Label>
               <Input
