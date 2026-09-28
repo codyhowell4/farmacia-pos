@@ -26,6 +26,11 @@ const DoctorCustomers = () => {
 
   useEffect(() => {
     loadCustomers();
+    // Tablet/recepción registrations should appear without a manual refresh —
+    // reload quietly whenever the tab regains focus.
+    const onFocus = () => loadCustomers(true);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   useEffect(() => {
@@ -36,24 +41,23 @@ const DoctorCustomers = () => {
     }
     setFiltered(safeCustomers.filter(c =>
       c?.full_name?.toLowerCase().includes(q) ||
+      c?.guardian_name?.toLowerCase().includes(q) ||
       c?.phone?.toLowerCase().includes(q) ||
       c?.email?.toLowerCase().includes(q) ||
       c?.curp?.toLowerCase().includes(q)
     ));
-  }, [search, safeCustomers.length]);
+  }, [search, customers]);
 
-  const loadCustomers = async () => {
-    setLoading(true);
+  const loadCustomers = async (quiet = false) => {
+    if (!quiet) setLoading(true);
     try {
       const data = await getCustomersForDoctor();
-      const safe = Array.isArray(data) ? data : [];
-      setCustomers(safe);
-      setFiltered(safe);
+      setCustomers(Array.isArray(data) ? data : []);
     } catch (err) {
-      toast.error('Error cargando pacientes');
+      if (!quiet) toast.error('Error cargando pacientes');
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   };
 
@@ -99,7 +103,7 @@ const DoctorCustomers = () => {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
         <Input
-          placeholder="Buscar por nombre, teléfono, CURP..."
+          placeholder="Buscar por nombre, tutor, teléfono, CURP..."
           className="pl-10"
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -129,6 +133,7 @@ const DoctorCustomers = () => {
                 <div className="min-w-0">
                   <p className="font-medium text-slate-900 truncate">{c?.full_name || 'Sin nombre'}</p>
                   <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
+                    {c?.guardian_name && <span className="flex items-center gap-1"><Users className="w-3 h-3" />Tutor: {c.guardian_name}</span>}
                     {c?.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{c.phone}</span>}
                     {c?.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" />{c.email}</span>}
                   </div>

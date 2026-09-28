@@ -263,16 +263,17 @@ const DoctorAppointments = () => {
   };
 
   // One general consultorio queue (only relevant when I'm clocked in):
-  // unassigned in-person citas plus citas assigned to doctors who haven't
-  // clocked in (shown with a yellow "assigned to Dr. X" note and takeover
-  // confirmation). Citas with a borrador or already in_consulta hold
-  // captured work pending the 24 h auto-close — never offer them here.
+  // every one of today's in-person citas that isn't mine — unassigned ones
+  // can be claimed directly; ones assigned to another doctor show a yellow
+  // "assigned to Dr. X" note and ask for takeover confirmation. Citas with
+  // a borrador or already in_consulta hold captured work pending the 24 h
+  // auto-close — never offer them here.
   const queueAppts = (canConsult && activeShift)
     ? orgToday.filter(a => {
         if (isUnpaidPendingVideo(a)) return false;
         if (draftsMap[a?.id] || a?.status === 'in_consulta') return false;
         if (!a?.doctor_id) return a?.type !== 'video';
-        return a.doctor_id !== user?.id && !clockedInIds.includes(a.doctor_id);
+        return a.doctor_id !== user?.id;
       })
     : [];
   // Safety net: a consulta left in_consulta > 24 h with NO borrador is
@@ -687,13 +688,13 @@ const DoctorAppointments = () => {
         ))}
       </div>
 
-      {/* Fila del consultorio: citas sin asignar + citas de médicos que no han iniciado turno + consultas abandonadas (+24 h) */}
+      {/* Fila del consultorio: todas las citas de hoy que no son mías (sin asignar o de otro médico) + consultas abandonadas (+24 h) */}
       {queueRows.length > 0 && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
           <h3 className="font-semibold text-emerald-900 mb-1 flex items-center gap-2">
             <UserCheck className="w-4 h-4" /> Fila del consultorio ({queueRows.length})
           </h3>
-          <p className="text-xs text-emerald-700 mb-3">Citas sin médico asignado o cuyo médico no ha iniciado turno — tómalas para atenderlas tú.</p>
+          <p className="text-xs text-emerald-700 mb-3">Citas sin médico asignado o agendadas con otro médico — tómalas para atenderlas tú.</p>
           <div className="space-y-2">
             {queueRows.map(a => {
               const assignedTo = a?.doctor_id ? (doctorNames[a.doctor_id] || 'Otro médico') : null;
@@ -717,7 +718,7 @@ const DoctorAppointments = () => {
                       )}
                       {assignedTo && !stuck && (
                         <p className="text-xs font-medium text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 mt-1 inline-block">
-                          ⚠ Cita agendada con {assignedTo} — no ha iniciado turno
+                          ⚠ Cita agendada con {assignedTo}{clockedInIds.includes(a?.doctor_id) ? '' : ' — no ha iniciado turno'}
                         </p>
                       )}
                     </div>
