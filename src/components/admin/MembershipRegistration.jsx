@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,7 +44,6 @@ const PLANS = {
   },
 };
 
-const CASH_SURCHARGE = 50;
 const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paypal-subscription`;
 
 const MembershipRegistration = () => {
@@ -77,12 +76,7 @@ const MembershipRegistration = () => {
 
   const plan = PLANS[selectedPlanKey];
 
-  const monthlyTotal = useMemo(() => {
-    if (!plan) return 0;
-    let total = plan.monthlyPrice;
-    if (form.paymentMethod === 'cash') total += CASH_SURCHARGE;
-    return total;
-  }, [plan, form.paymentMethod]);
+  const monthlyTotal = plan ? plan.monthlyPrice : 0;
 
   const handlePlanSelect = (key) => {
     setSelectedPlanKey(key);
@@ -407,7 +401,7 @@ const MembershipRegistration = () => {
                 className="w-4 h-4"
               />
               <Banknote className="w-5 h-5" />
-              <span>Efectivo (+${CASH_SURCHARGE} MXN)</span>
+              <span>Efectivo</span>
             </label>
           </div>
         </div>
