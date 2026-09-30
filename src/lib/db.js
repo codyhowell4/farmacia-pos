@@ -548,12 +548,16 @@ export const findDiscount = async (code) => {
 export const getOpenShift = async (profileId, locationId) => {
   // Find ANY open shift at this location, not just one opened by the current user.
   // This allows different cashiers to close each other's shifts.
+  // .limit(1): with 2+ stale open shifts piled up, maybeSingle() alone errors
+  // (PGRST116) and the POS wrongly falls back to "no open shift", which locks
+  // cashiers out of the close-shift flow. Always take the newest open shift.
   const { data, error } = await supabase
     .from('shifts')
     .select('*')
     .eq('location_id', locationId)
     .eq('status', 'open')
     .order('opened_at', { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (error) {
     console.error('[getOpenShift] error:', error);
