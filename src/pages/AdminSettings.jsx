@@ -11,6 +11,7 @@ import { getTaxSettingsDb, saveTaxSettingsDb } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { getOrgInfo, clearOrgInfoCache, resolveOrgId } from '@/lib/orgInfo';
 import BankAccountSettings from '@/components/admin/BankAccountSettings';
+import ChangePinCard from '@/components/ChangePinCard';
 
 const AdminSettings = () => {
   const { toast } = useToast();
@@ -208,8 +209,14 @@ const AdminSettings = () => {
           </Button>
         </motion.div>
 
-        {/* Bank Account Settings */}
+        {/* PIN de desbloqueo (pantalla bloqueada por inactividad) */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+          className="max-w-xl">
+          <ChangePinCard />
+        </motion.div>
+
+        {/* Bank Account Settings */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
           className="bg-white rounded-xl shadow-lg p-6 max-w-2xl">
           <BankAccountSettings />
         </motion.div>

@@ -176,6 +176,25 @@ export const setProfilePin = async (userId, pin) => {
   if (error) throw error;
 };
 
+// Screen-lock unlock: verifies the CALLER's own PIN (any role) against
+// profiles.pin_hash. A profile with no PIN set accepts the default '1234'.
+// Attempts are audit-logged server-side. Returns true/false, or null when the
+// RPC itself failed (network/session) so the UI can tell both apart.
+export const verifyProfilePin = async (pin) => {
+  const { data, error } = await supabase.rpc('verify_profile_pin', { p_pin: pin });
+  if (error) {
+    console.error('[verifyProfilePin] RPC error:', error);
+    return null;
+  }
+  return data === true;
+};
+
+// Self-service PIN change for the screen lock (4–6 digits, hashed server-side).
+export const setMyProfilePin = async (pin) => {
+  const { error } = await supabase.rpc('set_my_profile_pin', { p_pin: pin });
+  if (error) throw error;
+};
+
 // ── INVENTORY ───────────────────────────────────────────────
 
 export const getInventory = async (locationId = null) => {

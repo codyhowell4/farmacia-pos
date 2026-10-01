@@ -15,14 +15,16 @@ import InventoryDashboard from '@/pages/InventoryDashboard';
 import DoctorDashboard from '@/pages/DoctorDashboard';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ShiftProvider } from '@/contexts/ShiftContext';
+import { LockProvider } from '@/contexts/LockContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ShiftGate from '@/components/ShiftGate';
-import useIdleLogout from '@/hooks/useIdleLogout';
+import ScreenLock from '@/components/ScreenLock';
+import useIdleLock from '@/hooks/useIdleLock';
 
-// Inactivity auto-logoff; must live inside AuthProvider (useAuth) and Router
-// (useNavigate / useLocation).
-const IdleLogoutWatcher = () => {
-  useIdleLogout();
+// Inactivity screen lock; must live inside AuthProvider (useAuth), LockProvider
+// (useScreenLock) and Router (useLocation).
+const IdleLockWatcher = () => {
+  useIdleLock();
   return null;
 };
 
@@ -30,9 +32,11 @@ function App() {
   return (
     <AuthProvider>
       <ShiftProvider>
-        <Router>
-          <IdleLogoutWatcher />
-          <Routes>
+        <LockProvider>
+          <Router>
+            <IdleLockWatcher />
+            <ScreenLock />
+            <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -77,7 +81,8 @@ function App() {
           </Routes>
           <Toaster />
           <SonnerToaster richColors closeButton position="top-right" />
-        </Router>
+          </Router>
+        </LockProvider>
       </ShiftProvider>
     </AuthProvider>
   );

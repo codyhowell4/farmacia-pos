@@ -163,8 +163,10 @@ function main() {
   }
 
   if (pages.length === 0) {
-    console.error('❌ No pages with Helmet components found!');
-    process.exit(1);
+    // Fail-soft: llms.txt is build metadata and must never block `vite build`
+    // (the old `|| true` shell guard silently skipped vite under cmd.exe).
+    console.error('⚠️  No pages with Helmet components found — keeping existing llms.txt');
+    process.exit(0);
   }
 
 

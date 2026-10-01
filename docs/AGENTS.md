@@ -81,7 +81,7 @@ pharmacy-pos/
 │   └── hooks/
 │       ├── use-mobile.jsx
 │       ├── use-toast.js
-│       └── useIdleLogout.js      # Idle auto-logout: 60 min in /doctor, 30 min elsewhere (mounted in App.jsx)
+│       └── useIdleLock.js        # Idle screen lock (PIN to re-enter): 60 min in /doctor, 30 min elsewhere (mounted in App.jsx)
 ├── tools/
 │   ├── generate-llms.js        # Build-time script generating public/llms.txt from Helmet metadata
 │   └── install-missing-components.js
@@ -190,6 +190,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key-here
 2. On login, `AuthContext` fetches the `profiles` row (with retry logic for trigger delays).
 3. `ProtectedRoute` guards routes by `user.role`.
 4. Admin PIN verification is used for sensitive operations (price overrides, voiding sales, returns). PINs are stored bcrypt-hashed in `profiles.pin_hash` and verified server-side via the `verify_admin_pin` RPC.
+5. **Screen lock (2026-09-30):** inactivity locks the screen instead of logging out (`useIdleLock` → `LockContext` → `ScreenLock` overlay, all mounted in `App.jsx`); the Supabase session stays alive underneath. The user's own PIN unlocks it via the `verify_profile_pin` RPC (any role; audit-logged; a profile with no `pin_hash` accepts the default **1234**). Users change their PIN via `set_my_profile_pin` from Admin → Configuración or doctor portal → Mi Perfil (`ChangePinCard`); admins can also set anyone's PIN from Usuarios. The lock flag persists in `sessionStorage` (`apolo:screen-lock` = user id) so a reload cannot bypass it; `login()`/`logout()` clear it. `verify_admin_pin` deliberately does NOT accept the 1234 default — sensitive-operation approval always requires an explicitly set PIN.
 
 ---
 
@@ -300,7 +301,7 @@ The frontend is fully static; Supabase does all backend work. See `docs/HOSTING.
 
 - **Never commit `.env`** — it is gitignored.
 - Supabase RLS policies enforce org isolation. Do not disable RLS.
-- Admin PINs are stored bcrypt-hashed in `profiles.pin_hash` (never plaintext). Set/clear them via the `admin_set_profile_pin` RPC (admin-only); verify via the `verify_admin_pin` RPC. The legacy `profiles.pin` column is always NULL.
+- PINs are stored bcrypt-hashed in `profiles.pin_hash` (never plaintext). Admins set/clear anyone's via the `admin_set_profile_pin` RPC; users change their own via `set_my_profile_pin` (self-service, only `pin_hash` may move — the `profiles_protect_privileged` trigger allows it only under the function's transaction-local flag). Admin overrides verify via `verify_admin_pin` (admins only, no default); the screen lock verifies via `verify_profile_pin` (own PIN, NULL hash = default 1234). The legacy `profiles.pin` column is always NULL.
 - All DB mutations go through `src/lib/db.js` which uses the authenticated Supabase client.
 - pos/inventory roles reach customer data ONLY through the `pos_*` security-definer RPCs (`searchCustomersPos`, `createCustomerPos`, `searchPrescriptionsPos`, `searchMembershipsPos`, `getMembershipByIdPos`, `getSaleForReturnPos` in `db.js`) — direct SELECT/INSERT/UPDATE on `customers` and other clinical tables is restricted to admin/doctor (clinical staff).
 - Price overrides, voids, and user management require admin PIN or admin role.

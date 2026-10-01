@@ -47,7 +47,7 @@ const AdminUsers = () => {
       return;
     }
     if (formData.pin && !/^\d{4,6}$/.test(formData.pin)) {
-      toast({ title: 'PIN inválido', description: 'El PIN de administrador debe tener entre 4 y 6 dígitos.', variant: 'destructive' });
+      toast({ title: 'PIN inválido', description: 'El PIN debe tener entre 4 y 6 dígitos.', variant: 'destructive' });
       return;
     }
     try {
@@ -230,11 +230,16 @@ const AdminUsers = () => {
                       ))}
                     </select>
                   </div>
-                  {formData.role === 'admin' && (
+                  {formData.role && formData.role !== 'customer' && (
                     <div className="space-y-2">
-                      <Label htmlFor="pin">PIN de administrador</Label>
-                      <Input id="pin" type="password" inputMode="numeric" maxLength={6} value={formData.pin} onChange={(e) => setFormData({ ...formData, pin: e.target.value })} placeholder="PIN de 4 a 6 dígitos" />
-                      {editingUser && <p className="text-xs text-slate-400">Deja vacío para conservar el PIN actual.</p>}
+                      <Label htmlFor="pin">PIN de desbloqueo</Label>
+                      <Input id="pin" type="password" inputMode="numeric" maxLength={6} value={formData.pin} onChange={(e) => setFormData({ ...formData, pin: e.target.value })} placeholder="PIN de 4 a 6 dígitos (vacío = 1234)" />
+                      <p className="text-xs text-slate-400">
+                        {editingUser
+                          ? 'Deja vacío para conservar el PIN actual.'
+                          : 'Si lo dejas vacío, el PIN será el predeterminado: 1234.'}
+                        {formData.role === 'admin' && ' En administradores también autoriza anulaciones, devoluciones y ajustes de precio.'}
+                      </p>
                     </div>
                   )}
                   <div className="space-y-2">

@@ -17,6 +17,7 @@ import {
   setEfirmaSessionPassword, getEfirmaSessionPassword, clearEfirmaSessionPassword,
 } from '@/lib/efirma';
 import DoctorAvailabilityEditor from '@/components/DoctorAvailabilityEditor';
+import ChangePinCard from '@/components/ChangePinCard';
 import { toast } from 'sonner';
 
 const InfoRow = ({ icon: Icon, label, value, fallback }) => (
@@ -334,6 +335,9 @@ const DoctorProfile = () => {
               </Button>
             </div>
           </div>
+
+          {/* PIN de desbloqueo (pantalla bloqueada por inactividad) */}
+          <ChangePinCard />
 
           {/* Professional Info */}
           <div className="bg-white rounded-xl shadow-lg p-6">

@@ -223,6 +223,8 @@ export const AuthProvider = ({ children }) => {
       setSession(signInData.session);
       setProfile(userProfile);
       setIsReady(true);
+      // A fresh login never inherits a previous session's screen lock.
+      sessionStorage.removeItem('apolo:screen-lock');
 
       // Step 4: Log successful login
       logAudit({
@@ -247,7 +249,8 @@ export const AuthProvider = ({ children }) => {
         details: 'Sesión cerrada',
       });
     }
-    
+
+    sessionStorage.removeItem('apolo:screen-lock');
     setProfile(null);
     setSession(null);
     await supabase.auth.signOut();
