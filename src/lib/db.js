@@ -3803,6 +3803,46 @@ export const recordMembershipPayment = async (membershipId, { amount, paymentMet
   return data;
 };
 
+// POS membership signup ("Registrar Miembro"): the fee rode the POS ticket,
+// so after the sale completes this security-definer RPC dedupes/creates the
+// customer, creates or reinstates the membership, records payment #1 (emails
+// + notifications, NO duplicate sale booking), links the sale, and deducts
+// consulta visits consumed by the ticket.
+export const registerMembershipAtPos = async ({
+  saleId, planType, fullName, email, phone,
+  paymentMethod = 'cash', visitsUsed = 0, termsAcceptedAt = null,
+}) => {
+  const { data, error } = await supabase.rpc('pos_register_membership', {
+    p_sale_id: saleId,
+    p_plan_type: planType,
+    p_full_name: fullName,
+    p_email: email,
+    p_phone: phone,
+    p_payment_method: paymentMethod,
+    p_visits_used: visitsUsed,
+    p_terms_accepted_at: termsAcceptedAt,
+  });
+  if (error) throw error;
+  return data;
+};
+
+// Find-or-create the org-wide MEMBRESIA INDIVIDUAL/FAMILIAR service products
+// (RPC ensure_membership_plan_products is granted to authenticated) and return
+// them so the POS can add the fee to a ticket.
+export const ensureMembershipPlanProducts = async () => {
+  const orgId = await getOrgId();
+  const { error } = await supabase.rpc('ensure_membership_plan_products', { p_org_id: orgId });
+  if (error) throw error;
+  const { data, error: fetchErr } = await supabase
+    .from('inventory')
+    .select('*')
+    .eq('org_id', orgId)
+    .is('location_id', null)
+    .eq('department', 'membresias');
+  if (fetchErr) throw fetchErr;
+  return data || [];
+};
+
 // Read-only, server-authoritative pricing/entitlement check for the POS.
 // items: [{ inventory_id, qty }]
 export const validateMembershipCheckout = async (membershipId, memberId, items) => {

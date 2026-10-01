@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon, Award } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon, Award, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,6 +13,7 @@ import ReturnModal from '@/components/ReturnModal';
 import LostSaleModal from '@/components/LostSaleModal';
 import PrescriptionModal from '@/components/PrescriptionModal';
 import MembershipPosLookup from '@/components/MembershipPosLookup';
+import MembershipSignupDialog, { MEMBERSHIP_SIGNUP_PLANS } from '@/components/MembershipSignupDialog';
 import ApoloBrand from '@/components/ApoloBrand';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN, getTaxSettings, calcIVA } from '@/lib/currency';
@@ -23,7 +24,9 @@ import {
   fulfillMembershipTrackers, getMembershipByIdPos, isServiceItem,
   ensureMembershipRevisionProducts, getPendingMemberRevisions, markMembershipRevisionUsed,
   validateMembershipCheckout, clearSaleMembershipVisitsUsed, createControlledRegisterRows,
+  registerMembershipAtPos, ensureMembershipPlanProducts,
 } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -105,6 +108,8 @@ const PoSDashboard = () => {
   const [fulfillingTrackers, setFulfillingTrackers] = useState(false);
   const [membershipConsultationProduct, setMembershipConsultationProduct] = useState(null);
   const [membershipRevisionProducts, setMembershipRevisionProducts] = useState([]);
+  const [membershipPlanProducts, setMembershipPlanProducts] = useState([]);
+  const [membershipSignupOpen, setMembershipSignupOpen] = useState(false);
   const searchInputRef = useRef(null);
   const completingSaleRef = useRef(false);
 
@@ -144,6 +149,15 @@ const PoSDashboard = () => {
             return merged;
           });
         }
+      })
+      .catch(console.error);
+    ensureMembershipPlanProducts()
+      .then((products) => {
+        setMembershipPlanProducts(products);
+        setInventory((prev) => {
+          const missing = products.filter((p) => !prev.some((i) => i.id === p.id));
+          return missing.length > 0 ? [...prev, ...missing] : prev;
+        });
       })
       .catch(console.error);
     processMembershipRenewals().catch(console.error);
@@ -248,6 +262,14 @@ const PoSDashboard = () => {
     return item.is_membership_blood_pressure === true;
   };
 
+  // The membership signup fee (MEMBRESIA INDIVIDUAL/FAMILIAR) rides the ticket
+  // at full price: never discounted, never IVA'd (matches the membership-payment
+  // RPC bookings, which are iva_enabled=false).
+  const isMembershipFeeItem = (item) => !!item && item.department === 'membresias';
+  // A just-registered member has no server row yet — the pseudo membership
+  // carries the signup payload and bypasses server validation.
+  const isSignupMembership = !!selectedMembership?._signup;
+
   const getRevisionType = (item) => item?.revision_type || null;
 
   // Benefit pricing must never survive the benefit itself: when the attached
@@ -313,11 +335,13 @@ const PoSDashboard = () => {
   };
 
   const handleClearMembership = () => {
+    const wasSignup = !!selectedMembership?._signup;
     if (cart.length > 0) {
       const { next, removedRevisions } = repriceCartForMembershipChange(cart, {
         membershipStillActive: false,
       });
-      setCart(next);
+      // A signup's fee product leaves the ticket along with its benefits.
+      setCart(wasSignup ? next.filter((item) => !isMembershipFeeItem(item)) : next);
       if (removedRevisions > 0) {
         toast({
           title: 'Revisiones eliminadas del carrito',
@@ -327,6 +351,46 @@ const PoSDashboard = () => {
     }
     setSelectedMembership(null);
     setSelectedMember(null);
+    if (wasSignup) {
+      toast({ title: 'Registro de membresía cancelado', description: 'Los beneficios se quitaron del ticket.' });
+    }
+  };
+
+  const handleMembershipSignupConfirm = ({ planKey, fullName, email, phone, termsAcceptedAt }) => {
+    const plan = MEMBERSHIP_SIGNUP_PLANS[planKey];
+    if (!plan) return;
+    if (selectedMembership) {
+      toast({ title: 'Ya hay una membresía aplicada', description: 'Quita la membresía actual antes de registrar una nueva.', variant: 'destructive' });
+      return;
+    }
+    if (cart.some(isMembershipFeeItem)) {
+      toast({ title: 'El ticket ya incluye una membresía', variant: 'destructive' });
+      return;
+    }
+    const product = membershipPlanProducts.find((p) => p.name === plan.productName)
+      || inventory.find((p) => p.department === 'membresias' && p.name === plan.productName);
+    if (!product) {
+      toast({ title: 'Producto de membresía no encontrado', description: 'Recarga el POS para regenerar los productos de membresía.', variant: 'destructive' });
+      return;
+    }
+    setSelectedMembership({
+      id: null,
+      plan_id: 'NUEVA',
+      plan_type: planKey,
+      status: 'active',
+      discount_percent: 10,
+      visits_remaining: plan.visits,
+      visits_limit: plan.visits,
+      customers: { full_name: fullName, email, phone },
+      membership_members: [{ id: null, sub_id: 'NUEVA-1', name: fullName, is_owner: true }],
+      _signup: { planKey, fullName, email, phone, termsAcceptedAt },
+    });
+    setSelectedMember({ id: null, sub_id: 'NUEVA-1', name: fullName, is_owner: true });
+    // Benefit pricing applies immediately: consultas ride free against the
+    // fresh visit balance and regular items get the member % at totals level.
+    setCart([...cart, { ...product, quantity: 1, originalPrice: product.price, price: product.price, overrideBy: null, revisionIds: [] }]);
+    setMembershipSignupOpen(false);
+    toast({ title: 'Membresía en el ticket', description: `${plan.name} de ${fullName} — se activa al cobrar.` });
   };
 
   const findPendingRevisionForMember = (item, memberId) => {
@@ -342,6 +406,12 @@ const PoSDashboard = () => {
   };
 
   const addToCart = (medicine, quantity = 1) => {
+    // Fee products are never added manually: they must go through the
+    // "Registrar Miembro" dialog so the titular's data is captured.
+    if (isMembershipFeeItem(medicine)) {
+      toast({ title: 'Registro de membresía', description: 'Para cobrar una membresía usa el botón "Registrar Miembro" — se deben capturar los datos del titular.', variant: 'destructive' });
+      return;
+    }
     const invItem = inventory.find(i => i.id === medicine.id);
     const service = isServiceItem(invItem);
     if (!service && (!invItem || invItem.quantity <= 0)) {
@@ -429,6 +499,9 @@ const PoSDashboard = () => {
       let blocked = false;
       const updated = currentCart.map(item => {
         if (item.id !== id) return item;
+        // The membership fee quantity is fixed at 1 (one signup per ticket);
+        // removing the line goes through removeFromCart, which cancels the signup.
+        if (isMembershipFeeItem(item)) return item;
         const newQuantity = item.quantity + delta;
         const inventoryItem = inventory.find(inv => inv.id === id);
         if (newQuantity <= 0) return { ...item, quantity: newQuantity };
@@ -475,7 +548,19 @@ const PoSDashboard = () => {
   };
 
   const removeFromCart = (id) => {
-    setCart(cart.filter(item => item.id !== id));
+    const removedItem = cart.find((item) => item.id === id);
+    const filtered = cart.filter((item) => item.id !== id);
+    // Removing the signup fee cancels the whole signup: the pseudo membership
+    // leaves with it and the remaining lines lose member pricing.
+    if (isMembershipFeeItem(removedItem) && isSignupMembership) {
+      const { next } = repriceCartForMembershipChange(filtered, { membershipStillActive: false });
+      setCart(next);
+      setSelectedMembership(null);
+      setSelectedMember(null);
+      toast({ title: 'Registro de membresía cancelado', description: 'Los beneficios se quitaron del ticket.' });
+    } else {
+      setCart(filtered);
+    }
     setRxNumbers(prev => { const n = { ...prev }; delete n[id]; return n; });
   };
 
@@ -560,6 +645,8 @@ const PoSDashboard = () => {
   };
 
   const handlePriceChange = (id, newPriceStr) => {
+    // The membership fee price is the plan price — fixed, no manual overrides.
+    if (isMembershipFeeItem(cart.find((item) => item.id === id))) return;
     const newPrice = parseFloat(newPriceStr);
     if (isNaN(newPrice)) return;
     setCart(cart.map(item => item.id === id ? { ...item, price: newPrice } : item));
@@ -567,7 +654,8 @@ const PoSDashboard = () => {
 
   const handlePriceBlur = (id) => {
     const item = cart.find(item => item.id === id);
-    if (!item || item.price === item.originalPrice) return;
+    if (!item || isMembershipFeeItem(item)) return;
+    if (item.price === item.originalPrice) return;
     const discountPercentage = ((item.originalPrice - item.price) / item.originalPrice) * 100;
     // Cualquier aumento de precio requiere PIN de administrador (riesgo de
     // cobro de más / fraude), igual que un descuento >10% o precio negativo.
@@ -857,7 +945,10 @@ const PoSDashboard = () => {
       // this entirely.
       let membershipLineById = new Map();
       let serverRevisionIds = [];
-      if (isMembershipActive) {
+      // Signup pseudo memberships have no server row yet: the local fallback
+      // below computes the consulta free/50% split from the plan's full visit
+      // count, and pos_register_membership deducts the visits after the sale.
+      if (isMembershipActive && !isSignupMembership) {
         let validation;
         try {
           validation = await validateMembershipCheckout(
@@ -1036,7 +1127,7 @@ const PoSDashboard = () => {
 
         const sale = await createSaleWithPayments(saleRecord, saleItems, payments);
 
-        if (isMembershipActive && usedVisits > 0) {
+        if (isMembershipActive && !isSignupMembership && usedVisits > 0) {
           try {
             await decrementMembershipVisits(selectedMembership.id, usedVisits);
           } catch (visitErr) {
@@ -1066,6 +1157,63 @@ const PoSDashboard = () => {
         }
 
         console.log('Sale created:', sale.id);
+
+        // POS membership signup: the fee rode this ticket — create/activate
+        // the real membership now, link it to the sale, then email the
+        // onboarding link (portal account + password setup).
+        const signupInfo = isSignupMembership ? selectedMembership?._signup : null;
+        if (signupInfo) {
+          try {
+            const signupResult = await registerMembershipAtPos({
+              saleId: sale.id,
+              planType: signupInfo.planKey,
+              fullName: signupInfo.fullName,
+              email: signupInfo.email,
+              phone: signupInfo.phone,
+              paymentMethod: saleRecord.payment_method,
+              visitsUsed: usedVisits,
+              termsAcceptedAt: signupInfo.termsAcceptedAt,
+            });
+            toast({ title: 'Membresía registrada', description: `Plan ID: ${signupResult.plan_id}` });
+            try {
+              const tempPassword = `${crypto.randomUUID()}Aa1!`;
+              const { data: portalData, error: portalError } = await supabase.functions.invoke('create-portal-account', {
+                body: {
+                  customer_id: signupResult.customer_id,
+                  email: signupInfo.email,
+                  password: tempPassword,
+                  full_name: signupInfo.fullName,
+                },
+              });
+              if (portalError || portalData?.error) {
+                throw new Error(portalError?.message || portalData.error);
+              }
+              if (portalData?.account_existed) {
+                toast({ title: 'El cliente ya tenía cuenta en el portal', description: 'Puede entrar con su correo y contraseña actuales.' });
+              } else {
+                const { error: resetError } = await supabase.auth.resetPasswordForEmail(signupInfo.email, {
+                  redirectTo: `${window.location.origin}/reset-password`,
+                });
+                if (resetError) throw resetError;
+                toast({ title: 'Correo de activación enviado', description: `${signupInfo.email} recibirá un enlace para crear su contraseña.` });
+              }
+            } catch (portalErr) {
+              console.error('Portal onboarding error:', portalErr);
+              toast({
+                title: 'Membresía activa, pero el correo de activación falló',
+                description: 'Crea la cuenta del portal desde la ficha del cliente en Admin.',
+                variant: 'destructive',
+              });
+            }
+          } catch (signupErr) {
+            console.error('POS membership signup failed:', signupErr);
+            toast({
+              title: 'Venta cobrada, pero la membresía no se creó',
+              description: signupErr.message || 'Registra la membresía manualmente desde Admin y vincúlala al cliente.',
+              variant: 'destructive',
+            });
+          }
+        }
 
         // Create or link prescription record if prescription data exists
         if (prescription) {
@@ -1300,8 +1448,9 @@ const PoSDashboard = () => {
   const isMembershipActive = selectedMembership?.status === 'active';
   const originalSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const consultationItems = isMembershipActive ? cart.filter((item) => isMembershipConsultation(item)) : [];
-  const regularItems = isMembershipActive ? cart.filter((item) => !isMembershipConsultation(item)) : cart;
+  const regularItems = isMembershipActive ? cart.filter((item) => !isMembershipConsultation(item) && !isMembershipFeeItem(item)) : cart;
   const regularSubtotal = regularItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const feeSubtotal = cart.filter(isMembershipFeeItem).reduce((sum, item) => sum + item.price * item.quantity, 0);
   const originalConsultationSubtotal = consultationItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
   let consultationEffectiveTotal = originalConsultationSubtotal;
@@ -1358,8 +1507,10 @@ const PoSDashboard = () => {
   const discountAmount = isCostPlus ? originalSubtotal - costPlusSubtotal : appliedDiscountAmount;
   const subtotalAfterDiscount = isCostPlus
     ? costPlusSubtotal
-    : regularSubtotal - appliedDiscountAmount + consultationEffectiveTotal;
-  const ivaAmount = calcIVA(subtotalAfterDiscount, taxSettings);
+    : regularSubtotal - appliedDiscountAmount + consultationEffectiveTotal + feeSubtotal;
+  // The signup fee rides at full price and generates no IVA (matches the
+  // membership-payment RPC bookings, which are iva_enabled=false).
+  const ivaAmount = calcIVA(subtotalAfterDiscount - feeSubtotal, taxSettings);
   const finalTotal = subtotalAfterDiscount + ivaAmount;
 
   // Hypothetical member savings for the Cobrar upsell note: anything labeled
@@ -1615,6 +1766,15 @@ const PoSDashboard = () => {
                   onFulfillTrackers={handleFulfillTracker}
                   fulfillingTrackers={fulfillingTrackers}
                 />
+                {!selectedMembership && (
+                  <Button
+                    variant="outline"
+                    className="w-full mt-2 border-apolo-navy/30 text-apolo-navy hover:bg-apolo-navy/5"
+                    onClick={() => setMembershipSignupOpen(true)}
+                  >
+                    <UserPlus className="w-4 h-4 mr-2" /> Registrar Miembro
+                  </Button>
+                )}
               </div>
 
               {/* Receta (controlled meds) — captured here so checkout isn't blocked up front */}
@@ -1937,6 +2097,11 @@ const PoSDashboard = () => {
             </div>
           </DialogContent>
         </Dialog>
+        <MembershipSignupDialog
+          open={membershipSignupOpen}
+          onOpenChange={setMembershipSignupOpen}
+          onConfirm={handleMembershipSignupConfirm}
+        />
       </div>
     );
   }
@@ -2115,6 +2280,15 @@ const PoSDashboard = () => {
                   onFulfillTrackers={handleFulfillTracker}
                   fulfillingTrackers={fulfillingTrackers}
                 />
+                {!selectedMembership && (
+                  <Button
+                    variant="outline"
+                    className="w-full mt-2 border-apolo-navy/30 text-apolo-navy hover:bg-apolo-navy/5"
+                    onClick={() => setMembershipSignupOpen(true)}
+                  >
+                    <UserPlus className="w-4 h-4 mr-2" /> Registrar Miembro
+                  </Button>
+                )}
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between"><p>Subtotal:</p><p>{formatMXN(subtotal)}</p></div>
                   {appliedDiscountLabel && <div className="flex justify-between text-red-600"><p>Descuento ({appliedDiscountLabel}):</p><p>-{formatMXN(discountAmount)}</p></div>}
@@ -2210,6 +2384,11 @@ const PoSDashboard = () => {
         );
       }} />
       <LostSaleModal open={lostSaleOpen} onOpenChange={setLostSaleOpen} />
+      <MembershipSignupDialog
+        open={membershipSignupOpen}
+        onOpenChange={setMembershipSignupOpen}
+        onConfirm={handleMembershipSignupConfirm}
+      />
     </>
   );
 };
