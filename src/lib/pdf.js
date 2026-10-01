@@ -2,12 +2,13 @@ import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 import { buildRecetaQrText } from './cda';
 import { formatAge } from './age';
+import { parseDateLocal } from './timezone';
 
 const INCH = 72;
 
 function formatDateMX(d) {
   if (!d) return { day: '__', month: '__', year: '____' };
-  const date = new Date(d);
+  const date = parseDateLocal(d);
   return {
     day: String(date.getDate()).padStart(2, '0'),
     month: String(date.getMonth() + 1).padStart(2, '0'),

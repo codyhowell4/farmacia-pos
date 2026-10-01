@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { buildRecetaQrText } from '@/lib/cda';
 import { formatAge } from '@/lib/age';
+import { parseDateLocal } from '@/lib/timezone';
 
 const NAVY = '#1E2A8A';
 const GREEN = '#2E9E7B';
@@ -45,7 +46,7 @@ const PrintablePrescription = ({ prescription, customer }) => {
 
   const formatDateMX = (d) => {
     if (!d) return { day: '__', month: '__', year: '____' };
-    const date = new Date(d);
+    const date = parseDateLocal(d);
     return {
       day: String(date.getDate()).padStart(2, '0'),
       month: String(date.getMonth() + 1).padStart(2, '0'),

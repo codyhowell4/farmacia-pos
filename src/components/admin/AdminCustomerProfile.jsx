@@ -11,6 +11,7 @@ import {
   getCustomerAppointments,
   getCustomerOrders,
 } from '@/lib/db';
+import { parseDateLocal } from '@/lib/timezone';
 
 const StatCard = ({ label, value, icon: Icon, color }) => (
   <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
@@ -102,7 +103,7 @@ const AdminCustomerProfile = () => {
 
   const formatDate = (d) => {
     if (!d) return '—';
-    return new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+    return parseDateLocal(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
   const formatCurrency = (n) => {

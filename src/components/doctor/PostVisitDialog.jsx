@@ -16,6 +16,7 @@ import {
   getConsultaDraft, saveConsultaDraft, deleteConsultaDraft, getPrescriptionById
 } from '@/lib/db';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
+import { localDateString } from '@/lib/timezone';
 import { findControlledMed, controlledMedMessage, CONTROLLED_MED_MESSAGE } from '@/lib/controlledMeds';
 import { findAllergyConflicts, summarizeAllergies, allergyOverrideNote } from '@/lib/allergyCheck';
 import Cie10Search from './Cie10Search';
@@ -466,7 +467,7 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
       frequency: first.frequency.trim() || null,
       duration: first.duration.trim() || null,
       notes: first.notes.trim() || null,
-      prescription_date: new Date().toISOString().split('T')[0],
+      prescription_date: localDateString(),
       height_cm: vitals.height_cm ? parseFloat(vitals.height_cm) : null,
       weight_kg: vitals.weight_kg ? parseFloat(vitals.weight_kg) : null,
       medications: medsToSave.map(m => ({

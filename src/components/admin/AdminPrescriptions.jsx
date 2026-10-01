@@ -9,6 +9,7 @@ import { getDoctorPrescriptions, updatePrescriptionStatus, cancelDoctorPrescript
 import { useAuth } from '@/contexts/AuthContext';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { downloadPrescriptionPDF } from '@/lib/pdf';
+import { parseDateLocal } from '@/lib/timezone';
 import PrintablePrescription from '@/components/doctor/PrintablePrescription';
 
 const statusConfig = {
@@ -79,7 +80,7 @@ const AdminPrescriptions = () => {
 
   const formatDate = (d) => {
     if (!d) return '—';
-    return new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+    return parseDateLocal(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
   };
 
   return (

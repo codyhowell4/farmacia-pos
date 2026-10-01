@@ -22,3 +22,16 @@ export const dateInTz = (iso, tz, opts = {}) =>
 
 export const timeInTz = (iso, tz) =>
   new Date(iso).toLocaleTimeString('es-MX', { timeZone: tz || DEFAULT_TZ, hour: '2-digit', minute: '2-digit' });
+
+// Parse a date-only string (YYYY-MM-DD from a `date` column) as LOCAL time.
+// `new Date('YYYY-MM-DD')` is UTC midnight, which renders as the previous day
+// in Mexican timezones. Full timestamps (timestamptz) pass through unchanged.
+export const parseDateLocal = (d) => {
+  if (!d) return null;
+  const s = String(d);
+  return new Date(s.length === 10 ? `${s}T12:00:00` : s);
+};
+
+// Today as YYYY-MM-DD in LOCAL time — for writing `date` columns.
+// (toISOString() is UTC and rolls over to tomorrow after 6–7 PM local.)
+export const localDateString = (d = new Date()) => d.toLocaleDateString('en-CA');

@@ -131,7 +131,9 @@
       }
       function parts(d) {
         if (!d) return { day: '__', month: '__', year: '____' };
-        var x = new Date(d);
+        var s = String(d);
+        // date-only (YYYY-MM-DD) must parse as local time, not UTC midnight
+        var x = new Date(s.length === 10 ? s + 'T12:00:00' : s);
         return {
           day: String(x.getDate()).padStart(2, '0'),
           month: String(x.getMonth() + 1).padStart(2, '0'),

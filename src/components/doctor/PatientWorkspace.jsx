@@ -27,7 +27,7 @@ import {
   hasAllConsentsSigned,
 } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
-import { dayKeyInTz, timeInTz, dateInTz, DEFAULT_TZ } from '@/lib/timezone';
+import { dayKeyInTz, timeInTz, dateInTz, DEFAULT_TZ, localDateString } from '@/lib/timezone';
 import PrintablePrescription from './PrintablePrescription';
 import { tryAutoSignReceta } from '@/lib/efirma';
 import PatientMedicalHistory from './PatientMedicalHistory';
@@ -469,7 +469,7 @@ const PatientWorkspace = () => {
         frequency: first.frequency.trim() || null,
         duration: first.duration.trim() || null,
         notes: first.notes.trim() || null,
-        prescription_date: new Date().toISOString().split('T')[0],
+        prescription_date: localDateString(),
         height_cm: rxForm.height_cm ? parseFloat(rxForm.height_cm) : null,
         weight_kg: rxForm.weight_kg ? parseFloat(rxForm.weight_kg) : null,
         medications: medsToSave.map(m => ({

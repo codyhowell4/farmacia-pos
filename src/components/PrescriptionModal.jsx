@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { AlertTriangle, Stethoscope, User, FileText, Calendar, MapPin, Phone, Search, Link2, Printer, FileDown } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import { searchPrescriptionsPos } from '@/lib/db';
+import { localDateString } from '@/lib/timezone';
 import { isAntibioticName } from '@/lib/antibiotics';
 import PrintablePrescription from '@/components/doctor/PrintablePrescription';
 import { downloadPrescriptionPDF } from '@/lib/pdf';
@@ -87,7 +88,7 @@ const PrescriptionModal = ({
         doctorAddress: initialData.doctor_office_address || '',
         doctorPhone: initialData.doctor_phone || '',
         prescriptionNumber: initialData.prescription_number || '',
-        prescriptionDate: initialData.prescription_date || new Date().toISOString().split('T')[0],
+        prescriptionDate: initialData.prescription_date || localDateString(),
       });
     }
   }, [open, initialData]);
@@ -124,7 +125,7 @@ const PrescriptionModal = ({
       doctorAddress: rx.doctor_office_address || '',
       doctorPhone: rx.doctor_phone || '',
       prescriptionNumber: rx.prescription_number || '',
-      prescriptionDate: rx.prescription_date || new Date().toISOString().split('T')[0],
+      prescriptionDate: rx.prescription_date || localDateString(),
     });
     setSearchResults([]);
     toast({ title: 'Receta vinculada', description: `Receta ${rx.prescription_number} seleccionada` });
@@ -140,7 +141,7 @@ const PrescriptionModal = ({
       doctorAddress: '',
       doctorPhone: '',
       prescriptionNumber: '',
-      prescriptionDate: new Date().toISOString().split('T')[0],
+      prescriptionDate: localDateString(),
     });
   };
 
@@ -271,7 +272,7 @@ const PrescriptionModal = ({
       doctorAddress: '',
       doctorPhone: '',
       prescriptionNumber: '',
-      prescriptionDate: new Date().toISOString().split('T')[0],
+      prescriptionDate: localDateString(),
     });
     setLinkedPrescription(null);
     setSearchResults([]);
