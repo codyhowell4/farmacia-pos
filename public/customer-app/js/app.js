@@ -82,6 +82,14 @@ let consentGateActive = false;
 // check itself fails, renderPage() is locked to a blocking retry view.
 let consentGateVerifyError = false;
 
+// Health onboarding wizard: one-time, skippable 4-step questionnaire
+// (datos básicos, alergias, padecimientos, medicamentos actuales) shown
+// after the consent gate while customers.health_onboarding_completed_at
+// is NULL. Answers feed the expediente the doctor sees. Unlike the
+// consent gate it fails OPEN — a transient check error never locks the app.
+let healthGateActive = false;
+let healthWizard = null;
+
 // Check-in mode (?checkin=1): after login, route to the pre-visit
 // check-in form instead of the normal start page.
 let pendingCheckin = false;
@@ -197,8 +205,10 @@ async function initAuth() {
       if (!isPasswordRecovery) {
         // Consent gate: block normal content until the 3 standard docs are signed
         const gated = await checkConsentGate();
+        // Health onboarding wizard (one-time, skippable) comes after consent
+        const healthGated = gated ? false : await checkHealthOnboardingGate();
         // Restore chrome in case the public firma view hid it
-        if (!gated) {
+        if (!gated && !healthGated) {
           setAppChromeVisible(true);
           if (pendingCheckin) {
             renderCheckinForm();
@@ -341,6 +351,9 @@ async function handleLogin() {
   // Consent gate: block normal content until the 3 standard docs are signed
   if (await checkConsentGate()) return;
 
+  // Health onboarding wizard (one-time, skippable) comes after consent
+  if (await checkHealthOnboardingGate()) return;
+
   if (pendingCheckin) {
     renderCheckinForm();
     showToast('Bienvenido de vuelta, ' + (currentCustomerProfile?.name || currentAuthUser.email), 'success');
@@ -474,6 +487,9 @@ async function handleFamilyActivation() {
 
   // Consent gate: sign the standard documents right after activation
   if (await checkConsentGate()) return;
+
+  // Health onboarding wizard (one-time, skippable) comes after consent
+  if (await checkHealthOnboardingGate()) return;
 
   currentPage = 'membresias';
   navItems.forEach(nav => nav.classList.remove('active'));
@@ -689,6 +705,8 @@ async function handleSignup() {
     setTimeout(async () => {
       // Consent gate: sign the standard documents right after account creation
       if (await checkConsentGate()) return;
+      // Health onboarding wizard (one-time, skippable) comes after consent
+      if (await checkHealthOnboardingGate()) return;
       currentPage = 'consulta';
       navItems.forEach(nav => nav.classList.remove('active'));
       document.querySelector('[data-page="consulta"]')?.classList.add('active');
@@ -1208,7 +1226,7 @@ async function handleRevokeConsents() {
 
   // The gate queries status='signed', so revoked documents no longer count:
   // it re-appears on its own to collect the signatures again.
-  await checkConsentGate();
+  if (!(await checkConsentGate())) await checkHealthOnboardingGate();
 }
 
 // ============================================================
@@ -1433,24 +1451,484 @@ async function handleConsentOnboardingSubmit() {
   setAppChromeVisible(true);
   showToast('Documentos firmados correctamente. ¡Bienvenido!', 'success');
 
-  // Claimed family members (plan familiar) land on Membresías — the same
-  // destination the family-activation flow uses when no consent is due.
-  // Titulars and everyone else keep landing on Consulta. The membership
-  // lookup fails open (free shape without isFamilyMember), so on any error
-  // the default landing applies.
+  // Health onboarding wizard (one-time, skippable) comes right after consent
+  if (await checkHealthOnboardingGate()) return;
+
+  await routePostAuthLanding();
+}
+
+// Shared post-auth landing: claimed family members (plan familiar) land on
+// Membresías — the same destination the family-activation flow uses when no
+// consent is due. Titulars and everyone else keep landing on Consulta. The
+// membership lookup fails open (free shape without isFamilyMember), so on
+// any error the default landing applies. An active ?checkin=1 flow goes
+// straight to the pre-visit form instead.
+async function routePostAuthLanding() {
+  setAppChromeVisible(true);
+  if (pendingCheckin) {
+    renderCheckinForm();
+    return;
+  }
   let landingPage = 'consulta';
   try {
     const membership = await FarmaciaAPI.getMembershipDetails();
     if (membership?.isFamilyMember) landingPage = 'membresias';
   } catch (e) {
-    console.warn('[Consent] Membership check failed; landing on Consulta:', e);
+    console.warn('[Auth] Membership check failed; landing on Consulta:', e);
   }
-
   currentPage = landingPage;
   navItems.forEach(nav => nav.classList.remove('active'));
   document.querySelector(`.bottom-nav .nav-item[data-page="${landingPage}"]`)?.classList.add('active');
   renderPage(landingPage);
+  scheduleMisDatosPrompt();
 }
+
+// ============================================================
+// HEALTH ONBOARDING WIZARD (first login, one-time, skippable)
+// Short 4-step questionnaire — datos básicos, alergias,
+// padecimientos y medicamentos actuales — shown after the consent
+// gate while customers.health_onboarding_completed_at is NULL.
+// Answers go through the patient self-service RPCs (security
+// definer, added_by_role='patient') into the same expediente
+// fields the doctor portal reads (medical_history sections plus
+// height/weight/date_of_birth), so no doctor-side sync is needed.
+// "Completar después" also sets the flag; the monthly mis-datos
+// prompt keeps nudging afterward. Fails OPEN: a transient check
+// error never locks the app (unlike the consent gate).
+// ============================================================
+
+// Returns true when the wizard was rendered (caller must not render
+// anything else); false when the user may proceed normally.
+async function checkHealthOnboardingGate() {
+  if (!currentAuthUser) return false; // guests keep normal behavior
+  if (isPasswordRecovery) return false; // never preempt the reset form
+  try {
+    const { data, error } = await FarmaciaAPI.getMyCustomerDetails();
+    if (error || !data) {
+      console.warn('[HealthOnboarding] Status check failed; letting user in (fail open):', error?.message);
+      return false;
+    }
+    if (data.health_onboarding_completed_at) return false;
+    healthGateActive = true;
+    healthWizard = {
+      step: 1,
+      date_of_birth: data.date_of_birth || '',
+      sexo: data.sexo || '',
+      weight: data.weight ?? '',
+      height: data.height ?? '',
+      allergies: [],   // {label, value}
+      noAllergies: false,
+      conditions: [],  // labels; "Otro" free text stored as "Otro: …"
+      noConditions: false,
+      meds: [],        // {label, value}
+      noMeds: false,
+      saving: false,
+      error: '',
+    };
+    renderHealthOnboarding();
+    return true;
+  } catch (e) {
+    console.warn('[HealthOnboarding] Gate check failed; letting user in (fail open):', e);
+    return false;
+  }
+}
+
+const HW_CONDITIONS = ['Diabetes', 'Hipertensión arterial', 'Asma', 'Tiroides', 'Epilepsia', 'Enfermedad cardíaca', 'Enfermedad renal', 'Cáncer', 'Otro'];
+
+function hwEsc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ISO (YYYY-MM-DD, as stored) → dd/mm/aaaa for the masked input. String-only:
+// never new Date(iso) (UTC-midnight off-by-one, see AGENTS.md date rule).
+function hwDobIsoToMx(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  return m ? m[3] + '/' + m[2] + '/' + m[1] : '';
+}
+
+function renderHealthOnboarding() {
+  closeMenu();
+  setAppChromeVisible(false);
+  const w = healthWizard;
+  if (!w) return;
+
+  const inputStyle = 'width: 100%; padding: 0.75rem; background: #F5F7FB; border: 1px solid #E3E8F2; border-radius: 10px; font-size: 1rem; color: #1a1a2e; box-sizing: border-box;';
+  const labelStyle = 'display: block; font-size: 0.85rem; font-weight: 600; margin: 0 0 0.5rem; color: #141B5E;';
+  const cardStyle = 'background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;';
+  const chipStyle = (active) => `padding: 0.5rem 0.875rem; border-radius: 999px; border: 1.5px solid ${active ? '#46AC78' : '#E3E8F2'}; background: ${active ? '#E9F7F0' : '#ffffff'}; color: ${active ? '#1F7A52' : '#475569'}; font-size: 0.85rem; font-weight: 600; cursor: pointer;`;
+  const entryChip = (text, removeFn, i) => `
+    <span style="display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.8rem; border-radius: 999px; background: #E9F7F0; border: 1px solid #B7E4CD; color: #1F7A52; font-size: 0.85rem; font-weight: 600;">
+      ${hwEsc(text)}
+      <button type="button" onclick="${removeFn}(${i})" aria-label="Quitar" style="background: none; border: none; color: #1F7A52; font-weight: 800; cursor: pointer; padding: 0; font-size: 0.95rem; line-height: 1;">✕</button>
+    </span>`;
+
+  let stepHtml = '';
+
+  if (w.step === 1) {
+    stepHtml = `
+      <div style="${cardStyle}">
+        <label style="${labelStyle}">Fecha de nacimiento</label>
+        <input type="text" id="hw-dob" inputmode="numeric" placeholder="dd/mm/aaaa" value="${hwDobIsoToMx(w.date_of_birth)}" oninput="maskDobInput(this)" style="${inputStyle} margin-bottom: 1rem;">
+        <label style="${labelStyle}">Sexo</label>
+        <select id="hw-sexo" style="${inputStyle} margin-bottom: 1rem;">
+          <option value="">Prefiero no decir</option>
+          <option value="M" ${w.sexo === 'M' ? 'selected' : ''}>Mujer</option>
+          <option value="H" ${w.sexo === 'H' ? 'selected' : ''}>Hombre</option>
+        </select>
+        <div style="display: flex; gap: 0.75rem;">
+          <div style="flex: 1;">
+            <label style="${labelStyle}">Peso (kg)</label>
+            <input type="number" id="hw-weight" min="1" max="500" step="0.1" inputmode="decimal" placeholder="Ej. 70" value="${w.weight}" style="${inputStyle}">
+          </div>
+          <div style="flex: 1;">
+            <label style="${labelStyle}">Talla (cm)</label>
+            <input type="number" id="hw-height" min="30" max="280" step="0.1" inputmode="decimal" placeholder="Ej. 165" value="${w.height}" style="${inputStyle}">
+          </div>
+        </div>
+      </div>`;
+  }
+
+  if (w.step === 2) {
+    stepHtml = `
+      <div style="${cardStyle}">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;${w.noAllergies ? '' : ' margin-bottom: 1rem;'}">
+          <input type="checkbox" id="hw-no-allergies" ${w.noAllergies ? 'checked' : ''} onchange="hwToggleNoAllergies()" style="width: 1.1rem; height: 1.1rem; accent-color: #46AC78; cursor: pointer;">
+          <span style="font-size: 0.95rem; color: #334155; font-weight: 600;">Sin alergias conocidas</span>
+        </label>
+        ${w.noAllergies ? '' : `
+          <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;${w.allergies.length ? ' margin-bottom: 1rem;' : ''}">
+            ${w.allergies.map((a, i) => entryChip(a.value ? `${a.label} (${a.value})` : a.label, 'hwRemoveAllergy', i)).join('')}
+          </div>
+          <label style="${labelStyle}">Alergia (medicamento, alimento, etc.)</label>
+          <input type="text" id="hw-allergy-label" placeholder="Ej. Penicilina, camarón, polen" style="${inputStyle} margin-bottom: 0.75rem;">
+          <label style="${labelStyle}">Reacción (opcional)</label>
+          <input type="text" id="hw-allergy-value" placeholder="Ej. me causa ronchas" style="${inputStyle} margin-bottom: 0.75rem;">
+          <button type="button" onclick="hwAddAllergy()" style="padding: 0.6rem 1rem; background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 10px; color: #1E2A8A; font-weight: 600; font-size: 0.9rem; cursor: pointer;">+ Agregar alergia</button>
+        `}
+      </div>`;
+  }
+
+  if (w.step === 3) {
+    const otherEntry = w.conditions.find(c => c === 'Otro' || c.startsWith('Otro:'));
+    const otherText = otherEntry && otherEntry.startsWith('Otro:') ? otherEntry.slice(5).trim() : '';
+    stepHtml = `
+      <div style="${cardStyle}">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;${w.noConditions ? '' : ' margin-bottom: 1rem;'}">
+          <input type="checkbox" id="hw-no-conditions" ${w.noConditions ? 'checked' : ''} onchange="hwToggleNoConditions()" style="width: 1.1rem; height: 1.1rem; accent-color: #46AC78; cursor: pointer;">
+          <span style="font-size: 0.95rem; color: #334155; font-weight: 600;">Ninguno / sin padecimientos conocidos</span>
+        </label>
+        ${w.noConditions ? '' : `
+          <p style="margin: 0 0 0.75rem; font-size: 0.85rem; color: #64748b;">Toca todos los que apliquen:</p>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem;">
+            ${HW_CONDITIONS.map(c => {
+              const active = c === 'Otro' ? !!otherEntry : w.conditions.includes(c);
+              return `<button type="button" onclick="hwToggleCondition('${c}')" style="${chipStyle(active)}">${c}</button>`;
+            }).join('')}
+          </div>
+          ${otherEntry ? `
+            <label style="${labelStyle}">¿Cuál otro padecimiento?</label>
+            <input type="text" id="hw-condition-other" placeholder="Escríbelo aquí" value="${hwEsc(otherText)}" onchange="hwCaptureOtherCondition()" style="${inputStyle}">
+          ` : ''}
+        `}
+      </div>`;
+  }
+
+  if (w.step === 4) {
+    stepHtml = `
+      <div style="${cardStyle}">
+        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;${w.noMeds ? '' : ' margin-bottom: 1rem;'}">
+          <input type="checkbox" id="hw-no-meds" ${w.noMeds ? 'checked' : ''} onchange="hwToggleNoMeds()" style="width: 1.1rem; height: 1.1rem; accent-color: #46AC78; cursor: pointer;">
+          <span style="font-size: 0.95rem; color: #334155; font-weight: 600;">No tomo medicamentos actualmente</span>
+        </label>
+        ${w.noMeds ? '' : `
+          <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;${w.meds.length ? ' margin-bottom: 1rem;' : ''}">
+            ${w.meds.map((m, i) => entryChip(m.value ? `${m.label} (${m.value})` : m.label, 'hwRemoveMed', i)).join('')}
+          </div>
+          <label style="${labelStyle}">Medicamento</label>
+          <input type="text" id="hw-med-label" placeholder="Ej. Losartán, Metformina" style="${inputStyle} margin-bottom: 0.75rem;">
+          <label style="${labelStyle}">Dosis / frecuencia (opcional)</label>
+          <input type="text" id="hw-med-value" placeholder="Ej. 50 mg cada 24 horas" style="${inputStyle} margin-bottom: 0.75rem;">
+          <button type="button" onclick="hwAddMed()" style="padding: 0.6rem 1rem; background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 10px; color: #1E2A8A; font-weight: 600; font-size: 0.9rem; cursor: pointer;">+ Agregar medicamento</button>
+        `}
+      </div>`;
+  }
+
+  const stepTitles = ['', 'Tus datos', 'Alergias', 'Padecimientos', 'Medicamentos actuales'];
+  const dots = [1, 2, 3, 4].map(n => `
+    <span style="width: 0.6rem; height: 0.6rem; border-radius: 999px; background: ${n <= w.step ? '#46AC78' : '#D7DEEA'}; display: inline-block;"></span>`).join('');
+
+  mainContent.innerHTML = `
+    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
+      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">🩺 Cuéntanos sobre tu salud</h1>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">4 preguntas rápidas para que tu médico te atienda mejor. Solo es necesario una vez.</p>
+    </div>
+
+    <div style="padding: 1rem;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+        <span style="font-size: 0.85rem; font-weight: 700; color: #1E2A8A;">Paso ${w.step} de 4 · ${stepTitles[w.step]}</span>
+        <span style="display: inline-flex; gap: 0.35rem; align-items: center;">${dots}</span>
+      </div>
+
+      ${stepHtml}
+
+      <p style="margin: 0 0 1rem; font-size: 0.8rem; color: #64748b; line-height: 1.5;">Esta información forma parte de tu expediente y la verá tu médico. Puedes actualizarla cuando quieras en <strong>Mis datos</strong>.</p>
+
+      ${w.error ? `
+        <div style="margin-bottom: 1rem; padding: 0.75rem; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 10px; color: #DC2626; font-size: 0.85rem;">${hwEsc(w.error)}</div>
+      ` : ''}
+
+      <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem;">
+        ${w.step > 1 ? `
+          <button type="button" onclick="hwBack()" ${w.saving ? 'disabled' : ''} style="padding: 1rem 1.25rem; background: #ffffff; border: 1px solid #E3E8F2; border-radius: 12px; color: #475569; font-weight: 600; font-size: 1rem; cursor: pointer;">Atrás</button>
+        ` : ''}
+        <button type="button" onclick="hwNext()" ${w.saving ? 'disabled' : ''} style="flex: 1; padding: 1rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;${w.saving ? ' opacity: 0.6;' : ''}">${w.saving ? 'Guardando...' : (w.step === 4 ? 'Guardar y continuar' : 'Continuar')}</button>
+      </div>
+
+      <div style="text-align: center;">
+        <button type="button" onclick="hwSkip()" ${w.saving ? 'disabled' : ''} style="background: none; border: none; color: #64748b; font-size: 0.85rem; cursor: pointer; text-decoration: underline;">Completar después</button>
+      </div>
+    </div>
+  `;
+
+  window.scrollTo(0, 0);
+}
+
+// Captures the current step's inputs into healthWizard state.
+// Returns false when a validation error should stop navigation.
+function hwCaptureStep() {
+  const w = healthWizard;
+  if (!w) return true;
+  if (w.step === 1) {
+    const dobMx = (document.getElementById('hw-dob')?.value || '').trim();
+    if (dobMx) {
+      const iso = parseDobMx(dobMx);
+      if (!iso) {
+        w.error = 'Revisa la fecha de nacimiento (formato dd/mm/aaaa).';
+        return false;
+      }
+      w.date_of_birth = iso;
+    } else {
+      w.date_of_birth = '';
+    }
+    w.sexo = document.getElementById('hw-sexo')?.value || '';
+    const peso = parseFloat(document.getElementById('hw-weight')?.value);
+    w.weight = Number.isFinite(peso) && peso > 0 && peso <= 500 ? peso : '';
+    const talla = parseFloat(document.getElementById('hw-height')?.value);
+    w.height = Number.isFinite(talla) && talla >= 30 && talla <= 280 ? talla : '';
+  }
+  if (w.step === 3 && !w.noConditions) {
+    hwCaptureOtherCondition(true);
+  }
+  w.error = '';
+  return true;
+}
+
+// Syncs the "Otro" free-text input into conditions as "Otro: …".
+// skipRender is used when called from hwCaptureStep (a re-render follows anyway).
+function hwCaptureOtherCondition(skipRender) {
+  const w = healthWizard;
+  if (!w) return;
+  const selected = w.conditions.includes('Otro') || w.conditions.some(c => c.startsWith('Otro:'));
+  if (!selected) return;
+  const txt = (document.getElementById('hw-condition-other')?.value || '').trim();
+  w.conditions = w.conditions.filter(c => c !== 'Otro' && !c.startsWith('Otro:'));
+  w.conditions.push(txt ? 'Otro: ' + txt.slice(0, 120) : 'Otro');
+  if (!skipRender) renderHealthOnboarding();
+}
+
+function hwNext() {
+  const w = healthWizard;
+  if (!w || w.saving) return;
+  if (!hwCaptureStep()) { renderHealthOnboarding(); return; }
+  if (w.step < 4) {
+    w.step += 1;
+    renderHealthOnboarding();
+    return;
+  }
+  hwFinish();
+}
+
+function hwBack() {
+  const w = healthWizard;
+  if (!w || w.saving || w.step <= 1) return;
+  hwCaptureStep();
+  w.step -= 1;
+  renderHealthOnboarding();
+}
+
+function hwToggleNoAllergies() {
+  const w = healthWizard;
+  if (!w) return;
+  w.noAllergies = !w.noAllergies;
+  if (w.noAllergies) w.allergies = [];
+  renderHealthOnboarding();
+}
+
+function hwAddAllergy() {
+  const w = healthWizard;
+  if (!w) return;
+  const label = (document.getElementById('hw-allergy-label')?.value || '').trim();
+  const value = (document.getElementById('hw-allergy-value')?.value || '').trim();
+  if (!label) {
+    w.error = 'Escribe la alergia o marca "Sin alergias conocidas".';
+    renderHealthOnboarding();
+    return;
+  }
+  w.error = '';
+  w.allergies.push({ label: label.slice(0, 120), value: value.slice(0, 200) });
+  renderHealthOnboarding();
+}
+
+function hwRemoveAllergy(i) {
+  const w = healthWizard;
+  if (!w) return;
+  w.allergies.splice(i, 1);
+  renderHealthOnboarding();
+}
+
+function hwToggleCondition(label) {
+  const w = healthWizard;
+  if (!w) return;
+  w.noConditions = false;
+  if (label === 'Otro') {
+    const has = w.conditions.includes('Otro') || w.conditions.some(c => c.startsWith('Otro:'));
+    w.conditions = w.conditions.filter(c => c !== 'Otro' && !c.startsWith('Otro:'));
+    if (!has) w.conditions.push('Otro');
+  } else {
+    const i = w.conditions.indexOf(label);
+    if (i >= 0) w.conditions.splice(i, 1); else w.conditions.push(label);
+  }
+  renderHealthOnboarding();
+}
+
+function hwToggleNoConditions() {
+  const w = healthWizard;
+  if (!w) return;
+  w.noConditions = !w.noConditions;
+  if (w.noConditions) w.conditions = [];
+  renderHealthOnboarding();
+}
+
+function hwToggleNoMeds() {
+  const w = healthWizard;
+  if (!w) return;
+  w.noMeds = !w.noMeds;
+  if (w.noMeds) w.meds = [];
+  renderHealthOnboarding();
+}
+
+function hwAddMed() {
+  const w = healthWizard;
+  if (!w) return;
+  const label = (document.getElementById('hw-med-label')?.value || '').trim();
+  const value = (document.getElementById('hw-med-value')?.value || '').trim();
+  if (!label) {
+    w.error = 'Escribe el medicamento o marca "No tomo medicamentos actualmente".';
+    renderHealthOnboarding();
+    return;
+  }
+  w.error = '';
+  w.meds.push({ label: label.slice(0, 120), value: value.slice(0, 200) });
+  renderHealthOnboarding();
+}
+
+function hwRemoveMed(i) {
+  const w = healthWizard;
+  if (!w) return;
+  w.meds.splice(i, 1);
+  renderHealthOnboarding();
+}
+
+async function hwFinish() {
+  const w = healthWizard;
+  if (!w || w.saving) return;
+  w.saving = true;
+  w.error = '';
+  renderHealthOnboarding();
+
+  const saves = [];
+  // Paso 1 — expediente fields (the RPC coalesces nulls: blank = "no change")
+  saves.push(['tus datos', FarmaciaAPI.updateMyProfile({
+    date_of_birth: w.date_of_birth || null,
+    sexo: w.sexo || null,
+    height: w.height === '' ? null : w.height,
+    weight: w.weight === '' ? null : w.weight,
+  })]);
+  // Paso 2 — explicit denials are NOM-004-friendly and are excluded from the
+  // receta allergy-conflict check (it only reads positive entries)
+  if (w.noAllergies && w.allergies.length === 0) {
+    saves.push(['alergias', FarmaciaAPI.addMyHistoryEntry('alergias', 'Sin alergias conocidas', null, 'denied')]);
+  } else {
+    w.allergies.forEach(a => saves.push(['alergias', FarmaciaAPI.addMyAllergy(a.label, a.value)]));
+  }
+  if (w.noConditions && w.conditions.length === 0) {
+    saves.push(['padecimientos', FarmaciaAPI.addMyHistoryEntry('patologicos', 'Sin padecimientos conocidos', null, 'denied')]);
+  } else {
+    w.conditions.forEach(c => saves.push(['padecimientos', FarmaciaAPI.addMyHistoryEntry('patologicos', c, null, 'positive')]));
+  }
+  if (w.noMeds && w.meds.length === 0) {
+    saves.push(['medicamentos', FarmaciaAPI.addMyHistoryEntry('medicamentos_actuales', 'Sin medicamentos actuales', null, 'denied')]);
+  } else {
+    w.meds.forEach(m => saves.push(['medicamentos', FarmaciaAPI.addMyHistoryEntry('medicamentos_actuales', m.label, m.value, 'positive')]));
+  }
+
+  for (const [what, promise] of saves) {
+    const { error } = await promise;
+    if (error) {
+      console.warn('[HealthOnboarding] Save failed (' + what + '):', error.message);
+      w.saving = false;
+      w.error = 'No pudimos guardar ' + what + '. Revisa tu conexión e intenta de nuevo.' + (error.message ? ` (${error.message})` : '');
+      renderHealthOnboarding();
+      return;
+    }
+  }
+
+  const { error: doneErr } = await FarmaciaAPI.completeMyHealthOnboarding();
+  if (doneErr) {
+    // Answers are saved; without the flag the wizard re-appears next login.
+    console.warn('[HealthOnboarding] Completion flag failed:', doneErr.message);
+    w.saving = false;
+    w.error = 'Tus respuestas se guardaron, pero no pudimos cerrar el cuestionario. Intenta de nuevo.' + (doneErr.message ? ` (${doneErr.message})` : '');
+    renderHealthOnboarding();
+    return;
+  }
+
+  healthGateActive = false;
+  healthWizard = null;
+  setAppChromeVisible(true);
+  showToast('¡Gracias! Tu expediente quedó actualizado.', 'success');
+  await routePostAuthLanding();
+}
+
+async function hwSkip() {
+  const w = healthWizard;
+  if (w?.saving) return;
+  if (w) { w.saving = true; renderHealthOnboarding(); }
+  const { error } = await FarmaciaAPI.completeMyHealthOnboarding();
+  if (error) {
+    console.warn('[HealthOnboarding] Skip failed:', error.message);
+    showToast('No pudimos continuar. Intenta de nuevo.' + (error.message ? ` (${error.message})` : ''), 'error');
+    if (w) { w.saving = false; renderHealthOnboarding(); }
+    return;
+  }
+  healthGateActive = false;
+  healthWizard = null;
+  await routePostAuthLanding();
+}
+
+window.checkHealthOnboardingGate = checkHealthOnboardingGate;
+window.hwNext = hwNext;
+window.hwBack = hwBack;
+window.hwSkip = hwSkip;
+window.hwToggleNoAllergies = hwToggleNoAllergies;
+window.hwAddAllergy = hwAddAllergy;
+window.hwRemoveAllergy = hwRemoveAllergy;
+window.hwToggleCondition = hwToggleCondition;
+window.hwCaptureOtherCondition = hwCaptureOtherCondition;
+window.hwToggleNoConditions = hwToggleNoConditions;
+window.hwToggleNoMeds = hwToggleNoMeds;
+window.hwAddMed = hwAddMed;
+window.hwRemoveMed = hwRemoveMed;
 
 // ============================================================
 // PUBLIC SIGN-AND-REGISTER VIEW (?firma=1)
@@ -1645,6 +2123,10 @@ async function handleFirmaRegistroSubmit() {
 
   consentGateActive = false;
   setAppChromeVisible(true);
+
+  // Health onboarding wizard (one-time, skippable) comes after consent
+  if (await checkHealthOnboardingGate()) return;
+
   currentPage = 'consulta';
   navItems.forEach(nav => nav.classList.remove('active'));
   document.querySelector('.bottom-nav .nav-item[data-page="consulta"]')?.classList.add('active');
@@ -2221,6 +2703,8 @@ async function handleLogout() {
   // Reset the consent gate so a gated session can't stick to the next one
   consentGateActive = false;
   consentGateVerifyError = false;
+  healthGateActive = false;
+  healthWizard = null;
   setAppChromeVisible(true);
 
   updateMenuUserInfo();
@@ -2607,6 +3091,14 @@ function renderPage(page) {
     } else {
       renderConsentOnboarding();
     }
+    return;
+  }
+
+  // Health onboarding wizard: while active, it is the only view that renders
+  // (same lock as the consent gate, but it never blocks on errors — the
+  // wizard itself always offers "Completar después").
+  if (healthGateActive) {
+    renderHealthOnboarding();
     return;
   }
 
@@ -4985,7 +5477,7 @@ function scheduleMisDatosPrompt() {
 }
 
 async function maybePromptMisDatos() {
-  if (!currentAuthUser || consentGateActive || isPasswordRecovery || pendingCheckin) return;
+  if (!currentAuthUser || consentGateActive || healthGateActive || isPasswordRecovery || pendingCheckin) return;
   let last = 0;
   try { last = Number(localStorage.getItem(MISDATOS_PROMPT_KEY) || 0); } catch (e) { return; }
   if (Date.now() - last < MISDATOS_PROMPT_INTERVAL_MS) return;
@@ -5190,6 +5682,11 @@ const HISTORY_SECTIONS_APP = [
     key: 'alergias', icon: '⚠️', title: 'Alergias',
     placeholder: 'Ej. Penicilina, látex, mariscos...',
     suggestions: ['Alergias a Medicamentos', 'Alergias a Alimentos', 'Alergias Ambientales', 'Otras Alergias'],
+  },
+  {
+    key: 'medicamentos_actuales', icon: '💊', title: 'Medicamentos que tomo actualmente',
+    placeholder: 'Ej. Losartán 50 mg cada 24 horas...',
+    suggestions: ['Sin medicamentos actuales', 'Antihipertensivos', 'Antidiabéticos', 'Analgésicos', 'Antibióticos', 'Otros'],
   },
   {
     key: 'patologicos', icon: '🏥', title: 'Enfermedades, cirugías y hospitalizaciones',

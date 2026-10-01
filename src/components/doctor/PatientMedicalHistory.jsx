@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Edit2, Trash2, CheckCircle, XCircle, AlertTriangle,
   HeartPulse, Activity, Users, Baby, Syringe, Stethoscope, ClipboardList,
-  History, ChevronDown, ChevronUp,
+  History, ChevronDown, ChevronUp, Pill,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -22,6 +22,12 @@ const SECTIONS = [
     icon: AlertTriangle,
     isAllergy: true,
     suggestions: ['Alergias a Medicamentos', 'Alergias a Alimentos', 'Alergias Ambientales', 'Otras Alergias'],
+  },
+  {
+    key: 'medicamentos_actuales',
+    title: 'Medicamentos Actuales',
+    icon: Pill,
+    suggestions: ['Sin medicamentos actuales', 'Antihipertensivos', 'Antidiabéticos', 'Analgésicos', 'Antibióticos', 'Otros'],
   },
   {
     key: 'patologicos',

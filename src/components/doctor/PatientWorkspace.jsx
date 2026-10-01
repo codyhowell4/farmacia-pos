@@ -144,6 +144,13 @@ const PatientWorkspace = () => {
     .map((e) => (e.value ? `${e.label}: ${e.value}` : e.label))
     .join('; ');
 
+  // Positive current-medication entries (patient onboarding wizard /
+  // Historia tab write these into medical_history.medicamentos_actuales)
+  const historyMeds = (customer?.medical_history?.medicamentos_actuales || [])
+    .filter((e) => e.status !== 'denied')
+    .map((e) => (e.value ? `${e.label}: ${e.value}` : e.label))
+    .join('; ');
+
   // Resumen fallbacks: when the customers row lacks antropometría, pull it
   // from the most recent receta that captured it (prescriptions are ordered
   // newest first). The app's "Mis datos" editor writes to customers directly.
@@ -975,6 +982,13 @@ const PatientWorkspace = () => {
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
               <p className="text-sm text-red-700"><span className="font-semibold">Alergias:</span> {historyAllergies}</p>
+            </div>
+          )}
+
+          {historyMeds && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
+              <Pill className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-blue-700"><span className="font-semibold">Medicamentos actuales:</span> {historyMeds}</p>
             </div>
           )}
 

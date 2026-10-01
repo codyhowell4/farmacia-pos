@@ -1642,7 +1642,7 @@ window.FarmaciaAPI = (function () {
         if (!user) return { data: null, error: new Error('Not authenticated') };
         const { data, error } = await sb
           .from('customers')
-          .select('full_name, email, phone, curp, sexo, date_of_birth, birth_state, height, weight, medical_history, created_at')
+          .select('full_name, email, phone, curp, sexo, date_of_birth, birth_state, height, weight, medical_history, health_onboarding_completed_at, created_at')
           .eq('profile_id', user.id)
           .single();
         if (error) throw error;
@@ -1718,6 +1718,22 @@ window.FarmaciaAPI = (function () {
         return { data: true, error: null };
       } catch (err) {
         console.error('[FarmaciaAPI] addMyHistoryEntry failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
+     * Marks the first-login health onboarding as done (completed or skipped)
+     * on the caller's own customers row.
+     */
+    async completeMyHealthOnboarding() {
+      if (!sb) return { data: null, error: new Error('Supabase not available') };
+      try {
+        const { error } = await sb.rpc('complete_my_health_onboarding');
+        if (error) throw error;
+        return { data: true, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] completeMyHealthOnboarding failed:', err.message);
         return { data: null, error: err };
       }
     },
