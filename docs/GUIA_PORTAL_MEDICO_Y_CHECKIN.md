@@ -184,7 +184,7 @@ Hay **tres puertas de entrada públicas** (no requieren cuenta de staff) y una h
 
 > Ojo con los nombres: el subdominio **formularios.** abre la página `/registro/` (la tableta), mientras que el subdominio **registro.** manda al check-in de la app. Cuando alguien diga "los formularios de la tableta", se refiere a `formularios.apolofarmacia.com.mx`.
 
-Todas las páginas comparten reglas de higiene de kiosco: **90 segundos sin tocar la pantalla → se reinicia sola**, y la pantalla de éxito se cierra sola a los **45 segundos** ("Esta pantalla se cerrará en N s por privacidad").
+Todas las páginas comparten reglas de higiene de kiosco: **2 minutos sin tocar la pantalla → se reinicia sola**, y la pantalla de éxito se cierra sola a los **2 minutos** ("Esta pantalla se cerrará en N s por privacidad").
 
 ## 2.2 Tableta de recepción — `formularios.apolofarmacia.com.mx` (paciente nuevo CON correo o teléfono)
 
@@ -285,7 +285,7 @@ Sin importar por cuál página entró el paciente:
 
 - **"CURP inválido"** — el CURP es opcional; si lo capturan, debe estar completo y correcto (se valida el dígito verificador). Si no lo tiene a la mano, déjelo vacío.
 - **"No encontramos un expediente…"** — casi siempre es la fecha de nacimiento o una variante grande del nombre. Regístrelo como Primera Vez; no se duplica el expediente.
-- **La pantalla se reinició sola** — es el temporizador de privacidad (90 s sin uso / 45 s en la pantalla de éxito). Vuelva a empezar.
+- **La pantalla se reinició sola** — es el temporizador de privacidad (2 min sin uso / 2 min en la pantalla de éxito). Vuelva a empezar.
 - **Mensajes de "demasiados intentos"** — las páginas tienen límite de uso por IP para evitar abuso (búsquedas y registros por minuto). Espere unos minutos y reintente.
 - **El paciente no aparece en Citas** — confirme que llegó a la pantalla de éxito ("¡Registro completo!" / "¡Check-in listo!"). La agenda se actualiza sola; no hace falta recargar.
 - **En la tableta, el aviso de error dice "tres documentos"** — es un detalle de redacción conocido: son **cuatro** casillas las que hay que marcar.

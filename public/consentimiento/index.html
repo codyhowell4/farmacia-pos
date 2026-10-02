@@ -238,22 +238,22 @@
       }
       function hideError() { errorBox.style.display = 'none'; }
 
-      // ---- Inactividad (kiosco compartido): 90 s sin interacción → reinicio ----
+      // ---- Inactividad (kiosco compartido): 2 min sin interacción → reinicio ----
       var idleTimer = null;
       function resetIdleTimer() {
         if (idleTimer) clearTimeout(idleTimer);
-        idleTimer = setTimeout(function () { location.reload(); }, 90000);
+        idleTimer = setTimeout(function () { location.reload(); }, 120000);
       }
-      ['input', 'click', 'keydown'].forEach(function (evt) {
+      ['input', 'click', 'keydown', 'touchstart', 'scroll'].forEach(function (evt) {
         document.addEventListener(evt, resetIdleTimer, true);
       });
       resetIdleTimer();
 
-      // ---- Pantalla de éxito: cuenta regresiva visible y cierre a los 45 s (privacidad) ----
+      // ---- Pantalla de éxito: cuenta regresiva visible y cierre a los 2 min (privacidad) ----
       function startSuccessCountdown() {
         if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
         var el = document.getElementById('success-countdown');
-        var seconds = 45;
+        var seconds = 120;
         function tick() {
           if (seconds <= 0) {
             clearInterval(interval);
