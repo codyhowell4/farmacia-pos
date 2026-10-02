@@ -9,11 +9,13 @@
 //     persisted on the customer record for minors.
 //   register + guest (consentimiento. subdomain): first-visit patients with no
 //     email/phone/account — name + DOB + sexo (+ optional CURP) + the 4
-//     consents. Reuses a name+DOB match instead of duplicating the customer;
-//     no account provisioning. Minors are registered under their own name+DOB
-//     so they match on return visits; the guardian signs the consent documents
-//     (parental consent) with relationship + INE last-4 as evidence.
-//   lookup (consentimiento.): returning-patient search by name + DOB. Returns
+//     consents. Reuses a name+DOB match (accent/case-insensitive, typo-tolerant)
+//     instead of duplicating the customer; no account provisioning. Minors are
+//     registered under their own name+DOB so they match on return visits; the
+//     guardian signs the consent documents (parental consent) with relationship
+//     + INE last-4 as evidence.
+//   lookup (consentimiento.): returning-patient search by name + DOB (matching
+//     is typo-tolerant — a 1-2 character spelling slip still matches). Returns
 //     whether a matching customer exists and if their 4 consents are on file.
 //     Response is deliberately minimal (no full_name) — see C1 in
 //     docs/LAUNCH_COMPLIANCE_GAPS.md.
@@ -259,11 +261,48 @@ const normalizeName = (s: string) =>
 const nameTokens = (s: string) => normalizeName(s).split(' ').filter(Boolean);
 const isTokenSubset = (a: string[], b: string[]) => a.every((t) => b.includes(t));
 
-// 'exact' | 'loose' | null. Loose = one name's tokens are a subset of the
-// other's ("Juan Pérez" vs "Juan Antonio Pérez") — used so a returning
+// Optimal string alignment (Damerau-Levenshtein, adjacent transpositions):
+// a single-character typo — missing, extra, swapped or wrong letter — costs 1.
+const nameDistance = (a: string, b: string): number => {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev2: number[] = [];
+  let prev: number[] = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur: number[] = [i];
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let d = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d = Math.min(d, prev2[j - 2] + 1);
+      }
+      cur[j] = d;
+    }
+    prev2 = prev;
+    prev = cur;
+  }
+  return prev[n];
+};
+
+// Typo tier: the edit distance when two NORMALIZED names are a plausible
+// spelling slip of each other ("matinez" ↔ "martinez"), null otherwise. Only
+// trusted in same-DOB contexts (every caller verifies the DOB first). Bounds
+// keep short names from merging on 2 edits: distance ≤ 2, name ≥ 12 chars,
+// and distance ≤ 12% of the name length.
+const typoDistance = (cNorm: string, tNorm: string): number | null => {
+  const len = Math.max(cNorm.length, tNorm.length);
+  if (len < 12) return null;
+  const d = nameDistance(cNorm, tNorm);
+  return d >= 1 && d <= 2 && d / len <= 0.12 ? d : null;
+};
+
+// 'exact' | 'loose' | 'typo' | null. Loose = one name's tokens are a subset
+// of the other's ("Juan Pérez" vs "Juan Antonio Pérez") — used so a returning
 // patient who writes their name slightly differently doesn't fork the
-// expediente. Never applied across different birthdates.
-const matchName = (candidate: string, target: string): 'exact' | 'loose' | null => {
+// expediente. Typo = a small spelling slip (≤ 2 edits, e.g. a transposed or
+// missing letter). Never applied across different birthdates.
+const matchName = (candidate: string, target: string): 'exact' | 'loose' | 'typo' | null => {
   const c = normalizeName(candidate);
   const t = normalizeName(target);
   if (!c || !t) return null;
@@ -271,18 +310,33 @@ const matchName = (candidate: string, target: string): 'exact' | 'loose' | null 
   const ct = nameTokens(candidate);
   const tt = nameTokens(target);
   if (isTokenSubset(ct, tt) || isTokenSubset(tt, ct)) return 'loose';
+  if (typoDistance(c, t) !== null) return 'typo';
   return null;
 };
 
 // Best match among same-DOB candidates: exact wins; otherwise a single
-// unambiguous loose match. Ambiguous loose matches return null — never merge
-// two records when it is unclear which one is the patient.
+// unambiguous loose match; otherwise the single closest typo-tier spelling.
+// Ambiguity at any tier returns null — never merge two records when it is
+// unclear which one is the patient.
 const findMatch = <T extends { full_name: string }>(candidates: T[], target: string): T | null => {
   const exact = candidates.find((c) => matchName(c.full_name, target) === 'exact');
   if (exact) return exact;
   const loose = candidates.filter((c) => matchName(c.full_name, target) === 'loose');
   if (loose.length === 1) return loose[0];
-  if (loose.length > 1) console.warn('[tablet-checkin] ambiguous loose name match; not reusing');
+  if (loose.length > 1) {
+    console.warn('[tablet-checkin] ambiguous loose name match; not reusing');
+    return null;
+  }
+  const tNorm = normalizeName(target);
+  const typo = candidates
+    .map((c) => ({ c, d: typoDistance(normalizeName(c.full_name), tNorm) }))
+    .filter((x): x is { c: T; d: number } => x.d !== null)
+    .sort((a, b) => a.d - b.d);
+  if (typo.length > 0 && (typo.length === 1 || typo[1].d > typo[0].d)) {
+    console.warn(`[tablet-checkin] typo-tolerant name match (dist ${typo[0].d}) — reusing existing customer`);
+    return typo[0].c;
+  }
+  if (typo.length > 1) console.warn('[tablet-checkin] ambiguous typo name match; not reusing');
   return null;
 };
 

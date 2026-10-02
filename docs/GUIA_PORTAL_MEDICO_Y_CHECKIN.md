@@ -226,7 +226,7 @@ Después, **"2. Documentos de consentimiento"** (los mismos 4, aceptados por el 
 ### B) "🔁 Ya he venido antes"
 
 1. Llena **"Buscar mi expediente"** con nombre completo y fecha de nacimiento.
-2. El sistema busca el expediente (tolera acentos y variantes del nombre, p. ej. "Juan Pérez" vs "Juan Antonio Pérez", pero nunca con otra fecha de nacimiento). Tres resultados posibles:
+2. El sistema busca el expediente (tolera acentos, variantes del nombre y errores pequeños de ortografía — p. ej. "Juan Pérez" vs "Juan Antonio Pérez" o "Martinez" vs "Matinez" — pero nunca con otra fecha de nacimiento). Tres resultados posibles:
    - **Encontrado con consentimientos al corriente** → pasa directo a las preguntas de check-in (con el aviso "El personal confirmará tu identidad en recepción antes de la consulta").
    - **Encontrado pero faltan firmas** → primero firma los documentos pendientes, luego las preguntas.
    - **No encontrado** → lo manda al registro de Primera Vez conservando lo que ya escribió ("No encontramos un expediente con ese nombre y fecha de nacimiento. Completa tu registro como paciente nuevo").
