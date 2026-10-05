@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getConsultaNotesByDoctor, getAppointmentsByDoctor, getDoctorPrescriptions } from '@/lib/db';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
 import { BarChart3, Stethoscope, CalendarCheck, Pill, FileText, Users } from 'lucide-react';
 import { toast } from 'sonner';
@@ -170,23 +171,21 @@ const DoctorReports = () => {
         <div className="flex items-end gap-3">
           <div className="space-y-1">
             <Label htmlFor="reports-from" className="text-xs text-slate-500">Del</Label>
-            <Input
+            <DateInput
               id="reports-from"
-              type="date"
               value={range.from}
               max={range.to}
-              onChange={(e) => e.target.value && setRange((r) => ({ ...r, from: e.target.value }))}
+              onChange={(v) => v && setRange((r) => ({ ...r, from: v }))}
               className="bg-white"
             />
           </div>
           <div className="space-y-1">
             <Label htmlFor="reports-to" className="text-xs text-slate-500">Al</Label>
-            <Input
+            <DateInput
               id="reports-to"
-              type="date"
               value={range.to}
               min={range.from}
-              onChange={(e) => e.target.value && setRange((r) => ({ ...r, to: e.target.value }))}
+              onChange={(v) => v && setRange((r) => ({ ...r, to: v }))}
               className="bg-white"
             />
           </div>

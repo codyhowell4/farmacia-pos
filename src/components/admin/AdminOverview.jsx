@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { DollarSign, Package, ShoppingCart, TrendingUp, XCircle, UserCog, ClipboardList, Pill, Clock, AlertTriangle, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
 
 import { getSales, getInventory, getActivePrescriptionCount, getPreorders, getAppointments } from '@/lib/db';
@@ -100,18 +101,16 @@ const AdminOverview = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1">
             <Label className="text-sm text-slate-600">Fecha inicio</Label>
-            <Input
-              type="date"
+            <DateInput
               value={dateRange.startDate}
-              onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
+              onChange={(v) => setDateRange({ ...dateRange, startDate: v })}
             />
           </div>
           <div className="space-y-1">
             <Label className="text-sm text-slate-600">Fecha fin</Label>
-            <Input
-              type="date"
+            <DateInput
               value={dateRange.endDate}
-              onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
+              onChange={(v) => setDateRange({ ...dateRange, endDate: v })}
             />
           </div>
         </div>

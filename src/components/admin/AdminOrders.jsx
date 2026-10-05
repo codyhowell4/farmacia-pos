@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, ShoppingCart, UserCircle, Clock, Package, CheckCircle, XCircle, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { getSales, updateSaleStatus, decrementInventoryItem, incrementInventory, getInventoryQuantity, createNotification } from '@/lib/db';
@@ -234,10 +235,9 @@ const AdminOrders = () => {
           </div>
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-slate-400" />
-            <input
-              type="date"
+            <DateInput
               value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
+              onChange={(v) => setDateFilter(v)}
               className="px-3 py-2 rounded-md border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-apolo-navy"
             />
             {dateFilter && (

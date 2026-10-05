@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Search, UserCircle, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
@@ -165,7 +166,7 @@ const AdminCustomers = () => {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="date_of_birth">Fecha de nacimiento</Label>
-                    <Input id="date_of_birth" type="date" value={formData.date_of_birth} onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })} />
+                    <DateInput id="date_of_birth" value={formData.date_of_birth} onChange={(v) => setFormData({ ...formData, date_of_birth: v })} />
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="address">Dirección</Label>

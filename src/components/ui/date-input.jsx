@@ -30,20 +30,29 @@ const maskDigits = (raw) => {
 
 // Controlled date field: `value`/`onChange` carry ISO `YYYY-MM-DD` (or ''),
 // the user sees and types `dd/mm/aaaa`. Calendar button keeps the native picker.
-const DateInput = React.forwardRef(({ value, onChange, className, placeholder = 'dd/mm/aaaa', disabled, id }, ref) => {
+// `min`/`max` are ISO strings and apply to both typed and picked dates.
+const DateInput = React.forwardRef(({ value, onChange, className, placeholder = 'dd/mm/aaaa', disabled, id, min, max, ...props }, ref) => {
   const [text, setText] = useState(() => isoToDisplay(value));
   const [editing, setEditing] = useState(false);
   const pickerRef = useRef(null);
 
   useEffect(() => { if (!editing) setText(isoToDisplay(value)); }, [value, editing]);
 
-  const invalid = text.replace(/\D/g, '').length === 8 && !displayToIso(text);
+  const parse = (t) => {
+    const iso = displayToIso(t);
+    if (!iso) return null;
+    if (min && iso < min) return null; // ISO YYYY-MM-DD compares lexicographically
+    if (max && iso > max) return null;
+    return iso;
+  };
+
+  const invalid = text.replace(/\D/g, '').length === 8 && !parse(text);
 
   const handleChange = (e) => {
     const masked = maskDigits(e.target.value);
     setText(masked);
     if (masked.replace(/\D/g, '').length === 8) {
-      const iso = displayToIso(masked);
+      const iso = parse(masked);
       if (iso) onChange?.(iso);
     }
   };
@@ -51,7 +60,7 @@ const DateInput = React.forwardRef(({ value, onChange, className, placeholder = 
   const handleBlur = () => {
     setEditing(false);
     if (text === '') { onChange?.(''); return; }
-    const iso = displayToIso(text);
+    const iso = parse(text);
     if (iso) { onChange?.(iso); setText(isoToDisplay(iso)); }
     else setText(isoToDisplay(value)); // revert incomplete/invalid to last valid value
   };
@@ -82,6 +91,7 @@ const DateInput = React.forwardRef(({ value, onChange, className, placeholder = 
         onBlur={handleBlur}
         title={invalid ? 'Fecha inválida — usa dd/mm/aaaa' : undefined}
         className={cn('pr-9', invalid && 'border-red-500 focus-visible:ring-red-500', className)}
+        {...props}
       />
       <button
         type="button"
@@ -99,6 +109,8 @@ const DateInput = React.forwardRef(({ value, onChange, className, placeholder = 
         type="date"
         tabIndex={-1}
         aria-hidden="true"
+        min={min}
+        max={max}
         className="absolute right-0 top-1/2 h-0 w-0 opacity-0 pointer-events-none"
         onChange={(e) => {
           const iso = e.target.value;

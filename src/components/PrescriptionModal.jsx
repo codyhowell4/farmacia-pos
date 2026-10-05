@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
 import { AlertTriangle, Stethoscope, User, FileText, Calendar, MapPin, Phone, Search, Link2, Printer, FileDown } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
@@ -497,12 +498,11 @@ const PrescriptionModal = ({
                   <Calendar className="w-3 h-3" />
                   Fecha de la receta *
                 </Label>
-                <Input
+                <DateInput
                   id="prescriptionDate"
-                  type="date"
                   value={formData.prescriptionDate}
                   max={new Date().toISOString().split('T')[0]}
-                  onChange={(e) => setFormData({ ...formData, prescriptionDate: e.target.value })}
+                  onChange={(v) => setFormData({ ...formData, prescriptionDate: v })}
                   className={fieldErrors.prescriptionDate ? 'border-red-500' : ''}
                 />
                 {fieldErrors.prescriptionDate && (

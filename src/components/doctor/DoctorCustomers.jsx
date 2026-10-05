@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Users, Search, ChevronRight, Phone, Mail, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -181,10 +182,9 @@ const DoctorCustomers = () => {
             </div>
             <div className="space-y-2">
               <Label>Fecha de nacimiento</Label>
-              <Input
-                type="date"
+              <DateInput
                 value={newCustomer.date_of_birth}
-                onChange={(e) => setNewCustomer({ ...newCustomer, date_of_birth: e.target.value })}
+                onChange={(v) => setNewCustomer({ ...newCustomer, date_of_birth: v })}
               />
             </div>
             <div className="space-y-2">

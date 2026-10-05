@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -182,19 +183,17 @@ export default function ReportsPage() {
         <CardContent className="flex flex-wrap gap-4 items-end">
           <div className="space-y-2">
             <Label>Desde</Label>
-            <Input
-              type="date"
+            <DateInput
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(v) => setStartDate(v)}
               className="w-40"
             />
           </div>
           <div className="space-y-2">
             <Label>Hasta</Label>
-            <Input
-              type="date"
+            <DateInput
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(v) => setEndDate(v)}
               className="w-40"
             />
           </div>

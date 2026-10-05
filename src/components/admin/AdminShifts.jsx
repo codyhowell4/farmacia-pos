@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Clock, DollarSign, CreditCard, Stethoscope, ChevronDown, ChevronUp, AlertTriangle, Download, Printer, Calendar } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Search } from 'lucide-react';
@@ -345,14 +346,14 @@ const AdminShifts = () => {
             <Label htmlFor="export-start" className="text-xs text-slate-600">Del</Label>
             <div className="relative">
               <Calendar className="absolute left-2 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
-              <Input id="export-start" type="date" value={exportStartDate} onChange={e => setExportStartDate(e.target.value)} className="pl-8 w-full" />
+              <DateInput id="export-start" value={exportStartDate} onChange={v => setExportStartDate(v)} className="pl-8 w-full" />
             </div>
           </div>
           <div className="flex flex-col gap-1 w-44">
             <Label htmlFor="export-end" className="text-xs text-slate-600">Al</Label>
             <div className="relative">
               <Calendar className="absolute left-2 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
-              <Input id="export-end" type="date" value={exportEndDate} onChange={e => setExportEndDate(e.target.value)} className="pl-8 w-full" />
+              <DateInput id="export-end" value={exportEndDate} onChange={v => setExportEndDate(v)} className="pl-8 w-full" />
             </div>
           </div>
           <Button variant="outline" onClick={handlePrint}><Printer className="w-4 h-4 mr-2" />Imprimir PDF</Button>

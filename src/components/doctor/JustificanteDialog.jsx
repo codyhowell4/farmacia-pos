@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -145,7 +146,7 @@ const JustificanteDialog = ({ open, onOpenChange, customer }) => {
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>Fecha *</Label>
-            <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+            <DateInput value={fecha} onChange={(v) => setFecha(v)} />
           </div>
           <div className="space-y-2">
             <Label>Diagnóstico (opcional)</Label>

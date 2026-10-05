@@ -3,6 +3,7 @@ import { Helmet } from 'react-helmet';
 import { BookOpen, Plus, Download, Filter, Trash2, Edit2, Loader2, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
@@ -413,11 +414,11 @@ const AdminAccounting = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
             <div>
               <Label className="text-xs">Del</Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+              <DateInput value={startDate} onChange={(v) => setStartDate(v)} />
             </div>
             <div>
               <Label className="text-xs">Al</Label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+              <DateInput value={endDate} onChange={(v) => setEndDate(v)} />
             </div>
             <div>
               <Label className="text-xs">Tipo</Label>
@@ -545,10 +546,9 @@ const AdminAccounting = () => {
           <form onSubmit={handleSaveExpense} className="space-y-4">
             <div>
               <Label>Fecha</Label>
-              <Input
-                type="date"
+              <DateInput
                 value={expenseForm.date}
-                onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
+                onChange={(v) => setExpenseForm({ ...expenseForm, date: v })}
                 required
               />
             </div>
@@ -615,10 +615,9 @@ const AdminAccounting = () => {
           <form onSubmit={handleSaveRevenue} className="space-y-4">
             <div>
               <Label>Fecha</Label>
-              <Input
-                type="date"
+              <DateInput
                 value={revenueForm.date}
-                onChange={(e) => setRevenueForm({ ...revenueForm, date: e.target.value })}
+                onChange={(v) => setRevenueForm({ ...revenueForm, date: v })}
                 required
               />
             </div>

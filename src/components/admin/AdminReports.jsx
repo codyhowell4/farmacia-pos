@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -222,11 +223,11 @@ export default function AdminReports() {
         <CardContent className="flex flex-wrap gap-4 items-end">
           <div className="space-y-2">
             <Label>Desde</Label>
-            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
+            <DateInput value={startDate} onChange={(v) => setStartDate(v)} className="w-40" />
           </div>
           <div className="space-y-2">
             <Label>Hasta</Label>
-            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
+            <DateInput value={endDate} onChange={(v) => setEndDate(v)} className="w-40" />
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={loadSales}>

@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -1550,7 +1551,7 @@ const PatientWorkspace = () => {
                 <Input placeholder="Glicemia" value={rxForm.glicemia} onChange={(e) => setRxForm({ ...rxForm, glicemia: e.target.value })} />
               </div>
               <Input placeholder="Alergias" value={rxForm.alergias} onChange={(e) => setRxForm({ ...rxForm, alergias: e.target.value })} />
-              <Input type="date" placeholder="Próxima cita" value={rxForm.next_appointment} onChange={(e) => setRxForm({ ...rxForm, next_appointment: e.target.value })} />
+              <DateInput placeholder="Próxima cita (dd/mm/aaaa)" value={rxForm.next_appointment} onChange={(v) => setRxForm({ ...rxForm, next_appointment: v })} />
             </div>
 
             <div className="flex gap-3">
