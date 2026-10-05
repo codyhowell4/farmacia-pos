@@ -1073,6 +1073,7 @@ const InventoryDashboard = () => {
                     const expiryStatus = getExpiryStatus(getItemExpiryDate(item));
                     const isLow = item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD);
                     const isSelected = selectedIds.has(item.id);
+                    const linkedCov = isLow && !isServiceItem(item) ? linkedStockMap.get(item.id) : null;
                     return (
                       <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${isSelected ? 'bg-apolo-navy/5' : ''}`}>
                         <td className="px-4 py-3">
@@ -1108,9 +1109,16 @@ const InventoryDashboard = () => {
                           {isServiceItem(item) ? (
                             <span className="px-2 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 w-fit">Servicio</span>
                           ) : (
-                            <span className={`px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1 w-fit ${isLow ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
-                              {item.quantity} {isLow && <AlertTriangle className="w-3 h-3" />}
-                            </span>
+                            <>
+                              <span className={`px-2 py-1 rounded-full text-xs font-semibold flex items-center gap-1 w-fit ${isLow ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                {item.quantity} {isLow && <AlertTriangle className="w-3 h-3" />}
+                              </span>
+                              {linkedCov && linkedCov.linkedQty > 0 && (
+                                <div className="mt-1 text-xs text-green-700 font-medium" title={linkedCov.linkedItems.map(li => `${li.name}: ${li.quantity}`).join(', ')}>
+                                  cubierto: {linkedCov.linkedQty} pzas en vinculados
+                                </div>
+                              )}
+                            </>
                           )}
                         </td>
                         <td className="px-4 py-3 text-sm">

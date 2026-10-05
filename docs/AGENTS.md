@@ -206,7 +206,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key-here
 - `organizations`, `locations` — multi-tenancy hierarchy
 - `profiles` — extends `auth.users` with role, org, location, PIN
 - `inventory` — medicines with barcode, expiry, batch, Rx flag, stock count
-- `product_links` — symmetric links between equivalent products (other brand / discounted); linked stock suppresses reorder recommendations
+- `product_links` — symmetric links between equivalent products (other brand / discounted); linked stock suppresses reorder recommendations (AdminReorderReport "cubiertos por vinculados") and, via `buildLinkedStockMap`, keeps covered low/out items out of the Inventario inteligente Agotados/Stock bajo/Reorden tabs + summary cards (rows show a green "Cubierto (N)" badge instead of the risk score) and annotates the /inventory qty cell ("cubierto: N pzas en vinculados")
 - `partners` — partner businesses offering member discounts; managed in Admin → Socios, read publicly via `get_public_partners` RPC
 - `sales`, `sale_items`, `sale_payments` — transactions (supports split payments)
 - `returns`, `return_items` — return processing

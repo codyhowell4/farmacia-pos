@@ -11,7 +11,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
-import { getInventoryIntelligence, getLocations, getServiceItemIds } from '@/lib/db';
+import { getInventoryIntelligence, getLocations, getServiceItemIds, getAllProductLinks, buildLinkedStockMap } from '@/lib/db';
+
+// Linked-stock coverage (productos vinculados): an item whose linked
+// equivalents have stock doesn't need a purchase — same rule as AdminReorderReport.
+const linkedCoverage = (map, item) => {
+  const l = map.get(item.id);
+  return l && l.linkedQty > 0 ? l : null;
+};
 
 const getExpiryStatus = (expirationDate) => {
   if (!expirationDate) return null;
@@ -51,6 +58,7 @@ const AdminInventory = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('name');
   const [serviceIds, setServiceIds] = useState(new Set());
+  const [productLinks, setProductLinks] = useState([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
@@ -75,12 +83,14 @@ const AdminInventory = () => {
     try {
       setLoading(true);
       const locationId = selectedLocation || null;
-      const [data, svcIds] = await Promise.all([
+      const [data, svcIds, links] = await Promise.all([
         getInventoryIntelligence(locationId),
         getServiceItemIds().catch(() => []),
+        getAllProductLinks().catch(() => []),
       ]);
       setItems(data || []);
       setServiceIds(new Set(svcIds));
+      setProductLinks(links || []);
     } catch (e) {
       console.error(e);
       toast({ title: 'Error', description: 'No se pudo cargar el inventario', variant: 'destructive' });
@@ -89,18 +99,23 @@ const AdminInventory = () => {
     }
   };
 
+  // Org-wide product links → coverage map (productId -> { linkedQty, linkedItems })
+  const linkedStockMap = useMemo(() => buildLinkedStockMap(items, productLinks), [items, productLinks]);
+
   const filteredItems = useMemo(() => {
     let result = items;
     const isSvc = (i) => serviceIds.has(i.id);
 
     // Tab filter (services don't track stock — excluded from stock/expiry tabs;
-    // kept in fast/slow since those are sales rankings, not stock tracking)
+    // kept in fast/slow since those are sales rankings, not stock tracking).
+    // Items covered by stock in a linked equivalent (productos vinculados) are
+    // excluded from the action tabs — no purchase/adjustment needed for them.
     switch (activeTab) {
       case 'low':
-        result = result.filter(i => !isSvc(i) && i.quantity > 0 && i.quantity <= i.low_stock_threshold);
+        result = result.filter(i => !isSvc(i) && i.quantity > 0 && i.quantity <= i.low_stock_threshold && !linkedCoverage(linkedStockMap, i));
         break;
       case 'out':
-        result = result.filter(i => !isSvc(i) && i.quantity === 0);
+        result = result.filter(i => !isSvc(i) && i.quantity === 0 && !linkedCoverage(linkedStockMap, i));
         break;
       case 'fast':
         result = result.filter(i => i.has_sufficient_data && i.avg_daily_sales_30 > 0)
@@ -123,7 +138,7 @@ const AdminInventory = () => {
         result = result.filter(i => !isSvc(i) && i.is_expired);
         break;
       case 'reorder':
-        result = result.filter(i => !isSvc(i) && (i.recommended_qty > 0 || i.quantity === 0 || (i.days_of_inventory !== null && i.days_of_inventory <= 14)));
+        result = result.filter(i => !isSvc(i) && (i.recommended_qty > 0 || i.quantity === 0 || (i.days_of_inventory !== null && i.days_of_inventory <= 14)) && !linkedCoverage(linkedStockMap, i));
         break;
       default:
         break;
@@ -151,26 +166,28 @@ const AdminInventory = () => {
     }
 
     return result;
-  }, [items, activeTab, searchTerm, sortBy, serviceIds]);
+  }, [items, activeTab, searchTerm, sortBy, serviceIds, linkedStockMap]);
 
   const stats = useMemo(() => {
     const isSvc = (i) => serviceIds.has(i.id);
     const totalItems = items.length;
     const totalValue = items.reduce((sum, i) => sum + (i.inventory_value || 0), 0);
-    const lowStock = items.filter(i => !isSvc(i) && i.quantity > 0 && i.quantity <= i.low_stock_threshold).length;
-    const outOfStock = items.filter(i => !isSvc(i) && i.quantity === 0).length;
-    const reorderNeeded = items.filter(i => !isSvc(i) && (i.recommended_qty > 0 || i.quantity === 0)).length;
+    const lowStock = items.filter(i => !isSvc(i) && i.quantity > 0 && i.quantity <= i.low_stock_threshold && !linkedCoverage(linkedStockMap, i)).length;
+    const outOfStock = items.filter(i => !isSvc(i) && i.quantity === 0 && !linkedCoverage(linkedStockMap, i)).length;
+    const reorderNeeded = items.filter(i => !isSvc(i) && (i.recommended_qty > 0 || i.quantity === 0) && !linkedCoverage(linkedStockMap, i)).length;
     const expiringSoon = items.filter(i => {
       if (isSvc(i)) return false;
       const s = getExpiryStatus(i.expiration_date);
       return s !== null;
     }).length;
-    const avgRisk = items.length > 0
-      ? Math.round(items.reduce((sum, i) => sum + (i.stockout_risk_score || 0), 0) / items.length)
+    // Covered low/out items aren't real stockout risks — keep them out of the average
+    const riskPool = items.filter(i => !(i.quantity <= (i.low_stock_threshold || 0) && linkedCoverage(linkedStockMap, i)));
+    const avgRisk = riskPool.length > 0
+      ? Math.round(riskPool.reduce((sum, i) => sum + (i.stockout_risk_score || 0), 0) / riskPool.length)
       : 0;
     const expiredCount = items.filter(i => !isSvc(i) && i.is_expired).length;
     return { totalItems, totalValue, lowStock, outOfStock, reorderNeeded, expiringSoon, expiredCount, avgRisk };
-  }, [items, serviceIds]);
+  }, [items, serviceIds, linkedStockMap]);
 
   const exportCSV = () => {
     const headers = [
@@ -246,6 +263,7 @@ const AdminInventory = () => {
               const isOut = item.quantity === 0;
               const isLow = !isOut && item.quantity <= item.low_stock_threshold;
               const insufficient = !item.has_sufficient_data;
+              const linked = (isOut || isLow) ? linkedCoverage(linkedStockMap, item) : null;
 
               return (
                 <tr key={item.id} className="hover:bg-slate-50 transition-colors">
@@ -263,6 +281,11 @@ const AdminInventory = () => {
                       }`}>
                         {item.quantity}
                       </span>
+                    )}
+                    {linked && (
+                      <div className="mt-1 text-xs text-green-700 font-medium" title={linked.linkedItems.map(li => `${li.name}: ${li.quantity}`).join(', ')}>
+                        cubierto: {linked.linkedQty} pzas en vinculados
+                      </div>
                     )}
                   </td>
                   <td className="px-3 py-2 text-slate-600">
@@ -298,7 +321,9 @@ const AdminInventory = () => {
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    {item.recommended_qty > 0 ? (
+                    {linked ? (
+                      <span className="text-xs text-slate-400">—</span>
+                    ) : item.recommended_qty > 0 ? (
                       <span className="inline-flex items-center gap-1 text-apolo-navy font-semibold text-xs">
                         <TrendingUp className="w-3 h-3" />
                         {item.recommended_qty}
@@ -308,9 +333,15 @@ const AdminInventory = () => {
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    <Badge variant="outline" className={`text-xs ${risk.color}`}>
-                      {risk.label} {item.stockout_risk_score > 0 ? `(${item.stockout_risk_score})` : ''}
-                    </Badge>
+                    {linked ? (
+                      <Badge variant="outline" className="text-xs bg-green-100 text-green-700 border-green-200" title={`Cubierto por: ${linked.linkedItems.map(li => `${li.name} (${li.quantity})`).join(', ')}`}>
+                        Cubierto ({linked.linkedQty})
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className={`text-xs ${risk.color}`}>
+                        {risk.label} {item.stockout_risk_score > 0 ? `(${item.stockout_risk_score})` : ''}
+                      </Badge>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     {item.is_expired ? (
