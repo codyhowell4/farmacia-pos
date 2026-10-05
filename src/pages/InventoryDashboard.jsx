@@ -4,6 +4,7 @@ import { Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, Hist
 import ApoloBrand from '@/components/ApoloBrand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { DateInput } from '@/components/ui/date-input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -896,7 +897,7 @@ const InventoryDashboard = () => {
                       <div className="space-y-2"><Label>Precio de venta (MXN)</Label><Input type="number" step="0.01" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} required /></div>
                       <div className="space-y-2"><Label>Cantidad</Label><Input type="number" value={formData.quantity} onChange={(e) => setFormData({ ...formData, quantity: e.target.value })} required /></div>
                       <div className="space-y-2"><Label>Umbral de alerta de stock bajo</Label><Input type="number" value={formData.lowStockThreshold} onChange={(e) => setFormData({ ...formData, lowStockThreshold: e.target.value })} placeholder="10" /></div>
-                      <div className="space-y-2"><Label>Fecha de vencimiento</Label><Input type="date" value={formData.expirationDate} onChange={(e) => setFormData({ ...formData, expirationDate: e.target.value })} /></div>
+                      <div className="space-y-2"><Label>Fecha de vencimiento</Label><DateInput value={formData.expirationDate} onChange={(v) => setFormData({ ...formData, expirationDate: v })} /></div>
                       <div className="space-y-2"><Label>Número de lote</Label><Input value={formData.batchNumber} onChange={(e) => setFormData({ ...formData, batchNumber: e.target.value })} placeholder="Ej. LOT-2024-001" /></div>
                       <div className="space-y-2"><Label>Código de barras (UPC)</Label>
                         <div className="relative">
@@ -1273,10 +1274,9 @@ const InventoryDashboard = () => {
               </div>
               <div className="space-y-2">
                 <Label>Fecha de caducidad (nuevo lote)</Label>
-                <Input
-                  type="date"
+                <DateInput
                   value={restockForm.expirationDate}
-                  onChange={(e) => setRestockForm({ ...restockForm, expirationDate: e.target.value })}
+                  onChange={(v) => setRestockForm({ ...restockForm, expirationDate: v })}
                 />
               </div>
               <div className="space-y-2">
