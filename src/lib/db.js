@@ -3226,6 +3226,22 @@ export const getInventoryWithSupplier = async (locationId = null) => {
 };
 
 
+// Live single-item lookup by barcode. Used by the add form so a product
+// created after the page loaded (other PC/tab) is found before the user
+// fills the whole form and hits the duplicate-barcode error at save time.
+export const getInventoryItemByBarcode = async (barcode) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase
+    .from('inventory')
+    .select('*, suppliers(id, name)')
+    .eq('org_id', orgId)
+    .eq('barcode', barcode)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+};
+
+
 // ── INVENTORY INTELLIGENCE (PHASE 3) ─────────────────────────
 
 export const getInventorySettings = async () => {

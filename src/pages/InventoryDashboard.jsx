@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Helmet } from 'react-helmet';
-import { Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal, Upload, FileSpreadsheet, ChevronDown, ChevronUp, Link2, X } from 'lucide-react';
+import { Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal, Upload, FileSpreadsheet, ChevronDown, ChevronUp, Link2, X, RefreshCw } from 'lucide-react';
 import ApoloBrand from '@/components/ApoloBrand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,11 +13,34 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
-import { getInventoryWithSupplier, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory, getAllInventoryBatches, restockInventoryItem, isServiceItem, getProductLinks, getAllProductLinks, addProductLink, removeProductLink, buildLinkedStockMap } from '@/lib/db';
+import { getInventoryWithSupplier, getInventoryItemByBarcode, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory, getAllInventoryBatches, restockInventoryItem, isServiceItem, getProductLinks, getAllProductLinks, addProductLink, removeProductLink, buildLinkedStockMap } from '@/lib/db';
 import { isAntibioticName } from '@/lib/antibiotics';
 
 const LOW_STOCK_THRESHOLD = 0;
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
+
+// Cache-first loading: the full catalog (~1000 rows) renders instantly from
+// the last snapshot while fresh data loads in the background. All staff see
+// the same org catalog, so the snapshot is shared across users of this PC.
+const INV_CACHE_PREFIX = 'inv_cache_v1_';
+const readInvCache = (key) => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || 'null');
+    return parsed && Array.isArray(parsed.items) ? parsed : null;
+  } catch { return null; }
+};
+const findInvCache = () => {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(INV_CACHE_PREFIX)) {
+        const cached = readInvCache(k);
+        if (cached) return cached;
+      }
+    }
+  } catch { /* localStorage unavailable */ }
+  return null;
+};
 
 const getExpiryStatus = (expirationDate) => {
   if (!expirationDate) return null;
@@ -34,7 +57,13 @@ const InventoryDashboard = () => {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [inventory, setInventory] = useState([]);
+  // Snapshot from the last visit — renders instantly, then the background
+  // reload (mount effect) replaces it with fresh data.
+  const initialCacheRef = useRef(undefined);
+  if (initialCacheRef.current === undefined) initialCacheRef.current = findInvCache();
+  const initialCache = initialCacheRef.current;
+  const [inventory, setInventory] = useState(initialCache?.items || []);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('name');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -61,13 +90,20 @@ const InventoryDashboard = () => {
   const [isRestockOpen, setIsRestockOpen] = useState(false);
   const [restockForm, setRestockForm] = useState({ quantity: '', expirationDate: '', batchNumber: '', cost: '' });
   const [isRestockSaving, setIsRestockSaving] = useState(false);
-  const [batchesByItem, setBatchesByItem] = useState({});
+  const [batchesByItem, setBatchesByItem] = useState(() => {
+    const map = {};
+    for (const b of initialCache?.batches || []) {
+      if (!map[b.inventory_id]) map[b.inventory_id] = [];
+      map[b.inventory_id].push(b);
+    }
+    return map;
+  });
 
   // Productos vinculados: edit-modal list + org-wide links for the
   // low-stock banner's "cubierto por vinculados" annotation
   const [linkedProducts, setLinkedProducts] = useState([]);
   const [linkSearch, setLinkSearch] = useState('');
-  const [allLinks, setAllLinks] = useState([]);
+  const [allLinks, setAllLinks] = useState(initialCache?.links || []);
 
   // Bulk selection state
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -87,6 +123,15 @@ const InventoryDashboard = () => {
   const [expiringExpanded, setExpiringExpanded] = useState(false);
 
   useEffect(() => { loadInventory(); loadSuppliers(); }, [user?.locationId]);
+
+  // Debounce state for the live barcode lookup in the add/edit form.
+  const barcodeLookupRef = useRef({ timer: null, seq: 0 });
+  useEffect(() => () => clearTimeout(barcodeLookupRef.current.timer), []);
+
+  // The table renders the first slice only — rendering ~1000 rows at once is
+  // what made the module feel slow. Reset the slice whenever the list shape changes.
+  const [visibleCount, setVisibleCount] = useState(100);
+  useEffect(() => { setVisibleCount(100); }, [searchTerm, alertFilter, sortBy]);
 
   const loadSuppliers = async () => {
     try {
@@ -128,6 +173,18 @@ const InventoryDashboard = () => {
       setBatchesByItem(map);
     }
     setAllLinks(links || []);
+    // Refresh the snapshot for the next visit (only when the two critical
+    // slices loaded, so a failed batches query doesn't poison the cache).
+    if (items && batches) {
+      try {
+        localStorage.setItem(`${INV_CACHE_PREFIX}${user?.id || 'anon'}`, JSON.stringify({ ts: Date.now(), items, batches, links: links || [] }));
+      } catch { /* quota exceeded — non-fatal */ }
+    }
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try { await loadInventory(); } finally { setIsRefreshing(false); }
   };
 
   const handleLogout = () => { logout(); navigate('/login'); };
@@ -178,7 +235,7 @@ const InventoryDashboard = () => {
     }
   };
 
-  const handleEdit = (item) => {
+  const startEditingItem = (item) => {
     setEditingItem(item);
     setFormData({
       name: item.name,
@@ -199,8 +256,12 @@ const InventoryDashboard = () => {
       itemType: item.item_type || 'product',
       notes: item.notes || '',
     });
-    setIsDialogOpen(true);
     loadProductLinks(item);
+  };
+
+  const handleEdit = (item) => {
+    startEditingItem(item);
+    setIsDialogOpen(true);
   };
 
   // Linked products shown in the edit modal: resolve each link's other
@@ -655,28 +716,37 @@ const InventoryDashboard = () => {
     resetImportState();
   };
 
-  // Handle barcode scan in form
-  const handleBarcodeScan = async (barcode) => {
+  // Handle barcode scan in the add/edit form. If the code already belongs to
+  // a product, switch the dialog to editing THAT product — otherwise the save
+  // fails with the duplicate-barcode error after filling the whole form.
+  const handleBarcodeScan = (barcode) => {
     if (!barcode) return;
-    // Search for existing item with this barcode
     const existingItem = inventory.find(item => item.barcode === barcode);
     if (existingItem) {
-      // Pre-fill form with existing data
-      setFormData({
-        ...formData,
-        name: existingItem.name,
-        use: existingItem.use || '',
-        cost: existingItem.cost?.toString() || '',
-        price: existingItem.price?.toString() || '',
-        lowStockThreshold: (existingItem.low_stock_threshold || LOW_STOCK_THRESHOLD).toString(),
-        warehouseLocation: existingItem.warehouse_location || '',
-        requiresPrescription: existingItem.requires_prescription || false,
-        department: existingItem.department || '',
-        itemType: existingItem.item_type || 'product',
-        barcode: barcode,
-      });
-      toast({ title: 'Producto encontrado', description: 'Datos pre-llenados del producto existente' });
+      if (editingItem?.id !== existingItem.id) {
+        startEditingItem(existingItem);
+        toast({ title: 'Código ya registrado', description: `Pertenece a "${existingItem.name}" — estás editando el producto existente.` });
+      }
+      return;
     }
+    // Not in the loaded list — it may be stale (product added from another
+    // PC/tab since page load). Debounce a live DB lookup to catch that.
+    if (editingItem) return;
+    const lookup = barcodeLookupRef.current;
+    clearTimeout(lookup.timer);
+    const seq = ++lookup.seq;
+    lookup.timer = setTimeout(async () => {
+      try {
+        const found = await getInventoryItemByBarcode(barcode);
+        if (seq !== barcodeLookupRef.current.seq) return; // user kept typing
+        if (!found) return;
+        setInventory(prev => prev.some(i => i.id === found.id) ? prev : [...prev, found]);
+        startEditingItem(found);
+        toast({ title: 'Código ya registrado', description: `Pertenece a "${found.name}" — estás editando el producto existente.` });
+      } catch (e) {
+        console.warn('Barcode lookup failed:', e?.message);
+      }
+    }, 400);
   };
 
   // Expiration is tracked per batch: the effective date is the earliest
@@ -705,15 +775,18 @@ const InventoryDashboard = () => {
   };
 
   // Services don't track stock — excluded from low-stock/alert logic
-  const lowStockItems = inventory.filter(item => !isServiceItem(item) && item.quantity > 0 && item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD));
-  const expiringItems = inventory.filter(isItemExpiring);
+  const lowStockItems = useMemo(
+    () => inventory.filter(item => !isServiceItem(item) && item.quantity > 0 && item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD)),
+    [inventory]
+  );
+  const expiringItems = useMemo(() => inventory.filter(isItemExpiring), [inventory, batchesByItem]);
   const expiredCount = expiringItems.filter(i => {
     const s = getExpiryStatus(getItemExpiryDate(i));
     return s && s.days < 0;
   }).length;
 
   // Linked-stock coverage: productId -> { linkedQty, linkedItems }
-  const linkedStockMap = buildLinkedStockMap(inventory, allLinks);
+  const linkedStockMap = useMemo(() => buildLinkedStockMap(inventory, allLinks), [inventory, allLinks]);
 
   // Candidates for the modal's "vincular producto" search (exclude self + already linked)
   const linkCandidates = (() => {
@@ -736,7 +809,7 @@ const InventoryDashboard = () => {
     }
   };
 
-  const filteredInventory = sortItems(inventory.filter(item => {
+  const filteredInventory = useMemo(() => sortItems(inventory.filter(item => {
     const q = searchTerm.toLowerCase().trim();
     const matchesSearch = !q || [
       item.name, item.use, item.department, item.barcode, item.batch_number,
@@ -747,7 +820,9 @@ const InventoryDashboard = () => {
     if (alertFilter === 'low_stock') return matchesSearch && item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD);
     if (alertFilter === 'expiring') return matchesSearch && isItemExpiring(item);
     return matchesSearch;
-  }));
+  })), [inventory, searchTerm, sortBy, alertFilter, batchesByItem]);
+
+  const visibleItems = filteredInventory.slice(0, visibleCount);
 
   return (
     <>
@@ -865,6 +940,9 @@ const InventoryDashboard = () => {
                 <option value="most_stock">Más stock</option>
                 <option value="least_stock">Menos stock</option>
               </select>
+              <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing} title="Recargar la lista (por si otro equipo agregó o cambió productos)">
+                <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />Actualizar
+              </Button>
               <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
                 <Upload className="w-4 h-4 mr-2" />Importar CSV
               </Button>
@@ -1070,7 +1148,7 @@ const InventoryDashboard = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {filteredInventory.map((item) => {
+                  {visibleItems.map((item) => {
                     const expiryStatus = getExpiryStatus(getItemExpiryDate(item));
                     const isLow = item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD);
                     const isSelected = selectedIds.has(item.id);
@@ -1147,6 +1225,13 @@ const InventoryDashboard = () => {
                 </tbody>
               </table>
               {filteredInventory.length === 0 && <p className="text-center text-slate-500 py-8">Sin artículos encontrados.</p>}
+              {filteredInventory.length > visibleCount && (
+                <div className="flex items-center justify-center gap-3 py-3 border-t border-slate-200">
+                  <span className="text-sm text-slate-500">Mostrando {visibleItems.length} de {filteredInventory.length}</span>
+                  <Button variant="outline" size="sm" onClick={() => setVisibleCount(c => c + 200)}>Mostrar 200 más</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setVisibleCount(filteredInventory.length)}>Mostrar todos</Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
