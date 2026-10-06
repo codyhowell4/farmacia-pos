@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { HeartHandshake, Plus, Edit2, Trash2, Loader2, Phone, MapPin, Globe } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { HeartHandshake, Plus, Edit2, Trash2, Loader2, Phone, MapPin, Globe, Mail, Ticket, ImagePlus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { getPartners, createPartner, updatePartner, deletePartner } from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 
 const emptyForm = {
   name: '',
@@ -16,17 +17,45 @@ const emptyForm = {
   whatsapp: '',
   address: '',
   website: '',
+  contact_email: '',
   sort_order: 0,
   active: true,
 };
 
+const resizeLogo = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('read'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('img'));
+      img.onload = () => {
+        const scale = Math.min(1, 600 / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('blob'))), 'image/jpeg', 0.85);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
 const AdminPartners = () => {
   const [partners, setPartners] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [editing, setEditing] = useState(null); // { ...form, id? }
+  const [editing, setEditing] = useState(null); // { ...form, id?, logo_url? }
+  const [logoFile, setLogoFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const { toast } = useToast();
+  const logoInputRef = useRef(null);
 
   const loadData = async () => {
     setIsLoading(true);
@@ -35,7 +64,7 @@ const AdminPartners = () => {
       setPartners(data || []);
     } catch (e) {
       console.error(e);
-      toast({ title: 'Error', description: 'No se pudieron cargar los socios', variant: 'destructive' });
+      toast({ title: 'Error', description: 'No se pudieron cargar los afiliados', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -45,10 +74,31 @@ const AdminPartners = () => {
     loadData();
   }, []);
 
+  const openEdit = (partner) => {
+    setLogoFile(null);
+    if (logoInputRef.current) logoInputRef.current.value = '';
+    setEditing(partner ? { ...emptyForm, ...partner } : { ...emptyForm });
+  };
+
+  const uploadLogo = async (partnerId) => {
+    const blob = await resizeLogo(logoFile);
+    const path = `${partnerId}/logo-${Date.now()}.jpg`;
+    const { error } = await supabase.storage
+      .from('partner-logos')
+      .upload(path, blob, { contentType: 'image/jpeg' });
+    if (error) throw error;
+    const { data } = supabase.storage.from('partner-logos').getPublicUrl(path);
+    return data.publicUrl;
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (!editing.name.trim() || !editing.offer.trim()) {
       toast({ title: 'Verifica los datos', description: 'Nombre y oferta son obligatorios.', variant: 'destructive' });
+      return;
+    }
+    if (logoFile && logoFile.size > 5 * 1024 * 1024) {
+      toast({ title: 'Verifica el logo', description: 'La imagen no debe pasar de 5 MB.', variant: 'destructive' });
       return;
     }
 
@@ -62,19 +112,26 @@ const AdminPartners = () => {
       whatsapp: editing.whatsapp.trim() || null,
       address: editing.address.trim() || null,
       website: editing.website.trim() || null,
+      contact_email: (editing.contact_email || '').trim() || null,
       sort_order: Number(editing.sort_order) || 0,
       active: !!editing.active,
     };
 
     try {
-      if (editing.id) {
-        await updatePartner(editing.id, payload);
-        toast({ title: 'Socio actualizado' });
+      let partnerId = editing.id;
+      if (partnerId) {
+        await updatePartner(partnerId, payload);
       } else {
-        await createPartner(payload);
-        toast({ title: 'Socio agregado' });
+        const created = await createPartner(payload);
+        partnerId = created.id;
       }
+      if (logoFile && partnerId) {
+        const logoUrl = await uploadLogo(partnerId);
+        await updatePartner(partnerId, { logo_url: logoUrl });
+      }
+      toast({ title: editing.id ? 'Afiliado actualizado' : 'Afiliado agregado' });
       setEditing(null);
+      setLogoFile(null);
       await loadData();
     } catch (err) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
@@ -97,7 +154,7 @@ const AdminPartners = () => {
     setDeletingId(partner.id);
     try {
       await deletePartner(partner.id);
-      toast({ title: 'Socio eliminado' });
+      toast({ title: 'Afiliado eliminado' });
       await loadData();
     } catch (err) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
@@ -110,35 +167,45 @@ const AdminPartners = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Socios</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Afiliados</h1>
           <p className="text-sm text-slate-500">
             Negocios aliados que ofrecen descuentos o beneficios a los miembros. Se muestran en la sección de membresía de la app.
+            También pueden registrarse solos en <span className="font-medium">afiliados.apolofarmacia.com.mx</span>.
           </p>
         </div>
-        <Button size="sm" onClick={() => setEditing({ ...emptyForm })}>
-          <Plus className="w-4 h-4 mr-1" /> Agregar socio
+        <Button size="sm" onClick={() => openEdit(null)}>
+          <Plus className="w-4 h-4 mr-1" /> Agregar afiliado
         </Button>
       </div>
 
       {isLoading ? (
-        <div className="py-12 text-center text-slate-500">Cargando socios...</div>
+        <div className="py-12 text-center text-slate-500">Cargando afiliados...</div>
       ) : partners.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
           <HeartHandshake className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500">No hay socios registrados todavía.</p>
+          <p className="text-slate-500">No hay afiliados registrados todavía.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {partners.map((p) => (
             <div key={p.id} className={`bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col gap-3 ${!p.active ? 'opacity-60' : ''}`}>
               <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-semibold text-slate-900">{p.name}</p>
-                  {p.category && <p className="text-xs text-slate-500 capitalize">{p.category}</p>}
+                <div className="flex items-start gap-3 min-w-0">
+                  {p.logo_url ? (
+                    <img src={p.logo_url} alt="" className="w-11 h-11 rounded-xl object-cover border border-slate-200 shrink-0" loading="lazy" />
+                  ) : (
+                    <div className="w-11 h-11 rounded-xl bg-indigo-50 text-apolo-navy flex items-center justify-center font-bold text-lg shrink-0">
+                      {(p.name || '?').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-900 truncate">{p.name}</p>
+                    {p.category && <p className="text-xs text-slate-500 capitalize">{p.category}</p>}
+                  </div>
                 </div>
                 <button
                   onClick={() => handleToggleActive(p)}
-                  className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                  className={`text-xs font-medium px-2.5 py-1 rounded-full shrink-0 ${
                     p.active ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-600'
                   }`}
                   title={p.active ? 'Visible en la app — clic para ocultar' : 'Oculto en la app — clic para mostrar'}
@@ -150,14 +217,27 @@ const AdminPartners = () => {
               <p className="text-sm font-medium text-apolo-navy">{p.offer}</p>
               {p.description && <p className="text-sm text-slate-600">{p.description}</p>}
 
+              {p.poster_opt_in && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">📋 Póster</span>
+                  {p.coupon_code && (
+                    <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded-full bg-indigo-50 text-apolo-navy flex items-center gap-1">
+                      <Ticket className="w-3 h-3" /> {p.coupon_code}
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-1 text-xs text-slate-500 mt-auto">
+                {p.contact_email && <p className="flex items-center gap-1.5"><Mail className="w-3 h-3" /> {p.contact_email}</p>}
                 {p.phone && <p className="flex items-center gap-1.5"><Phone className="w-3 h-3" /> {p.phone}</p>}
                 {p.address && <p className="flex items-center gap-1.5"><MapPin className="w-3 h-3" /> {p.address}</p>}
                 {p.website && <p className="flex items-center gap-1.5"><Globe className="w-3 h-3" /> {p.website}</p>}
+                {p.user_id && <p className="text-emerald-600 font-medium">✓ Tiene cuenta en el portal de afiliados</p>}
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <Button size="sm" variant="ghost" onClick={() => setEditing({ ...emptyForm, ...p })}>
+                <Button size="sm" variant="ghost" onClick={() => openEdit(p)}>
                   <Edit2 className="w-4 h-4" />
                 </Button>
                 <Button
@@ -178,7 +258,7 @@ const AdminPartners = () => {
       <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing?.id ? 'Editar socio' : 'Agregar socio'}</DialogTitle>
+            <DialogTitle>{editing?.id ? 'Editar afiliado' : 'Agregar afiliado'}</DialogTitle>
           </DialogHeader>
           {editing && (
             <form onSubmit={handleSave} className="space-y-4">
@@ -211,6 +291,28 @@ const AdminPartners = () => {
                   onChange={(e) => setEditing({ ...editing, description: e.target.value })}
                 />
               </div>
+              <div>
+                <Label>Logo</Label>
+                <div className="flex items-center gap-3 mt-1">
+                  {editing.logo_url && !logoFile ? (
+                    <img src={editing.logo_url} alt="" className="w-12 h-12 rounded-xl object-cover border border-slate-200" />
+                  ) : logoFile ? (
+                    <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 text-xs font-bold">Nuevo</div>
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-slate-100 border border-dashed border-slate-300 flex items-center justify-center text-slate-400">
+                      <ImagePlus className="w-5 h-5" />
+                    </div>
+                  )}
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-apolo-navy hover:file:bg-indigo-100"
+                    onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
+                  />
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Aparece junto al negocio en la app. Máx. 5 MB.</p>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>Teléfono</Label>
@@ -222,6 +324,14 @@ const AdminPartners = () => {
                 </div>
               </div>
               <div>
+                <Label>Correo de contacto</Label>
+                <Input
+                  type="email"
+                  value={editing.contact_email || ''}
+                  onChange={(e) => setEditing({ ...editing, contact_email: e.target.value })}
+                />
+              </div>
+              <div>
                 <Label>Dirección</Label>
                 <Input value={editing.address || ''} onChange={(e) => setEditing({ ...editing, address: e.target.value })} />
               </div>
@@ -229,6 +339,14 @@ const AdminPartners = () => {
                 <Label>Sitio web</Label>
                 <Input value={editing.website || ''} onChange={(e) => setEditing({ ...editing, website: e.target.value })} />
               </div>
+              {(editing.poster_opt_in || editing.coupon_code) && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 space-y-1">
+                  {editing.poster_opt_in && <p>📋 Participa en el programa de póster (10% en sus compras).</p>}
+                  {editing.coupon_code && (
+                    <p>Cupón: <span className="font-mono font-bold">{editing.coupon_code}</span> — activo en POS y Descuentos.</p>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4 items-end">
                 <div>
                   <Label>Orden (menor primero)</Label>

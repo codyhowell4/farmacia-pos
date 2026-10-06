@@ -2284,6 +2284,67 @@ function renderLocked(featureName) {
   `;
 }
 
+// Latest partners shown on the Membresías page — the detail modal reads
+// from here (the cards are rendered inside renderMembresias' local scope).
+let membresiasPartners = [];
+
+function partnerEscHandler(e) {
+  if (e.key === 'Escape') window.closePartnerDetail();
+}
+
+window.closePartnerDetail = function () {
+  document.removeEventListener('keydown', partnerEscHandler);
+  const el = document.getElementById('partner-detail-overlay');
+  if (el) el.remove();
+};
+
+// Tap on a partner card → full-detail modal (logo, offer, contact actions).
+window.showPartnerDetail = function (partnerId) {
+  const p = (membresiasPartners || []).find((x) => x.id === partnerId);
+  if (!p) return;
+  window.closePartnerDetail();
+
+  const waDigits = (p.whatsapp || '').replace(/\D/g, '');
+  const site = p.website ? (/^https?:\/\//i.test(p.website) ? p.website : 'https://' + p.website) : '';
+  const mapsUrl = p.address ? 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(p.address) : '';
+
+  const logoHtml = p.logo_url
+    ? `<img src="${escapeHtml(p.logo_url)}" alt="" style="width: 72px; height: 72px; border-radius: 18px; object-fit: cover; box-shadow: 0 4px 14px rgba(10,15,60,0.18);">`
+    : `<div style="width: 72px; height: 72px; border-radius: 18px; background: #EDF1FB; color: #1E2A8A; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.8rem;">${escapeHtml((p.name || '?').charAt(0).toUpperCase())}</div>`;
+
+  const actionBtn = (href, label) =>
+    `<a href="${escapeHtml(href)}" target="_blank" rel="noopener" style="display: flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.65rem 0.5rem; border-radius: 12px; background: #F0F4FF; color: #1E2A8A; font-weight: 700; font-size: 0.8rem; text-decoration: none;">${label}</a>`;
+
+  const actions = [
+    p.phone ? actionBtn('tel:' + p.phone.replace(/\s/g, ''), '📞 Llamar') : '',
+    waDigits.length >= 8 ? actionBtn('https://wa.me/' + waDigits, '💬 WhatsApp') : '',
+    mapsUrl ? actionBtn(mapsUrl, '📍 Cómo llegar') : '',
+    site ? actionBtn(site, '🌐 Sitio web') : '',
+  ].filter(Boolean).join('');
+
+  const overlay = document.createElement('div');
+  overlay.id = 'partner-detail-overlay';
+  overlay.style.cssText = 'position: fixed; inset: 0; background: rgba(10,15,40,0.65); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 1rem;';
+  overlay.onclick = (e) => { if (e.target === overlay) window.closePartnerDetail(); };
+  overlay.innerHTML = `
+    <div style="background: #fff; border-radius: 20px; max-width: 420px; width: 100%; max-height: 84vh; overflow-y: auto; padding: 1.4rem 1.2rem 1.2rem; position: relative;">
+      <button onclick="closePartnerDetail()" style="position: absolute; top: 0.75rem; right: 0.75rem; background: #f1f5f9; border: none; border-radius: 8px; width: 30px; height: 30px; font-size: 0.95rem; cursor: pointer; color: #64748b;">✕</button>
+      <div style="text-align: center;">${logoHtml}</div>
+      <div style="text-align: center; margin-top: 0.75rem;">
+        <div style="font-weight: 800; color: #1a1a2e; font-size: 1.1rem;">${escapeHtml(p.name)}</div>
+        ${p.category ? `<span style="display: inline-block; margin-top: 0.35rem; font-size: 0.68rem; background: #EDF1FB; color: #1E2A8A; padding: 0.25rem 0.65rem; border-radius: 12px; font-weight: 600;">${escapeHtml(p.category)}</span>` : ''}
+      </div>
+      <div style="margin-top: 0.9rem; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 0.75rem 0.9rem; color: #359268; font-weight: 700; font-size: 0.9rem; text-align: center;">🤝 ${escapeHtml(p.offer)}</div>
+      ${p.description ? `<p style="color: #475569; font-size: 0.85rem; line-height: 1.55; margin: 0.9rem 0 0;">${escapeHtml(p.description)}</p>` : ''}
+      ${p.address ? `<p style="color: #64748b; font-size: 0.8rem; margin: 0.6rem 0 0;">📍 ${escapeHtml(p.address)}</p>` : ''}
+      ${actions ? `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-top: 1rem;">${actions}</div>` : ''}
+      <p style="text-align: center; font-size: 0.72rem; color: #94a3b8; margin: 1rem 0 0;">Muestra tu tarjeta de membresía Apolo para obtener este beneficio.</p>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.addEventListener('keydown', partnerEscHandler);
+};
+
 // Membresías page - upsell for guests/free users; digital card for active members.
 // Intentionally NOT in PAID_PAGES: it is the upsell page and must stay
 // reachable by free users and guests.
@@ -2295,7 +2356,7 @@ async function renderMembresias() {
       <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>10% de descuento en medicamentos</span></div>
       <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Toma de presión gratis (cuando quiera)</span></div>
       <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Revisión semestral gratis (valor $775): Biometría Hemática, Examen General de Orina, Química Sanguínea de 12 elementos y Consulta</span></div>
-      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Descuentos en negocios aliados</span></div>
+      <div style="display: flex; gap: 0.75rem; align-items: flex-start;"><span style="color: #46AC78; font-weight: 700;">✓</span><span>Descuentos en negocios afiliados</span></div>
     </div>
   `;
 
@@ -2322,7 +2383,7 @@ async function renderMembresias() {
       </div>
     </div>
 
-    <!-- Negocios aliados (resolved async) -->
+    <!-- Negocios afiliados (resolved async) -->
     <div id="membresias-socios"></div>
   `;
 
@@ -2338,6 +2399,7 @@ async function renderMembresias() {
   } catch (e) {
     console.warn('[renderMembresias] lookup failed:', e);
   }
+  membresiasPartners = partners || [];
   // Keep the store's member-pricing cache in sync with this fresh lookup
   // (covers mid-session activations and cancellations).
   storeMembership = (membership && membership.status === 'active') ? membership : null;
@@ -2400,7 +2462,7 @@ async function renderMembresias() {
           </div>
         </div>
       </div>
-      <p style="text-align: center; font-size: 0.75rem; color: rgba(255,255,255,0.85); margin: 0.625rem 0 0;">Muestra esta tarjeta en farmacia y negocios aliados</p>
+      <p style="text-align: center; font-size: 0.75rem; color: rgba(255,255,255,0.85); margin: 0.625rem 0 0;">Muestra esta tarjeta en farmacia y negocios afiliados</p>
 
       <div style="background: rgba(255,255,255,0.95); border-radius: 16px; padding: 1rem 1.25rem; margin-top: 1rem; font-size: 0.85rem;">
         <div style="display: flex; justify-content: space-between; padding: 0.375rem 0;">
@@ -2530,7 +2592,7 @@ async function renderMembresias() {
         '10% de descuento en medicamentos',
         'Toma de presión gratis (cuando quiera)',
         'Revisión semestral gratis (valor $775): BH, EGO, QS12e y Consulta',
-        'Descuentos en negocios aliados'
+        'Descuentos en negocios afiliados'
       ], false)}
       ${planCard('Familiar', 'Para toda la familia', '$500', [
         'Hasta 6 personas (titular + 5)',
@@ -2539,7 +2601,7 @@ async function renderMembresias() {
         '10% de descuento en medicamentos',
         'Toma de presión gratis (cuando quiera)',
         'Revisión semestral gratis para cada miembro (valor $775): BH, EGO, QS12e y Consulta',
-        'Descuentos en negocios aliados'
+        'Descuentos en negocios afiliados'
       ], true)}
       ${!currentAuthUser ? `
         <div style="text-align: center; padding: 0 0 0.5rem; font-size: 0.85rem; color: rgba(255,255,255,0.8);">
@@ -2549,25 +2611,31 @@ async function renderMembresias() {
     `;
   }
 
-  // ---- Negocios aliados (visible to everyone; a teaser for free users) ----
+  // ---- Negocios afiliados (visible to everyone; a teaser for free users) ----
   if (sociosEl && partners.length) {
     const partnerCards = partners.map(p => `
-      <div style="background: rgba(255,255,255,0.95); border-radius: 16px; padding: 1rem; border: 1px solid #E3E8F2;">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
-          <div style="font-weight: 700; color: #1a1a2e; font-size: 0.95rem;">${escapeHtml(p.name)}</div>
-          ${p.category ? `<span style="font-size: 0.65rem; background: #EDF1FB; color: #1E2A8A; padding: 0.2rem 0.5rem; border-radius: 12px; font-weight: 600; white-space: nowrap;">${escapeHtml(p.category)}</span>` : ''}
+      <div onclick="showPartnerDetail('${p.id}')" style="background: rgba(255,255,255,0.95); border-radius: 16px; padding: 1rem; border: 1px solid #E3E8F2; cursor: pointer;" role="button" tabindex="0">
+        <div style="display: flex; gap: 0.75rem; align-items: flex-start;">
+          ${p.logo_url
+            ? `<img src="${escapeHtml(p.logo_url)}" alt="" loading="lazy" style="width: 46px; height: 46px; border-radius: 12px; object-fit: cover; flex-shrink: 0;">`
+            : `<div style="width: 46px; height: 46px; border-radius: 12px; background: #EDF1FB; color: #1E2A8A; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.15rem; flex-shrink: 0;">${escapeHtml((p.name || '?').charAt(0).toUpperCase())}</div>`}
+          <div style="min-width: 0; flex: 1;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
+              <div style="font-weight: 700; color: #1a1a2e; font-size: 0.95rem;">${escapeHtml(p.name)}</div>
+              ${p.category ? `<span style="font-size: 0.65rem; background: #EDF1FB; color: #1E2A8A; padding: 0.2rem 0.5rem; border-radius: 12px; font-weight: 600; white-space: nowrap;">${escapeHtml(p.category)}</span>` : ''}
+            </div>
+            <div style="color: #359268; font-weight: 600; font-size: 0.85rem; margin-top: 0.25rem;">🤝 ${escapeHtml(p.offer)}</div>
+            ${p.description ? `<div style="color: #64748b; font-size: 0.8rem; margin-top: 0.25rem; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${escapeHtml(p.description)}</div>` : ''}
+            <div style="color: #94a3b8; font-size: 0.72rem; margin-top: 0.35rem;">Toca para ver más →</div>
+          </div>
         </div>
-        <div style="color: #359268; font-weight: 600; font-size: 0.85rem; margin-top: 0.3rem;">🤝 ${escapeHtml(p.offer)}</div>
-        ${p.description ? `<div style="color: #64748b; font-size: 0.8rem; margin-top: 0.3rem; line-height: 1.4;">${escapeHtml(p.description)}</div>` : ''}
-        ${p.phone ? `<div style="color: #64748b; font-size: 0.75rem; margin-top: 0.3rem;">📞 ${escapeHtml(p.phone)}</div>` : ''}
-        ${p.address ? `<div style="color: #64748b; font-size: 0.75rem; margin-top: 0.15rem;">📍 ${escapeHtml(p.address)}</div>` : ''}
       </div>
     `).join('');
 
     sociosEl.innerHTML = `
       <div style="padding: 0.5rem 1rem 1.5rem;">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
-          <div style="font-weight: 700; font-size: 1rem; color: white;">Negocios aliados</div>
+          <div style="font-weight: 700; font-size: 1rem; color: white;">Negocios afiliados</div>
           ${isMember ? '' : '<span style="font-size: 0.7rem; color: #E0A63E; font-weight: 700;">🔒 Beneficio de miembros</span>'}
         </div>
         <div style="display: flex; flex-direction: column; gap: 0.75rem;">${partnerCards}</div>
@@ -2575,6 +2643,9 @@ async function renderMembresias() {
           ${isMember
             ? 'Muestra tu tarjeta digital para obtener estos descuentos.'
             : 'Activa tu membresía para usar estos descuentos.'}
+        </p>
+        <p style="font-size: 0.78rem; margin-top: 0.5rem; text-align: center;">
+          <a href="https://afiliados.apolofarmacia.com.mx/" target="_blank" rel="noopener" style="color: #7dd3a8; font-weight: 600; text-decoration: none;">¿Tienes un negocio? Afíliate aquí →</a>
         </p>
       </div>
     `;

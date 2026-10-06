@@ -45,3 +45,9 @@ verify_jwt = false
 # Cron-invoked queue processor — auth is via the x-cron-secret header instead
 [functions.send-notifications]
 verify_jwt = false
+
+# Public afiliado (partner business) self-registration — no session yet by
+# definition. Abuse bounded by honeypot + per-IP rate limiting; responses are
+# generic so the endpoint can't be used to enumerate accounts.
+[functions.affiliate-signup]
+verify_jwt = false

@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Afiliados — Farmacia Apolo</title>
+  <meta name="description" content="Portal de negocios afiliados de Farmacia Apolo: registra tu negocio, edita tu información y consulta tu cupón de afiliado.">
+  <link rel="icon" href="/brand/apolo-logo.png">
+  <style>
+    :root {
+      --navy: #141B5E;
+      --blue: #1E2A8A;
+      --blue-soft: #2A3BB5;
+      --green: #46AC78;
+      --green-dark: #359268;
+      --gold: #E0A63E;
+      --bg: #EDF1FB;
+      --ink: #1a1a2e;
+      --muted: #64748b;
+      --line: #E3E8F2;
+      --danger: #dc2626;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(160deg, var(--navy) 0%, var(--blue) 55%, var(--blue-soft) 100%);
+      min-height: 100vh;
+      color: var(--ink);
+    }
+    #app { max-width: 480px; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
+
+    .brand { text-align: center; padding: 1rem 0 1.25rem; }
+    .brand img { width: 72px; height: 72px; border-radius: 18px; box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
+    .brand h1 { color: #fff; font-size: 1.35rem; margin-top: 0.65rem; letter-spacing: 0.2px; }
+    .brand p { color: rgba(255,255,255,0.75); font-size: 0.82rem; margin-top: 0.2rem; }
+
+    .card { background: #fff; border-radius: 18px; padding: 1.35rem 1.15rem; box-shadow: 0 10px 30px rgba(10,15,60,0.25); margin-bottom: 1rem; }
+    .card h2 { font-size: 1.1rem; color: var(--navy); margin-bottom: 0.25rem; }
+    .card .sub { font-size: 0.82rem; color: var(--muted); margin-bottom: 1rem; line-height: 1.45; }
+
+    label { display: block; font-size: 0.8rem; font-weight: 600; color: #334155; margin: 0.85rem 0 0.3rem; }
+    input[type="text"], input[type="email"], input[type="password"], input[type="tel"], input[type="url"], textarea {
+      width: 100%; padding: 0.72rem 0.85rem; border: 1.5px solid var(--line); border-radius: 10px;
+      font-size: 0.95rem; font-family: inherit; color: var(--ink); background: #fbfcfe;
+      transition: border-color 0.15s;
+    }
+    input:focus, textarea:focus { outline: none; border-color: var(--blue-soft); background: #fff; }
+    textarea { resize: vertical; min-height: 70px; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+
+    .btn {
+      display: block; width: 100%; padding: 0.85rem; margin-top: 1.1rem; border: none; border-radius: 12px;
+      background: var(--green); color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer;
+      font-family: inherit; transition: background 0.15s, transform 0.05s;
+    }
+    .btn:hover { background: var(--green-dark); }
+    .btn:active { transform: scale(0.99); }
+    .btn:disabled { opacity: 0.6; cursor: default; }
+    .btn.navy { background: var(--navy); }
+    .btn.navy:hover { background: var(--blue); }
+    .btn.ghost { background: transparent; color: var(--blue); border: 1.5px solid var(--line); font-weight: 600; }
+    .btn.ghost:hover { background: #f4f6fd; }
+
+    .link { color: var(--blue-soft); font-weight: 600; font-size: 0.85rem; cursor: pointer; text-decoration: none; background: none; border: none; font-family: inherit; padding: 0; }
+    .link:hover { text-decoration: underline; }
+    .switch { text-align: center; margin-top: 1rem; font-size: 0.85rem; color: var(--muted); }
+    .msg { border-radius: 10px; padding: 0.7rem 0.85rem; font-size: 0.85rem; margin-top: 1rem; line-height: 1.45; }
+    .msg.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .msg.ok { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .msg.info { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+
+    .check { display: flex; gap: 0.6rem; align-items: flex-start; margin-top: 1rem; font-size: 0.82rem; color: #334155; line-height: 1.45; }
+    .check input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--green); flex-shrink: 0; }
+    .hp { position: absolute; left: -9999px; top: -9999px; height: 1px; width: 1px; overflow: hidden; }
+
+    /* Coupon digital card (mirrors the membership card) */
+    .coupon-card {
+      position: relative; overflow: hidden; border-radius: 20px; padding: 1.3rem 1.25rem 1.15rem;
+      background: linear-gradient(135deg, #141B5E, #1E2A8A, #2A3BB5); color: #fff;
+      box-shadow: 0 12px 28px rgba(10,15,60,0.35);
+    }
+    .coupon-card::before, .coupon-card::after {
+      content: ''; position: absolute; border-radius: 50%; background: rgba(255,255,255,0.06);
+    }
+    .coupon-card::before { width: 190px; height: 190px; right: -70px; top: -80px; }
+    .coupon-card::after { width: 130px; height: 130px; left: -50px; bottom: -60px; }
+    .coupon-eyebrow { font-size: 0.62rem; letter-spacing: 2px; color: rgba(255,255,255,0.75); font-weight: 700; display: flex; justify-content: space-between; }
+    .coupon-biz { font-size: 1.05rem; font-weight: 700; margin-top: 0.85rem; position: relative; }
+    .coupon-code { font-family: 'Courier New', monospace; font-size: 1.55rem; font-weight: 700; letter-spacing: 2.5px; margin-top: 0.35rem; position: relative; }
+    .coupon-foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 1rem; position: relative; }
+    .coupon-foot small { font-size: 0.62rem; letter-spacing: 1px; color: rgba(255,255,255,0.7); display: block; }
+    .coupon-pct { color: var(--gold); font-weight: 800; font-size: 0.85rem; letter-spacing: 0.5px; text-align: right; }
+
+    .logo-row { display: flex; align-items: center; gap: 0.9rem; margin-top: 0.5rem; }
+    .logo-preview {
+      width: 74px; height: 74px; border-radius: 16px; border: 1.5px solid var(--line); object-fit: cover; background: #f8fafc; flex-shrink: 0;
+    }
+    .logo-placeholder {
+      width: 74px; height: 74px; border-radius: 16px; border: 1.5px dashed #cbd5e1; background: #f8fafc;
+      display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 1.6rem; flex-shrink: 0;
+    }
+    .file-btn { position: relative; overflow: hidden; display: inline-block; }
+    .file-btn input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .file-btn span { display: inline-block; padding: 0.55rem 0.95rem; border-radius: 10px; background: #eef2ff; color: var(--blue); font-weight: 700; font-size: 0.82rem; border: 1px solid #dbe3fa; }
+
+    .preview-card { background: rgba(255,255,255,0.97); border-radius: 16px; padding: 1rem; border: 1px solid var(--line); }
+    .status-pill { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; font-weight: 700; padding: 0.3rem 0.7rem; border-radius: 999px; }
+    .status-pill.on { background: #dcfce7; color: #166534; }
+    .status-pill.off { background: #fee2e2; color: #991b1b; }
+
+    .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .topbar .who { color: #fff; font-size: 0.85rem; font-weight: 600; }
+    .topbar .who small { display: block; font-weight: 400; color: rgba(255,255,255,0.7); font-size: 0.72rem; }
+    .logout { background: rgba(255,255,255,0.14); color: #fff; border: none; border-radius: 10px; padding: 0.5rem 0.85rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .logout:hover { background: rgba(255,255,255,0.24); }
+
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(10,15,40,0.65); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .modal { background: #fff; border-radius: 16px; max-width: 520px; width: 100%; max-height: 82vh; display: flex; flex-direction: column; overflow: hidden; }
+    .modal header { padding: 1rem 1.1rem 0.6rem; display: flex; justify-content: space-between; align-items: center; }
+    .modal header strong { color: var(--navy); }
+    .modal .body { padding: 0.4rem 1.1rem 1.1rem; overflow-y: auto; white-space: pre-wrap; font-size: 0.82rem; line-height: 1.55; color: #334155; }
+    .modal .x { background: #f1f5f9; border: none; border-radius: 8px; width: 30px; height: 30px; font-size: 1rem; cursor: pointer; color: var(--muted); }
+
+    .center { text-align: center; }
+    .muted { color: var(--muted); font-size: 0.82rem; line-height: 1.5; }
+    .spin { width: 34px; height: 34px; border: 3.5px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; margin: 3rem auto; animation: sp 0.8s linear infinite; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+    .footer-link { text-align: center; margin-top: 1.5rem; }
+    .footer-link a { color: rgba(255,255,255,0.8); font-size: 0.8rem; text-decoration: none; }
+    .footer-link a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div id="app"><div class="spin"></div></div>
+
+  <script src="/vendor/supabase-js.min.js"></script>
+  <script src="/customer-app/js/supabase.js?v=1"></script>
+  <script src="/customer-app/js/consentDocs.js?v=4"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    var cfg = window.farmaciaSupabaseConfig || {};
+    var SUPA_URL = cfg.URL;
+    var ANON_KEY = cfg.ANON_KEY;
+    var ORG_ID = cfg.DEFAULT_ORG_ID;
+
+    var sb = null;
+    if (SUPA_URL && ANON_KEY && window.supabase && window.supabase.createClient) {
+      sb = window.supabase.createClient(SUPA_URL, ANON_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          storageKey: 'apolo-affiliate-auth'
+        }
+      });
+    }
+
+    var app = document.getElementById('app');
+    var state = {
+      partner: null,
+      userEmail: '',
+      recovery: false,
+      logoFile: null
+    };
+
+    // ---------- helpers ----------
+    function esc(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function digits(value) { return String(value || '').replace(/\D/g, ''); }
+    function setHtml(html) { app.innerHTML = html; }
+    function showMsg(id, kind, text) {
+      var el = document.getElementById(id);
+      if (el) { el.className = 'msg ' + kind; el.textContent = text; el.style.display = 'block'; }
+    }
+    function brandHeader(title, subtitle) {
+      return '<div class="brand">' +
+        '<img src="/brand/apolo-logo.png" alt="Farmacia Apolo">' +
+        '<h1>' + esc(title) + '</h1>' +
+        (subtitle ? '<p>' + esc(subtitle) + '</p>' : '') +
+        '</div>';
+    }
+    function privacyModal() {
+      return '<div class="modal-backdrop" id="privacy-modal" style="display:none;" onclick="if(event.target===this)hidePrivacy()">' +
+        '<div class="modal"><header><strong>Aviso de Privacidad</strong><button class="x" onclick="hidePrivacy()">✕</button></header>' +
+        '<div class="body" id="privacy-body"></div></div></div>';
+    }
+    window.showPrivacy = function () {
+      var doc = (window.APOLO_CONSENT_DOCS || []).find(function (d) { return d.type === 'privacidad'; });
+      var body = document.getElementById('privacy-body');
+      if (body) body.textContent = doc ? doc.content : 'Aviso de privacidad disponible en Farmacia Apolo.';
+      var m = document.getElementById('privacy-modal');
+      if (m) m.style.display = 'flex';
+    };
+    window.hidePrivacy = function () {
+      var m = document.getElementById('privacy-modal');
+      if (m) m.style.display = 'none';
+    };
+
+    // ---------- views ----------
+    function renderFatal() {
+      setHtml(brandHeader('Afiliados', '') +
+        '<div class="card"><h2>Servicio no disponible</h2>' +
+        '<p class="sub">No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.</p></div>');
+    }
+
+    function renderAuth(mode) {
+      var isRegister = mode === 'register';
+      var html = brandHeader('Negocios Afiliados', 'Ofrece descuentos a nuestros miembros y gana visibilidad');
+
+      if (isRegister) {
+        html += '<div class="card">' +
+          '<h2>Registra tu negocio</h2>' +
+          '<p class="sub">Tu negocio aparecerá en la sección de negocios afiliados de la app de Farmacia Apolo, visible para todos nuestros miembros.</p>' +
+          '<form id="register-form" novalidate>' +
+          '<label for="r-name">Nombre del negocio *</label>' +
+          '<input type="text" id="r-name" maxlength="120" required>' +
+          '<label for="r-category">Categoría</label>' +
+          '<input type="text" id="r-category" maxlength="60" placeholder="Ej. gimnasio, óptica, laboratorio, restaurante">' +
+          '<label for="r-offer">Oferta para miembros *</label>' +
+          '<input type="text" id="r-offer" maxlength="200" placeholder="Ej. 15% de descuento mostrando la tarjeta digital" required>' +
+          '<label for="r-description">Descripción</label>' +
+          '<textarea id="r-description" maxlength="500" placeholder="Detalles o condiciones (opcional)"></textarea>' +
+          '<div class="row2">' +
+          '<div><label for="r-phone">Teléfono</label><input type="tel" id="r-phone" maxlength="30"></div>' +
+          '<div><label for="r-whatsapp">WhatsApp</label><input type="tel" id="r-whatsapp" maxlength="30"></div>' +
+          '</div>' +
+          '<label for="r-address">Dirección</label>' +
+          '<input type="text" id="r-address" maxlength="200">' +
+          '<label for="r-website">Sitio web</label>' +
+          '<input type="url" id="r-website" maxlength="200" placeholder="https://...">' +
+          '<label for="r-email">Correo electrónico *</label>' +
+          '<input type="email" id="r-email" maxlength="160" autocomplete="email" required>' +
+          '<p class="muted" style="margin-top:0.35rem;">A este correo te llegarán tu bienvenida y el enlace para crear tu contraseña.</p>' +
+          '<div class="check"><input type="checkbox" id="r-poster">' +
+          '<span>Quiero colgar un póster en mi local para obtener <strong>10% de descuento en cualquiera de mis compras</strong>.</span></div>' +
+          '<div class="check"><input type="checkbox" id="r-privacy">' +
+          '<span>He leído y acepto el <button type="button" class="link" onclick="showPrivacy()">Aviso de Privacidad</button>. *</span></div>' +
+          '<div class="hp" aria-hidden="true"><label>Empresa<input type="text" id="r-company" tabindex="-1" autocomplete="off"></label></div>' +
+          '<div id="register-msg" class="msg" style="display:none;"></div>' +
+          '<button type="submit" class="btn" id="register-btn">Crear mi cuenta y publicar mi negocio</button>' +
+          '</form>' +
+          '<div class="switch">¿Ya tienes cuenta? <button class="link" onclick="goLogin()">Inicia sesión</button></div>' +
+          '</div>';
+      } else {
+        html += '<div class="card">' +
+          '<h2>Entrar a mi portal</h2>' +
+          '<p class="sub">Administra la información de tu negocio afiliado.</p>' +
+          '<form id="login-form" novalidate>' +
+          '<label for="l-email">Correo electrónico</label>' +
+          '<input type="email" id="l-email" autocomplete="email" required>' +
+          '<label for="l-pass">Contraseña</label>' +
+          '<input type="password" id="l-pass" autocomplete="current-password" required>' +
+          '<div id="login-msg" class="msg" style="display:none;"></div>' +
+          '<button type="submit" class="btn navy" id="login-btn">Entrar</button>' +
+          '</form>' +
+          '<div class="switch"><button class="link" onclick="goForgot()">Olvidé mi contraseña</button></div>' +
+          '<div class="switch">¿Aún no eres afiliado? <button class="link" onclick="goRegister()">Registra tu negocio</button></div>' +
+          '</div>';
+      }
+
+      html += '<div class="footer-link"><a href="/customer-app/">¿Eres cliente? Entra a la app de clientes →</a></div>';
+      html += privacyModal();
+      setHtml(html);
+
+      if (isRegister) {
+        document.getElementById('register-form').addEventListener('submit', handleRegister);
+      } else {
+        document.getElementById('login-form').addEventListener('submit', handleLogin);
+      }
+    }
+    window.goLogin = function () { renderAuth('login'); };
+    window.goRegister = function () { renderAuth('register'); };
+
+    function renderForgot() {
+      setHtml(brandHeader('Recuperar contraseña', '') +
+        '<div class="card"><h2>Restablecer contraseña</h2>' +
+        '<p class="sub">Te enviaremos un correo con un enlace para crear una nueva contraseña.</p>' +
+        '<form id="forgot-form" novalidate>' +
+        '<label for="f-email">Correo electrónico</label>' +
+        '<input type="email" id="f-email" autocomplete="email" required>' +
+        '<div id="forgot-msg" class="msg" style="display:none;"></div>' +
+        '<button type="submit" class="btn navy">Enviar enlace</button>' +
+        '</form>' +
+        '<div class="switch"><button class="link" onclick="goLogin()">← Volver a entrar</button></div>' +
+        '</div>');
+      document.getElementById('forgot-form').addEventListener('submit', handleForgot);
+    }
+    window.goForgot = function () { renderForgot(); };
+
+    function renderSuccess(email) {
+      setHtml(brandHeader('¡Registro recibido!', '') +
+        '<div class="card center">' +
+        '<div style="font-size:2.6rem;">📬</div>' +
+        '<h2 style="margin-top:0.4rem;">Revisa tu correo</h2>' +
+        '<p class="sub" style="margin-top:0.5rem;">Enviamos a <strong>' + esc(email) + '</strong> dos correos:</p>' +
+        '<p class="muted" style="text-align:left;">1. <strong>Tu bienvenida</strong> como negocio afiliado (con tu cupón, si lo pediste).<br>' +
+        '2. El enlace para <strong>crear tu contraseña</strong> y entrar a tu portal.</p>' +
+        '<p class="muted" style="margin-top:0.8rem;">Tu negocio ya está visible en la app de Farmacia Apolo. Desde tu portal podrás subir tu logo y editar tu información.</p>' +
+        '<button class="btn ghost" onclick="goLogin()">Ir a entrar</button>' +
+        '</div>');
+    }
+
+    function renderSetPassword() {
+      setHtml(brandHeader('Crea tu contraseña', '') +
+        '<div class="card"><h2>Establecer contraseña</h2>' +
+        '<p class="sub">Elige una contraseña de al menos 10 caracteres para entrar a tu portal.</p>' +
+        '<form id="setpass-form" novalidate>' +
+        '<label for="p-pass">Nueva contraseña</label>' +
+        '<input type="password" id="p-pass" autocomplete="new-password" minlength="10" required>' +
+        '<label for="p-pass2">Confirmar contraseña</label>' +
+        '<input type="password" id="p-pass2" autocomplete="new-password" minlength="10" required>' +
+        '<div id="setpass-msg" class="msg" style="display:none;"></div>' +
+        '<button type="submit" class="btn">Guardar y entrar</button>' +
+        '</form></div>');
+      document.getElementById('setpass-form').addEventListener('submit', handleSetPassword);
+    }
+
+    function renderNoPartner() {
+      setHtml(brandHeader('Portal de Afiliados', '') +
+        '<div class="card center">' +
+        '<h2>Cuenta sin negocio ligado</h2>' +
+        '<p class="sub" style="margin-top:0.5rem;">Esta cuenta (<strong>' + esc(state.userEmail) + '</strong>) no tiene un negocio afiliado registrado. Si acabas de registrarte, usa el mismo correo con el que llenaste el formulario.</p>' +
+        '<button class="btn ghost" onclick="doLogout()">Cerrar sesión</button>' +
+        '</div>');
+    }
+
+    function partnerCardPreview(p) {
+      var logo = p.logo_url
+        ? '<img src="' + esc(p.logo_url) + '" alt="" style="width:46px;height:46px;border-radius:12px;object-fit:cover;flex-shrink:0;" loading="lazy">'
+        : '<div style="width:46px;height:46px;border-radius:12px;background:#EDF1FB;color:#1E2A8A;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.15rem;flex-shrink:0;">' + esc((p.name || '?').charAt(0).toUpperCase()) + '</div>';
+      return '<div class="preview-card">' +
+        '<div style="display:flex;gap:0.75rem;align-items:flex-start;">' + logo +
+        '<div style="min-width:0;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">' +
+        '<div style="font-weight:700;color:#1a1a2e;font-size:0.95rem;">' + esc(p.name) + '</div>' +
+        (p.category ? '<span style="font-size:0.62rem;background:#EDF1FB;color:#1E2A8A;padding:0.2rem 0.5rem;border-radius:12px;font-weight:600;white-space:nowrap;">' + esc(p.category) + '</span>' : '') +
+        '</div>' +
+        '<div style="color:#359268;font-weight:600;font-size:0.85rem;margin-top:0.25rem;">🤝 ' + esc(p.offer) + '</div>' +
+        (p.description ? '<div style="color:#64748b;font-size:0.78rem;margin-top:0.25rem;line-height:1.4;">' + esc(p.description) + '</div>' : '') +
+        '</div></div></div>';
+    }
+
+    function renderPortal() {
+      var p = state.partner;
+      var html = '<div class="topbar">' +
+        '<div class="who">' + esc(p.name) + '<small>' + esc(state.userEmail) + '</small></div>' +
+        '<button class="logout" onclick="doLogout()">Salir</button>' +
+        '</div>';
+
+      // Status + coupon section
+      html += '<div class="card">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;">' +
+        '<h2 style="margin:0;">Mi cupón de afiliado</h2>' +
+        (p.active
+          ? '<span class="status-pill on">● Visible en la app</span>'
+          : '<span class="status-pill off">● Oculto — contáctanos</span>') +
+        '</div>';
+
+      if (p.coupon_code) {
+        html += '<div class="coupon-card">' +
+          '<div class="coupon-eyebrow"><span>FARMACIA APOLO</span><span>AFILIADO ⭐</span></div>' +
+          '<div class="coupon-biz">' + esc(p.name) + '</div>' +
+          '<div class="coupon-code">' + esc(p.coupon_code) + '</div>' +
+          '<div class="coupon-foot">' +
+          '<small>PROGRAMA PÓSTER</small>' +
+          '<div class="coupon-pct">10% DE DESCUENTO<br>EN TODA LA TIENDA</div>' +
+          '</div></div>' +
+          '<p class="muted" style="margin-top:0.7rem;">Menciona este código en caja antes de pagar y se aplicará tu 10% de descuento.</p>';
+      } else {
+        html += '<p class="muted">¿Quieres <strong>10% de descuento en cualquiera de tus compras</strong> en Farmacia Apolo? Cuelga un póster nuestro en tu local y te generamos tu cupón al instante.</p>' +
+          '<div id="poster-msg" class="msg" style="display:none;"></div>' +
+          '<button class="btn" id="poster-btn" onclick="requestPoster()">Quiero colgar un póster y obtener mi 10%</button>';
+      }
+      html += '</div>';
+
+      // Logo
+      html += '<div class="card">' +
+        '<h2>Logo de mi negocio</h2>' +
+        '<p class="sub">Aparece junto a tu negocio en la app. Se ajusta automáticamente (máx. 5 MB).</p>' +
+        '<div class="logo-row">' +
+        (p.logo_url
+          ? '<img class="logo-preview" id="logo-preview" src="' + esc(p.logo_url) + '" alt="Logo">'
+          : '<div class="logo-placeholder" id="logo-preview-ph">🏪</div><img class="logo-preview" id="logo-preview" src="" alt="" style="display:none;">') +
+        '<div class="file-btn"><span>' + (p.logo_url ? 'Cambiar logo' : 'Subir logo') + '</span>' +
+        '<input type="file" id="logo-input" accept="image/*"></div>' +
+        (p.logo_url ? '<button class="link" style="color:#dc2626;" onclick="removeLogo()">Quitar</button>' : '') +
+        '</div>' +
+        '<div id="logo-msg" class="msg" style="display:none;"></div>' +
+        '</div>';
+
+      // Listing form
+      html += '<div class="card">' +
+        '<h2>Información de mi negocio</h2>' +
+        '<p class="sub">Así aparece en la app para los miembros de Farmacia Apolo.</p>' +
+        '<form id="listing-form" novalidate>' +
+        '<label for="e-name">Nombre del negocio *</label>' +
+        '<input type="text" id="e-name" maxlength="120" value="' + esc(p.name) + '" required>' +
+        '<label for="e-category">Categoría</label>' +
+        '<input type="text" id="e-category" maxlength="60" value="' + esc(p.category || '') + '">' +
+        '<label for="e-offer">Oferta para miembros *</label>' +
+        '<input type="text" id="e-offer" maxlength="200" value="' + esc(p.offer) + '" required>' +
+        '<label for="e-description">Descripción</label>' +
+        '<textarea id="e-description" maxlength="500">' + esc(p.description || '') + '</textarea>' +
+        '<div class="row2">' +
+        '<div><label for="e-phone">Teléfono</label><input type="tel" id="e-phone" maxlength="30" value="' + esc(p.phone || '') + '"></div>' +
+        '<div><label for="e-whatsapp">WhatsApp</label><input type="tel" id="e-whatsapp" maxlength="30" value="' + esc(p.whatsapp || '') + '"></div>' +
+        '</div>' +
+        '<label for="e-address">Dirección</label>' +
+        '<input type="text" id="e-address" maxlength="200" value="' + esc(p.address || '') + '">' +
+        '<label for="e-website">Sitio web</label>' +
+        '<input type="url" id="e-website" maxlength="200" value="' + esc(p.website || '') + '">' +
+        '<div id="listing-msg" class="msg" style="display:none;"></div>' +
+        '<button type="submit" class="btn navy" id="listing-btn">Guardar cambios</button>' +
+        '</form></div>';
+
+      // Live preview
+      html += '<div class="card">' +
+        '<h2>Vista previa en la app</h2>' +
+        '<p class="sub">Así te ven los miembros (toca la tarjeta en la app para ver todos tus datos).</p>' +
+        '<div id="preview-slot">' + partnerCardPreview(p) + '</div>' +
+        '</div>';
+
+      setHtml(html);
+      document.getElementById('listing-form').addEventListener('submit', handleSaveListing);
+      var logoInput = document.getElementById('logo-input');
+      if (logoInput) logoInput.addEventListener('change', handleLogoUpload);
+    }
+
+    // ---------- auth & data ----------
+    function loadPortal() {
+      setHtml('<div class="spin"></div>');
+      sb.auth.getUser().then(function (res) {
+        var user = res.data && res.data.user;
+        if (!user) { renderAuth('register'); return; }
+        state.userEmail = user.email || '';
+        return sb.rpc('get_my_partner').then(function (r) {
+          if (r.error) {
+            console.error('get_my_partner', r.error);
+            setHtml(brandHeader('Portal de Afiliados', '') +
+              '<div class="card"><div class="msg error" style="display:block;">No pudimos cargar tu negocio. Inténtalo más tarde.</div>' +
+              '<button class="btn ghost" onclick="doLogout()">Cerrar sesión</button></div>');
+            return;
+          }
+          var row = (r.data && r.data.length) ? r.data[0] : null;
+          state.partner = row;
+          if (!row) renderNoPartner();
+          else renderPortal();
+        });
+      }).catch(function () { renderAuth('register'); });
+    }
+
+    function handleRegister(ev) {
+      ev.preventDefault();
+      var btn = document.getElementById('register-btn');
+      var val = function (id) { return document.getElementById(id).value.trim(); };
+      var payload = {
+        org_id: ORG_ID,
+        name: val('r-name'),
+        category: val('r-category'),
+        offer: val('r-offer'),
+        description: val('r-description'),
+        phone: val('r-phone'),
+        whatsapp: val('r-whatsapp'),
+        address: val('r-address'),
+        website: val('r-website'),
+        email: val('r-email').toLowerCase(),
+        poster_opt_in: document.getElementById('r-poster').checked,
+        company: document.getElementById('r-company').value // honeypot
+      };
+
+      if (!payload.name || !payload.offer || !payload.email) {
+        showMsg('register-msg', 'error', 'Nombre del negocio, oferta y correo son obligatorios.');
+        return;
+      }
+      if (!document.getElementById('r-privacy').checked) {
+        showMsg('register-msg', 'error', 'Debes aceptar el Aviso de Privacidad para continuar.');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Registrando...';
+      fetch(SUPA_URL + '/functions/v1/affiliate-signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          return { status: res.status, body: body };
+        });
+      }).then(function (r) {
+        if (r.status === 200 && r.body && r.body.ok) {
+          renderSuccess(payload.email);
+        } else {
+          showMsg('register-msg', 'error', (r.body && r.body.error) || 'No se pudo completar el registro. Inténtalo más tarde.');
+          btn.disabled = false;
+          btn.textContent = 'Crear mi cuenta y publicar mi negocio';
+        }
+      }).catch(function () {
+        showMsg('register-msg', 'error', 'Sin conexión. Revisa tu internet e inténtalo de nuevo.');
+        btn.disabled = false;
+        btn.textContent = 'Crear mi cuenta y publicar mi negocio';
+      });
+    }
+
+    function handleLogin(ev) {
+      ev.preventDefault();
+      var btn = document.getElementById('login-btn');
+      var email = document.getElementById('l-email').value.trim();
+      var password = document.getElementById('l-pass').value;
+      if (!email || !password) {
+        showMsg('login-msg', 'error', 'Ingresa tu correo y contraseña.');
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Entrando...';
+      sb.auth.signInWithPassword({ email: email, password: password }).then(function (r) {
+        if (r.error) {
+          showMsg('login-msg', 'error', 'Correo o contraseña incorrectos.');
+          btn.disabled = false;
+          btn.textContent = 'Entrar';
+          return;
+        }
+        loadPortal();
+      }).catch(function () {
+        showMsg('login-msg', 'error', 'Sin conexión. Inténtalo de nuevo.');
+        btn.disabled = false;
+        btn.textContent = 'Entrar';
+      });
+    }
+
+    function handleForgot(ev) {
+      ev.preventDefault();
+      var email = document.getElementById('f-email').value.trim();
+      if (!email) {
+        showMsg('forgot-msg', 'error', 'Ingresa tu correo.');
+        return;
+      }
+      sb.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin + '/afiliados/'
+      }).then(function () {
+        showMsg('forgot-msg', 'ok', 'Si el correo está registrado, recibirás el enlace en unos minutos.');
+      }).catch(function () {
+        showMsg('forgot-msg', 'ok', 'Si el correo está registrado, recibirás el enlace en unos minutos.');
+      });
+    }
+
+    function handleSetPassword(ev) {
+      ev.preventDefault();
+      var p1 = document.getElementById('p-pass').value;
+      var p2 = document.getElementById('p-pass2').value;
+      if (p1.length < 10) {
+        showMsg('setpass-msg', 'error', 'La contraseña debe tener al menos 10 caracteres.');
+        return;
+      }
+      if (p1 !== p2) {
+        showMsg('setpass-msg', 'error', 'Las contraseñas no coinciden.');
+        return;
+      }
+      sb.auth.updateUser({ password: p1 }).then(function (r) {
+        if (r.error) {
+          showMsg('setpass-msg', 'error', 'No se pudo guardar. Abre de nuevo el enlace de tu correo.');
+          return;
+        }
+        state.recovery = false;
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+        loadPortal();
+      }).catch(function () {
+        showMsg('setpass-msg', 'error', 'Sin conexión. Inténtalo de nuevo.');
+      });
+    }
+
+    window.doLogout = function () {
+      sb.auth.signOut().finally(function () {
+        state.partner = null;
+        renderAuth('register');
+      });
+    };
+
+    window.requestPoster = function () {
+      var btn = document.getElementById('poster-btn');
+      btn.disabled = true;
+      btn.textContent = 'Generando tu cupón...';
+      sb.rpc('request_poster_coupon').then(function (r) {
+        if (r.error) {
+          console.error('request_poster_coupon', r.error);
+          showMsg('poster-msg', 'error', 'No se pudo generar el cupón. Inténtalo más tarde.');
+          btn.disabled = false;
+          btn.textContent = 'Quiero colgar un póster y obtener mi 10%';
+          return;
+        }
+        state.partner.coupon_code = r.data;
+        state.partner.poster_opt_in = true;
+        renderPortal();
+      }).catch(function () {
+        showMsg('poster-msg', 'error', 'Sin conexión. Inténtalo de nuevo.');
+        btn.disabled = false;
+        btn.textContent = 'Quiero colgar un póster y obtener mi 10%';
+      });
+    };
+
+    function currentListingForm() {
+      var val = function (id) { return document.getElementById(id).value.trim(); };
+      return {
+        p_name: val('e-name'),
+        p_category: val('e-category') || null,
+        p_offer: val('e-offer'),
+        p_description: val('e-description') || null,
+        p_phone: val('e-phone') || null,
+        p_whatsapp: val('e-whatsapp') || null,
+        p_address: val('e-address') || null,
+        p_website: val('e-website') || null,
+        p_logo_url: null
+      };
+    }
+
+    function handleSaveListing(ev) {
+      ev.preventDefault();
+      var btn = document.getElementById('listing-btn');
+      var payload = currentListingForm();
+      if (!payload.p_name || !payload.p_offer) {
+        showMsg('listing-msg', 'error', 'Nombre y oferta son obligatorios.');
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Guardando...';
+      sb.rpc('update_my_partner', payload).then(function (r) {
+        btn.disabled = false;
+        btn.textContent = 'Guardar cambios';
+        if (r.error) {
+          console.error('update_my_partner', r.error);
+          showMsg('listing-msg', 'error', 'No se pudo guardar: ' + (r.error.message || 'intenta más tarde'));
+          return;
+        }
+        state.partner = r.data;
+        showMsg('listing-msg', 'ok', 'Cambios guardados. Ya se ven en la app.');
+        var slot = document.getElementById('preview-slot');
+        if (slot) slot.innerHTML = partnerCardPreview(r.data);
+      }).catch(function () {
+        btn.disabled = false;
+        btn.textContent = 'Guardar cambios';
+        showMsg('listing-msg', 'error', 'Sin conexión. Inténtalo de nuevo.');
+      });
+    }
+
+    function resizeImage(file) {
+      return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onerror = function () { reject(new Error('read')); };
+        reader.onload = function () {
+          var img = new Image();
+          img.onerror = function () { reject(new Error('img')); };
+          img.onload = function () {
+            var max = 600;
+            var scale = Math.min(1, max / Math.max(img.width, img.height));
+            var w = Math.max(1, Math.round(img.width * scale));
+            var h = Math.max(1, Math.round(img.height * scale));
+            var canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            var ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            canvas.toBlob(function (blob) {
+              if (blob) resolve(blob);
+              else reject(new Error('blob'));
+            }, 'image/jpeg', 0.85);
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function handleLogoUpload(ev) {
+      var file = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!file) return;
+      if (!/^image\//.test(file.type)) {
+        showMsg('logo-msg', 'error', 'El archivo debe ser una imagen.');
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        showMsg('logo-msg', 'error', 'La imagen no debe pasar de 5 MB.');
+        return;
+      }
+      showMsg('logo-msg', 'info', 'Subiendo logo...');
+      resizeImage(file).then(function (blob) {
+        var path = state.partner.id + '/logo-' + Date.now() + '.jpg';
+        return sb.storage.from('partner-logos').upload(path, blob, { contentType: 'image/jpeg' })
+          .then(function (r) {
+            if (r.error) throw r.error;
+            var pub = sb.storage.from('partner-logos').getPublicUrl(path);
+            var url = pub && pub.data ? pub.data.publicUrl : null;
+            if (!url) throw new Error('publicUrl');
+            var payload = currentListingForm();
+            payload.p_logo_url = url;
+            return sb.rpc('update_my_partner', payload).then(function (u) {
+              if (u.error) throw u.error;
+              state.partner = u.data;
+              renderPortal();
+            });
+          });
+      }).catch(function (err) {
+        console.error('logo upload', err);
+        showMsg('logo-msg', 'error', 'No se pudo subir el logo. Inténtalo con otra imagen.');
+      });
+    }
+
+    window.removeLogo = function () {
+      var payload = currentListingForm();
+      payload.p_logo_url = '';
+      sb.rpc('update_my_partner', payload).then(function (r) {
+        if (r.error) {
+          showMsg('logo-msg', 'error', 'No se pudo quitar el logo.');
+          return;
+        }
+        state.partner = r.data;
+        renderPortal();
+      });
+    };
+
+    // ---------- boot ----------
+    if (!sb) { renderFatal(); return; }
+
+    sb.auth.onAuthStateChange(function (event) {
+      if (event === 'PASSWORD_RECOVERY') {
+        state.recovery = true;
+        renderSetPassword();
+      }
+    });
+
+    // Recovery links carry type=recovery in the URL hash — catch it even if
+    // the auth event fired before our listener attached.
+    var hash = window.location.hash || '';
+    if (/type=recovery/.test(hash)) {
+      // Give the client a tick to parse the session from the URL.
+      setTimeout(function () {
+        if (!state.recovery) { state.recovery = true; renderSetPassword(); }
+      }, 400);
+      return;
+    }
+
+    sb.auth.getSession().then(function (r) {
+      var session = r.data && r.data.session;
+      if (session) loadPortal();
+      else renderAuth('register');
+    }).catch(function () { renderAuth('register'); });
+  })();
+  </script>
+</body>
+</html>

@@ -55,7 +55,10 @@ interface NotificationRow {
     | 'membership_receipt'
     | 'membership_welcome'
     | 'membership_payment_failed'
-    | 'membership_cancelled';
+    | 'membership_cancelled'
+    | 'affiliate_welcome'
+    | 'affiliate_new_signup'
+    | 'affiliate_poster_optin';
   payload: {
     appointment_id?: string;
     patient_name?: string;
@@ -78,6 +81,13 @@ interface NotificationRow {
     discount_percent?: number;
     effective_date?: string;
     immediate?: boolean;
+    partner_name?: string;
+    contact_email?: string;
+    category?: string;
+    offer?: string;
+    coupon_code?: string;
+    portal_url?: string;
+    poster_opt_in?: boolean;
   };
   scheduled_for: string;
 }
@@ -318,7 +328,7 @@ const buildMessage = (env: Record<string, string>, row: NotificationRow) => {
         (pct ? `<li style="padding:2px 0;">${escapeHtml(pct)}% de descuento en toda la tienda</li>` : '') +
         `<li style="padding:2px 0;">Toma de presión gratis cuando quieras</li>` +
         `<li style="padding:2px 0;">Revisión de laboratorio gratis cada 6 meses (valor $775)</li>` +
-        `<li style="padding:2px 0;">Descuentos con nuestros socios</li>` +
+        `<li style="padding:2px 0;">Descuentos con nuestros afiliados</li>` +
         `</ul>` +
         kvTable(
           kvRow('Mensualidad', escapeHtml(monthly)) +
@@ -380,6 +390,66 @@ const buildMessage = (env: Record<string, string>, row: NotificationRow) => {
       cta: meetingUrl ? { href: meetingUrl, label: 'Unirme a la consulta' } : undefined,
     });
     return { subject: 'Enlace de tu consulta — Farmacia Apolo', html, text };
+  }
+
+  // ── Afiliados (negocios aliados) ──────────────────────────────────────
+  if (row.template === 'affiliate_welcome') {
+    const partner = String(row.payload.partner_name || '');
+    const portal = String(row.payload.portal_url || 'https://afiliados.apolofarmacia.com.mx/');
+    const coupon = String(row.payload.coupon_code || '');
+    const couponText = coupon ? ` Tu cupón del 10% de descuento en toda la tienda es ${coupon}.` : '';
+    const text = `${greeting} ¡${partner} ya es negocio afiliado de Farmacia Apolo! Tu oferta ya aparece en la app para nuestros miembros. Entra a tu portal para completar tu cuenta: ${portal} (te llegará otro correo para crear tu contraseña).${couponText} Farmacia Apolo.`;
+    const html = brandedEmail(env, {
+      title: `¡${escapeHtml(partner)} ya es negocio afiliado!`,
+      body:
+        `<p style="margin:0 0 8px;">${escapeHtml(greeting)}</p>` +
+        `<p style="margin:0;">Tu negocio <strong>${escapeHtml(partner)}</strong> ya aparece en la sección de negocios afiliados de la app de Farmacia Apolo, visible para todos nuestros miembros.</p>` +
+        `<p style="margin:10px 0 0;">En tu portal puedes editar tu información, subir el logo de tu negocio y ver tu cupón de afiliado. <strong>Te llegará un segundo correo para crear tu contraseña</strong> — úsalo para entrar por primera vez.</p>` +
+        (coupon
+          ? `<div style="margin:16px 0;padding:14px;background:#f0f4ff;border:2px dashed ${BRAND.blue};border-radius:12px;text-align:center;">` +
+            `<div style="font-size:11px;letter-spacing:1px;color:#64748b;text-transform:uppercase;">Tu cupón de afiliado (10% en toda la tienda)</div>` +
+            `<div style="font-family:'Courier New',monospace;font-size:24px;font-weight:700;color:${BRAND.navy};letter-spacing:2px;">${escapeHtml(coupon)}</div></div>`
+          : ''),
+      cta: { href: portal, label: 'Entrar a mi portal' },
+    });
+    return { subject: '¡Tu negocio ya es afiliado de Farmacia Apolo!', html, text };
+  }
+
+  if (row.template === 'affiliate_new_signup') {
+    const partner = String(row.payload.partner_name || '');
+    const email = String(row.payload.contact_email || '');
+    const category = String(row.payload.category || '');
+    const offer = String(row.payload.offer || '');
+    const poster = row.payload.poster_opt_in === true;
+    const text = `Nuevo afiliado registrado: ${partner}${category ? ` (${category})` : ''}. Oferta: ${offer}. Contacto: ${email}. Póster: ${poster ? 'sí' : 'no'}. Revisar en Admin → Afiliados.`;
+    const html = brandedEmail(env, {
+      title: 'Nuevo afiliado registrado',
+      body:
+        `<p style="margin:0;">Un negocio se registró desde el portal de afiliados y <strong>ya está visible en la app</strong>.</p>` +
+        kvTable(
+          kvRow('Negocio', escapeHtml(partner)) +
+          (category ? kvRow('Categoría', escapeHtml(category)) : '') +
+          kvRow('Oferta', escapeHtml(offer)) +
+          kvRow('Contacto', escapeHtml(email)) +
+          kvRow('Póster 10%', poster ? 'Sí quiere' : 'No')
+        ) +
+        `<p style="margin:10px 0 0;">Puedes editarlo u ocultarlo desde <strong>Admin → Afiliados</strong>.</p>`,
+    });
+    return { subject: `Nuevo afiliado: ${partner} — Farmacia Apolo`, html, text };
+  }
+
+  if (row.template === 'affiliate_poster_optin') {
+    const partner = String(row.payload.partner_name || '');
+    const coupon = String(row.payload.coupon_code || '');
+    const text = `${partner} quiere colgar un póster de Farmacia Apolo en su local (programa 10%). Su cupón ${coupon} ya está activo en el POS. Coordinar la entrega del póster.`;
+    const html = brandedEmail(env, {
+      title: 'Un afiliado quiere colgar un póster',
+      body:
+        `<p style="margin:0;"><strong>${escapeHtml(partner)}</strong> pidió colgar un póster de Farmacia Apolo en su local a cambio del 10% de descuento en sus compras.</p>` +
+        kvTable(kvRow('Negocio', escapeHtml(partner)) + kvRow('Cupón generado', escapeHtml(coupon))) +
+        `<p style="margin:10px 0 0;">El cupón ya está activo en el POS y en Admin → Descuentos. Falta <strong>coordinar la entrega/impresión del póster</strong> con el negocio.</p>`,
+    });
+    return { subject: `Póster solicitado: ${partner} — Farmacia Apolo`, html, text };
   }
 
   // Unknown template: log it loudly instead of silently rendering the wrong

@@ -215,7 +215,7 @@ const AdminDashboard = () => {
       </button>
       <button onClick={() => navigateTo('/admin/partners', 'partners')} className={navButtonClass(isActive('partners'))}>
         <HeartHandshake className="w-5 h-5" />
-        <span className="font-medium">Socios</span>
+        <span className="font-medium">Afiliados</span>
       </button>
 
       {/* Análisis — Collapsible submenu */}
