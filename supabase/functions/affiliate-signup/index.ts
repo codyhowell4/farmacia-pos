@@ -37,6 +37,7 @@ interface SignupPayload {
   website?: string;
   email: string;
   poster_opt_in?: boolean;
+  logo?: string; // optional data:image/jpeg;base64,... from the form
   company?: string; // honeypot — must be empty
 }
 
@@ -215,6 +216,37 @@ Deno.serve(async (req) => {
     if (partnerError) {
       console.error('[affiliate-signup] partner insert failed:', partnerError.message);
       return jsonResponse({ error: 'No se pudo completar el registro. Inténtalo más tarde.' }, 500);
+    }
+
+    // ── Logo (optional) ─────────────────────────────────────────────────
+    // The form sends a client-side-resized JPEG as a data URL. Upload via
+    // service role (registrant is anonymous) and store the public URL. A
+    // logo failure must never fail the signup — they can upload it later
+    // from their portal.
+    const logoDataUrl = typeof payload.logo === 'string' ? payload.logo.trim() : '';
+    if (logoDataUrl) {
+      try {
+        const match = /^data:image\/jpeg;base64,([A-Za-z0-9+/=\s]+)$/.exec(logoDataUrl);
+        if (!match) throw new Error('unexpected logo format');
+        const bytes = Uint8Array.from(atob(match[1].replace(/\s/g, '')), (c) => c.charCodeAt(0));
+        if (bytes.length < 100 || bytes.length > 2 * 1024 * 1024) {
+          throw new Error(`logo size out of range: ${bytes.length}`);
+        }
+        const logoPath = `${partner.id}/logo-${Date.now()}.jpg`;
+        const { error: uploadError } = await supabase.storage
+          .from('partner-logos')
+          .upload(logoPath, bytes, { contentType: 'image/jpeg' });
+        if (uploadError) throw uploadError;
+        const { data: pub } = supabase.storage.from('partner-logos').getPublicUrl(logoPath);
+        if (!pub?.publicUrl) throw new Error('no public url');
+        const { error: logoUpdateError } = await supabase
+          .from('partners')
+          .update({ logo_url: pub.publicUrl })
+          .eq('id', partner.id);
+        if (logoUpdateError) throw logoUpdateError;
+      } catch (err) {
+        console.error('[affiliate-signup] logo upload failed (signup continues):', err);
+      }
     }
 
     // ── Poster coupon (optional) ────────────────────────────────────────

@@ -163,7 +163,7 @@
       partner: null,
       userEmail: '',
       recovery: false,
-      logoFile: null
+      regLogo: null
     };
 
     // ---------- helpers ----------
@@ -226,6 +226,14 @@
           '<input type="text" id="r-offer" maxlength="200" placeholder="Ej. 15% de descuento mostrando la tarjeta digital" required>' +
           '<label for="r-description">Descripción</label>' +
           '<textarea id="r-description" maxlength="500" placeholder="Detalles o condiciones (opcional)"></textarea>' +
+          '<label>Logo de tu negocio</label>' +
+          '<div class="logo-row">' +
+          '<div class="logo-placeholder" id="r-logo-ph">🏪</div>' +
+          '<img class="logo-preview" id="r-logo-preview" src="" alt="Vista previa del logo" style="display:none;">' +
+          '<div class="file-btn"><span id="r-logo-btn-text">Subir logo</span>' +
+          '<input type="file" id="r-logo" accept="image/*"></div>' +
+          '</div>' +
+          '<p class="muted" style="margin-top:0.35rem;">Opcional. JPG o PNG de máx. 5 MB — aparecerá en tu ficha dentro de la app.</p>' +
           '<div class="row2">' +
           '<div><label for="r-phone">Teléfono</label><input type="tel" id="r-phone" maxlength="30"></div>' +
           '<div><label for="r-whatsapp">WhatsApp</label><input type="tel" id="r-whatsapp" maxlength="30"></div>' +
@@ -238,7 +246,7 @@
           '<input type="email" id="r-email" maxlength="160" autocomplete="email" required>' +
           '<p class="muted" style="margin-top:0.35rem;">A este correo te llegarán tu bienvenida y el enlace para crear tu contraseña.</p>' +
           '<div class="check"><input type="checkbox" id="r-poster">' +
-          '<span>Quiero colgar un póster en mi local para obtener <strong>10% de descuento en cualquiera de mis compras</strong>.</span></div>' +
+          '<span>Quiero colgar un póster en mi local para obtener <strong>10% de descuento en cualquiera de mis compras en Apolo Farmacia</strong>.</span></div>' +
           '<div class="check"><input type="checkbox" id="r-privacy">' +
           '<span>He leído y acepto el <button type="button" class="link" onclick="showPrivacy()">Aviso de Privacidad</button>. *</span></div>' +
           '<div class="hp" aria-hidden="true"><label>Empresa<input type="text" id="r-company" tabindex="-1" autocomplete="off"></label></div>' +
@@ -269,7 +277,9 @@
       setHtml(html);
 
       if (isRegister) {
+        state.regLogo = null;
         document.getElementById('register-form').addEventListener('submit', handleRegister);
+        document.getElementById('r-logo').addEventListener('change', handleRegLogo);
       } else {
         document.getElementById('login-form').addEventListener('submit', handleLogin);
       }
@@ -301,7 +311,7 @@
         '<p class="sub" style="margin-top:0.5rem;">Enviamos a <strong>' + esc(email) + '</strong> dos correos:</p>' +
         '<p class="muted" style="text-align:left;">1. <strong>Tu bienvenida</strong> como negocio afiliado (con tu cupón, si lo pediste).<br>' +
         '2. El enlace para <strong>crear tu contraseña</strong> y entrar a tu portal.</p>' +
-        '<p class="muted" style="margin-top:0.8rem;">Tu negocio ya está visible en la app de Farmacia Apolo. Desde tu portal podrás subir tu logo y editar tu información.</p>' +
+        '<p class="muted" style="margin-top:0.8rem;">Tu negocio ya está visible en la app de Farmacia Apolo. Desde tu portal podrás cambiar tu logo y editar tu información.</p>' +
         '<button class="btn ghost" onclick="goLogin()">Ir a entrar</button>' +
         '</div>');
     }
@@ -455,6 +465,37 @@
       }).catch(function () { renderAuth('register'); });
     }
 
+    function handleRegLogo(ev) {
+      var file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      if (!/^image\//.test(file.type)) {
+        showMsg('register-msg', 'error', 'El logo debe ser una imagen (JPG o PNG).');
+        ev.target.value = '';
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        showMsg('register-msg', 'error', 'El logo no debe pasar de 5 MB.');
+        ev.target.value = '';
+        return;
+      }
+      resizeImage(file).then(function (blob) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          state.regLogo = reader.result; // data:image/jpeg;base64,...
+          var img = document.getElementById('r-logo-preview');
+          var ph = document.getElementById('r-logo-ph');
+          if (img) { img.src = state.regLogo; img.style.display = 'block'; }
+          if (ph) ph.style.display = 'none';
+          var bt = document.getElementById('r-logo-btn-text');
+          if (bt) bt.textContent = 'Cambiar logo';
+        };
+        reader.readAsDataURL(blob);
+      }).catch(function () {
+        showMsg('register-msg', 'error', 'No se pudo leer esa imagen. Prueba con otra.');
+        ev.target.value = '';
+      });
+    }
+
     function handleRegister(ev) {
       ev.preventDefault();
       var btn = document.getElementById('register-btn');
@@ -471,6 +512,7 @@
         website: val('r-website'),
         email: val('r-email').toLowerCase(),
         poster_opt_in: document.getElementById('r-poster').checked,
+        logo: state.regLogo,
         company: document.getElementById('r-company').value // honeypot
       };
 
