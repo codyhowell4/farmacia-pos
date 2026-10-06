@@ -10,6 +10,7 @@ The frontend is 100% static (Vite build + the vanilla customer app) — any stat
 | **Cloudflare Pages** (same project) | In-store tablet check-in | `formularios.apolofarmacia.com.mx` → `/registro/` |
 | **Cloudflare Pages** (same project) | No-account patient kiosk | `consentimiento.apolofarmacia.com.mx` → `/consentimiento/` |
 | **Cloudflare Pages** (same project) | Online check-in (logged-in customers) | `registro.apolofarmacia.com.mx` → `app.apolofarmacia.com.mx/customer-app/?checkin=1` |
+| **Cloudflare Pages** (same project) | Afiliados (partner) portal | `afiliados.apolofarmacia.com.mx` → `/afiliados/` |
 | **Vercel** | Testing / staging front-end | `farmacia-pos.vercel.app` |
 
 The apex domain (`apolofarmacia.com.mx` / `www`) is attached to the Pages project but scoped to public use: `/membresias` (the membership signup page) is **served directly on the main domain**, the bare root → 301 to `/membresias`, and any other extensionless path (app routes) → 301 to the `app.` subdomain (static assets and `/membresias` itself stay). The staff/customer apps live on the `app.` subdomain. To keep `/membresias` canonical on the main domain, `app.apolofarmacia.com.mx/membresias` → 301 to `https://apolofarmacia.com.mx/membresias`. The rest of the apex remains reserved for the future marketing website — when it lands, replace these redirect rules with the site.
@@ -23,6 +24,14 @@ Flow: patient/guardian fills name + **email OR phone** (one required; + guardian
 Walk-in citas are assigned to the **doctor on shift**: `tablet-checkin` matches the current time (America/Mexico_City) against each active doctor's `doctor_profiles.availability` weekly windows and falls back to the first active doctor.
 
 `registro.apolofarmacia.com.mx` → 301 to the customer app's `?checkin=1` view: a logged-in customer answers the 5-question pre-visit form (motivo, síntomas, duración, medicamentos, alergias); `tablet-checkin` in `checkin` mode creates the same walk-in cita + medical note with the answers. Guests are routed to login first.
+
+## Afiliados portal (`afiliados.` subdomain)
+
+`afiliados.apolofarmacia.com.mx` is a Pages custom domain on the same project; a Redirect Rule sends its root to `/afiliados/` (`public/afiliados/index.html`, self-contained). Partner businesses self-register there (the same fields as Admin → Afiliados + contact email); the public `affiliate-signup` edge function (honeypot + per-IP rate limit, generic responses) provisions the auth account, creates the `partners` row **live immediately**, emails the afiliado (branded welcome + GoTrue password-setup link redirecting to `app.apolofarmacia.com.mx/afiliados/`, already in the Auth allow-list) and alerts all org admins by email (`affiliate_new_signup`).
+
+The portal (own Supabase session, `storageKey: 'apolo-affiliate-auth'`) lets the afiliado edit their listing and upload a logo via the `get_my_partner` / `update_my_partner` definer RPCs (whitelisted fields only — `active`/`org_id`/`sort_order`/`coupon_code` stay staff-only). Logos live in the public `partner-logos` storage bucket, path-scoped to `{partner_id}/` for the owner, staff-writable too.
+
+Poster program: the registration checkbox (and a portal button later) sets `partners.poster_opt_in` and calls `generate_partner_coupon`, which inserts a reusable **10% code built from the business name** into the existing `discounts` table — instantly usable in the POS and visible in Admin → Descuentos — and emails the admins (`affiliate_poster_optin`) so they can coordinate the physical póster. The afiliado sees the code as a membership-style digital card in their portal. Migration: `20261006000000_affiliates.sql`.
 
 ## Consentimiento kiosk (`consentimiento.` subdomain)
 
