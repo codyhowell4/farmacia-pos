@@ -22,6 +22,14 @@ const emptyForm = {
   active: true,
 };
 
+const withTimeout = (promise, ms, step) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${step} tardó demasiado. Revisa tu conexión e inténtalo de nuevo.`)), ms)
+    ),
+  ]);
+
 const resizeLogo = (file) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -81,11 +89,23 @@ const AdminPartners = () => {
   };
 
   const uploadLogo = async (partnerId) => {
-    const blob = await resizeLogo(logoFile);
-    const path = `${partnerId}/logo-${Date.now()}.jpg`;
-    const { error } = await supabase.storage
-      .from('partner-logos')
-      .upload(path, blob, { contentType: 'image/jpeg' });
+    let blob;
+    let contentType = 'image/jpeg';
+    let ext = 'jpg';
+    try {
+      blob = await withTimeout(resizeLogo(logoFile), 10000, 'Procesar la imagen');
+    } catch (resizeErr) {
+      console.warn('resizeLogo falló; se sube el archivo original:', resizeErr);
+      blob = logoFile;
+      contentType = logoFile.type || 'image/jpeg';
+      ext = { 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }[contentType] || 'jpg';
+    }
+    const path = `${partnerId}/logo-${Date.now()}.${ext}`;
+    const { error } = await withTimeout(
+      supabase.storage.from('partner-logos').upload(path, blob, { contentType }),
+      30000,
+      'Subir el logo'
+    );
     if (error) throw error;
     const { data } = supabase.storage.from('partner-logos').getPublicUrl(path);
     return data.publicUrl;
@@ -120,21 +140,28 @@ const AdminPartners = () => {
     try {
       let partnerId = editing.id;
       if (partnerId) {
-        await updatePartner(partnerId, payload);
+        const logoUrl = logoFile ? await uploadLogo(partnerId) : null;
+        await withTimeout(
+          updatePartner(partnerId, { ...payload, ...(logoUrl ? { logo_url: logoUrl } : {}) }),
+          15000,
+          'Guardar los datos'
+        );
       } else {
-        const created = await createPartner(payload);
+        const created = await withTimeout(createPartner(payload), 15000, 'Guardar los datos');
         partnerId = created.id;
-      }
-      if (logoFile && partnerId) {
-        const logoUrl = await uploadLogo(partnerId);
-        await updatePartner(partnerId, { logo_url: logoUrl });
+        setEditing((prev) => (prev ? { ...prev, id: partnerId } : prev));
+        if (logoFile) {
+          const logoUrl = await uploadLogo(partnerId);
+          await withTimeout(updatePartner(partnerId, { logo_url: logoUrl }), 15000, 'Guardar el logo');
+        }
       }
       toast({ title: editing.id ? 'Afiliado actualizado' : 'Afiliado agregado' });
       setEditing(null);
       setLogoFile(null);
       await loadData();
     } catch (err) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+      console.error('AdminPartners save failed:', err);
+      toast({ title: 'No se pudo guardar', description: err.message, variant: 'destructive' });
     } finally {
       setSaving(false);
     }

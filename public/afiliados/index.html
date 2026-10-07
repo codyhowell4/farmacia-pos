@@ -722,6 +722,13 @@
       });
     }
 
+    function withTimeout(promise, ms, msg) {
+      return Promise.race([
+        promise,
+        new Promise(function (_, reject) { setTimeout(function () { reject(new Error(msg || 'timeout')); }, ms); })
+      ]);
+    }
+
     function handleLogoUpload(ev) {
       var file = ev.target.files && ev.target.files[0];
       ev.target.value = '';
@@ -735,9 +742,15 @@
         return;
       }
       showMsg('logo-msg', 'info', 'Subiendo logo...');
-      resizeImage(file).then(function (blob) {
-        var path = state.partner.id + '/logo-' + Date.now() + '.jpg';
-        return sb.storage.from('partner-logos').upload(path, blob, { contentType: 'image/jpeg' })
+      withTimeout(resizeImage(file), 10000, 'resize').catch(function () {
+        return null; // si falla el procesamiento, se sube el archivo original
+      }).then(function (blob) {
+        var original = blob === null;
+        if (original) blob = file;
+        var ct = original ? (file.type || 'image/jpeg') : 'image/jpeg';
+        var ext = original ? ({ 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }[file.type] || 'jpg') : 'jpg';
+        var path = state.partner.id + '/logo-' + Date.now() + '.' + ext;
+        return withTimeout(sb.storage.from('partner-logos').upload(path, blob, { contentType: ct }), 30000, 'timeout')
           .then(function (r) {
             if (r.error) throw r.error;
             var pub = sb.storage.from('partner-logos').getPublicUrl(path);
@@ -745,7 +758,7 @@
             if (!url) throw new Error('publicUrl');
             var payload = currentListingForm();
             payload.p_logo_url = url;
-            return sb.rpc('update_my_partner', payload).then(function (u) {
+            return withTimeout(sb.rpc('update_my_partner', payload), 15000, 'timeout').then(function (u) {
               if (u.error) throw u.error;
               state.partner = u.data;
               renderPortal();
@@ -753,7 +766,9 @@
           });
       }).catch(function (err) {
         console.error('logo upload', err);
-        showMsg('logo-msg', 'error', 'No se pudo subir el logo. Inténtalo con otra imagen.');
+        showMsg('logo-msg', 'error', err && err.message === 'timeout'
+          ? 'La conexión está lenta. Inténtalo de nuevo.'
+          : 'No se pudo subir el logo. Inténtalo con otra imagen.');
       });
     }
 
