@@ -165,7 +165,7 @@ const AdminKpis = () => {
               className="bg-white rounded-xl shadow-lg p-6 border border-slate-200 relative overflow-hidden"
             >
               <div className="relative z-10">
-                <p className="text-sm text-slate-600 mb-1 truncate pr-10">{tile.label}</p>
+                <p className="text-sm text-slate-600 mb-1 line-clamp-2 pr-10">{tile.label}</p>
                 <p className="text-3xl font-bold text-apolo-navy">{tile.value}</p>
                 <p className="text-xs text-slate-400 mt-1">{tile.subtitle}</p>
               </div>
@@ -191,7 +191,7 @@ const AdminKpis = () => {
                 className="bg-white rounded-xl shadow-lg p-4 border border-slate-200 relative overflow-hidden"
               >
                 <div className="relative z-10">
-                  <p className="text-xs text-slate-600 mb-1 truncate pr-8">{tile.label}</p>
+                  <p className="text-xs text-slate-600 mb-1 line-clamp-2 pr-8">{tile.label}</p>
                   <p className="text-2xl font-bold text-apolo-navy">{tile.big}</p>
                   {tile.small && <p className="text-xs text-slate-400 mt-0.5">{tile.small}</p>}
                 </div>
