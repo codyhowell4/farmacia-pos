@@ -616,6 +616,57 @@ export const getShifts = async () => {
   );
 };
 
+// ── PUNTOS / KPIs ───────────────────────────────────────────
+
+export const getPointActivityTypes = async () => {
+  const { data, error } = await supabase
+    .from('point_activity_types')
+    .select('*')
+    .eq('active', true)
+    .order('sort', { ascending: true });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getShiftPointsSummary = async (shiftId) => {
+  const { data, error } = await supabase
+    .from('shift_points_summary')
+    .select('*')
+    .eq('shift_id', shiftId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+};
+
+export const getShiftActivityCounts = async (shiftId) => {
+  const { data, error } = await supabase
+    .from('shift_activity_counts')
+    .select('*')
+    .eq('shift_id', shiftId);
+  if (error) throw error;
+  return data || [];
+};
+
+export const setShiftActivityCount = async (shiftId, activity, count) => {
+  const { data, error } = await supabase.rpc('set_shift_activity_count', {
+    p_shift_id: shiftId,
+    p_activity: activity,
+    p_count: count,
+  });
+  if (error) throw error;
+  return data;
+};
+
+export const getShiftPointsSummaries = async (sinceIso) => {
+  return fetchAllPages(() =>
+    supabase
+      .from('shift_points_summary')
+      .select('*')
+      .gte('opened_at', sinceIso)
+      .order('opened_at', { ascending: false })
+  );
+};
+
 // ── EXPENSES ────────────────────────────────────────────────
 
 export const getExpenses = async (startDate = null, endDate = null) => {

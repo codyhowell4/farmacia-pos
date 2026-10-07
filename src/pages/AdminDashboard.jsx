@@ -6,7 +6,7 @@ import {
   Users, Package, ShoppingCart, LogOut, BarChart3, Ticket, Menu, X, Clock, Shield,
   Settings, Truck, FileText, TrendingUp, TrendingDown, BookOpen, UserCircle, Stethoscope, Smartphone,
   ClipboardList, Pill, CalendarDays, AlertTriangle, ChevronDown, ChevronRight, UserPlus,
-  Award, FileSignature, HeartHandshake, FileWarning,
+  Award, FileSignature, HeartHandshake, FileWarning, Target,
 } from 'lucide-react';
 import ApoloBrand from '@/components/ApoloBrand';
 import { Button } from '@/components/ui/button';
@@ -37,6 +37,7 @@ import AdminMemberships from '@/components/admin/AdminMemberships';
 import AdminConsents from '@/components/admin/AdminConsents';
 import AdminArco from '@/components/admin/AdminArco';
 import AdminPartners from '@/components/admin/AdminPartners';
+import AdminKpis from '@/components/admin/AdminKpis';
 
 const AdminDashboard = () => {
   const { logout, user } = useAuth();
@@ -73,6 +74,7 @@ const AdminDashboard = () => {
     if (path.includes('/partners')) return 'partners';
     if (path.includes('/reorder-report')) return 'reorder-report';
     if (path.includes('/lost-sales')) return 'lost-sales';
+    if (path.includes('/kpis')) return 'kpis';
     return 'overview';
   };
   
@@ -223,7 +225,7 @@ const AdminDashboard = () => {
         <button
           onClick={() => setAnalyticsOpen(!analyticsOpen)}
           className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all ${
-            ['reports', 'reorder-report', 'analytics', 'lost-sales'].includes(activeTab)
+            ['reports', 'reorder-report', 'analytics', 'lost-sales', 'kpis'].includes(activeTab)
               ? 'bg-white/10 text-white'
               : 'text-white/70 hover:bg-white/10 hover:text-white'
           }`}
@@ -244,6 +246,9 @@ const AdminDashboard = () => {
               className="overflow-hidden ml-2"
             >
               <div className="space-y-1 pt-1">
+                <button onClick={() => navigateTo('/admin/kpis', 'kpis')} className={subNavButtonClass(isActive('kpis'))}>
+                  <Target className="w-4 h-4" /><span>KPIs</span>
+                </button>
                 <button onClick={() => navigateTo('/admin/reports', 'reports')} className={subNavButtonClass(isActive('reports'))}>
                   <FileText className="w-4 h-4" /><span>Reporte COFEPRIS</span>
                 </button>
@@ -390,6 +395,7 @@ const AdminDashboard = () => {
                 <Route path="/customers/:customerId" element={<AdminCustomerProfile />} />
                 <Route path="/reorder-report" element={<AdminReorderReport />} />
                 <Route path="/lost-sales" element={<AdminLostSales />} />
+                <Route path="/kpis" element={<AdminKpis />} />
                 <Route path="/settings" element={<AdminSettings />} />
               </Routes>
             </main>

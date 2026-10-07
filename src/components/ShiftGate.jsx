@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useShift } from '@/contexts/ShiftContext';
 import { useAuth } from '@/contexts/AuthContext';
+import PuntosBar from '@/components/PuntosBar';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -26,7 +27,7 @@ const ShiftGate = ({ children }) => {
     );
   }
 
-  if (activeShift) return children;
+  if (activeShift) return (<>{children}<PuntosBar /></>);
 
   const handleOpenShift = async (e) => {
     e.preventDefault();

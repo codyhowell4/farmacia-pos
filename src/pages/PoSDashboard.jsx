@@ -1589,7 +1589,7 @@ const PoSDashboard = () => {
     };
     
     return (
-      <div className="min-h-screen bg-apolo-bg p-4 sm:p-8">
+      <div className="min-h-screen bg-apolo-bg p-4 sm:p-8 pb-28">
         <Helmet><title>Checkout - Pharmacy PoS</title></Helmet>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto bg-white rounded-xl shadow-2xl p-4 sm:p-8">
           <h1 className="text-3xl sm:text-4xl font-bold text-center mb-6 sm:mb-8 bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">Cobrar</h1>
@@ -2109,7 +2109,7 @@ const PoSDashboard = () => {
   return (
     <>
       <Helmet><title>Punto de Venta - Farmacia</title></Helmet>
-      <div className="min-h-screen bg-apolo-bg">
+      <div className="min-h-screen bg-apolo-bg pb-28">
         <nav className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-40">
           <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16 gap-3">
