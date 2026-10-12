@@ -261,23 +261,46 @@ function updateActivityUI() {
 
 // ---------------- Page actions (window handlers) ----------------
 
+// These bands rarely advertise the UART service UUID — the FitPro app and
+// Gadgetbridge discover them by advertised name instead. Try service+names
+// first; if the picker comes back empty, fall back to showing all devices.
+const FITPRO_NAME_PREFIXES = ['M8', 'M7', 'M6', 'M5', 'M4', 'Y68', '716', 'D13', 'Watch', 'FitPro', 'Band', 'Smart', 'LX'];
+
+async function requestBand() {
+  const optionalServices = [NUS_SERVICE, BATTERY_SVC, DIS_SVC];
+  try {
+    return await navigator.bluetooth.requestDevice({
+      filters: [{ services: [NUS_SERVICE] }, ...FITPRO_NAME_PREFIXES.map(p => ({ namePrefix: p }))],
+      optionalServices,
+    });
+  } catch (e) {
+    if (e.name !== 'NotFoundError') throw e;
+    dlog('Sin coincidencias por filtro; mostrando todos los dispositivos BLE…');
+    setPulseraStatus('Elige tu pulsera en la lista (aparece como M8 o similar).');
+    return await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices });
+  }
+}
+
 async function connectPulsera() {
   if (Pulsera.connecting || Pulsera.connected) return;
   Pulsera.connecting = true;
   setPulseraStatus('Buscando tu pulsera… (despiértala con un toque)');
   dlog('Solicitando dispositivo…');
   try {
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [NUS_SERVICE] }],
-      optionalServices: [BATTERY_SVC, DIS_SVC],
-    });
+    const device = await requestBand();
     Pulsera.device = device;
     Pulsera.name = device.name || 'Pulsera M8';
     device.addEventListener('gattserverdisconnected', onGattDisconnected);
 
     setPulseraStatus('Conectando…');
     const server = await device.gatt.connect();
-    const svc = await server.getPrimaryService(NUS_SERVICE);
+    let svc;
+    try {
+      svc = await server.getPrimaryService(NUS_SERVICE);
+    } catch (e) {
+      device.gatt.disconnect();
+      throw new Error('ese dispositivo no parece ser una pulsera FitPro/M8');
+    }
     const rx = await svc.getCharacteristic(NUS_RX);
     Pulsera.tx = await svc.getCharacteristic(NUS_TX);
     await rx.startNotifications();
@@ -419,7 +442,7 @@ export function renderPulsera() {
       <button onclick="connectPulsera()" style="width: 100%; padding: 1rem 1.5rem; background: #1E2A8A; color: white; border: none; border-radius: 14px; font-size: 1.05rem; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(30,42,138,0.35);">
         Conectar Mi Pulsera
       </button>
-      <p id="pulsera-status" style="font-size: 0.8rem; color: var(--text-muted); margin: 0.75rem 0 0;">Enciende tu pulsera y mantenla cerca del teléfono.</p>
+      <p id="pulsera-status" style="font-size: 0.8rem; color: var(--text-muted); margin: 0.75rem 0 0;">Despierta tu pulsera con un toque y mantenla cerca del teléfono. Si tienes la app <b>FitPro</b> instalada, ciérrala primero — la pulsera solo se conecta a una app a la vez.</p>
       ${saved.name ? `<p style="font-size: 0.75rem; color: var(--text-muted); margin: 0.5rem 0 0;">Última pulsera vinculada: <b>${escapeHtml(saved.name)}</b></p>` : ''}
     </div>`;
 

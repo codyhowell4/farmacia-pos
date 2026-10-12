@@ -21,7 +21,7 @@ import { Integrations, renderIntegrationsList } from './integrations.js';
 import { VoiceAI, HealthFAQ } from './voiceAI.js';
 import { FastingTracker, SleepTracker, CheckInSystem } from './tracking.js';
 import { NotificationManager } from './notifications.js';
-import { renderPulsera } from './pulsera.js?v=1';
+import { renderPulsera } from './pulsera.js?v=2';
 
 // Toast notifications (CSS in style.css)
 function showToast(message, type = 'info') {
