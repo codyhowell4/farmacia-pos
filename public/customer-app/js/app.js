@@ -21,6 +21,7 @@ import { Integrations, renderIntegrationsList } from './integrations.js';
 import { VoiceAI, HealthFAQ } from './voiceAI.js';
 import { FastingTracker, SleepTracker, CheckInSystem } from './tracking.js';
 import { NotificationManager } from './notifications.js';
+import { renderPulsera } from './pulsera.js?v=1';
 
 // Toast notifications (CSS in style.css)
 function showToast(message, type = 'info') {
@@ -3185,11 +3186,21 @@ function renderPage(page) {
     return;
   }
   
+  // Salud section: legacy page ids land on the merged Salud page (right tab)
+  if (page === 'appointments' || page === 'prescripciones') {
+    window.__saludTab = page === 'prescripciones' ? 'recetas' : 'citas';
+    page = 'salud';
+    currentPage = 'salud';
+    navItems.forEach(nav => nav.classList.remove('active'));
+    const saludNav = document.querySelector('.bottom-nav .nav-item[data-page="salud"]');
+    if (saludNav) saludNav.classList.add('active');
+  }
+
   switch(page) {
     case 'consulta': renderConsulta(); break;
-    case 'appointments': renderAppointments(); break;
+    case 'salud': renderSalud(); break;
+    case 'pulsera': renderPulsera(); break;
     case 'membresias': renderMembresias(); break;
-    case 'prescripciones': renderPrescripciones(); break;
     case 'caregiver': renderCaregiver(); break;
     case 'store': renderStore(); break;
     case 'shop': renderShop(); break;
@@ -3597,7 +3608,7 @@ function renderHealth() {
     </div>`;
   } else {
     metricsHTML = `
-    <div class="medicine-card" style="flex-direction: column; padding: 1rem; margin-bottom: 1rem; background: var(--primary-light); border: 1px dashed var(--primary); cursor: pointer;" onclick="showHeightModal(() => renderSalud())">
+    <div class="medicine-card" style="flex-direction: column; padding: 1rem; margin-bottom: 1rem; background: var(--primary-light); border: 1px dashed var(--primary); cursor: pointer;" onclick="showHeightModal(() => renderSaludRetired())">
       <div style="text-align: center;">
         <div style="font-size: 2rem; margin-bottom: 0.5rem;">📏</div>
         <div style="font-weight: 600; color: var(--primary); margin-bottom: 0.25rem;">Configurar altura para calcular métricas</div>
@@ -7637,7 +7648,7 @@ window.finishGoalSetup = function() {
 // SALUD PAGE - Medical Records, Prescriptions, Vaccines, Exams
 // ============================================
 
-function renderSalud() {
+function renderSaludRetired() {
   const prescriptions = Store.getPrescriptions() || [];
   const reminders = Store.getMedicineReminders() || [];
   const schedules = Store.getMedicineSchedules() || [];
@@ -8150,7 +8161,7 @@ window.saveDetectedPrescriptions = function(count) {
   }
   
   document.querySelector('.modal-overlay')?.remove();
-  renderSalud();
+  renderSaludRetired();
   showToast(`${count} medicamento(s) guardado(s)`, 'success');
 };
 
@@ -8246,14 +8257,14 @@ window.saveManualPrescription = async function() {
   }
   
   document.querySelector('.modal-overlay')?.remove();
-  renderSalud();
+  renderSaludRetired();
   showToast(useSupabase ? 'Medicamento guardado en el sistema' : 'Medicamento guardado', 'success');
 };
 
 window.deletePrescription = function(id) {
   if (confirm('¿Eliminar esta receta?')) {
     Store.deletePrescription(id);
-    renderSalud();
+    renderSaludRetired();
   }
 };
 
@@ -8439,23 +8450,23 @@ window.saveSmartReminder = function(prescriptionId) {
   });
   
   document.querySelector('.modal-overlay')?.remove();
-  renderSalud();
+  renderSaludRetired();
   showToast(`${doseTimes.length} recordatorios creados`, 'success');
 };
 
 window.toggleReminder = function(id) {
   Store.toggleMedicineReminder(id);
-  renderSalud();
+  renderSaludRetired();
 };
 
 window.markDoseTaken = function(scheduleId, doseId) {
   Store.markDoseTaken(scheduleId, doseId);
-  renderSalud();
+  renderSaludRetired();
 };
 
 window.markDoseSkipped = function(scheduleId, doseId) {
   Store.markDoseSkipped(scheduleId, doseId);
-  renderSalud();
+  renderSaludRetired();
 };
 
 window.deleteSchedule = function(scheduleId) {
@@ -8463,7 +8474,7 @@ window.deleteSchedule = function(scheduleId) {
     Store.deleteSchedule(scheduleId);
     // Cancel any pending notifications for this schedule
     NotificationManager.cancelScheduleNotifications(scheduleId);
-    renderSalud();
+    renderSaludRetired();
   }
 };
 
@@ -8699,7 +8710,7 @@ window.submitRefillRequest = async function(prescriptionId) {
   }
   
   document.querySelector('.modal-overlay').remove();
-  renderSalud();
+  renderSaludRetired();
   showToast(useSupabase
     ? `Solicitud enviada al sistema — Número: ${request.id}`
     : `Solicitud enviada — Número: ${request.id}`,
@@ -8782,7 +8793,7 @@ window.cancelRefillRequest = function(requestId) {
   if (confirm('¿Cancelar esta solicitud de recarga?')) {
     Store.cancelRefillRequest(requestId);
     document.querySelector('.modal-overlay').remove();
-    renderSalud();
+    renderSaludRetired();
     showToast('Solicitud cancelada', 'info');
   }
 };
@@ -8867,7 +8878,7 @@ window.saveVaccine = function(vaccineId) {
   });
   
   document.querySelector('.modal-overlay')?.remove();
-  renderSalud();
+  renderSaludRetired();
   showToast(`${vaccine.name} registrada`, 'success');
 };
 
@@ -8996,7 +9007,7 @@ window.saveExamResult = function() {
   });
   
   document.querySelector('.modal-overlay')?.remove();
-  renderSalud();
+  renderSaludRetired();
   showToast('Estudio guardado', 'success');
 };
 
@@ -10660,19 +10671,50 @@ window.confirmInPersonBooking = async function(locationId) {
 // APPOINTMENTS PAGE - Track all appointments
 // ============================================
 
-async function renderAppointments() {
-  // Show loading state
-  mainContent.innerHTML = `
-    <!-- Header -->
+// ============================================
+// SALUD SECTION - merged Mis Citas + Mis Recetas (tabs)
+// ============================================
+
+function saludHeader(active, opts = {}) {
+  const subtitle = opts.subtitle || '';
+  const action = opts.action || '';
+  const tabBtn = (tab, label) =>
+    `<button onclick="switchSaludTab('${tab}')" style="flex: 1; padding: 0.5rem; border: none; border-radius: 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer; ${active === tab ? 'background: white; color: #1E2A8A;' : 'background: rgba(255,255,255,0.15); color: white;'}">${label}</button>`;
+  return `
     <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">Mis Citas</h2>
-          <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">Gestiona tus consultas</p>
+          <h2 style="margin: 0; font-size: 1.3rem;">Salud</h2>
+          <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">${subtitle}</p>
         </div>
-        <button onclick="renderConsulta()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Nueva</button>
+        ${action}
+      </div>
+      <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+        ${tabBtn('citas', 'Citas')}
+        ${tabBtn('recetas', 'Recetas')}
       </div>
     </div>
+  `;
+}
+
+const SALUD_CITAS_ACTION = '<button onclick="renderConsulta()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Nueva</button>';
+const SALUD_RECETAS_ACTION = '<button onclick="showUploadPrescriptionModal()" style="background: rgba(255,255,255,0.2); color: #1a1a2e; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Subir</button>';
+
+function renderSalud() {
+  if (window.__saludTab === 'recetas') return renderPrescripciones();
+  return renderAppointments();
+}
+
+window.switchSaludTab = function(tab) {
+  window.__saludTab = tab === 'recetas' ? 'recetas' : 'citas';
+  renderSalud();
+};
+window.renderSalud = renderSalud;
+
+async function renderAppointments() {
+  // Show loading state
+  mainContent.innerHTML = `
+    ${saludHeader('citas', { subtitle: 'Gestiona tus consultas', action: SALUD_CITAS_ACTION })}
     <div style="padding: 2rem 1rem; text-align: center;">
       <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
       <div style="color: var(--text-muted); font-size: 1rem;">Cargando citas...</div>
@@ -10766,16 +10808,7 @@ async function renderAppointments() {
   const hasUpcoming = activeAppointments.length > 0 || upcomingVideos.length > 0;
   
   mainContent.innerHTML = `
-    <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">Mis Citas</h2>
-          <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">Gestiona tus consultas</p>
-        </div>
-        <button onclick="renderConsulta()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Nueva</button>
-      </div>
-    </div>
+    ${saludHeader('citas', { subtitle: 'Gestiona tus consultas', action: SALUD_CITAS_ACTION })}
 
     <!-- Upcoming Appointments -->
     <div style="padding: 1rem;">
@@ -11089,18 +11122,10 @@ async function renderPrescripciones() {
   
   // Show loading state
   mainContent.innerHTML = `
-    <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">Mis Recetas</h2>
-          <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">
-            ${activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas de ${activeProfile?.name}`}
-          </p>
-        </div>
-        <button onclick="showUploadPrescriptionModal()" style="background: rgba(255,255,255,0.2); color: #1a1a2e; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Subir</button>
-      </div>
-    </div>
+    ${saludHeader('recetas', {
+      subtitle: activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas de ${activeProfile?.name}`,
+      action: SALUD_RECETAS_ACTION
+    })}
     <div style="padding: 2rem 1rem; text-align: center;">
       <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
       <div style="color: var(--text-muted); font-size: 1rem;">Cargando recetas...</div>
@@ -11146,19 +11171,10 @@ async function renderPrescripciones() {
   const activeCount = activePrescriptions.filter(p => !p.status || p.status === 'active').length;
   
   mainContent.innerHTML = `
-    <!-- Header -->
-    <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <div>
-          <h2 style="margin: 0; font-size: 1.3rem;">Mis Recetas</h2>
-          <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">
-            ${activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas de ${activeProfile?.name}`}
-            ${activeCount > 0 ? `• ${activeCount} activas` : ''}
-          </p>
-        </div>
-        <button onclick="showUploadPrescriptionModal()" style="background: rgba(255,255,255,0.2); color: #1a1a2e; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Subir</button>
-      </div>
-    </div>
+    ${saludHeader('recetas', {
+      subtitle: (activeProfile?.isMain ? 'Todas tus recetas médicas' : `Recetas de ${activeProfile?.name}`) + (activeCount > 0 ? ` • ${activeCount} activas` : ''),
+      action: SALUD_RECETAS_ACTION
+    })}
 
     <!-- Pending Consent Documents -->
     ${pendingConsents.length > 0 ? `
@@ -12949,7 +12965,7 @@ window.markWellnessDone = function(reminderId) {
   showWellnessReminders();
   
   // Refresh health page if visible
-  if (currentPage === 'health') renderSalud();
+  if (currentPage === 'health') renderSaludRetired();
 };
 
 window.scheduleWellness = function(reminderId) {
@@ -12962,7 +12978,7 @@ window.scheduleWellness = function(reminderId) {
   
   document.querySelector('.modal-overlay')?.remove();
   showWellnessReminders();
-  if (currentPage === 'health') renderSalud();
+  if (currentPage === 'health') renderSaludRetired();
 };
 
 // ============================================

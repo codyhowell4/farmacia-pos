@@ -1306,26 +1306,6 @@ const PoSDashboard = () => {
           }
         }
 
-        // ── Fire-and-forget Akaunting sync ──
-        setTimeout(async () => {
-          try {
-            const { syncSale } = await import('@/services/akauntingSync');
-            await syncSale({
-              ...sale,
-              sale_items: saleItems,
-              sale_payments: payments,
-              timestamp: saleRecord.timestamp,
-            });
-          } catch (syncErr) {
-            console.warn('Akaunting auto-sync failed:', syncErr.message);
-            toast({
-              title: 'Advertencia de sincronización',
-              description: `La venta se guardó pero no se sincronizó con Akaunting: ${syncErr.message}`,
-              variant: 'destructive',
-            });
-          }
-        }, 0);
-
         logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(finalTotal)} | ${isSplitPayment ? 'split' : paymentMethod} | ${cart.length} item(s)` });
         toast({ title: '¡Venta completada!', description: `${formatMXN(finalTotal)} ${isSplitPayment ? '(pago dividido)' : ''}` });
 

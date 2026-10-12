@@ -9,8 +9,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useToast } from '@/components/ui/use-toast';
 import { formatMXN } from '@/lib/currency';
 import { getShifts, getExpenses, createExpense, updateExpense, deleteExpense, getManualRevenue, createManualRevenue, updateManualRevenue, deleteManualRevenue } from '@/lib/db';
-import AkauntingConnectionCard from './AkauntingConnectionCard';
-import AkauntingSyncPanel from './AkauntingSyncPanel';
 
 const EXPENSE_CATEGORIES = [
   'Artículos de oficina',
@@ -527,13 +525,6 @@ const AdminAccounting = () => {
               </tbody>
             </table>
           </div>
-        </div>
-
-        {/* Akaunting Integration */}
-        <div className="pt-6 border-t border-slate-200">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Integración con Akaunting</h3>
-          <AkauntingConnectionCard />
-          <AkauntingSyncPanel />
         </div>
       </div>
 
