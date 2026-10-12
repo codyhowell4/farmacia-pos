@@ -219,6 +219,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-public-key-here
 - `bank_accounts` — transfer destination accounts
 - `stock_adjustments` — manual inventory adjustments with reason
 - `prescriptions` — COFEPRIS prescription records
+- `pulsera_daily` — Pulsera Apolo Básico (FitPro-protocol band, Web Bluetooth in the customer portal's Pulsera section) wellness data: one row per customer per day (pasos, distancia_m, kcal, última FC/SpO2/PA, batería, firmware), upserted from `public/customer-app/js/pulsera.js`. RLS: customer reads/upserts own rows, staff read-only. Patient-generated consumer-band data — NOT part of the legal expediente (NOM-004); localStorage stays the instant cache, this table is the durable copy.
 
 ### Schema File
 The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional migration/fix files exist (`supabase/schemas/PHASE1_SCHEMA.sql` through `supabase/schemas/PHASE5_SCHEMA.sql`, `supabase/schemas/COMPLETE_DATABASE_FIX.sql`, etc.) — these are historical; the single source of truth for new setups is `supabase/schemas/supabase_schema.sql`.
