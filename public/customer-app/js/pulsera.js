@@ -30,6 +30,12 @@ const CMD_NOTIFY_MSG   = 0x12;
 const CMD_DAY_SUMMARY  = 0x06; // request; band replies with cmd 0x0c + may stream 0x02/0x03
 const CMD_GET_HW_INFO  = 0x10;
 const CMD_BAND_INFO    = 0x02;
+const CMD_NOTIFY_ENABLE = 0x07; // payload: 11 bytes of 0x01 = all pushes on
+const CMD_DISPLAY_ON_LIFT = 0x09;
+const CMD_DND          = 0x14;
+const CMD_LONG_SIT     = 0x05;
+const CMD_SET_STEP_GOAL = 0x03;
+const CMD_ALARM        = 0x02;
 
 const RX_STEP_DATA     = 0x02;
 const RX_SLEEP_DATA    = 0x03;
@@ -160,7 +166,9 @@ function handleRx(event) {
       sendAck(group, bytes[1], bytes[2]);
       Pulsera.activity = { steps, distance, calories, at: Date.now() };
       savePulsera();
+      recordDaySummary(Pulsera.activity);
       updateActivityUI();
+      updateWeekUI();
       setPulseraStatus(`Sincronizado: ${steps.toLocaleString()} pasos hoy.`);
     } else if (cmd === RX_STEP_DATA || cmd === RX_SLEEP_DATA) {
       sendAck(group, bytes[1], bytes[2]);
@@ -207,6 +215,9 @@ async function initSequence() {
   await bleSend(craftFrame(GRP_REQUEST, 0x0f)); await sleep(200);
   await bleSend(craftFrame(GRP_REQUEST, CMD_GET_HW_INFO)); await sleep(200);
   await bleSend(craftFrame(GRP_BANDINFO, CMD_BAND_INFO)); await sleep(200);
+  // Enable message/notification pushes — without this the band silently
+  // swallows pushed messages (no vibration, no popup).
+  await bleSend(craftFrame(GRP_GENERAL, CMD_NOTIFY_ENABLE, Array(11).fill(1))); await sleep(200);
   dlog('Secuencia de inicio enviada.');
 }
 
@@ -310,6 +321,7 @@ async function connectPulsera() {
     await readBattery();
     await readFirmware();
     await initSequence();
+    await applyStoredSettings();
 
     Pulsera.connected = true;
     Pulsera.connecting = false;
@@ -405,6 +417,176 @@ function copyDebugLog() {
   }
 }
 
+// ---------------- Band settings / alarms / goals / history ----------------
+
+function loadPulseraSettings() {
+  const fallback = { wrist: false, dnd: false, sedentary: false, stepGoal: 8000, alarms: [] };
+  try {
+    return { ...fallback, ...JSON.parse(localStorage.getItem('pulseraSettings') || '{}') };
+  } catch (e) { return fallback; }
+}
+
+function savePulseraSettings(s) {
+  try { localStorage.setItem('pulseraSettings', JSON.stringify(s)); } catch (e) { /* non-fatal */ }
+}
+
+function hm(mins) { return [(mins >> 8) & 0xff, mins & 0xff]; }
+
+async function sendWristSense(on) {
+  await bleSend(craftFrame(GRP_GENERAL, CMD_DISPLAY_ON_LIFT, [on ? 1 : 0, ...hm(7 * 60), ...hm(23 * 60)]));
+}
+
+async function sendDnd(on) {
+  await bleSend(craftFrame(GRP_GENERAL, CMD_DND, [on ? 1 : 0, ...hm(0), ...hm(23 * 60 + 59)]));
+}
+
+async function sendSedentary(on) {
+  await bleSend(craftFrame(GRP_GENERAL, CMD_LONG_SIT,
+    on ? [0x00, 0x01, 0x00, 0x96, 0x04, 0x08, 0x16, 0x7f]
+       : [0x00, 0x00, 0x00, 0x96, 0x04, 0x08, 0x16, 0x7f]));
+}
+
+async function sendStepGoal(goal) {
+  const g = Math.max(0, Math.min(0xffffffff, Math.round(goal)));
+  await bleSend(craftFrame(GRP_GENERAL, CMD_SET_STEP_GOAL, [(g >>> 24) & 0xff, (g >>> 16) & 0xff, (g >>> 8) & 0xff, g & 0xff]));
+}
+
+// The band keeps up to 8 daily alarms; the payload is the full set, so
+// adding/removing one means re-sending them all. Empty payload clears all.
+async function pushAlarms(alarms) {
+  const now = new Date();
+  const payload = [];
+  for (const a of alarms.slice(0, 8)) {
+    const v = BigInt(0x7f) | (1n << 11n) |
+      (BigInt(a.m) << 14n) | (BigInt(a.h) << 20n) |
+      (BigInt(now.getDate()) << 25n) | (BigInt(now.getMonth() + 1) << 30n) |
+      (BigInt(now.getFullYear() - 2000) << 34n);
+    payload.push(
+      Number((v >> 32n) & 0xffn), Number((v >> 24n) & 0xffn),
+      Number((v >> 16n) & 0xffn), Number((v >> 8n) & 0xffn), Number(v & 0xffn)
+    );
+  }
+  await bleSend(craftFrame(GRP_GENERAL, CMD_ALARM, payload));
+}
+
+async function applyStoredSettings() {
+  const s = loadPulseraSettings();
+  try {
+    if (s.wrist) { await sendWristSense(true); await sleep(150); }
+    if (s.dnd) { await sendDnd(true); await sleep(150); }
+    if (s.sedentary) { await sendSedentary(true); await sleep(150); }
+    if (s.stepGoal) { await sendStepGoal(s.stepGoal); await sleep(150); }
+    if (s.alarms && s.alarms.length) { await pushAlarms(s.alarms); await sleep(150); }
+    dlog('Ajustes aplicados a la pulsera.');
+  } catch (e) { dlog('Error aplicando ajustes: ' + e.message); }
+}
+
+async function toggleBandSetting(key) {
+  const s = loadPulseraSettings();
+  s[key] = !s[key];
+  savePulseraSettings(s);
+  renderPulsera();
+  if (!Pulsera.connected) return;
+  try {
+    if (key === 'wrist') await sendWristSense(s.wrist);
+    if (key === 'dnd') await sendDnd(s.dnd);
+    if (key === 'sedentary') await sendSedentary(s.sedentary);
+    setPulseraStatus('Ajuste enviado a la pulsera.');
+  } catch (e) { setPulseraStatus('Error: ' + e.message); }
+}
+
+async function setStepGoalFromInput() {
+  const el = document.getElementById('pulsera-goal-input');
+  const goal = parseInt(el && el.value, 10);
+  if (!goal || goal < 100) { setPulseraStatus('Escribe una meta válida (ej. 8000).'); return; }
+  const s = loadPulseraSettings();
+  s.stepGoal = goal;
+  savePulseraSettings(s);
+  renderPulsera();
+  if (Pulsera.connected) {
+    try {
+      await sendStepGoal(goal);
+      setPulseraStatus('Meta enviada: ' + goal.toLocaleString() + ' pasos.');
+    } catch (e) { setPulseraStatus('Error: ' + e.message); }
+  } else {
+    setPulseraStatus('Meta guardada; se envía al conectar la pulsera.');
+  }
+}
+
+async function addPulseraAlarm() {
+  const el = document.getElementById('pulsera-alarm-time');
+  const val = el && el.value;
+  if (!val) { setPulseraStatus('Elige la hora de la alarma.'); return; }
+  const [h, m] = val.split(':').map(Number);
+  const s = loadPulseraSettings();
+  if (s.alarms.length >= 8) { setPulseraStatus('Máximo 8 alarmas.'); return; }
+  if (s.alarms.some(a => a.h === h && a.m === m)) { setPulseraStatus('Esa alarma ya existe.'); return; }
+  s.alarms.push({ h, m });
+  s.alarms.sort((a, b) => a.h * 60 + a.m - (b.h * 60 + b.m));
+  savePulseraSettings(s);
+  renderPulsera();
+  if (Pulsera.connected) {
+    try {
+      await pushAlarms(s.alarms);
+      setPulseraStatus('Alarma guardada en la pulsera (suena todos los días).');
+    } catch (e) { setPulseraStatus('Error: ' + e.message); }
+  } else {
+    setPulseraStatus('Alarma guardada; se envía al conectar la pulsera.');
+  }
+}
+
+async function delPulseraAlarm(i) {
+  const s = loadPulseraSettings();
+  s.alarms.splice(i, 1);
+  savePulseraSettings(s);
+  renderPulsera();
+  if (Pulsera.connected) {
+    try {
+      await pushAlarms(s.alarms);
+      setPulseraStatus('Alarma eliminada.');
+    } catch (e) { setPulseraStatus('Error: ' + e.message); }
+  }
+}
+
+function loadPulseraHistory() {
+  try { return JSON.parse(localStorage.getItem('pulseraHistory') || '{}'); } catch (e) { return {}; }
+}
+
+function recordDaySummary(activity) {
+  const hist = loadPulseraHistory();
+  const key = new Date(activity.at).toLocaleDateString('en-CA'); // local YYYY-MM-DD
+  hist[key] = { steps: activity.steps, distance: activity.distance, calories: activity.calories };
+  const keys = Object.keys(hist).sort();
+  while (keys.length > 14) { delete hist[keys.shift()]; }
+  try { localStorage.setItem('pulseraHistory', JSON.stringify(hist)); } catch (e) { /* non-fatal */ }
+}
+
+function weeklyBarsHtml() {
+  const hist = loadPulseraHistory();
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toLocaleDateString('en-CA');
+    days.push({
+      label: d.toLocaleDateString('es-MX', { weekday: 'short' }).replace('.', ''),
+      steps: hist[key] ? hist[key].steps : null,
+    });
+  }
+  const max = Math.max(1, ...days.map(d => d.steps || 0));
+  const bars = days.map(d => `
+    <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px; height: 58px;">
+      <div style="width: 100%; max-width: 26px; height: ${Math.max(4, Math.round(((d.steps || 0) / max) * 44))}px; border-radius: 4px; background: ${d.steps == null ? 'rgba(30,42,138,0.10)' : '#1E2A8A'};" title="${d.steps == null ? 'sin datos' : d.steps.toLocaleString() + ' pasos'}"></div>
+      <div style="font-size: 0.6rem; color: var(--text-muted); text-transform: capitalize;">${d.label}</div>
+    </div>`).join('');
+  return `<div style="display: flex; gap: 0.35rem;">${bars}</div>`;
+}
+
+function updateWeekUI() {
+  const w = document.getElementById('pulsera-week');
+  if (w) w.innerHTML = weeklyBarsHtml();
+}
+
 // ---------------- Page render ----------------
 
 export function renderPulsera() {
@@ -474,6 +656,11 @@ export function renderPulsera() {
         </div>
       </div>
 
+      <div style="margin-bottom: 1rem;">
+        <div style="font-size: 0.7rem; color: var(--text-muted); font-weight: 600; margin-bottom: 0.25rem;">ESTA SEMANA (pasos)</div>
+        <div id="pulsera-week">${weeklyBarsHtml()}</div>
+      </div>
+
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
         <button onclick="pulseraMeasureHR()" style="padding: 0.7rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">❤️ Medir frecuencia</button>
         <button onclick="pulseraSync()" style="padding: 0.7rem; background: #1E2A8A; color: white; border: none; border-radius: 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">🔄 Sincronizar pasos</button>
@@ -484,6 +671,42 @@ export function renderPulsera() {
       <button onclick="pulseraDisconnect()" style="width: 100%; margin-top: 0.5rem; padding: 0.5rem; background: none; color: #b91c1c; border: none; font-size: 0.8rem; cursor: pointer;">Desconectar</button>
     </div>`;
 
+  const settings = loadPulseraSettings();
+  const toggleRow = (key, label) => `
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 0.55rem 0; border-bottom: 1px solid rgba(0,0,0,0.05);">
+      <span style="font-size: 0.85rem; color: var(--text-secondary);">${label}</span>
+      <button onclick="pulseraToggle('${key}')" aria-label="${label}" style="flex-shrink: 0; width: 46px; height: 26px; border-radius: 13px; border: none; cursor: pointer; position: relative; background: ${settings[key] ? '#46AC78' : '#cbd5e1'};">
+        <span style="position: absolute; top: 3px; ${settings[key] ? 'right: 3px;' : 'left: 3px;'} width: 20px; height: 20px; border-radius: 50%; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.25);"></span>
+      </button>
+    </div>`;
+
+  const settingsCard = `
+    <div class="glass-card" style="margin: 1rem; padding: 1.25rem;">
+      <div style="font-weight: 700; margin-bottom: 0.25rem; color: var(--text-secondary);">⚙️ Ajustes de la pulsera</div>
+      ${Pulsera.connected ? '' : `<div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.25rem;">Se aplican automáticamente al conectar.</div>`}
+      ${toggleRow('wrist', '🙋 Levantar la muñeca para ver la pantalla (7:00–23:00)')}
+      ${toggleRow('sedentary', '🪑 Aviso para moverte si llevas mucho tiempo sentado (8:00–22:00)')}
+      ${toggleRow('dnd', '🔕 No molestar (silencia las vibraciones)')}
+      <div style="display: flex; gap: 0.5rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid rgba(0,0,0,0.05);">
+        <span style="font-size: 0.85rem; color: var(--text-secondary); flex: 1;">🎯 Meta diaria de pasos</span>
+        <input id="pulsera-goal-input" type="number" min="100" step="500" value="${settings.stepGoal}" style="width: 90px; padding: 0.4rem 0.5rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem;">
+        <button onclick="pulseraSetGoal()" style="padding: 0.4rem 0.8rem; background: #1E2A8A; color: white; border: none; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">Guardar</button>
+      </div>
+      <div style="padding: 0.6rem 0 0;">
+        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem;">⏰ Alarmas en la pulsera <span style="color: var(--text-muted); font-size: 0.75rem;">(diarias, máx. 8 — ideales para horarios de medicamentos)</span></div>
+        ${settings.alarms.length === 0 ? `<div style="font-size: 0.78rem; color: var(--text-muted);">Sin alarmas todavía.</div>` : ''}
+        ${settings.alarms.map((a, i) => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.3rem 0;">
+          <span style="font-weight: 700; color: #1E2A8A; font-size: 1.05rem;">${String(a.h).padStart(2, '0')}:${String(a.m).padStart(2, '0')}</span>
+          <button onclick="pulseraDelAlarm(${i})" style="background: none; border: none; color: #b91c1c; font-size: 0.8rem; cursor: pointer;">Eliminar</button>
+        </div>`).join('')}
+        <div style="display: flex; gap: 0.5rem; margin-top: 0.45rem;">
+          <input id="pulsera-alarm-time" type="time" style="flex: 1; padding: 0.45rem 0.5rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.9rem;">
+          <button onclick="pulseraAddAlarm()" style="padding: 0.45rem 0.9rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer;">+ Agregar</button>
+        </div>
+      </div>
+    </div>`;
+
   mainContent.innerHTML = `
     <div id="pulsera-page">
       <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
@@ -492,6 +715,8 @@ export function renderPulsera() {
       </div>
 
       ${!bleOK ? compatCard : (Pulsera.connected ? dashboardCard : connectCard)}
+
+      ${bleOK ? settingsCard : ''}
 
       <div class="glass-card" style="margin: 1rem; padding: 1.25rem;">
         <div style="font-weight: 700; margin-bottom: 0.5rem; color: var(--text-secondary);">⌚ Tu pulsera M8</div>
@@ -539,3 +764,7 @@ window.pulseraSync = syncActivity;
 window.pulseraFind = findBand;
 window.pulseraTestReminder = testReminder;
 window.pulseraCopyLog = copyDebugLog;
+window.pulseraToggle = toggleBandSetting;
+window.pulseraSetGoal = setStepGoalFromInput;
+window.pulseraAddAlarm = addPulseraAlarm;
+window.pulseraDelAlarm = delPulseraAlarm;
