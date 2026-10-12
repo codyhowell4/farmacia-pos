@@ -167,6 +167,10 @@ const MembershipPosLookup = ({
           </Button>
         </div>
 
+        {selectedMember?.pulsera_redeemed_at && (
+          <p className="text-xs text-amber-700 px-1">⌚ {selectedMember.name} ya recibió su Pulsera Apolo Básico — próximas se cobran a precio normal.</p>
+        )}
+
         {members.length > 1 && (
           <div className="bg-white border border-slate-200 rounded-lg p-2">
             <p className="text-xs font-semibold text-slate-500 mb-1.5 uppercase">Miembro beneficiario</p>
@@ -181,7 +185,7 @@ const MembershipPosLookup = ({
                       : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                   }`}
                 >
-                  {m.name} {m.is_owner && '(titular)'}
+                  {m.name} {m.is_owner && '(titular)'}{m.pulsera_redeemed_at && ' · Pulsera ✓'}
                 </button>
               ))}
             </div>

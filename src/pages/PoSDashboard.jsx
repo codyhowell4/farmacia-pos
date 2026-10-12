@@ -272,11 +272,36 @@ const PoSDashboard = () => {
 
   const getRevisionType = (item) => item?.revision_type || null;
 
+  // Pulsera Apolo Básico: with an active membership the selected member's
+  // FIRST pulsera rides at $0. The redemption is tracked on the member's
+  // account (membership_members.pulsera_redeemed_at), so one per member.
+  const isMembershipPulsera = (item) => !!item && item.is_membership_pulsera === true;
+  const pulseraEligibleMember = (membership, member) =>
+    membership?.status === 'active' && member && !member.pulsera_redeemed_at ? member : null;
+
+  // Reprices every pulsera line against a membership/member pair. At most
+  // one free pulsera per ticket (the first eligible line wins); the rest
+  // return to catalog price.
+  const repricePulseraLines = (items, membership, member) => {
+    const eligible = !!pulseraEligibleMember(membership, member);
+    let freeClaimed = false;
+    return items.map((item) => {
+      if (!isMembershipPulsera(item)) return item;
+      if (eligible && !freeClaimed) {
+        freeClaimed = true;
+        return { ...item, price: 0, quantity: 1 };
+      }
+      return { ...item, price: item.originalPrice ?? item.price };
+    });
+  };
+
   // Benefit pricing must never survive the benefit itself: when the attached
   // membership/member changes, revision lines (allocated to a specific
   // member) are removed, and — when no active membership remains —
   // blood-pressure and membership-consulta lines return to catalog price.
-  const repriceCartForMembershipChange = (currentCart, { membershipStillActive }) => {
+  // Pulsera lines reprice in both directions against the new pair.
+  const repriceCartForMembershipChange = (currentCart, { membership, member }) => {
+    const membershipStillActive = membership?.status === 'active';
     let removedRevisions = 0;
     const next = [];
     for (const item of currentCart) {
@@ -290,14 +315,20 @@ const PoSDashboard = () => {
       }
       next.push(item);
     }
-    return { next, removedRevisions };
+    return { next: repricePulseraLines(next, membership, member), removedRevisions };
   };
 
   const handleSelectMembership = (membership) => {
     const membershipChanged = membership?.id !== selectedMembership?.id;
     if (membershipChanged && cart.length > 0) {
+      // Reprice against the owner, the member MembershipPosLookup will
+      // auto-select (its own effect then finds nothing to change).
+      const nextOwner = membership
+        ? (membership.membership_members || []).find((m) => m.is_owner) || membership.membership_members?.[0] || null
+        : null;
       const { next, removedRevisions } = repriceCartForMembershipChange(cart, {
-        membershipStillActive: membership?.status === 'active',
+        membership,
+        member: nextOwner,
       });
       setCart(next);
       if (removedRevisions > 0) {
@@ -318,10 +349,13 @@ const PoSDashboard = () => {
   const handleSelectMember = (member) => {
     // Revision lines are member-specific: switching beneficiary drops them.
     // Blood-pressure/consulta pricing is a membership-level benefit and
-    // stays while the membership is active.
-    if (selectedMember?.id && member?.id !== selectedMember.id && cart.length > 0) {
+    // stays while the membership is active. Pulsera pricing IS member-level
+    // (one free per member), so it reprices on every beneficiary change.
+    const memberChanged = member?.id !== selectedMember?.id;
+    if (memberChanged && cart.length > 0) {
       const { next, removedRevisions } = repriceCartForMembershipChange(cart, {
-        membershipStillActive: selectedMembership?.status === 'active',
+        membership: selectedMembership,
+        member,
       });
       setCart(next);
       if (removedRevisions > 0) {
@@ -338,7 +372,8 @@ const PoSDashboard = () => {
     const wasSignup = !!selectedMembership?._signup;
     if (cart.length > 0) {
       const { next, removedRevisions } = repriceCartForMembershipChange(cart, {
-        membershipStillActive: false,
+        membership: null,
+        member: null,
       });
       // A signup's fee product leaves the ticket along with its benefits.
       setCart(wasSignup ? next.filter((item) => !isMembershipFeeItem(item)) : next);
@@ -432,6 +467,27 @@ const PoSDashboard = () => {
       finalPrice = 0;
     }
 
+    // Pulsera Apolo Básico: the selected member's first one is a membership
+    // benefit ($0); anything else sells at catalog. One free pulsera per
+    // member per account — enforced again server-side at checkout.
+    if (isMembershipPulsera(medicine)) {
+      const eligible = !!pulseraEligibleMember(selectedMembership, selectedMember);
+      const freeLineInCart = cart.some((i) => isMembershipPulsera(i) && Number(i.price) === 0);
+      if (eligible && !freeLineInCart) {
+        finalPrice = 0;
+      } else if (eligible && freeLineInCart) {
+        toast({
+          title: '1 pulsera gratis por miembro',
+          description: `La pulsera de ${selectedMember.name} ya está en el ticket. Esta se cobra a precio normal.`,
+        });
+      } else if (membershipActive && selectedMember?.pulsera_redeemed_at) {
+        toast({
+          title: 'Beneficio ya usado',
+          description: `${selectedMember.name} ya recibió su pulsera gratis. Se cobra precio normal.`,
+        });
+      }
+    }
+
     // Membership revisions require an eligible member and are discounted to $0.
     if (isMembershipRevision(medicine)) {
       if (!membershipActive || !selectedMember) {
@@ -460,6 +516,14 @@ const PoSDashboard = () => {
     const existingItem = cart.find(item => item.id === medicine.id);
     let itemAdded = false;
     if (existingItem) {
+      // The free membership pulsera is one per member — never past qty 1.
+      if (isMembershipPulsera(existingItem) && Number(existingItem.price) === 0) {
+        toast({
+          title: '1 pulsera gratis por miembro',
+          description: `${selectedMember?.name || 'Este miembro'} ya tiene su pulsera gratis en el ticket.`,
+        });
+        return;
+      }
       const newQuantity = existingItem.quantity + quantity;
       if (service || newQuantity <= invItem.quantity) {
         setCart(cart.map(item => item.id === medicine.id ? {
@@ -503,6 +567,14 @@ const PoSDashboard = () => {
         // removing the line goes through removeFromCart, which cancels the signup.
         if (isMembershipFeeItem(item)) return item;
         const newQuantity = item.quantity + delta;
+        // The free membership pulsera stays at qty 1 (one per member).
+        if (delta > 0 && isMembershipPulsera(item) && Number(item.price) === 0) {
+          toast({
+            title: '1 pulsera gratis por miembro',
+            description: 'Las unidades extra de la pulsera se cobran a precio normal.',
+          });
+          return item;
+        }
         const inventoryItem = inventory.find(inv => inv.id === id);
         if (newQuantity <= 0) return { ...item, quantity: newQuantity };
         if (!isServiceItem(inventoryItem) && newQuantity > inventoryItem.quantity) {
@@ -553,13 +625,15 @@ const PoSDashboard = () => {
     // Removing the signup fee cancels the whole signup: the pseudo membership
     // leaves with it and the remaining lines lose member pricing.
     if (isMembershipFeeItem(removedItem) && isSignupMembership) {
-      const { next } = repriceCartForMembershipChange(filtered, { membershipStillActive: false });
+      const { next } = repriceCartForMembershipChange(filtered, { membership: null, member: null });
       setCart(next);
       setSelectedMembership(null);
       setSelectedMember(null);
       toast({ title: 'Registro de membresía cancelado', description: 'Los beneficios se quitaron del ticket.' });
     } else {
-      setCart(filtered);
+      // If the free pulsera line left the ticket, another pulsera line
+      // inherits the benefit (still one per member).
+      setCart(repricePulseraLines(filtered, selectedMembership, selectedMember));
     }
     setRxNumbers(prev => { const n = { ...prev }; delete n[id]; return n; });
   };
@@ -1156,6 +1230,32 @@ const PoSDashboard = () => {
           }
         }
 
+        // Pulsera Apolo Básico: stamp the benefit on the member's account so
+        // it can only be claimed once. Signup memberships are stamped after
+        // pos_register_membership creates the roster (see signupInfo below).
+        const freePulseraInTicket = isMembershipActive
+          && cart.some((item) => isMembershipPulsera(item) && Number(item.price) === 0);
+        if (freePulseraInTicket && !isSignupMembership && selectedMember?.id) {
+          try {
+            const { error: pulseraErr } = await supabase
+              .from('membership_members')
+              .update({
+                pulsera_redeemed_at: new Date().toISOString(),
+                pulsera_redeemed_sale_id: sale.id,
+              })
+              .eq('id', selectedMember.id)
+              .is('pulsera_redeemed_at', null);
+            if (pulseraErr) throw pulseraErr;
+          } catch (pulseraMarkErr) {
+            console.warn('Failed to mark pulsera benefit:', pulseraMarkErr);
+            toast({
+              title: 'Venta cobrada, pero la entrega no quedó registrada',
+              description: `Anota manualmente que ${selectedMember.name} recibió su pulsera (venta ${sale.id.slice(-6)}).`,
+              variant: 'destructive',
+            });
+          }
+        }
+
         console.log('Sale created:', sale.id);
 
         // POS membership signup: the fee rode this ticket — create/activate
@@ -1175,6 +1275,22 @@ const PoSDashboard = () => {
               termsAcceptedAt: signupInfo.termsAcceptedAt,
             });
             toast({ title: 'Membresía registrada', description: `Plan ID: ${signupResult.plan_id}` });
+            // Stamp the free pulsera on the brand-new titular's account.
+            if (freePulseraInTicket && signupResult?.membership_id) {
+              try {
+                await supabase
+                  .from('membership_members')
+                  .update({
+                    pulsera_redeemed_at: new Date().toISOString(),
+                    pulsera_redeemed_sale_id: sale.id,
+                  })
+                  .eq('membership_id', signupResult.membership_id)
+                  .eq('is_owner', true)
+                  .is('pulsera_redeemed_at', null);
+              } catch (pulseraSignupErr) {
+                console.warn('Failed to mark signup pulsera benefit:', pulseraSignupErr);
+              }
+            }
             try {
               const tempPassword = `${crypto.randomUUID()}Aa1!`;
               const { data: portalData, error: portalError } = await supabase.functions.invoke('create-portal-account', {
@@ -2210,6 +2326,9 @@ const PoSDashboard = () => {
                         <span className="font-medium text-sm">{item.name}</span>
                         {item.requires_prescription && (
                           <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700">Rx</span>
+                        )}
+                        {isMembershipPulsera(item) && Number(item.price) === 0 && (
+                          <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-700">Gratis membresía</span>
                         )}
                         {stock != null && (
                           <p className={`text-xs ${item.quantity >= stock ? 'text-amber-600 font-medium' : 'text-slate-500'}`}>
