@@ -1,5 +1,5 @@
 // ============================================
-// PULSERA M8 - FitPro-protocol smart band over Web Bluetooth
+// PULSERA APOLO BÁSICO (M8 hardware) - FitPro-protocol smart band over Web Bluetooth
 // Protocol reference: Gadgetbridge FitPro implementation
 // (gadgetbridge.org/internals/specifics/fitpro-protocol)
 // Frame: [0xCD, lenHi, lenLo, group, 0x01, cmd, payloadLenHi, payloadLenLo, ...payload]
@@ -115,6 +115,130 @@ function loadSavedPulsera() {
   } catch (e) { return {}; }
 }
 
+// ---------------- Cloud persistence (pulsera_daily) ----------------
+// Every page load starts a fresh BLE session, so the band's data is mirrored
+// to Supabase: one row per customer per day, upserted on each sync.
+// localStorage stays as the instant cache; the cloud row is what survives.
+
+let _pulseraCustomerId; // undefined = not resolved yet, null = anonymous
+async function getPulseraCustomerId() {
+  const sb = window.farmaciaSupabase;
+  if (!sb) return null;
+  if (_pulseraCustomerId !== undefined) return _pulseraCustomerId;
+  try {
+    const { data } = await sb.auth.getSession();
+    const user = data.session && data.session.user;
+    if (!user) { _pulseraCustomerId = null; return null; }
+    const { data: row, error } = await sb.from('customers').select('id').eq('profile_id', user.id).maybeSingle();
+    if (error) throw error;
+    _pulseraCustomerId = row ? row.id : null;
+  } catch (e) {
+    _pulseraCustomerId = null;
+  }
+  return _pulseraCustomerId;
+}
+
+// The band streams day totals every ~3 s, so writes are batched: HR saves go
+// out immediately, step updates go out 20 s after the last packet.
+let _cloudSaveTimer = null;
+function scheduleCloudSave() {
+  if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
+  _cloudSaveTimer = setTimeout(() => savePulseraToCloud(), 20000);
+}
+
+async function savePulseraToCloud() {
+  if (_cloudSaveTimer) { clearTimeout(_cloudSaveTimer); _cloudSaveTimer = null; }
+  const sb = window.farmaciaSupabase;
+  if (!sb) return;
+  const customerId = await getPulseraCustomerId();
+  if (!customerId) return;
+  const saved = loadSavedPulsera();
+  const act = Pulsera.activity || saved.activity;
+  const hr = Pulsera.hr || saved.hr;
+  if (!act && !hr) return;
+  const todayKey = new Date().toLocaleDateString('en-CA');
+  const hist = loadPulseraHistory();
+  const histToday = hist[todayKey] || {};
+  // Only same-day readings go into today's row — stale ones must not
+  // overwrite a newer measurement from an earlier session.
+  const hrToday = hr && new Date(hr.at).toLocaleDateString('en-CA') === todayKey ? hr : null;
+  const row = {
+    org_id: (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID,
+    customer_id: customerId,
+    fecha: todayKey,
+    pasos: act ? act.steps : (histToday.steps || 0),
+    distancia_m: act ? act.distance : (histToday.distance || 0),
+    kcal: act ? act.calories : (histToday.calories || 0),
+    fc_lpm: hrToday ? hrToday.bpm : null,
+    spo2: hrToday && hrToday.spo2 != null ? hrToday.spo2 : null,
+    pa_sistolica: hrToday ? hrToday.bpHigh : null,
+    pa_diastolica: hrToday ? hrToday.bpLow : null,
+    bateria: Pulsera.battery != null ? Pulsera.battery : (saved.battery != null ? saved.battery : null),
+    firmware: Pulsera.firmware || saved.firmware || null,
+    updated_at: new Date().toISOString(),
+  };
+  if (!row.org_id) return;
+  try {
+    const { error } = await sb.from('pulsera_daily').upsert(row, { onConflict: 'customer_id,fecha' });
+    if (error) dlog('Nube: error al guardar: ' + error.message);
+    else dlog('Nube: datos del día guardados en tu expediente.');
+  } catch (e) { dlog('Nube: ' + e.message); }
+}
+
+window.addEventListener('pagehide', () => { savePulseraToCloud(); });
+
+let _cloudLoaded = false;
+async function loadPulseraFromCloud() {
+  if (_cloudLoaded) return;
+  _cloudLoaded = true;
+  const sb = window.farmaciaSupabase;
+  if (!sb) return;
+  const customerId = await getPulseraCustomerId();
+  if (!customerId) return;
+  const since = new Date();
+  since.setDate(since.getDate() - 13);
+  try {
+    const { data, error } = await sb.from('pulsera_daily')
+      .select('fecha,pasos,distancia_m,kcal,fc_lpm,spo2,pa_sistolica,pa_diastolica,bateria,firmware,updated_at')
+      .eq('customer_id', customerId)
+      .gte('fecha', since.toLocaleDateString('en-CA'))
+      .order('fecha', { ascending: false })
+      .limit(14);
+    if (error) throw error;
+    if (!data || !data.length) return;
+    const hist = loadPulseraHistory();
+    for (const r of data) {
+      const local = hist[r.fecha];
+      if (!local || (r.pasos || 0) >= (local.steps || 0)) {
+        hist[r.fecha] = { steps: r.pasos || 0, distance: r.distancia_m || 0, calories: r.kcal || 0 };
+      }
+    }
+    try { localStorage.setItem('pulseraHistory', JSON.stringify(hist)); } catch (e) { /* non-fatal */ }
+    // Fill any gaps in the last-known state so the dashboard shows the cloud
+    // data even before the band reconnects.
+    const saved = loadSavedPulsera();
+    let changed = false;
+    const todayKey = new Date().toLocaleDateString('en-CA');
+    const todayRow = data.find(r => r.fecha === todayKey);
+    if (todayRow && !saved.activity) {
+      saved.activity = { steps: todayRow.pasos || 0, distance: todayRow.distancia_m || 0, calories: todayRow.kcal || 0, at: new Date(todayRow.updated_at).getTime() };
+      changed = true;
+    }
+    const hrRow = data.find(r => r.fc_lpm != null);
+    if (hrRow && !saved.hr) {
+      saved.hr = { bpm: hrRow.fc_lpm, spo2: hrRow.spo2, bpHigh: hrRow.pa_sistolica, bpLow: hrRow.pa_diastolica, at: new Date(hrRow.updated_at).getTime() };
+      changed = true;
+    }
+    if (saved.battery == null && data[0].bateria != null) { saved.battery = data[0].bateria; changed = true; }
+    if (!saved.firmware && data[0].firmware) { saved.firmware = data[0].firmware; changed = true; }
+    if (changed) {
+      try { localStorage.setItem('pulseraConnection', JSON.stringify(saved)); } catch (e) { /* non-fatal */ }
+    }
+    dlog('Nube: historial cargado (' + data.length + ' días).');
+    if (document.getElementById('pulsera-page')) renderPulsera();
+  } catch (e) { dlog('Nube: no se pudo cargar el historial: ' + e.message); }
+}
+
 // ---------------- BLE I/O ----------------
 
 async function bleSend(frame) {
@@ -149,29 +273,38 @@ function handleRx(event) {
   if (group === GRP_SPORTS) {
     if (cmd === RX_HR_DATA && bytes.length >= 20) {
       const bpm = bytes[19];
-      // Bytes 12-15 are seconds-since-midnight on this firmware, so byte 13 is
-      // part of that timestamp, NOT SpO2 (Gadgetbridge reads it as SpO2 — at
-      // 21:15 h that's 0x00012AC7, which is why the app showed "SpO2 1%").
-      // Only trust byte 13 as SpO2 when the field can't be a time-of-day and
-      // the value is plausible.
+      // Bytes 12-15 are seconds-since-midnight on this firmware. Gadgetbridge
+      // double-reads byte 13 as SpO2 even though it's inside that timestamp
+      // (which is why their parser shows "SpO2 1%" after 18:12 h). Field logs
+      // put the real SpO2 at byte 16: 0x63 (99) with the band showing 98%.
       const secsOfDay = be32(bytes, 12);
-      const spo2Raw = bytes[13];
-      const spo2 = (secsOfDay > 86400 && spo2Raw >= 70 && spo2Raw <= 100) ? spo2Raw : null;
+      const spo2Raw = bytes[16];
+      const spo2 = (spo2Raw >= 70 && spo2Raw <= 100) ? spo2Raw : null;
       // The two BP bytes don't always arrive in the same order — display the
       // larger one as systolic.
       const bpA = bytes[17], bpB = bytes[18];
       const bpOk = bpA >= 40 && bpA <= 250 && bpB >= 40 && bpB <= 250;
       sendAck(group, bytes[1], bytes[2]);
       if (bpm > 0) {
+        // Trust the packet's own time-of-day when it's sane (we set the band
+        // clock on connect), so saved readings carry the real measure time.
+        let at = Date.now();
+        if (secsOfDay > 0 && secsOfDay <= 86400) {
+          const midnight = new Date();
+          midnight.setHours(0, 0, 0, 0);
+          const t = midnight.getTime() + secsOfDay * 1000;
+          if (Math.abs(t - at) < 6 * 3600 * 1000) at = t;
+        }
         const prev = Pulsera.hr || {};
         Pulsera.hr = {
           bpm,
           spo2: spo2 != null ? spo2 : (prev.spo2 ?? null),
           bpHigh: bpOk ? Math.max(bpA, bpB) : (prev.bpHigh ?? null),
           bpLow: bpOk ? Math.min(bpA, bpB) : (prev.bpLow ?? null),
-          at: Date.now(),
+          at,
         };
         savePulsera();
+        savePulseraToCloud();
         updateHrUI();
         dlog(`FC: ${bpm} lpm · SpO2: ${spo2 != null ? spo2 + '%' : 'sin dato'} · PA: ${bpOk ? Math.max(bpA, bpB) + '/' + Math.min(bpA, bpB) : 'sin dato'}`);
       }
@@ -203,6 +336,7 @@ function onGattDisconnected() {
   Pulsera.hrMeasuring = false;
   if (Pulsera.hrStopTimer) { clearTimeout(Pulsera.hrStopTimer); Pulsera.hrStopTimer = null; }
   savePulsera();
+  savePulseraToCloud();
   if (document.getElementById('pulsera-page')) renderPulsera();
 }
 
@@ -335,7 +469,7 @@ async function connectPulsera() {
   try {
     const device = await requestBand();
     Pulsera.device = device;
-    Pulsera.name = device.name || 'Pulsera M8';
+    Pulsera.name = device.name || 'Pulsera Apolo Básico';
     device.addEventListener('gattserverdisconnected', onGattDisconnected);
 
     setPulseraStatus('Conectando…');
@@ -345,7 +479,7 @@ async function connectPulsera() {
       svc = await server.getPrimaryService(NUS_SERVICE);
     } catch (e) {
       device.gatt.disconnect();
-      throw new Error('ese dispositivo no parece ser una pulsera FitPro/M8');
+      throw new Error('ese dispositivo no parece ser una Pulsera Apolo Básico (FitPro)');
     }
     const rx = await svc.getCharacteristic(NUS_RX);
     Pulsera.tx = await svc.getCharacteristic(NUS_TX);
@@ -605,6 +739,7 @@ function recordDaySummary(activity) {
   const keys = Object.keys(hist).sort();
   while (keys.length > 14) { delete hist[keys.shift()]; }
   try { localStorage.setItem('pulseraHistory', JSON.stringify(hist)); } catch (e) { /* non-fatal */ }
+  scheduleCloudSave();
 }
 
 function weeklyBarsHtml() {
@@ -695,6 +830,10 @@ export function renderPulsera() {
         </div>
       </div>
 
+      <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 0.6rem 0.75rem; font-size: 0.72rem; color: #92400e; margin-bottom: 0.75rem; line-height: 1.5;">
+        ⚠️ <b>Estos resultados no son 100% exactos</b> — úsalos con precaución. Te ayudan a conocer mejor tu salud, pero <b>no sustituyen a un médico ni a estudios clínicos</b>.
+      </div>
+
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
         <div style="background: #fef2f2; border-radius: 14px; padding: 0.9rem; text-align: center;">
           <div style="font-size: 0.7rem; color: #b91c1c; font-weight: 600;">FRECUENCIA</div>
@@ -722,7 +861,7 @@ export function renderPulsera() {
               <div style="font-size: 0.6rem; color: var(--text-muted);">mmHg</div>
             </div>
           </div>
-          <div style="font-size: 0.62rem; color: var(--text-muted); margin-top: 0.25rem;">El SpO2 se mide desde la pantalla de la pulsera</div>
+          <div style="font-size: 0.62rem; color: var(--text-muted); margin-top: 0.25rem;">Se actualizan al medir frecuencia</div>
         </div>
         <div style="background: #fffbeb; border-radius: 14px; padding: 0.9rem; text-align: center;">
           <div style="display: grid; grid-template-columns: 1fr 1fr;">
@@ -801,7 +940,7 @@ export function renderPulsera() {
     <div id="pulsera-page">
       <div style="padding: 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
         <h2 style="margin: 0; font-size: 1.3rem;">Mi Pulsera</h2>
-        <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">Pulsera Inteligente M8 · beneficio de membresía</p>
+        <p style="margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.9;">Pulsera Apolo Básico · beneficio de membresía</p>
       </div>
 
       ${!bleOK ? compatCard : (Pulsera.connected ? dashboardCard : connectCard)}
@@ -809,7 +948,7 @@ export function renderPulsera() {
       ${bleOK ? settingsCard : ''}
 
       <div class="glass-card" style="margin: 1rem; padding: 1.25rem;">
-        <div style="font-weight: 700; margin-bottom: 0.5rem; color: var(--text-secondary);">⌚ Tu pulsera M8</div>
+        <div style="font-weight: 700; margin-bottom: 0.5rem; color: var(--text-secondary);">⌚ Tu Pulsera Apolo Básico</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; column-gap: 0.5rem;">
           ${specItem('📺', 'Pantalla', '0.96" TFT a color')}
           ${specItem('📶', 'Conexión', 'Bluetooth 4.0 BLE')}
@@ -818,20 +957,20 @@ export function renderPulsera() {
           ${specItem('⏱️', 'En espera', 'Hasta 45 días')}
           ${specItem('🧲', 'Carga', 'Clip magnético USB')}
         </div>
-        <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0.5rem 0 0;">Monitorea frecuencia cardíaca, oxígeno (SpO2), presión, sueño y estrés. 30 modos de ejercicio.</p>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0.5rem 0 0;">Monitorea frecuencia cardíaca, oxígeno (SpO2), presión estimada y sueño. 30 modos de ejercicio.</p>
       </div>
 
       <div class="glass-card" style="margin: 1rem; padding: 1.25rem;">
         <div style="font-weight: 700; margin-bottom: 0.5rem; color: var(--text-secondary);">📊 Qué monitoreamos</div>
         <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.7;">
           👟 <b>Pasos</b>, distancia y calorías del día<br>
-          ❤️ <b>Frecuencia cardíaca</b> bajo demanda · 🫁 SpO2 desde la pantalla de la pulsera<br>
+          ❤️ <b>Frecuencia cardíaca</b>, 🫁 SpO2 y presión estimada bajo demanda<br>
           😴 <b>Sueño</b> (ligero, profundo, despierto)<br>
           💊 <b>Recordatorios de medicamentos</b> con vibración en tu muñeca
         </div>
         <p style="font-size: 0.72rem; color: var(--text-muted); margin: 0.75rem 0 0; border-top: 1px solid var(--glass-border, #e5e7eb); padding-top: 0.6rem;">
-          La pulsera M8 no es un dispositivo médico. Sus mediciones son informativas y no sustituyen
-          la consulta con un profesional de la salud. Tus datos se guardan únicamente en tu teléfono.
+          La Pulsera Apolo Básico no es un dispositivo médico. Sus mediciones son informativas y no sustituyen
+          la consulta con un profesional de la salud. Tus datos se guardan en tu expediente de Farmacia Apolo.
         </p>
       </div>
 
@@ -844,6 +983,8 @@ export function renderPulsera() {
       </div>
     </div>
   `;
+
+  loadPulseraFromCloud();
 }
 
 // Expose handlers for inline onclick
