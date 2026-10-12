@@ -149,15 +149,31 @@ function handleRx(event) {
   if (group === GRP_SPORTS) {
     if (cmd === RX_HR_DATA && bytes.length >= 20) {
       const bpm = bytes[19];
-      const spo2 = bytes[13];
-      const bpHigh = bytes[17];
-      const bpLow = bytes[18];
+      // Bytes 12-15 are seconds-since-midnight on this firmware, so byte 13 is
+      // part of that timestamp, NOT SpO2 (Gadgetbridge reads it as SpO2 — at
+      // 21:15 h that's 0x00012AC7, which is why the app showed "SpO2 1%").
+      // Only trust byte 13 as SpO2 when the field can't be a time-of-day and
+      // the value is plausible.
+      const secsOfDay = be32(bytes, 12);
+      const spo2Raw = bytes[13];
+      const spo2 = (secsOfDay > 86400 && spo2Raw >= 70 && spo2Raw <= 100) ? spo2Raw : null;
+      // The two BP bytes don't always arrive in the same order — display the
+      // larger one as systolic.
+      const bpA = bytes[17], bpB = bytes[18];
+      const bpOk = bpA >= 40 && bpA <= 250 && bpB >= 40 && bpB <= 250;
       sendAck(group, bytes[1], bytes[2]);
       if (bpm > 0) {
-        Pulsera.hr = { bpm, spo2, bpHigh, bpLow, at: Date.now() };
+        const prev = Pulsera.hr || {};
+        Pulsera.hr = {
+          bpm,
+          spo2: spo2 != null ? spo2 : (prev.spo2 ?? null),
+          bpHigh: bpOk ? Math.max(bpA, bpB) : (prev.bpHigh ?? null),
+          bpLow: bpOk ? Math.min(bpA, bpB) : (prev.bpLow ?? null),
+          at: Date.now(),
+        };
         savePulsera();
         updateHrUI();
-        dlog(`FC: ${bpm} lpm · SpO2: ${spo2}% · PA: ${bpHigh}/${bpLow}`);
+        dlog(`FC: ${bpm} lpm · SpO2: ${spo2 != null ? spo2 + '%' : 'sin dato'} · PA: ${bpOk ? Math.max(bpA, bpB) + '/' + Math.min(bpA, bpB) : 'sin dato'}`);
       }
     } else if (cmd === RX_DAY_TOTALS && bytes.length >= 20) {
       const steps = be32(bytes, 10);
@@ -252,22 +268,41 @@ function setPulseraStatus(msg) {
   if (el) el.textContent = msg;
 }
 
+// Display-only calibration: the band's firmware counts steps and measures HR
+// itself — we can't change its sensor math. But if it consistently over/under
+// counts, the user can set a factor (0.1–2) that corrects displayed numbers.
+function calFactor() {
+  const f = parseFloat(loadPulseraSettings().stepFactor);
+  return (isFinite(f) && f > 0 && f <= 2) ? f : 1;
+}
+
 function updateHrUI() {
   const hr = Pulsera.hr;
   if (!hr) return;
   const el = document.getElementById('pulsera-hr-value');
   if (el) el.innerHTML = `${hr.bpm} <span style="font-size: 1rem; font-weight: 500;">lpm</span>`;
   const sub = document.getElementById('pulsera-hr-sub');
-  if (sub) sub.textContent = `SpO2 ${hr.spo2}% · PA ${hr.bpHigh}/${hr.bpLow} · ${new Date(hr.at).toLocaleTimeString()}`;
+  if (sub) sub.textContent = new Date(hr.at).toLocaleTimeString();
+  const spo2El = document.getElementById('pulsera-spo2-value');
+  if (spo2El) spo2El.textContent = hr.spo2 != null ? hr.spo2 + '%' : '—';
+  const bpEl = document.getElementById('pulsera-bp-value');
+  if (bpEl) bpEl.textContent = hr.bpHigh != null ? `${hr.bpHigh}/${hr.bpLow}` : '—';
 }
 
 function updateActivityUI() {
   const a = Pulsera.activity;
   if (!a) return;
+  const f = calFactor();
   const s = document.getElementById('pulsera-steps-value');
-  if (s) s.textContent = a.steps.toLocaleString();
+  if (s) s.textContent = Math.round(a.steps * f).toLocaleString();
   const sub = document.getElementById('pulsera-activity-sub');
-  if (sub) sub.textContent = `${(a.distance / 1000).toFixed(2)} km · ${a.calories} kcal · ${new Date(a.at).toLocaleTimeString()}`;
+  if (sub) sub.textContent = new Date(a.at).toLocaleTimeString() + (f !== 1 ? ' · calibrado' : '');
+  const distEl = document.getElementById('pulsera-dist-value');
+  if (distEl) distEl.textContent = ((a.distance * f) / 1000).toFixed(2);
+  const kcalEl = document.getElementById('pulsera-kcal-value');
+  if (kcalEl) kcalEl.textContent = Math.round(a.calories * f).toLocaleString();
+  const sub2 = document.getElementById('pulsera-act2-sub');
+  if (sub2) sub2.textContent = new Date(a.at).toLocaleTimeString() + (f !== 1 ? ' · calibrado' : '');
 }
 
 // ---------------- Page actions (window handlers) ----------------
@@ -513,6 +548,17 @@ async function setStepGoalFromInput() {
   }
 }
 
+function setStepFactorFromInput() {
+  const el = document.getElementById('pulsera-factor-input');
+  const f = parseFloat(el && el.value);
+  if (!isFinite(f) || f < 0.1 || f > 2) { setPulseraStatus('Factor inválido — usa un valor entre 0.1 y 2.'); return; }
+  const s = loadPulseraSettings();
+  s.stepFactor = Math.round(f * 100) / 100;
+  savePulseraSettings(s);
+  renderPulsera();
+  setPulseraStatus(s.stepFactor === 1 ? 'Calibración quitada (factor 1).' : `Pasos, distancia y calorías ahora se muestran ×${s.stepFactor}.`);
+}
+
 async function addPulseraAlarm() {
   const el = document.getElementById('pulsera-alarm-time');
   const val = el && el.value;
@@ -563,6 +609,7 @@ function recordDaySummary(activity) {
 
 function weeklyBarsHtml() {
   const hist = loadPulseraHistory();
+  const f = calFactor();
   const days = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
@@ -570,7 +617,7 @@ function weeklyBarsHtml() {
     const key = d.toLocaleDateString('en-CA');
     days.push({
       label: d.toLocaleDateString('es-MX', { weekday: 'short' }).replace('.', ''),
-      steps: hist[key] ? hist[key].steps : null,
+      steps: hist[key] ? Math.round(hist[key].steps * f) : null,
     });
   }
   const max = Math.max(1, ...days.map(d => d.steps || 0));
@@ -630,6 +677,11 @@ export function renderPulsera() {
 
   const act = Pulsera.activity || saved.activity;
   const hr = Pulsera.hr || saved.hr;
+  const f = calFactor();
+  const spo2Disp = hr && hr.spo2 >= 70 && hr.spo2 <= 100 ? hr.spo2 + '%' : '—';
+  const bpHi = hr && hr.bpHigh != null && hr.bpLow != null ? Math.max(hr.bpHigh, hr.bpLow) : null;
+  const bpLo = hr && hr.bpHigh != null && hr.bpLow != null ? Math.min(hr.bpHigh, hr.bpLow) : null;
+  const bpDisp = bpHi != null && bpHi >= 70 && bpHi <= 250 && bpLo >= 40 ? `${bpHi}/${bpLo}` : '—';
   const dashboardCard = `
     <div class="glass-card" style="margin: 1rem; padding: 1.25rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
@@ -643,16 +695,49 @@ export function renderPulsera() {
         </div>
       </div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
         <div style="background: #fef2f2; border-radius: 14px; padding: 0.9rem; text-align: center;">
           <div style="font-size: 0.7rem; color: #b91c1c; font-weight: 600;">FRECUENCIA</div>
           <div id="pulsera-hr-value" style="font-size: 1.8rem; font-weight: 800; color: #b91c1c;">${hr ? hr.bpm + ' <span style="font-size: 1rem; font-weight: 500;">lpm</span>' : '—'}</div>
-          <div id="pulsera-hr-sub" style="font-size: 0.65rem; color: var(--text-muted);">${hr ? `SpO2 ${hr.spo2}% · PA ${hr.bpHigh}/${hr.bpLow} · ${new Date(hr.at).toLocaleTimeString()}` : 'Sin medición aún'}</div>
+          <div id="pulsera-hr-sub" style="font-size: 0.65rem; color: var(--text-muted);">${hr ? new Date(hr.at).toLocaleTimeString() : 'Sin medición aún'}</div>
         </div>
         <div style="background: #eff6ff; border-radius: 14px; padding: 0.9rem; text-align: center;">
           <div style="font-size: 0.7rem; color: #1E2A8A; font-weight: 600;">PASOS HOY</div>
-          <div id="pulsera-steps-value" style="font-size: 1.8rem; font-weight: 800; color: #1E2A8A;">${act ? act.steps.toLocaleString() : '—'}</div>
-          <div id="pulsera-activity-sub" style="font-size: 0.65rem; color: var(--text-muted);">${act ? `${(act.distance / 1000).toFixed(2)} km · ${act.calories} kcal · ${new Date(act.at).toLocaleTimeString()}` : 'Sincroniza para ver'}</div>
+          <div id="pulsera-steps-value" style="font-size: 1.8rem; font-weight: 800; color: #1E2A8A;">${act ? Math.round(act.steps * f).toLocaleString() : '—'}</div>
+          <div id="pulsera-activity-sub" style="font-size: 0.65rem; color: var(--text-muted);">${act ? new Date(act.at).toLocaleTimeString() + (f !== 1 ? ' · calibrado' : '') : 'Sincroniza para ver'}</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1rem;">
+        <div style="background: #f0fdfa; border-radius: 14px; padding: 0.9rem; text-align: center;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr;">
+            <div>
+              <div style="font-size: 0.7rem; color: #0f766e; font-weight: 600;">SPO2</div>
+              <div id="pulsera-spo2-value" style="font-size: 1.35rem; font-weight: 800; color: #0f766e;">${spo2Disp}</div>
+              <div style="font-size: 0.6rem; color: var(--text-muted);">% oxígeno</div>
+            </div>
+            <div>
+              <div style="font-size: 0.7rem; color: #7c3aed; font-weight: 600;">PA</div>
+              <div id="pulsera-bp-value" style="font-size: 1.35rem; font-weight: 800; color: #7c3aed;">${bpDisp}</div>
+              <div style="font-size: 0.6rem; color: var(--text-muted);">mmHg</div>
+            </div>
+          </div>
+          <div style="font-size: 0.62rem; color: var(--text-muted); margin-top: 0.25rem;">El SpO2 se mide desde la pantalla de la pulsera</div>
+        </div>
+        <div style="background: #fffbeb; border-radius: 14px; padding: 0.9rem; text-align: center;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr;">
+            <div>
+              <div style="font-size: 0.7rem; color: #b45309; font-weight: 600;">DISTANCIA</div>
+              <div id="pulsera-dist-value" style="font-size: 1.35rem; font-weight: 800; color: #b45309;">${act ? ((act.distance * f) / 1000).toFixed(2) : '—'}</div>
+              <div style="font-size: 0.6rem; color: var(--text-muted);">km</div>
+            </div>
+            <div>
+              <div style="font-size: 0.7rem; color: #b45309; font-weight: 600;">CALORÍAS</div>
+              <div id="pulsera-kcal-value" style="font-size: 1.35rem; font-weight: 800; color: #b45309;">${act ? Math.round(act.calories * f).toLocaleString() : '—'}</div>
+              <div style="font-size: 0.6rem; color: var(--text-muted);">kcal</div>
+            </div>
+          </div>
+          <div id="pulsera-act2-sub" style="font-size: 0.62rem; color: var(--text-muted); margin-top: 0.25rem;">${act ? new Date(act.at).toLocaleTimeString() + (f !== 1 ? ' · calibrado' : '') : 'Sincroniza para ver'}</div>
         </div>
       </div>
 
@@ -691,6 +776,11 @@ export function renderPulsera() {
         <span style="font-size: 0.85rem; color: var(--text-secondary); flex: 1;">🎯 Meta diaria de pasos</span>
         <input id="pulsera-goal-input" type="number" min="100" step="500" value="${settings.stepGoal}" style="width: 90px; padding: 0.4rem 0.5rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem;">
         <button onclick="pulseraSetGoal()" style="padding: 0.4rem 0.8rem; background: #1E2A8A; color: white; border: none; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">Guardar</button>
+      </div>
+      <div style="display: flex; gap: 0.5rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid rgba(0,0,0,0.05);">
+        <span style="font-size: 0.85rem; color: var(--text-secondary); flex: 1;">⚖️ Calibrar pasos <span style="font-size: 0.7rem; color: var(--text-muted);">(factor 0.1–2 · ej. 0.5 si cuenta el doble que tu otra pulsera)</span></span>
+        <input id="pulsera-factor-input" type="number" min="0.1" max="2" step="0.05" value="${settings.stepFactor || 1}" style="width: 70px; padding: 0.4rem 0.5rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem;">
+        <button onclick="pulseraSetFactor()" style="padding: 0.4rem 0.8rem; background: #1E2A8A; color: white; border: none; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">OK</button>
       </div>
       <div style="padding: 0.6rem 0 0;">
         <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem;">⏰ Alarmas en la pulsera <span style="color: var(--text-muted); font-size: 0.75rem;">(diarias, máx. 8 — ideales para horarios de medicamentos)</span></div>
@@ -735,7 +825,7 @@ export function renderPulsera() {
         <div style="font-weight: 700; margin-bottom: 0.5rem; color: var(--text-secondary);">📊 Qué monitoreamos</div>
         <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.7;">
           👟 <b>Pasos</b>, distancia y calorías del día<br>
-          ❤️ <b>Frecuencia cardíaca</b> y SpO2 bajo demanda<br>
+          ❤️ <b>Frecuencia cardíaca</b> bajo demanda · 🫁 SpO2 desde la pantalla de la pulsera<br>
           😴 <b>Sueño</b> (ligero, profundo, despierto)<br>
           💊 <b>Recordatorios de medicamentos</b> con vibración en tu muñeca
         </div>
@@ -766,5 +856,6 @@ window.pulseraTestReminder = testReminder;
 window.pulseraCopyLog = copyDebugLog;
 window.pulseraToggle = toggleBandSetting;
 window.pulseraSetGoal = setStepGoalFromInput;
+window.pulseraSetFactor = setStepFactorFromInput;
 window.pulseraAddAlarm = addPulseraAlarm;
 window.pulseraDelAlarm = delPulseraAlarm;
