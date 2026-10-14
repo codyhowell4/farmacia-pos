@@ -86,6 +86,70 @@ const Pulsera = {
   syncing: false,
 };
 
+// ---------------- Noise filters ----------------
+// The band counts steps and measures HR with its own firmware and only sends
+// cumulative day totals + spot readings — we never see the raw sensor stream,
+// so we can't reject individual bogus "motions". What we CAN do is reject
+// physiologically impossible deltas: even sprinting, a human tops out around
+// 4-5 steps/second. A bigger jump between packets is sensor noise (car rides,
+// hand washing, shaking the band), so only the plausible part is counted.
+const MAX_STEPS_PER_SEC = 4.5;
+const STEP_FILTER_KEY = 'pulseraStepFilter';
+
+function saveStepFilter(st) {
+  try { localStorage.setItem(STEP_FILTER_KEY, JSON.stringify(st)); } catch (e) { /* non-fatal */ }
+}
+
+function filterDayTotals(rawSteps, rawDist, rawKcal, now) {
+  const dayKey = new Date(now).toLocaleDateString('en-CA');
+  let st = null;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STEP_FILTER_KEY) || 'null');
+    if (parsed && parsed.day === dayKey) st = parsed;
+  } catch (e) { /* corrupted state — start fresh */ }
+  // First packet seen today: steps the band accumulated while we were
+  // disconnected become the baseline — there's nothing to compare against.
+  if (!st) {
+    st = { day: dayKey, raw: rawSteps, rawDist, rawKcal, steps: rawSteps, dist: rawDist, kcal: rawKcal, at: now };
+    saveStepFilter(st);
+    return { steps: st.steps, distance: st.dist, calories: st.kcal };
+  }
+  const elapsed = Math.max(0.5, (now - st.at) / 1000);
+  const stepDelta = rawSteps - st.raw;
+  // Counter went backwards (band reboot or midnight glitch): re-baseline the
+  // raw trackers but keep everything already accepted.
+  if (stepDelta < 0) {
+    st = { ...st, raw: rawSteps, rawDist, rawKcal, at: now };
+    saveStepFilter(st);
+    return { steps: st.steps, distance: st.dist, calories: st.kcal };
+  }
+  const maxDelta = Math.ceil(elapsed * MAX_STEPS_PER_SEC);
+  const ratio = stepDelta > maxDelta ? maxDelta / stepDelta : 1;
+  const accepted = {
+    day: dayKey,
+    raw: rawSteps, rawDist, rawKcal,
+    steps: st.steps + Math.round(stepDelta * ratio),
+    dist: st.dist + Math.round(Math.max(0, rawDist - st.rawDist) * ratio),
+    kcal: st.kcal + Math.round(Math.max(0, rawKcal - st.rawKcal) * ratio),
+    at: now,
+  };
+  if (ratio < 1) dlog(`Filtro de ruido: la pulsera reportó +${stepDelta} pasos en ${Math.round(elapsed)}s; se aceptaron +${accepted.steps - st.steps}.`);
+  saveStepFilter(accepted);
+  return { steps: accepted.steps, distance: accepted.dist, calories: accepted.kcal };
+}
+
+// Heart rate: the optical sensor spikes easily (loose fit, movement). A
+// rolling median of the last 5 readings kills one-off spikes without hiding
+// real trends. The window resets each time a new measurement is started.
+const hrBpmWindow = [];
+
+function medianBpm(bpm) {
+  hrBpmWindow.push(bpm);
+  if (hrBpmWindow.length > 5) hrBpmWindow.shift();
+  const sorted = [...hrBpmWindow].sort((a, b) => a - b);
+  return sorted[Math.floor((sorted.length - 1) / 2)];
+}
+
 const debugLines = [];
 
 function dlog(msg, bytes) {
@@ -295,9 +359,10 @@ function handleRx(event) {
           const t = midnight.getTime() + secsOfDay * 1000;
           if (Math.abs(t - at) < 6 * 3600 * 1000) at = t;
         }
+        const bpmMed = medianBpm(bpm);
         const prev = Pulsera.hr || {};
         Pulsera.hr = {
-          bpm,
+          bpm: bpmMed,
           spo2: spo2 != null ? spo2 : (prev.spo2 ?? null),
           bpHigh: bpOk ? Math.max(bpA, bpB) : (prev.bpHigh ?? null),
           bpLow: bpOk ? Math.min(bpA, bpB) : (prev.bpLow ?? null),
@@ -306,19 +371,23 @@ function handleRx(event) {
         savePulsera();
         savePulseraToCloud();
         updateHrUI();
-        dlog(`FC: ${bpm} lpm · SpO2: ${spo2 != null ? spo2 + '%' : 'sin dato'} · PA: ${bpOk ? Math.max(bpA, bpB) + '/' + Math.min(bpA, bpB) : 'sin dato'}`);
+        dlog(`FC: ${bpmMed} lpm${bpmMed !== bpm ? ` (crudo ${bpm})` : ''} · SpO2: ${spo2 != null ? spo2 + '%' : 'sin dato'} · PA: ${bpOk ? Math.max(bpA, bpB) + '/' + Math.min(bpA, bpB) : 'sin dato'}`);
       }
     } else if (cmd === RX_DAY_TOTALS && bytes.length >= 20) {
-      const steps = be32(bytes, 10);
-      const distance = be32(bytes, 14);
-      const calories = (bytes[18] << 8) | bytes[19];
+      const rawSteps = be32(bytes, 10);
+      const rawDistance = be32(bytes, 14);
+      const rawCalories = (bytes[18] << 8) | bytes[19];
       sendAck(group, bytes[1], bytes[2]);
-      Pulsera.activity = { steps, distance, calories, at: Date.now() };
+      // Cap physiologically impossible jumps before the totals go anywhere
+      // (UI, history, cloud) — see filterDayTotals for the why.
+      const now = Date.now();
+      const clean = filterDayTotals(rawSteps, rawDistance, rawCalories, now);
+      Pulsera.activity = { steps: clean.steps, distance: clean.distance, calories: clean.calories, at: now };
       savePulsera();
       recordDaySummary(Pulsera.activity);
       updateActivityUI();
       updateWeekUI();
-      setPulseraStatus(`Sincronizado: ${steps.toLocaleString()} pasos hoy.`);
+      setPulseraStatus(`Sincronizado: ${clean.steps.toLocaleString()} pasos hoy.`);
     } else if (cmd === RX_STEP_DATA || cmd === RX_SLEEP_DATA) {
       sendAck(group, bytes[1], bytes[2]);
     } else if (cmd === 0x07 || cmd === 0x08 || cmd === 0x10) {
@@ -403,8 +472,10 @@ function setPulseraStatus(msg) {
 }
 
 // Display-only calibration: the band's firmware counts steps and measures HR
-// itself — we can't change its sensor math. But if it consistently over/under
-// counts, the user can set a factor (0.1–2) that corrects displayed numbers.
+// itself — we can't change its sensor math. If a band consistently over/under
+// counts, support can set a factor (0.1–2) in pulseraSettings.stepFactor that
+// corrects displayed numbers. Deliberately no user-facing control: the noise
+// filter handles bursts automatically; this is for per-case support tuning.
 function calFactor() {
   const f = parseFloat(loadPulseraSettings().stepFactor);
   return (isFinite(f) && f > 0 && f <= 2) ? f : 1;
@@ -517,6 +588,7 @@ async function disconnectPulsera() {
 async function measureHR() {
   if (!Pulsera.connected || Pulsera.hrMeasuring) return;
   Pulsera.hrMeasuring = true;
+  hrBpmWindow.length = 0; // fresh median window per measurement
   setPulseraStatus('Midiendo frecuencia cardíaca… quédate quieto (hasta 60 s).');
   try {
     await bleSend(craftFrame(GRP_GENERAL, CMD_HR_MEASURE, [0x01]));
@@ -680,17 +752,6 @@ async function setStepGoalFromInput() {
   } else {
     setPulseraStatus('Meta guardada; se envía al conectar la pulsera.');
   }
-}
-
-function setStepFactorFromInput() {
-  const el = document.getElementById('pulsera-factor-input');
-  const f = parseFloat(el && el.value);
-  if (!isFinite(f) || f < 0.1 || f > 2) { setPulseraStatus('Factor inválido — usa un valor entre 0.1 y 2.'); return; }
-  const s = loadPulseraSettings();
-  s.stepFactor = Math.round(f * 100) / 100;
-  savePulseraSettings(s);
-  renderPulsera();
-  setPulseraStatus(s.stepFactor === 1 ? 'Calibración quitada (factor 1).' : `Pasos, distancia y calorías ahora se muestran ×${s.stepFactor}.`);
 }
 
 async function addPulseraAlarm() {
@@ -916,11 +977,6 @@ export function renderPulsera() {
         <input id="pulsera-goal-input" type="number" min="100" step="500" value="${settings.stepGoal}" style="width: 90px; padding: 0.4rem 0.5rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem;">
         <button onclick="pulseraSetGoal()" style="padding: 0.4rem 0.8rem; background: #1E2A8A; color: white; border: none; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">Guardar</button>
       </div>
-      <div style="display: flex; gap: 0.5rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid rgba(0,0,0,0.05);">
-        <span style="font-size: 0.85rem; color: var(--text-secondary); flex: 1;">⚖️ Calibrar pasos <span style="font-size: 0.7rem; color: var(--text-muted);">(factor 0.1–2 · ej. 0.5 si cuenta el doble que tu otra pulsera)</span></span>
-        <input id="pulsera-factor-input" type="number" min="0.1" max="2" step="0.05" value="${settings.stepFactor || 1}" style="width: 70px; padding: 0.4rem 0.5rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem;">
-        <button onclick="pulseraSetFactor()" style="padding: 0.4rem 0.8rem; background: #1E2A8A; color: white; border: none; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">OK</button>
-      </div>
       <div style="padding: 0.6rem 0 0;">
         <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.35rem;">⏰ Alarmas en la pulsera <span style="color: var(--text-muted); font-size: 0.75rem;">(diarias, máx. 8 — ideales para horarios de medicamentos)</span></div>
         ${settings.alarms.length === 0 ? `<div style="font-size: 0.78rem; color: var(--text-muted);">Sin alarmas todavía.</div>` : ''}
@@ -997,6 +1053,5 @@ window.pulseraTestReminder = testReminder;
 window.pulseraCopyLog = copyDebugLog;
 window.pulseraToggle = toggleBandSetting;
 window.pulseraSetGoal = setStepGoalFromInput;
-window.pulseraSetFactor = setStepFactorFromInput;
 window.pulseraAddAlarm = addPulseraAlarm;
 window.pulseraDelAlarm = delPulseraAlarm;
