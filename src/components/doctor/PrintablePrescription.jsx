@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { buildRecetaQrText } from '@/lib/cda';
 import { formatAge } from '@/lib/age';
@@ -7,7 +8,7 @@ import { parseDateLocal } from '@/lib/timezone';
 const NAVY = '#1E2A8A';
 const GREEN = '#2E9E7B';
 
-const PrintablePrescription = ({ prescription, customer }) => {
+const PrintablePrescription = ({ prescription, customer, skipPrintPortal }) => {
   const [qrUrl, setQrUrl] = useState(null);
 
   // Signed recetas get a verification QR next to the signature area.
@@ -59,6 +60,7 @@ const PrintablePrescription = ({ prescription, customer }) => {
 
   const vitals = {
     edad: prescription.edad || formatAge(customer?.date_of_birth),
+    genero: customer?.sexo === 'M' ? 'Mujer' : customer?.sexo === 'H' ? 'Hombre' : customer?.sexo === 'O' ? 'Otro' : '',
     peso: prescription.weight_kg || customer?.weight || '',
     talla: prescription.height_cm || customer?.height || '',
     temp: prescription.temperatura || '',
@@ -73,11 +75,15 @@ const PrintablePrescription = ({ prescription, customer }) => {
   return (
     <div className="prescription-print-container">
       <style>{`
+        @media screen {
+          .rx-print-portal { display: none; }
+        }
         @media print {
           @page { size: letter; margin: 0; }
+          html, body { height: auto !important; overflow: visible !important; }
           body * { visibility: hidden; }
-          .prescription-print-container, .prescription-print-container * { visibility: visible; }
-          .prescription-print-container { position: absolute; left: 0; top: 0; width: 100%; }
+          .rx-print-portal, .rx-print-portal * { visibility: visible; }
+          .rx-print-portal { position: absolute; left: 0; top: 0; width: 100%; }
           .no-print { display: none !important; }
         }
         .prescription-sheet {
@@ -472,7 +478,7 @@ const PrintablePrescription = ({ prescription, customer }) => {
             {/* Vitals column */}
             <div className="rx-vitals">
               {[
-                ['EDAD:', vitals.edad], ['PESO:', vitals.peso], ['TALLA:', vitals.talla],
+                ['EDAD:', vitals.edad], ['GÉNERO:', vitals.genero], ['PESO:', vitals.peso], ['TALLA:', vitals.talla],
                 ['TEMP:', vitals.temp], ['T/A:', vitals.ta], ['FC:', vitals.fc],
                 ['FR:', vitals.fr], ['SO2%:', vitals.so2], ['GLICEMIA:', vitals.glicemia],
                 ['ALERGIAS:', vitals.alergias],
@@ -568,6 +574,15 @@ const PrintablePrescription = ({ prescription, customer }) => {
           </div>
         </div>
       </div>
+      {/* Print-only copy portaled to <body>: printing from inside the Radix
+          dialog gets clipped by its fixed/transform/overflow box in Chrome/Edge,
+          which is why the preview printed only a slice of the sheet. */}
+      {!skipPrintPortal && createPortal(
+        <div className="rx-print-portal">
+          <PrintablePrescription prescription={prescription} customer={customer} skipPrintPortal />
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

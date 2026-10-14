@@ -156,12 +156,13 @@
         var next = parts(rx.next_appointment);
         var v = {
           edad: rx.edad || age(customer && customer.date_of_birth),
+          genero: customer && customer.sexo === 'M' ? 'Mujer' : customer && customer.sexo === 'H' ? 'Hombre' : customer && customer.sexo === 'O' ? 'Otro' : '',
           peso: rx.weight_kg || (customer && customer.weight) || '',
           talla: rx.height_cm || (customer && customer.height) || '',
           temp: rx.temperatura || '', ta: rx.ta || '', fc: rx.fc || '', fr: rx.fr || '',
           so2: rx.so2 || '', glicemia: rx.glicemia || '', alergias: rx.alergias || ''
         };
-        var vitalsRows = [['EDAD:', v.edad], ['PESO:', v.peso], ['TALLA:', v.talla], ['TEMP:', v.temp],
+        var vitalsRows = [['EDAD:', v.edad], ['GÉNERO:', v.genero], ['PESO:', v.peso], ['TALLA:', v.talla], ['TEMP:', v.temp],
           ['T/A:', v.ta], ['FC:', v.fc], ['FR:', v.fr], ['SO2%:', v.so2], ['GLICEMIA:', v.glicemia], ['ALERGIAS:', v.alergias]]
           .filter(function (r) { return r[1] !== '' && r[1] !== null && r[1] !== undefined; })
           .map(function (r) { return '<div><label>' + r[0] + '</label><span class="vline">' + esc(r[1]) + '</span></div>'; }).join('');
@@ -271,7 +272,7 @@
           return fail('No encontramos esta receta en tu cuenta.<br><br><a href="/customer-app/" style="color:#1E2A8A; font-weight:700;">Volver a la app</a>');
         }
         var custRes = await sb.from('customers')
-          .select('full_name, date_of_birth, weight, height')
+          .select('full_name, date_of_birth, weight, height, sexo')
           .eq('profile_id', user.id).single();
         render(rxRes.data, custRes.data || null);
       }
