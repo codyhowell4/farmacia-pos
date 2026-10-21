@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon, Award, UserPlus } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon, Award, UserPlus, UserCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,6 +14,7 @@ import LostSaleModal from '@/components/LostSaleModal';
 import PrescriptionModal from '@/components/PrescriptionModal';
 import MembershipPosLookup from '@/components/MembershipPosLookup';
 import MembershipSignupDialog, { MEMBERSHIP_SIGNUP_PLANS } from '@/components/MembershipSignupDialog';
+import StaffProfile from '@/components/StaffProfile';
 import ApoloBrand from '@/components/ApoloBrand';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN, getTaxSettings, calcIVA } from '@/lib/currency';
@@ -110,6 +111,7 @@ const PoSDashboard = () => {
   const [membershipRevisionProducts, setMembershipRevisionProducts] = useState([]);
   const [membershipPlanProducts, setMembershipPlanProducts] = useState([]);
   const [membershipSignupOpen, setMembershipSignupOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const searchInputRef = useRef(null);
   const completingSaleRef = useRef(false);
 
@@ -2261,6 +2263,9 @@ const PoSDashboard = () => {
                     ← Admin
                   </Button>
                 )}
+                <Button onClick={() => setProfileOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-apolo-navy border-apolo-navy/30 hover:bg-apolo-navy/5">
+                  <UserCircle className="w-4 h-4 mr-2" />Mi Perfil
+                </Button>
                 <Button onClick={handleLogout} variant="outline" size="sm" className="hidden sm:inline-flex"><LogOut className="w-4 h-4 mr-2" />Logout</Button>
                 <Button onClick={handleLogout} variant="ghost" size="icon" className="sm:hidden"><LogOut className="w-5 h-5" /></Button>
               </div>
@@ -2282,6 +2287,14 @@ const PoSDashboard = () => {
                   return (
                     <motion.div key={medicine.id} whileHover={disabled ? {} : { scale: 1.03 }} className={`bg-white border border-slate-200 rounded-lg p-3 sm:p-4 transition-all flex flex-col justify-between ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:shadow-xl cursor-pointer'}`} onClick={() => !disabled && addToCart(medicine)}>
                       <div>
+                        {medicine.image_url && (
+                          <img
+                            src={medicine.image_url}
+                            alt={medicine.name}
+                            loading="lazy"
+                            className="w-full h-20 sm:h-24 object-contain rounded-md mb-2 bg-slate-50"
+                          />
+                        )}
                         <div className="flex items-center gap-1.5 mb-1">
                           <h3 className="font-semibold text-slate-900 truncate text-sm sm:text-base">{medicine.name}</h3>
                           {medicine.requires_prescription && <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700 flex-shrink-0">Rx</span>}
@@ -2483,6 +2496,14 @@ const PoSDashboard = () => {
         );
       }} />
       <LostSaleModal open={lostSaleOpen} onOpenChange={setLostSaleOpen} />
+      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Mi Perfil</DialogTitle>
+          </DialogHeader>
+          <StaffProfile />
+        </DialogContent>
+      </Dialog>
       <MembershipSignupDialog
         open={membershipSignupOpen}
         onOpenChange={setMembershipSignupOpen}

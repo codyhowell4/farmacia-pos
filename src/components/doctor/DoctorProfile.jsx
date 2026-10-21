@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   UserCircle, Stethoscope, Phone, Mail, Award, Activity,
-  Calendar, MapPin, Clock, KeyRound, ShieldCheck
+  Calendar, MapPin, Clock, KeyRound, ShieldCheck, GraduationCap
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -53,6 +53,8 @@ const DoctorProfile = () => {
   const [efirmaUnlocked, setEfirmaUnlocked] = useState(false);
   const [licenseNumber, setLicenseNumber] = useState('');
   const [savingLicense, setSavingLicense] = useState(false);
+  const [escuela, setEscuela] = useState('');
+  const [savingEscuela, setSavingEscuela] = useState(false);
 
   useEffect(() => {
     if (user?.timezone) setTimezone(user.timezone);
@@ -188,6 +190,22 @@ const DoctorProfile = () => {
     }
   };
 
+  // La escuela/universidad de egreso se imprime en la receta bajo el nombre
+  // y la cédula (snapshot en prescriptions.doctor_escuela).
+  const handleSaveEscuela = async () => {
+    if (!user?.id) return;
+    setSavingEscuela(true);
+    try {
+      await upsertDoctorProfile(user.id, { escuela: escuela.trim() || null });
+      toast.success('Escuela guardada');
+      loadProfile();
+    } catch (err) {
+      toast.error(err.message || 'Error guardando la escuela');
+    } finally {
+      setSavingEscuela(false);
+    }
+  };
+
   const loadProfile = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
@@ -200,6 +218,7 @@ const DoctorProfile = () => {
       setProfile(data);
       setEfirma(efirmaRow);
       setLicenseNumber(data?.license_number || '');
+      setEscuela(data?.escuela || '');
       setAvailability(
         data?.availability && typeof data.availability === 'object' && !Array.isArray(data.availability)
           ? data.availability
@@ -376,6 +395,31 @@ const DoctorProfile = () => {
                     </div>
                     <p className="text-xs text-slate-400 mt-1">
                       Obligatoria para emitir recetas electrónicas (LGS 42 Bis) — se imprime en cada receta.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 py-3 border-b border-slate-100">
+                  <div className="mt-0.5 p-2 rounded-lg bg-teal-50 text-teal-600">
+                    <GraduationCap className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Escuela / Universidad</p>
+                    <div className="flex gap-2 mt-1.5">
+                      <Input
+                        value={escuela}
+                        onChange={(e) => setEscuela(e.target.value)}
+                        placeholder="Ej. Universidad Panamericana"
+                      />
+                      <Button
+                        onClick={handleSaveEscuela}
+                        disabled={savingEscuela}
+                        className="bg-[#46AC78] hover:bg-[#3b9566] shrink-0"
+                      >
+                        {savingEscuela ? 'Guardando…' : 'Guardar'}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Se imprime en la receta bajo tu nombre y cédula.
                     </p>
                   </div>
                 </div>

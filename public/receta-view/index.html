@@ -37,6 +37,7 @@
     .rx-logo-circle::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 5px; height: 5px; border-radius: 50%; background: #1E2A8A; }
     .rx-logo-slogan { font-size: 6.5pt; letter-spacing: 1.5px; }
     .rx-doctor-info { padding-top: 0.08in; font-size: 9.5pt; line-height: 1.9; letter-spacing: 1px; }
+    .rx-doctor-info.rx-doc-3lines { line-height: 1.5; font-size: 9pt; }
     .rx-doctor-info label { font-weight: 700; }
     .rx-doctor-info .underline { display: inline-block; min-width: 1.7in; border-bottom: 1px solid #1E2A8A; margin-left: 4px; }
     .rx-header-right { display: flex; align-items: flex-start; gap: 0.12in; }
@@ -194,9 +195,10 @@
                   '<div class="rx-logo-slogan">CUIDAMOS DE TI, CUIDAMOS TU SALUD</div>' +
                 '</div>' +
                 '<div class="rx-header-right">' +
-                  '<div class="rx-doctor-info">' +
+                  '<div class="rx-doctor-info' + (rx.doctor_escuela ? ' rx-doc-3lines' : '') + '">' +
                     '<div><label>NOMBRE DE DOCTOR:</label><span class="underline">' + esc(rx.doctor_name || (rx.profiles && rx.profiles.full_name) || '') + '</span></div>' +
                     '<div><label>CÉDULA:</label><span class="underline">' + esc(rx.doctor_license_number || '') + '</span></div>' +
+                    (rx.doctor_escuela ? '<div><label>ESCUELA:</label><span class="underline">' + esc(rx.doctor_escuela) + '</span></div>' : '') +
                   '</div>' +
                   '<svg class="rx-caduceus" viewBox="0 0 48 64" fill="none" stroke="#1E2A8A" stroke-width="2" stroke-linecap="round">' +
                     '<path d="M24 12 C18 3 8 3 4 9 C10 9 14 11 17 15 C12 15 8 18 7 22 C12 20 16 21 19 23" />' +

@@ -472,6 +472,9 @@ const PatientWorkspace = () => {
         patient_curp: customer?.curp || null,
         doctor_name: doctorProfile?.profiles?.full_name || user?.name || user?.email || '',
         doctor_license_number: doctorProfile?.license_number || '',
+        // Solo se envía cuando hay escuela: si la migración 20261018120000
+        // aún no corre en producción, las recetas sin escuela no fallan.
+        ...(doctorProfile?.escuela?.trim() ? { doctor_escuela: doctorProfile.escuela.trim() } : {}),
         medication: first.medication.trim(),
         dosage: first.dosage.trim() || null,
         frequency: first.frequency.trim() || null,

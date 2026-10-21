@@ -201,6 +201,20 @@ export const downloadPrescriptionPDF = async (prescription, customer, filename =
   txt(prescription.doctor_license_number || '', cedValX, DOC_Y + 0.28 * scale);
   line(cedValX, DOC_Y + 0.28 * scale + 0.07 * scale, cedValX + cedLineW, DOC_Y + 0.28 * scale + 0.07 * scale);
 
+  // Escuela del médico (opcional): tercera línea bajo la cédula; queda dentro
+  // de la banda del encabezado (HEADER_H) y no altera recetas sin el dato.
+  if (prescription.doctor_escuela) {
+    setFont('bold', 10);
+    const lblEsc = 'ESCUELA:';
+    const escY = DOC_Y + 0.52 * scale;
+    txt(lblEsc, DOC_X, escY);
+    const escValX = DOC_X + tw(lblEsc) + 0.03;
+    const escLineW = Math.max(0.4, CONTENT_R - escValX);
+    fitFont(prescription.doctor_escuela, 10, escLineW);
+    txt(prescription.doctor_escuela, escValX, escY);
+    line(escValX, escY + 0.07 * scale, escValX + escLineW, escY + 0.07 * scale);
+  }
+
   // ── Firma electrónica: verification QR near the signature area ──
   // (only when the receta was electronically signed; QR failure must
   // never block the PDF download)

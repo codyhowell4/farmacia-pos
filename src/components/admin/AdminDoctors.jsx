@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
-  Stethoscope, Search, Edit2, AlertTriangle, CheckCircle2, Phone, Award
+  Stethoscope, Search, Edit2, AlertTriangle, CheckCircle2, Phone, Award, GraduationCap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,6 +36,7 @@ const AdminDoctors = () => {
   const [form, setForm] = useState({
     full_name: '',
     license_number: '',
+    escuela: '',
     specialty: '',
     phone: '',
     is_active: true,
@@ -81,6 +82,7 @@ const AdminDoctors = () => {
     setForm({
       full_name: doctor.full_name || '',
       license_number: dp?.license_number || '',
+      escuela: dp?.escuela || '',
       specialty: dp?.specialty || '',
       phone: dp?.phone || '',
       is_active: dp?.is_active ?? true,
@@ -104,6 +106,7 @@ const AdminDoctors = () => {
 
     const payload = {
       license_number: licenseNumber,
+      escuela: form.escuela.trim() || null,
       specialty: form.specialty.trim() || null,
       phone: form.phone.trim() || null,
       is_active: form.is_active,
@@ -206,6 +209,12 @@ const AdminDoctors = () => {
                           <Award className="w-3.5 h-3.5 text-teal-600" />
                           {dp?.license_number || 'Sin cédula'}
                         </span>
+                        {dp?.escuela && (
+                          <span className="flex items-center gap-1">
+                            <GraduationCap className="w-3.5 h-3.5 text-teal-600" />
+                            {dp.escuela}
+                          </span>
+                        )}
                         {dp?.specialty && (
                           <span className="flex items-center gap-1">
                             <Stethoscope className="w-3.5 h-3.5 text-teal-600" />
@@ -280,6 +289,17 @@ const AdminDoctors = () => {
                 placeholder="Ej. 12345678"
                 required
               />
+            </div>
+
+            <div>
+              <Label htmlFor="escuela">Escuela / Universidad</Label>
+              <Input
+                id="escuela"
+                value={form.escuela}
+                onChange={e => setForm({ ...form, escuela: e.target.value })}
+                placeholder="Ej. Universidad Panamericana"
+              />
+              <p className="text-xs text-slate-400 mt-1">Se imprime en la receta bajo el nombre y la cédula.</p>
             </div>
 
             <div>

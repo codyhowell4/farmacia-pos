@@ -11,7 +11,7 @@ const isoToDisplay = (iso) => {
 };
 
 const displayToIso = (text) => {
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.test(text);
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text);
   if (!m) return null;
   const d = Number(m[1]), mo = Number(m[2]), y = Number(m[3]);
   if (y < 1900 || y > 2200 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;

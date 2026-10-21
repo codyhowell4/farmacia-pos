@@ -177,6 +177,12 @@ const PrintablePrescription = ({ prescription, customer, skipPrintPortal }) => {
           line-height: 1.9;
           letter-spacing: 1px;
         }
+        /* Con escuela (3ª línea) el interlineado se compacta para que el
+           encabezado crezca ~0 y no desplace el cuerpo de la receta. */
+        .rx-doctor-info.rx-doc-3lines {
+          line-height: 1.5;
+          font-size: 9pt;
+        }
         .rx-doctor-info label {
           font-weight: 700;
         }
@@ -446,9 +452,12 @@ const PrintablePrescription = ({ prescription, customer, skipPrintPortal }) => {
               <div className="rx-logo-slogan">CUIDAMOS DE TI, CUIDAMOS TU SALUD</div>
             </div>
             <div className="rx-header-right">
-              <div className="rx-doctor-info">
+              <div className={`rx-doctor-info${prescription.doctor_escuela ? ' rx-doc-3lines' : ''}`}>
                 <div><label>NOMBRE DE DOCTOR:</label><span className="underline">{prescription.doctor_name || prescription.profiles?.full_name || ''}</span></div>
                 <div><label>CÉDULA:</label><span className="underline">{prescription.doctor_license_number || ''}</span></div>
+                {prescription.doctor_escuela && (
+                  <div><label>ESCUELA:</label><span className="underline">{prescription.doctor_escuela}</span></div>
+                )}
               </div>
               {prescription.signature && qrUrl && (
                 <div className="rx-qr-block">

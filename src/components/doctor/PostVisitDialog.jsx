@@ -462,6 +462,9 @@ const PostVisitDialog = ({ open, onOpenChange, appointment, onSaved, onGoToConse
       patient_curp: appointment?.customers?.curp || null,
       doctor_name: doctorName,
       doctor_license_number: doctorProfile?.license_number || '',
+      // Solo se envía cuando hay escuela: si la migración 20261018120000
+      // aún no corre en producción, las recetas sin escuela no fallan.
+      ...(doctorProfile?.escuela?.trim() ? { doctor_escuela: doctorProfile.escuela.trim() } : {}),
       medication: first.medication.trim(),
       dosage: first.dosage.trim() || null,
       frequency: first.frequency.trim() || null,

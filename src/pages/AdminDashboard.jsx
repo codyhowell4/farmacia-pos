@@ -38,6 +38,7 @@ import AdminConsents from '@/components/admin/AdminConsents';
 import AdminArco from '@/components/admin/AdminArco';
 import AdminPartners from '@/components/admin/AdminPartners';
 import AdminKpis from '@/components/admin/AdminKpis';
+import StaffProfile from '@/components/StaffProfile';
 
 const AdminDashboard = () => {
   const { logout, user } = useAuth();
@@ -61,6 +62,7 @@ const AdminDashboard = () => {
     if (path.includes('/reports')) return 'reports';
     if (path.includes('/analytics')) return 'analytics';
     if (path.includes('/settings')) return 'settings';
+    if (path.includes('/profile')) return 'profile';
     if (path.includes('/accounting')) return 'accounting';
     if (path.includes('/doctors')) return 'doctors';
     if (path.includes('/prescriptions')) return 'prescriptions';
@@ -154,7 +156,7 @@ const AdminDashboard = () => {
         <button
           onClick={() => setConfigOpen(!configOpen)}
           className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all ${
-            ['users', 'doctors', 'customers', 'appointments', 'audit', 'settings'].includes(activeTab)
+            ['profile', 'users', 'doctors', 'customers', 'appointments', 'audit', 'settings'].includes(activeTab)
               ? 'bg-white/10 text-white'
               : 'text-white/70 hover:bg-white/10 hover:text-white'
           }`}
@@ -175,6 +177,9 @@ const AdminDashboard = () => {
               className="overflow-hidden ml-2"
             >
               <div className="space-y-1 pt-1">
+                <button onClick={() => navigateTo('/admin/profile', 'profile')} className={subNavButtonClass(isActive('profile'))}>
+                  <UserCircle className="w-4 h-4" /><span>Mi Perfil</span>
+                </button>
                 <button onClick={() => navigateTo('/admin/users', 'users')} className={subNavButtonClass(isActive('users'))}>
                   <Users className="w-4 h-4" /><span>Usuarios</span>
                 </button>
@@ -397,6 +402,7 @@ const AdminDashboard = () => {
                 <Route path="/lost-sales" element={<AdminLostSales />} />
                 <Route path="/kpis" element={<AdminKpis />} />
                 <Route path="/settings" element={<AdminSettings />} />
+                <Route path="/profile" element={<StaffProfile />} />
               </Routes>
             </main>
           </div>

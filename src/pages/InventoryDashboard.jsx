@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Helmet } from 'react-helmet';
-import { Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal, Upload, FileSpreadsheet, ChevronDown, ChevronUp, Link2, X, RefreshCw } from 'lucide-react';
+import { Plus, Edit, Trash2, LogOut, Search, AlertTriangle, Clock, Barcode, History, SlidersHorizontal, Upload, FileSpreadsheet, ChevronDown, ChevronUp, Link2, X, RefreshCw, UserCircle, ImagePlus } from 'lucide-react';
 import ApoloBrand from '@/components/ApoloBrand';
+import StaffProfile from '@/components/StaffProfile';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DateInput } from '@/components/ui/date-input';
@@ -13,7 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
-import { getInventoryWithSupplier, getInventoryItemByBarcode, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory, getAllInventoryBatches, restockInventoryItem, isServiceItem, getProductLinks, getAllProductLinks, addProductLink, removeProductLink, buildLinkedStockMap } from '@/lib/db';
+import { getInventoryWithSupplier, getInventoryItemByBarcode, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory, getAllInventoryBatches, restockInventoryItem, isServiceItem, getProductLinks, getAllProductLinks, addProductLink, removeProductLink, buildLinkedStockMap, uploadInventoryImage } from '@/lib/db';
 import { isAntibioticName } from '@/lib/antibiotics';
 
 const LOW_STOCK_THRESHOLD = 0;
@@ -78,8 +79,10 @@ const InventoryDashboard = () => {
     lowStockThreshold: LOW_STOCK_THRESHOLD.toString(),
     pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '',
     requiresPrescription: false, controlledGroup: '', batchNumber: '', supplierId: '', department: '', itemType: 'product',
-    notes: '',
+    notes: '', laboratorio: '', imageUrl: '',
   });
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
   const [suppliers, setSuppliers] = useState([]);
   const [adjustmentForm, setAdjustmentForm] = useState({
     newQuantity: '', reason: '',
@@ -121,12 +124,21 @@ const InventoryDashboard = () => {
   const [importMode, setImportMode] = useState('add'); // 'add' | 'replace'
   const [lowStockExpanded, setLowStockExpanded] = useState(false);
   const [expiringExpanded, setExpiringExpanded] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => { loadInventory(); loadSuppliers(); }, [user?.locationId]);
 
   // Debounce state for the live barcode lookup in the add/edit form.
   const barcodeLookupRef = useRef({ timer: null, seq: 0 });
   useEffect(() => () => clearTimeout(barcodeLookupRef.current.timer), []);
+
+  // Product photo: preview the picked file (object URL revoked on change)
+  useEffect(() => {
+    if (!imageFile) { setImagePreview(''); return undefined; }
+    const url = URL.createObjectURL(imageFile);
+    setImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
 
   // The table renders the first slice only — rendering ~1000 rows at once is
   // what made the module feel slow. Reset the slice whenever the list shape changes.
@@ -199,6 +211,11 @@ const InventoryDashboard = () => {
     }
     const threshold = parseInt(formData.lowStockThreshold) || LOW_STOCK_THRESHOLD;
     try {
+      // Photo first: a failed upload aborts the save so the form data survives
+      let imageUrl = formData.imageUrl || null;
+      if (imageFile) {
+        imageUrl = await uploadInventoryImage(imageFile);
+      }
       const item = {
         ...(editingItem ? { id: editingItem.id } : {}),
         name: formData.name,
@@ -218,6 +235,8 @@ const InventoryDashboard = () => {
         department: formData.department || null,
         item_type: formData.itemType || 'product',
         notes: formData.notes.trim() || null,
+        laboratorio: formData.laboratorio.trim() || null,
+        image_url: imageUrl,
       };
       await upsertInventoryItem(item);
       logAudit({
@@ -255,7 +274,10 @@ const InventoryDashboard = () => {
       department: item.department || '',
       itemType: item.item_type || 'product',
       notes: item.notes || '',
+      laboratorio: item.laboratorio || '',
+      imageUrl: item.image_url || '',
     });
+    setImageFile(null);
     loadProductLinks(item);
   };
 
@@ -526,7 +548,8 @@ const InventoryDashboard = () => {
   };
 
   const resetForm = () => {
-    setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false, controlledGroup: '', batchNumber: '', supplierId: '', department: '', itemType: 'product', notes: '' });
+    setFormData({ name: '', use: '', cost: '', price: '', quantity: '', lowStockThreshold: LOW_STOCK_THRESHOLD.toString(), pharmacyLocation: '', warehouseLocation: '', barcode: '', expirationDate: '', requiresPrescription: false, controlledGroup: '', batchNumber: '', supplierId: '', department: '', itemType: 'product', notes: '', laboratorio: '', imageUrl: '' });
+    setImageFile(null);
     setEditingItem(null);
     setLinkedProducts([]);
     setLinkSearch('');
@@ -601,6 +624,7 @@ const InventoryDashboard = () => {
       const warehouseLocation = normalizeText(pick(record, 'Almacén', 'almacen', 'Almacen', 'ALMACÉN', 'Ubicación', 'Ubicacion', 'ubicacion', 'Warehouse', 'warehouse_location', 'Pasillo'));
       const requiresPrescription = parseBool(pick(record, 'Receta', 'receta', 'Rx', 'rx', 'RX', 'Requiere Receta', 'requiere_receta', 'Prescription'));
       const supplierName = normalizeText(pick(record, 'Proveedor', 'proveedor', 'PROVEEDOR', 'Supplier', 'supplier'));
+      const laboratorio = normalizeText(pick(record, 'Laboratorio', 'laboratorio', 'LABORATORIO', 'Lab', 'lab', 'Manufacturer', 'manufacturer'));
       const itemTypeRaw = (pick(record, 'Tipo', 'tipo', 'Type', 'item_type') ?? '').toString().trim().toLowerCase();
       const itemType = ['servicio', 'service'].includes(itemTypeRaw) ? 'service' : 'product';
       const notes = normalizeText(pick(record, 'Notas', 'notas', 'NOTAS', 'Notes', 'notes', 'Notas Generales'));
@@ -624,6 +648,7 @@ const InventoryDashboard = () => {
         quantity,
         department: department || null,
         use: use || department || null,
+        laboratorio,
         low_stock_threshold: threshold !== undefined ? parseQuantity(threshold) : LOW_STOCK_THRESHOLD,
         location_id: user?.locationId || null,
         barcode,
@@ -814,7 +839,7 @@ const InventoryDashboard = () => {
     const matchesSearch = !q || [
       item.name, item.use, item.department, item.barcode, item.batch_number,
       item.warehouse_location, item.pharmacy_location, item.suppliers?.name,
-      item.item_type, item.notes,
+      item.item_type, item.notes, item.laboratorio,
     ].some(field => field && String(field).toLowerCase().includes(q));
     if (isServiceItem(item)) return matchesSearch && !alertFilter; // services never match stock/expiry alerts
     if (alertFilter === 'low_stock') return matchesSearch && item.quantity <= (item.low_stock_threshold || LOW_STOCK_THRESHOLD);
@@ -841,6 +866,9 @@ const InventoryDashboard = () => {
                     ← Admin
                   </Button>
                 )}
+                <Button onClick={() => setProfileOpen(true)} variant="outline" className="text-apolo-navy border-apolo-navy/30 hover:bg-apolo-navy/5">
+                  <UserCircle className="w-4 h-4 mr-2" />Mi Perfil
+                </Button>
                 <Button onClick={handleLogout} variant="outline"><LogOut className="w-4 h-4 mr-2" />Cerrar sesión</Button>
               </div>
             </div>
@@ -957,6 +985,7 @@ const InventoryDashboard = () => {
                       <div className="space-y-2"><Label>Nombre del medicamento</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required /></div>
                       <div className="space-y-2"><Label>Para Que Es</Label><Input value={formData.use} onChange={(e) => setFormData({ ...formData, use: e.target.value })} required /></div>
                       <div className="space-y-2"><Label>Departamento</Label><Input value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })} placeholder="Ej. Analgésicos, Antibióticos" /></div>
+                      <div className="space-y-2"><Label>Laboratorio (opcional)</Label><Input value={formData.laboratorio} onChange={(e) => setFormData({ ...formData, laboratorio: e.target.value })} placeholder="Ej. Bayer, Pfizer, Genomma Lab" /></div>
                       <div className="space-y-2">
                         <Label>Tipo</Label>
                         <select
@@ -1101,6 +1130,35 @@ const InventoryDashboard = () => {
                           rows={3}
                         />
                       </div>
+                      <div className="md:col-span-2 space-y-2">
+                        <Label className="flex items-center gap-1.5"><ImagePlus className="w-4 h-4" />Foto del producto (opcional)</Label>
+                        <div className="flex items-center gap-4">
+                          {(imagePreview || formData.imageUrl) ? (
+                            <img src={imagePreview || formData.imageUrl} alt="Foto del producto" className="w-20 h-20 rounded-lg object-cover border border-slate-200" />
+                          ) : (
+                            <div className="w-20 h-20 rounded-lg border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-400">
+                              <ImagePlus className="w-6 h-6" />
+                            </div>
+                          )}
+                          <div className="space-y-1.5">
+                            <Input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                            />
+                            <p className="text-xs text-slate-400">JPG, PNG o WebP — máx. 2 MB. Se sube al guardar el producto.</p>
+                            {(imagePreview || formData.imageUrl) && (
+                              <button
+                                type="button"
+                                className="text-xs text-red-600 hover:underline"
+                                onClick={() => { setImageFile(null); setFormData({ ...formData, imageUrl: '' }); }}
+                              >
+                                Quitar foto
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     <Button type="submit" className="w-full">{editingItem ? 'Actualizar medicamento' : 'Agregar medicamento'}</Button>
                   </form>
@@ -1179,7 +1237,17 @@ const InventoryDashboard = () => {
                             <button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-800" title="Eliminar"><Trash2 className="w-4 h-4" /></button>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-sm font-medium text-slate-900">{item.name}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                          <div className="flex items-center gap-2.5">
+                            {item.image_url ? (
+                              <img src={item.image_url} alt="" className="w-9 h-9 rounded-md object-cover border border-slate-200 flex-shrink-0" loading="lazy" />
+                            ) : null}
+                            <div className="min-w-0">
+                              <p className="truncate">{item.name}</p>
+                              {item.laboratorio && <p className="text-xs font-normal text-slate-500 truncate">{item.laboratorio}</p>}
+                            </div>
+                          </div>
+                        </td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.use}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.department || '-'}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{formatMXN(item.cost)}</td>
@@ -1421,7 +1489,7 @@ const InventoryDashboard = () => {
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
                 <p className="font-semibold mb-1">Columnas soportadas (todas opcionales excepto Producto):</p>
-                <p><code>Producto, Para Que Es, Costo, Venta, Existencia, Departamento, Umbral, Codigo, Vencimiento, Lote, Almacén, Receta, Proveedor, Tipo, Notas</code></p>
+                <p><code>Producto, Para Que Es, Costo, Venta, Existencia, Departamento, Umbral, Codigo, Vencimiento, Lote, Almacén, Receta, Proveedor, Laboratorio, Tipo, Notas</code></p>
                 <p className="mt-1 text-blue-700">También se aceptan variantes en inglés (Name, Price, Stock, Barcode, UPC, Batch, Supplier, Notes...). El Proveedor se relaciona por nombre.</p>
               </div>
 
@@ -1539,6 +1607,16 @@ const InventoryDashboard = () => {
                 <Button variant="outline" onClick={closeImportDialog} disabled={isImporting}>Cancelar</Button>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Mi Perfil */}
+        <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Mi Perfil</DialogTitle>
+            </DialogHeader>
+            <StaffProfile />
           </DialogContent>
         </Dialog>
 

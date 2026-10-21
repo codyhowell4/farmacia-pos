@@ -100,8 +100,12 @@ export const getUsers = async () => {
   );
 };
 
-export const createUser = async ({ email, password, full_name, role, location_id, pin }) => {
+export const createUser = async ({ email, password, full_name, role, location_id, pin, invite = true }) => {
   const adminOrgId = await getOrgId();
+
+  // Invite flow: without an explicit password the account gets a random one
+  // nobody knows, and the user sets their own from the activation email.
+  const effectivePassword = password || `${crypto.randomUUID()}Aa1!`;
 
   // Step 1: Create the Supabase auth user using a temporary client
   // (so we don't sign out the current admin)
@@ -113,7 +117,7 @@ export const createUser = async ({ email, password, full_name, role, location_id
 
   const { data: authData, error: authError } = await tempSupabase.auth.signUp({
     email,
-    password,
+    password: effectivePassword,
     options: { data: { full_name } },
   });
 
@@ -144,7 +148,31 @@ export const createUser = async ({ email, password, full_name, role, location_id
   if (pin) {
     await setProfilePin(newUserId, pin);
   }
-  return data;
+
+  // Step 3: activation email — the user picks their own password at
+  // /reset-password. Non-fatal: the account exists either way and the admin
+  // can resend from Usuarios.
+  let inviteSent = false;
+  if (invite && !password) {
+    const { error: inviteError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (inviteError) {
+      console.error('[createUser] invite email failed:', inviteError);
+    } else {
+      inviteSent = true;
+    }
+  }
+
+  return { ...data, inviteSent };
+};
+
+// Re-send the activation/reset email (e.g. the first link expired).
+export const resendUserInvite = async (email) => {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/reset-password`,
+  });
+  if (error) throw error;
 };
 
 export const updateProfile = async (id, updates) => {
@@ -203,6 +231,22 @@ export const getInventory = async (locationId = null) => {
     if (locationId) query = query.or(`location_id.eq.${locationId},location_id.is.null`);
     return query;
   });
+};
+
+// Product photos live in the public `inventory-images` bucket (staff-only
+// writes); the public URL is stored on inventory.image_url.
+const INVENTORY_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+export const uploadInventoryImage = async (file) => {
+  if (!file) throw new Error('No se seleccionó imagen');
+  if (!(file.type || '').startsWith('image/')) throw new Error('El archivo debe ser una imagen');
+  if (file.size > INVENTORY_IMAGE_MAX_BYTES) throw new Error('La imagen no debe pesar más de 2 MB');
+  const orgId = await getOrgId();
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  const path = `${orgId}/${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from('inventory-images').upload(path, file);
+  if (error) throw error;
+  const { data } = supabase.storage.from('inventory-images').getPublicUrl(path);
+  return data.publicUrl;
 };
 
 export const upsertInventoryItem = async (item) => {

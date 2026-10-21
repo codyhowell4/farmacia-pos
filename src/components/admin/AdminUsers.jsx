@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Search, UserX, UserCheck } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, UserX, UserCheck, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -8,7 +8,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
-import { getUsers, createUser, updateProfile, deleteProfile, getLocations, setProfilePin } from '@/lib/db';
+import { getUsers, createUser, updateProfile, deleteProfile, getLocations, setProfilePin, resendUserInvite } from '@/lib/db';
 
 const AdminUsers = () => {
   const [users, setUsers] = useState([]);
@@ -16,6 +16,7 @@ const AdminUsers = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [manualPassword, setManualPassword] = useState(false);
   const [formData, setFormData] = useState({
     username: '', password: '', name: '', role: '', pharmacyLocation: '', pin: '', timezone: 'America/Mexico_City'
   });
@@ -42,7 +43,10 @@ const AdminUsers = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     // Blank password on edit means "unchanged" (updateProfile never sets one).
-    if ((!editingUser || formData.password) && formData.password.length < 10) {
+    // On create, a password is only required in manual mode — the default is
+    // the activation email, where the user picks their own password.
+    const passwordUsed = editingUser ? Boolean(formData.password) : manualPassword;
+    if (passwordUsed && formData.password.length < 10) {
       toast({ title: 'Contraseña muy corta', description: 'La contraseña debe tener al menos 10 caracteres.', variant: 'destructive' });
       return;
     }
@@ -66,21 +70,46 @@ const AdminUsers = () => {
         }
         toast({ title: 'Usuario actualizado', description: 'La información del usuario ha sido actualizada' });
       } else {
-        await createUser({
+        const created = await createUser({
           email: formData.username,
-          password: formData.password,
+          password: manualPassword ? formData.password : undefined,
           full_name: formData.name,
           role: formData.role,
           location_id: formData.pharmacyLocation,
           pin: formData.pin || null,
+          invite: !manualPassword,
         });
-        toast({ title: 'Usuario agregado', description: 'El nuevo usuario ha sido creado' });
+        if (manualPassword) {
+          toast({ title: 'Usuario agregado', description: 'El nuevo usuario ha sido creado' });
+        } else if (created?.inviteSent) {
+          toast({ title: 'Usuario agregado', description: `Se envió el correo de activación a ${formData.username} — ahí creará su contraseña.` });
+        } else {
+          toast({
+            title: 'Usuario creado, pero el correo de activación falló',
+            description: 'Usa el botón de reenviar correo (sobre) en la lista de usuarios.',
+            variant: 'destructive',
+          });
+        }
       }
       await loadUsers();
       setIsDialogOpen(false);
       resetForm();
     } catch (err) {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  // Re-send the activation/reset email — for links that expired or never arrived.
+  const handleResendInvite = async (user) => {
+    if (!user?.email) {
+      toast({ title: 'Sin correo', description: 'Este usuario no tiene email registrado.', variant: 'destructive' });
+      return;
+    }
+    try {
+      await resendUserInvite(user.email);
+      toast({ title: 'Correo enviado', description: `Se envió el enlace de activación a ${user.email}` });
+    } catch (err) {
+      toast({ title: 'Error al enviar el correo', description: err.message, variant: 'destructive' });
     }
   };
 
@@ -142,6 +171,7 @@ const AdminUsers = () => {
       timezone: 'America/Mexico_City'
     });
     setEditingUser(null);
+    setManualPassword(false);
   };
 
   const filteredUsers = users.filter(user =>
@@ -194,11 +224,46 @@ const AdminUsers = () => {
                     <Label htmlFor="username">Usuario</Label>
                     <Input id="username" value={formData.username} onChange={(e) => setFormData({ ...formData, username: e.target.value })} required />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Contraseña</Label>
-                    <Input id="password" type="password" minLength={10} value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required={!editingUser} />
-                    <p className="text-xs text-slate-400">Mínimo 10 caracteres</p>
-                  </div>
+                  {editingUser ? (
+                    <div className="space-y-2">
+                      <Label>Contraseña</Label>
+                      <p className="text-xs text-slate-400 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        La contraseña no se puede ver ni cambiar aquí — el usuario la gestiona desde Mi Perfil, o usa el botón de correo (sobre) en la lista para enviarle un enlace de restablecimiento.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Contraseña</Label>
+                      {!manualPassword ? (
+                        <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
+                          <p className="text-sm text-teal-800">
+                            El usuario recibirá un <strong>correo de activación</strong> para crear su propia contraseña.
+                          </p>
+                          <label className="mt-1.5 flex items-center gap-2 text-xs text-teal-700 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={manualPassword}
+                              onChange={(e) => setManualPassword(e.target.checked)}
+                              className="h-3.5 w-3.5 rounded border-slate-300"
+                            />
+                            Establecer la contraseña manualmente (sin correo)
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <Input id="password" type="password" minLength={10} value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} required />
+                          <p className="text-xs text-slate-400">Mínimo 10 caracteres. No se enviará correo de activación.</p>
+                          <button
+                            type="button"
+                            className="text-xs text-teal-700 hover:underline"
+                            onClick={() => { setManualPassword(false); setFormData({ ...formData, password: '' }); }}
+                          >
+                            Mejor enviar el correo de activación
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="role">Rol</Label>
                     <select
@@ -309,6 +374,15 @@ const AdminUsers = () => {
                   <td className="px-4 py-3 text-sm">
                     <div className="flex space-x-2">
                       <button onClick={() => handleEdit(user)} className="text-apolo-navy hover:text-apolo-navy-dark"><Edit className="w-4 h-4" /></button>
+                      {user.email && (
+                        <button
+                          onClick={() => handleResendInvite(user)}
+                          title="Reenviar correo de activación / restablecer contraseña"
+                          className="text-teal-600 hover:text-teal-800"
+                        >
+                          <Mail className="w-4 h-4" />
+                        </button>
+                      )}
                       {user.id !== currentUser?.id && (
                         <button
                           onClick={() => handleToggleActive(user)}
