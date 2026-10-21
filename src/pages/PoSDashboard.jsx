@@ -2235,14 +2235,19 @@ const PoSDashboard = () => {
                       <div key={item.id}
                         className={`p-3 flex justify-between items-center ${item._unavailable ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-100 cursor-pointer'}`}
                         onClick={() => { if (!item._unavailable) addToCart(item); }}>
-                        <p>{item.name} <span className="text-slate-500">({item.use})</span>
-                          {item._unavailable && (
-                            <span className="ml-2 text-xs font-semibold text-red-600">
-                              {item.quantity <= 0 ? 'Sin existencias' : 'Caducado'}
-                            </span>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {item.image_url && (
+                            <img src={item.image_url} alt="" loading="lazy" className="w-10 h-10 rounded-md object-contain bg-white border border-slate-100 flex-shrink-0" />
                           )}
-                        </p>
-                        <p className="font-bold text-green-600">{formatMXN(item.price)}</p>
+                          <p className="min-w-0">{item.name} <span className="text-slate-500">({item.use})</span>
+                            {item._unavailable && (
+                              <span className="ml-2 text-xs font-semibold text-red-600">
+                                {item.quantity <= 0 ? 'Sin existencias' : 'Caducado'}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <p className="font-bold text-green-600 flex-shrink-0">{formatMXN(item.price)}</p>
                       </div>
                     ))}
                   </div>
@@ -2335,8 +2340,12 @@ const PoSDashboard = () => {
                   return (
                   <div key={item.id} className="border border-slate-200 rounded-lg p-3">
                     <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <span className="font-medium text-sm">{item.name}</span>
+                      <div className="flex items-start gap-2 min-w-0">
+                        {item.image_url && (
+                          <img src={item.image_url} alt="" loading="lazy" className="w-10 h-10 rounded-md object-contain bg-slate-50 border border-slate-100 flex-shrink-0" />
+                        )}
+                        <div className="min-w-0">
+                          <span className="font-medium text-sm">{item.name}</span>
                         {item.requires_prescription && (
                           <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700">Rx</span>
                         )}
@@ -2349,6 +2358,7 @@ const PoSDashboard = () => {
                           </p>
                         )}
                         {item.overrideBy && <p className="text-xs text-apolo-navy">Overridden by {item.overrideBy}</p>}
+                        </div>
                       </div>
                       <button onClick={() => removeFromCart(item.id)} className="text-red-500 hover:text-red-700 p-1"><Trash2 className="w-4 h-4" /></button>
                     </div>
