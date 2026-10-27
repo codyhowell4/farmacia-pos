@@ -112,7 +112,7 @@ const MembershipTermsPage = () => (
 
       <Section title="3. Pagos y renovación">
         <p>
-          La membresía se paga por mes anticipado, ya sea mediante cargo mensual automático con PayPal o
+          La membresía se paga por mes anticipado, ya sea mediante cargo mensual automático a tu tarjeta con Stripe o
           en efectivo en cualquiera de nuestras sucursales. La membresía se renueva cada mes mientras los
           pagos estén al corriente.
         </p>

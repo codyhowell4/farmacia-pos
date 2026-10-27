@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatMXN } from '@/lib/currency';
 
 const PAYPAL_STATUS_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paypal-subscription-status`;
+const STRIPE_STATUS_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-subscription-status`;
 
 const ROSTER_COOLDOWN_DAYS = 90;
 
@@ -71,6 +72,37 @@ const syncStatusToPayPal = async (subscriptionId, status) => {
   const result = await res.json();
   if (!res.ok || result.error) {
     throw new Error(result.error || 'Error al sincronizar con PayPal');
+  }
+
+  return result;
+};
+
+const syncStatusToStripe = async (membershipId, status) => {
+  if (!membershipId) return null;
+
+  const actionMap = {
+    active: 'activate',
+    paused: 'suspend',
+    cancelled: 'cancel',
+    expired: 'cancel',
+  };
+
+  const action = actionMap[status];
+  if (!action) return null;
+
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(STRIPE_STATUS_FUNCTION_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
+    body: JSON.stringify({ membership_id: membershipId, action }),
+  });
+
+  const result = await res.json();
+  if (!res.ok || result.error) {
+    throw new Error(result.error || 'Error al sincronizar con Stripe');
   }
 
   return result;
@@ -353,18 +385,20 @@ const AdminMemberships = () => {
         },
       });
 
-      if (
-        statusChanged &&
-        editing.payment_processor === 'paypal' &&
-        editing.processor_subscription_id
-      ) {
+      if (statusChanged && editing.processor_subscription_id) {
+        const processor = editing.payment_processor;
         try {
-          await syncStatusToPayPal(editing.processor_subscription_id, editing.status);
-        } catch (paypalErr) {
-          console.error('PayPal sync failed:', paypalErr);
+          if (processor === 'paypal') {
+            await syncStatusToPayPal(editing.processor_subscription_id, editing.status);
+          } else if (processor === 'stripe') {
+            await syncStatusToStripe(editing.id, editing.status);
+          }
+        } catch (syncErr) {
+          const processorLabel = processor === 'stripe' ? 'Stripe' : 'PayPal';
+          console.error(`${processorLabel} sync failed:`, syncErr);
           toast({
             title: 'Membresía actualizada localmente',
-            description: `No se pudo sincronizar con PayPal: ${paypalErr.message}`,
+            description: `No se pudo sincronizar con ${processorLabel}: ${syncErr.message}`,
             variant: 'destructive',
           });
           setEditing(null);
@@ -587,7 +621,9 @@ const AdminMemberships = () => {
                                 <p className="capitalize">{m.payment_processor || '—'}</p>
                               </div>
                               <div>
-                                <p className="text-xs font-semibold text-slate-500 uppercase">ID de suscripción PayPal</p>
+                                <p className="text-xs font-semibold text-slate-500 uppercase">
+                                  ID de suscripción {m.payment_processor === 'stripe' ? 'Stripe' : 'PayPal'}
+                                </p>
                                 <p className="font-mono text-xs break-all">{m.processor_subscription_id || '—'}</p>
                               </div>
                               <div>

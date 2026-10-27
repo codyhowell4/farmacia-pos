@@ -51,3 +51,28 @@ verify_jwt = false
 # generic so the endpoint can't be used to enumerate accounts.
 [functions.affiliate-signup]
 verify_jwt = false
+
+# Public Stripe membership signup (new signups only; existing PayPal members
+# keep PayPal) — no session yet by definition, same posture as
+# paypal-subscription.
+[functions.stripe-membership-signup]
+verify_jwt = false
+
+# POS card operations (authorize/capture/void + POS membership → Stripe
+# subscription) — staff only; the function itself requires an admin/pos
+# profile.
+[functions.stripe-pos-charge]
+verify_jwt = true
+
+[functions.stripe-subscription-status]
+verify_jwt = true
+
+# Stripe membership webhook — no session, auth is the Stripe-Signature header
+# (HMAC verified against STRIPE_WEBHOOK_SECRET inside the function).
+[functions.stripe-webhook]
+verify_jwt = false
+
+# Public teleconsulta payment verification (Stripe PaymentIntent) — replaces
+# paypal-capture-consult for new payments; same public posture.
+[functions.stripe-capture-consult]
+verify_jwt = false

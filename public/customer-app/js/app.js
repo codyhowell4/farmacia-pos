@@ -907,7 +907,7 @@ function renderPrivacidad() {
             Para operar la aplicación, la Farmacia se auxilia de los siguientes <strong>encargados técnicos</strong>,
             que tratan tus datos por cuenta del responsable y con las mismas protecciones previstas en este aviso y
             en la LFPDPPP: <strong>Daily.co</strong> (plataforma de videoconsulta), <strong>Resend</strong> (correo
-            electrónico transaccional), <strong>Meta Platforms / WhatsApp</strong> (mensajería), <strong>PayPal</strong>
+            electrónico transaccional), <strong>Meta Platforms / WhatsApp</strong> (mensajería), <strong>Stripe</strong>
             (procesamiento de pagos), <strong>Supabase</strong> (base de datos) y <strong>Cloudflare</strong>
             (hospedaje y red de entrega de contenido). Algunos de estos encargados tratan datos en servidores
             ubicados en Estados Unidos.
@@ -2431,6 +2431,9 @@ async function renderMembresias() {
       : null;
     const pendingCancel = !!membership.pending_cancellation;
     const isPayPal = membership.payment_processor === 'paypal';
+    // Stripe memberships (like legacy PayPal ones) can't resume in-app —
+    // they re-subscribe at /membresias. Only cash memberships resume here.
+    const isExternalProcessor = isPayPal || membership.payment_processor === 'stripe';
 
     statusEl.innerHTML = `
       <div style="background: linear-gradient(135deg, #141B5E 0%, #1E2A8A 55%, #2A3BB5 100%); border-radius: 20px; padding: 1.25rem; color: white; box-shadow: 0 12px 30px rgba(20,27,94,0.35); position: relative; overflow: hidden;">
@@ -2506,11 +2509,11 @@ async function renderMembresias() {
           <p style="font-size: 0.85rem; color: #b45309; margin: 0; line-height: 1.5;">
             Tu membresía está programada para cancelarse el <strong>${renewal || 'fin de tu periodo'}</strong>. Conservas todos tus beneficios hasta esa fecha.
           </p>
-          ${!isFamilyMember && !isPayPal ? `
+          ${!isFamilyMember && !isExternalProcessor ? `
             <button onclick="handleResumeMembership('${membership.id}')" style="width: 100%; margin-top: 0.75rem; padding: 0.75rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer;">Mantener membresía</button>
           ` : ''}
-          ${!isFamilyMember && isPayPal ? `
-            <p style="font-size: 0.8rem; color: #92400e; margin: 0.625rem 0 0;">Puedes reactivarla cuando quieras desde <a href="/membresias" style="color: #1E2A8A; font-weight: 600;">/membresias</a> — conservamos tus pagos acumulados.</p>
+          ${!isFamilyMember && isExternalProcessor ? `
+            <p style="font-size: 0.8rem; color: #92400e; margin: 0.625rem 0 0;">Puedes reactivar tu suscripción cuando quieras desde <a href="/membresias" style="color: #1E2A8A; font-weight: 600;">/membresias</a> — conservamos tus pagos acumulados.</p>
           ` : ''}
         </div>
       ` : ''}
@@ -2690,8 +2693,8 @@ async function handleCancelMembership(membershipId) {
   renderMembresias();
 }
 
-// Clear the pending cancellation (cash memberships only — PayPal members
-// re-sign up from /membresias).
+// Clear the pending cancellation (cash memberships only — PayPal and Stripe
+// members re-sign up from /membresias).
 async function handleResumeMembership(membershipId) {
   if (!membershipId) return;
 
@@ -9633,7 +9636,7 @@ window.showEmergencyInfo = function() {
 // Real doctors come from the get_public_doctors RPC.
 // Pricing: members with visits_remaining > 0 → free (membership_visit,
 // staff confirms later); members with 0 visits → 50% (membership_half);
-// non-members → full price (unpaid, PayPal capture required to confirm).
+// non-members → full price (unpaid, Stripe card payment required to confirm).
 
 // Cache of doctors loaded this session (used by booking + appointments)
 window.__videoDoctors = window.__videoDoctors || [];
@@ -9641,7 +9644,7 @@ window.__videoDoctors = window.__videoDoctors || [];
 // Pricing resolved on the booking screen: { paymentStatus, amount, price }
 window.__videoBookingPricing = null;
 
-// Context for the in-progress paid booking (used by PayPal retry)
+// Context for the in-progress paid booking (used by the payment retry)
 window.__videoPayment = null;
 
 function formatConsultPrice(amount) {
@@ -9724,53 +9727,56 @@ function videoClinicNow() {
   }
 }
 
-// Dynamically load the PayPal JS SDK (intent=capture) only when a paid
-// booking renders. Client id comes from window.farmaciaSupabaseConfig.
-let paypalSdkPromise = null;
-function loadPayPalSdk() {
-  if (window.paypal) return Promise.resolve(window.paypal);
-  if (paypalSdkPromise) return paypalSdkPromise;
+// Dynamically load Stripe.js only when a paid booking renders. Publishable
+// key comes from window.farmaciaSupabaseConfig.
+let stripeSdkPromise = null;
+function loadStripeSdk() {
+  if (window.Stripe) return Promise.resolve(window.Stripe);
+  if (stripeSdkPromise) return stripeSdkPromise;
 
-  const clientId = (window.farmaciaSupabaseConfig || {}).PAYPAL_CLIENT_ID;
-  if (!clientId) return Promise.reject(new Error('PayPal no está configurado'));
+  const publishableKey = (window.farmaciaSupabaseConfig || {}).STRIPE_PUBLISHABLE_KEY;
+  if (!publishableKey) return Promise.reject(new Error('Stripe no está configurado'));
 
-  paypalSdkPromise = new Promise((resolve, reject) => {
-    const existing = document.getElementById('paypal-sdk-script');
+  stripeSdkPromise = new Promise((resolve, reject) => {
+    const existing = document.getElementById('stripe-js-script');
     if (existing) {
-      existing.addEventListener('load', () => resolve(window.paypal));
-      existing.addEventListener('error', () => reject(new Error('No se pudo cargar el SDK de PayPal')));
+      existing.addEventListener('load', () => resolve(window.Stripe));
+      existing.addEventListener('error', () => reject(new Error('No se pudo cargar Stripe')));
       return;
     }
     const script = document.createElement('script');
-    script.id = 'paypal-sdk-script';
-    script.src = 'https://www.paypal.com/sdk/js?client-id=' + clientId + '&currency=MXN&intent=capture';
+    script.id = 'stripe-js-script';
+    script.src = 'https://js.stripe.com/v3';
     script.async = true;
-    script.onload = () => resolve(window.paypal);
+    script.onload = () => resolve(window.Stripe);
     script.onerror = () => {
-      paypalSdkPromise = null;
-      reject(new Error('No se pudo cargar el SDK de PayPal'));
+      stripeSdkPromise = null;
+      reject(new Error('No se pudo cargar Stripe'));
     };
     document.body.appendChild(script);
   });
-  return paypalSdkPromise;
+  return stripeSdkPromise;
 }
 
-// Capture a PayPal order for a consult via the edge function.
-// Returns { status: 'confirmed' } — the meeting URL is never returned to
-// this anonymous call; the patient joins from Mis Citas in the portal.
-async function captureConsultPayment(orderId, appointmentId) {
+// Call the stripe-capture-consult edge function. With { action: 'create' }
+// it mints the PaymentIntent (amount computed server-side) and returns
+// { client_secret, amount_mxn }; with { payment_intent_id, appointment_id }
+// it verifies the payment and confirms the cita → { status: 'confirmed' }.
+// The meeting URL is never returned to this anonymous call; the patient
+// joins from Mis Citas in the portal.
+async function callStripeCaptureConsult(body) {
   const cfg = window.farmaciaSupabaseConfig || {};
-  const res = await fetch(cfg.URL + '/functions/v1/paypal-capture-consult', {
+  const res = await fetch(cfg.URL + '/functions/v1/stripe-capture-consult', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(cfg.ANON_KEY ? { apikey: cfg.ANON_KEY } : {})
     },
-    body: JSON.stringify({ order_id: orderId, appointment_id: appointmentId })
+    body: JSON.stringify(body)
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json.error) {
-    throw new Error(json.error || 'No se pudo confirmar el pago');
+    throw new Error(json.error || 'No se pudo procesar el pago');
   }
   return json;
 }
@@ -9981,7 +9987,7 @@ async function resolveVideoBookingPrice() {
     html = `
       <div style="display: flex; justify-content: space-between; align-items: center;">
         <span style="color: var(--text-secondary);">Precio: ${formatConsultPrice(amount)}</span>
-        <span style="font-size: 0.8rem; color: var(--text-muted);">Pago seguro con PayPal</span>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">Pago seguro con Stripe</span>
       </div>
     `;
   }
@@ -10156,7 +10162,7 @@ window.confirmVideoBooking = async function(doctorId) {
     return;
   }
 
-  // Paid booking ('unpaid' or 'membership_half') → PayPal capture screen.
+  // Paid booking ('unpaid' or 'membership_half') → card payment screen.
   // If the user abandons here the appointment stays pending/unpaid;
   // staff can cancel it. Payment is required to confirm.
   window.__videoPayment = {
@@ -10202,7 +10208,7 @@ function renderVideoPaymentScreen() {
         <button onclick="this.closest('.modal-overlay').remove()" style="background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;">←</button>
         <div>
           <div style="font-weight: 600;">Pagar consulta</div>
-          <div style="font-size: 0.75rem; opacity: 0.9;">Pago seguro con PayPal</div>
+          <div style="font-size: 0.75rem; opacity: 0.9;">Pago seguro con Stripe</div>
         </div>
       </div>
 
@@ -10230,9 +10236,15 @@ function renderVideoPaymentScreen() {
         <!-- Error area -->
         <div id="video-pay-error" style="display: none; background: #fee2e2; color: #dc2626; border-radius: 12px; padding: 0.875rem; margin-bottom: 1rem; font-size: 0.85rem;"></div>
 
-        <!-- PayPal buttons -->
-        <div id="paypal-buttons-container" style="min-height: 120px;">
-          <div style="text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.9rem;">⏳ Cargando PayPal...</div>
+        <!-- Stripe card element -->
+        <div id="stripe-card-container">
+          <div id="stripe-card-element" style="background: #f8fafc; border: 1px solid var(--border-color); border-radius: 12px; padding: 0.875rem; min-height: 44px;">
+            <div style="text-align: center; color: var(--text-muted); font-size: 0.9rem;">⏳ Cargando pago con tarjeta...</div>
+          </div>
+          <div id="stripe-card-errors" role="alert" style="color: #dc2626; font-size: 0.8rem; margin-top: 0.5rem; min-height: 1rem;"></div>
+          <button id="video-pay-button" onclick="payVideoConsultWithCard()" disabled style="width: 100%; margin-top: 1rem; padding: 1rem; background: #1E2A8A; color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer; opacity: 0.5;">
+            Pagar ${formatConsultPrice(ctx.amount)}
+          </button>
         </div>
 
         <div style="font-size: 0.8rem; color: var(--text-muted); text-align: center; margin-top: 1rem;">
@@ -10241,56 +10253,108 @@ function renderVideoPaymentScreen() {
       </div>
     </div>
   `;
-  mountVideoPayPalButtons();
+  mountVideoStripeCard();
 }
 
-async function mountVideoPayPalButtons() {
+// Mounted Stripe card element for the in-progress payment screen.
+let videoStripeCard = null;
+
+async function mountVideoStripeCard() {
   const ctx = window.__videoPayment;
-  const container = document.getElementById('paypal-buttons-container');
-  if (!ctx || !container) return;
+  const cardEl = document.getElementById('stripe-card-element');
+  if (!ctx || !cardEl) return;
 
   try {
-    const paypal = await loadPayPalSdk();
-    if (!document.getElementById('paypal-buttons-container')) return; // user navigated away
-    container.innerHTML = '';
-    paypal.Buttons({
-      style: { shape: 'rect', color: 'gold', layout: 'vertical', label: 'pay' },
-      createOrder: (data, actions) => actions.order.create({
-        purchase_units: [{
-          amount: { value: ctx.amount.toFixed(2), currency_code: 'MXN' },
-          description: 'Video consulta médica - Farmacia Apolo',
-          // Binds the order to this appointment — paypal-capture-consult
-          // rejects orders whose custom_id does not match the cita.
-          custom_id: ctx.appointmentId
-        }]
-      }),
-      onApprove: async (data) => {
-        const box = document.getElementById('paypal-buttons-container');
-        if (box) box.innerHTML = '<div style="text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.9rem;">⏳ Confirmando pago...</div>';
-        try {
-          const result = await captureConsultPayment(data.orderID, ctx.appointmentId);
-          renderVideoPaymentSuccess(result);
-        } catch (err) {
-          console.error('[confirmVideoBooking] capture failed:', err);
-          showVideoPaymentError(err.message || 'No se pudo confirmar el pago');
-          mountVideoPayPalButtons(); // re-render buttons so the user can retry
-        }
-      },
-      onError: (err) => {
-        console.error('[PayPal Buttons] error:', err);
-        showVideoPaymentError('Ocurrió un error con PayPal. Intenta de nuevo.');
+    const StripeCtor = await loadStripeSdk();
+    if (!document.getElementById('stripe-card-element')) return; // user navigated away
+
+    const stripe = StripeCtor((window.farmaciaSupabaseConfig || {}).STRIPE_PUBLISHABLE_KEY);
+    const elements = stripe.elements({ locale: 'es' });
+    videoStripeCard = elements.create('card');
+    cardEl.innerHTML = '';
+    videoStripeCard.mount('#stripe-card-element');
+
+    const payBtn = document.getElementById('video-pay-button');
+    const errEl = document.getElementById('stripe-card-errors');
+    videoStripeCard.on('change', (event) => {
+      if (errEl) errEl.textContent = event.error ? event.error.message : '';
+      if (payBtn) {
+        payBtn.disabled = !event.complete;
+        payBtn.style.opacity = event.complete ? '1' : '0.5';
       }
-    }).render('#paypal-buttons-container');
+    });
   } catch (err) {
-    console.error('[PayPal] SDK load failed:', err);
-    container.innerHTML = `
-      <div style="text-align: center; padding: 1rem;">
-        <div style="color: #dc2626; font-size: 0.9rem; margin-bottom: 0.75rem;">${escapeHtml(err.message || 'No se pudo cargar PayPal')}</div>
-        <button onclick="retryVideoPayment()" style="padding: 0.75rem 1.5rem; background: #1E2A8A; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Reintentar</button>
-      </div>
-    `;
+    console.error('[Stripe] SDK load failed:', err);
+    const container = document.getElementById('stripe-card-container');
+    if (container) {
+      container.innerHTML = `
+        <div style="text-align: center; padding: 1rem;">
+          <div style="color: #dc2626; font-size: 0.9rem; margin-bottom: 0.75rem;">${escapeHtml(err.message || 'No se pudo cargar el pago con tarjeta')}</div>
+          <button onclick="retryVideoPayment()" style="padding: 0.75rem 1.5rem; background: #1E2A8A; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer;">Reintentar</button>
+        </div>
+      `;
+    }
   }
 }
+
+window.payVideoConsultWithCard = async function() {
+  const ctx = window.__videoPayment;
+  const payBtn = document.getElementById('video-pay-button');
+  if (!ctx || !videoStripeCard) return;
+
+  if (payBtn) {
+    payBtn.disabled = true;
+    payBtn.style.opacity = '0.5';
+    payBtn.textContent = '⏳ Procesando...';
+  }
+
+  const restorePayButton = () => {
+    if (!payBtn) return;
+    payBtn.disabled = false;
+    payBtn.style.opacity = '1';
+    payBtn.textContent = 'Pagar ' + formatConsultPrice(ctx.amount);
+  };
+
+  try {
+    // 1. Mint the PaymentIntent server-side (amount + appointment binding
+    //    are computed/validated in the edge function).
+    const { client_secret } = await callStripeCaptureConsult({
+      action: 'create',
+      appointment_id: ctx.appointmentId
+    });
+
+    // 2. Confirm the card with Stripe.js.
+    const StripeCtor = await loadStripeSdk();
+    const stripe = StripeCtor((window.farmaciaSupabaseConfig || {}).STRIPE_PUBLISHABLE_KEY);
+    const { error, paymentIntent } = await stripe.confirmCardPayment(client_secret, {
+      payment_method: { card: videoStripeCard }
+    });
+
+    if (error) {
+      console.error('[Stripe] confirmCardPayment failed:', error);
+      showVideoPaymentError('Tu banco rechazó el cargo — intenta con otra tarjeta');
+      restorePayButton();
+      return;
+    }
+    if (!paymentIntent || paymentIntent.status !== 'succeeded') {
+      showVideoPaymentError('El pago no se completó');
+      restorePayButton();
+      return;
+    }
+
+    // 3. Verify server-side and confirm the cita (creates the Daily room).
+    if (payBtn) payBtn.textContent = '⏳ Confirmando pago...';
+    const result = await callStripeCaptureConsult({
+      payment_intent_id: paymentIntent.id,
+      appointment_id: ctx.appointmentId
+    });
+    renderVideoPaymentSuccess(result);
+  } catch (err) {
+    console.error('[confirmVideoBooking] card payment failed:', err);
+    showVideoPaymentError(err.message || 'No se pudo procesar el pago');
+    restorePayButton();
+  }
+};
 
 window.retryVideoPayment = function() {
   const errorBox = document.getElementById('video-pay-error');
@@ -10298,11 +10362,7 @@ window.retryVideoPayment = function() {
     errorBox.style.display = 'none';
     errorBox.textContent = '';
   }
-  const container = document.getElementById('paypal-buttons-container');
-  if (container) {
-    container.innerHTML = '<div style="text-align: center; padding: 1.5rem; color: var(--text-muted); font-size: 0.9rem;">⏳ Cargando PayPal...</div>';
-  }
-  mountVideoPayPalButtons();
+  renderVideoPaymentScreen();
 };
 
 function showVideoPaymentError(message) {

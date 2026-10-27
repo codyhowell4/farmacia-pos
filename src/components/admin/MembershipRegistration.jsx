@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useToast } from '@/components/ui/use-toast';
 import { createMembership } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
-import { renderPayPalButtons, PAYPAL_PLAN_IDS, isPayPalConfigured } from '@/lib/paypal';
+import { getStripe, isStripeConfigured } from '@/lib/stripe';
 import { Users, User, Banknote, ChevronLeft, CheckCircle, Activity, CreditCard } from 'lucide-react';
 
 const REVISION_SUMMARY = 'Revisión semestral gratis (valor $775): incluye Biometría Hemática, Examen General de Orina, Química Sanguínea de 12 elementos y Consulta';
@@ -44,7 +44,9 @@ const PLANS = {
   },
 };
 
-const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paypal-subscription`;
+const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-membership-signup`;
+
+const CARD_DECLINED_MESSAGE = 'Tu banco rechazó el cargo — intenta con otra tarjeta';
 
 const MembershipRegistration = () => {
   const navigate = useNavigate();
@@ -53,7 +55,10 @@ const MembershipRegistration = () => {
   const [selectedPlanKey, setSelectedPlanKey] = useState(null);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState(null);
-  const paypalRendered = useRef(false);
+  const stripeCardRef = useRef(null);
+  const [cardholderName, setCardholderName] = useState('');
+  const [cardError, setCardError] = useState(null);
+  const [cardReady, setCardReady] = useState(false);
 
   const [form, setForm] = useState({
     ownerName: '',
@@ -65,7 +70,7 @@ const MembershipRegistration = () => {
     member4: '',
     member5: '',
     member6: '',
-    paymentMethod: 'paypal',
+    paymentMethod: 'stripe',
     termsAccepted: false,
   });
 
@@ -91,8 +96,8 @@ const MembershipRegistration = () => {
     if (!form.phone.trim()) return 'El teléfono es obligatorio.';
     if (form.password.length < 10) return 'La contraseña del portal debe tener al menos 10 caracteres.';
     if (!form.termsAccepted) return 'El titular debe aceptar los Términos y Condiciones y el Aviso de Privacidad.';
-    if (form.paymentMethod === 'paypal' && !isPayPalConfigured()) {
-      return 'PayPal no está configurado.';
+    if (form.paymentMethod === 'stripe' && !isStripeConfigured()) {
+      return 'Stripe no está configurado.';
     }
     return null;
   };
@@ -133,6 +138,9 @@ const MembershipRegistration = () => {
 
   const handleCashSubmit = async (e) => {
     e.preventDefault();
+    // The form wraps both payment sections; ignore stray submits (e.g. Enter
+    // in an input) while the card flow is selected.
+    if (form.paymentMethod !== 'cash') return;
     const error = validate();
     if (error) {
       toast({ title: 'Verifica los datos', description: error, variant: 'destructive' });
@@ -172,10 +180,56 @@ const MembershipRegistration = () => {
     }
   };
 
-  const handlePayPalApprove = async (data) => {
+  // Mount the Stripe card element for the card flow once terms are accepted.
+  useEffect(() => {
+    if (
+      step !== 'form' ||
+      !plan ||
+      form.paymentMethod !== 'stripe' ||
+      !form.termsAccepted ||
+      !isStripeConfigured()
+    ) return undefined;
+    let cancelled = false;
+    let card = null;
+    getStripe().then((stripe) => {
+      if (cancelled) return;
+      const container = document.getElementById('stripe-card-element-admin');
+      if (!container) return;
+      const elements = stripe.elements();
+      card = elements.create('card');
+      card.mount(container);
+      card.on('change', (e) => setCardError(e.error ? e.error.message : null));
+      stripeCardRef.current = { stripe, card };
+      setCardReady(true);
+    }).catch((err) => {
+      console.error('Failed to load Stripe:', err);
+      if (!cancelled) setCardError('No se pudo cargar el formulario de pago. Intenta de nuevo.');
+    });
+    return () => {
+      cancelled = true;
+      stripeCardRef.current = null;
+      setCardReady(false);
+      if (card) card.unmount();
+    };
+  }, [step, plan, form.paymentMethod, form.termsAccepted]);
+
+  const submitSignup = async (payload) => {
+    const res = await fetch(EDGE_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', authorization: 'Bearer anon' },
+      body: JSON.stringify(payload),
+    });
+
+    const result = await res.json();
+    if (!res.ok || result.error) {
+      throw new Error(result.error || 'Error al registrar la membresía');
+    }
+    return result;
+  };
+
+  const handleStripeSubmit = async () => {
     const currentForm = formRef.current;
     const currentPlanKey = selectedPlanKeyRef.current;
-    const currentPlan = currentPlanKey ? PLANS[currentPlanKey] : null;
 
     const error = (() => {
       if (!currentForm.ownerName.trim()) return 'El nombre del titular es obligatorio.';
@@ -183,12 +237,22 @@ const MembershipRegistration = () => {
       if (!currentForm.phone.trim()) return 'El teléfono es obligatorio.';
       if (currentForm.password.length < 10) return 'La contraseña del portal debe tener al menos 10 caracteres.';
       if (!currentForm.termsAccepted) return 'El titular debe aceptar los Términos y Condiciones y el Aviso de Privacidad.';
-      if (!isPayPalConfigured()) return 'PayPal no está configurado.';
+      if (!isStripeConfigured()) return 'Stripe no está configurado.';
       return null;
     })();
 
     if (error) {
       toast({ title: 'Verifica los datos', description: error, variant: 'destructive' });
+      return;
+    }
+
+    const stripeCtx = stripeCardRef.current;
+    if (!stripeCtx) {
+      toast({
+        title: 'Formulario de pago no listo',
+        description: 'Espera a que cargue el campo de tarjeta e intenta de nuevo.',
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -199,30 +263,59 @@ const MembershipRegistration = () => {
       : [];
 
     setLoading(true);
+    setCardError(null);
     try {
-      const orgId = import.meta.env.VITE_PUBLIC_ORG_ID;
-      const res = await fetch(EDGE_FUNCTION_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', authorization: 'Bearer anon' },
-        body: JSON.stringify({
-          subscription_id: data.subscriptionID,
-          plan_type: currentPlanKey,
-          password: currentForm.password,
-          customer: {
-            full_name: currentForm.ownerName.trim(),
-            email: currentForm.email.trim(),
-            phone: currentForm.phone.trim(),
-          },
-          member_names: familyMembers,
-          trackers_to_fulfill: 0,
-          org_id: orgId,
-          terms_accepted_at: new Date().toISOString(),
-        }),
+      const { paymentMethod, error: pmError } = await stripeCtx.stripe.createPaymentMethod({
+        type: 'card',
+        card: stripeCtx.card,
+        billing_details: {
+          name: cardholderName.trim() || currentForm.ownerName.trim(),
+          email: currentForm.email.trim(),
+        },
       });
 
-      const result = await res.json();
-      if (!res.ok || result.error) {
-        throw new Error(result.error || 'Error al registrar la membresía');
+      if (pmError) {
+        setCardError(pmError.code === 'card_declined' ? CARD_DECLINED_MESSAGE : pmError.message);
+        return;
+      }
+
+      const basePayload = {
+        plan_type: currentPlanKey,
+        password: currentForm.password,
+        customer: {
+          full_name: currentForm.ownerName.trim(),
+          email: currentForm.email.trim(),
+          phone: currentForm.phone.trim(),
+        },
+        member_names: familyMembers,
+        trackers_to_fulfill: 0,
+        org_id: import.meta.env.VITE_PUBLIC_ORG_ID,
+        terms_accepted_at: new Date().toISOString(),
+      };
+
+      let result = await submitSignup({ ...basePayload, action: 'start', payment_method_id: paymentMethod.id });
+
+      if (result.status === 'requires_payment_action' && result.client_secret) {
+        const { error: confirmError } = await stripeCtx.stripe.confirmCardPayment(result.client_secret);
+        if (confirmError) {
+          setCardError(CARD_DECLINED_MESSAGE);
+          toast({
+            title: 'No se pudo completar el pago',
+            description: CARD_DECLINED_MESSAGE,
+            variant: 'destructive',
+          });
+          return;
+        }
+        result = await submitSignup({
+          ...basePayload,
+          action: 'confirm',
+          payment_method_id: paymentMethod.id,
+          subscription_id: result.subscription_id,
+        });
+      }
+
+      if (result.status !== 'active') {
+        throw new Error('Respuesta inesperada del servidor de pagos');
       }
 
       setCreated(result.membership);
@@ -235,35 +328,6 @@ const MembershipRegistration = () => {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (
-      step === 'form' &&
-      plan &&
-      form.paymentMethod === 'paypal' &&
-      form.termsAccepted &&
-      !paypalRendered.current &&
-      isPayPalConfigured()
-    ) {
-      paypalRendered.current = true;
-      renderPayPalButtons({
-        containerId: 'paypal-button-container-admin',
-        planId: PAYPAL_PLAN_IDS[selectedPlanKey],
-        onApprove: handlePayPalApprove,
-        onError: (err) => {
-          console.error('PayPal error:', err);
-          toast({
-            title: 'Error de PayPal',
-            description: 'No se pudo cargar el botón de pago. Intenta de nuevo.',
-            variant: 'destructive',
-          });
-        },
-      }).catch((err) => {
-        console.error('Failed to render PayPal buttons:', err);
-        paypalRendered.current = false;
-      });
-    }
-  }, [step, plan, form.paymentMethod, form.termsAccepted, selectedPlanKey]);
 
   const renderPlans = () => (
     <div className="space-y-6">
@@ -310,7 +374,7 @@ const MembershipRegistration = () => {
 
   const renderForm = () => (
     <div className="max-w-2xl mx-auto space-y-6">
-      <Button variant="ghost" onClick={() => { setStep('plans'); paypalRendered.current = false; }} className="mb-2">
+      <Button variant="ghost" onClick={() => setStep('plans')} className="mb-2">
         <ChevronLeft className="w-4 h-4 mr-1" /> Cambiar plan
       </Button>
 
@@ -370,21 +434,18 @@ const MembershipRegistration = () => {
           <h2 className="text-lg font-semibold">Forma de pago</h2>
           <div className="flex gap-4">
             <label className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer ${
-              form.paymentMethod === 'paypal' ? 'bg-apolo-navy/5 border-apolo-navy/30' : 'hover:bg-slate-50'
+              form.paymentMethod === 'stripe' ? 'bg-apolo-navy/5 border-apolo-navy/30' : 'hover:bg-slate-50'
             }`}>
               <input
                 type="radio"
                 name="paymentMethod"
-                value="paypal"
-                checked={form.paymentMethod === 'paypal'}
-                onChange={(e) => {
-                  updateField('paymentMethod', e.target.value);
-                  paypalRendered.current = false;
-                }}
+                value="stripe"
+                checked={form.paymentMethod === 'stripe'}
+                onChange={(e) => updateField('paymentMethod', e.target.value)}
                 className="w-4 h-4"
               />
               <CreditCard className="w-5 h-5" />
-              <span>PayPal (suscripción mensual)</span>
+              <span>Tarjeta (suscripción mensual)</span>
             </label>
             <label className={`flex-1 flex items-center gap-3 p-3 border rounded-lg cursor-pointer ${
               form.paymentMethod === 'cash' ? 'bg-amber-50 border-amber-300' : 'hover:bg-slate-50'
@@ -394,10 +455,7 @@ const MembershipRegistration = () => {
                 name="paymentMethod"
                 value="cash"
                 checked={form.paymentMethod === 'cash'}
-                onChange={(e) => {
-                  updateField('paymentMethod', e.target.value);
-                  paypalRendered.current = false;
-                }}
+                onChange={(e) => updateField('paymentMethod', e.target.value)}
                 className="w-4 h-4"
               />
               <Banknote className="w-5 h-5" />
@@ -406,9 +464,9 @@ const MembershipRegistration = () => {
           </div>
         </div>
 
-        {form.paymentMethod === 'paypal' && !isPayPalConfigured() && (
+        {form.paymentMethod === 'stripe' && !isStripeConfigured() && (
           <div className="p-3 bg-yellow-50 text-yellow-800 text-sm rounded-lg">
-            PayPal no está configurado. Agrega las variables de entorno de PayPal para continuar.
+            Stripe no está configurado. Agrega las variables de entorno de Stripe para continuar.
           </div>
         )}
 
@@ -417,10 +475,7 @@ const MembershipRegistration = () => {
             id="terms-accepted-staff"
             type="checkbox"
             checked={form.termsAccepted}
-            onChange={(e) => {
-              updateField('termsAccepted', e.target.checked);
-              if (!e.target.checked) paypalRendered.current = false;
-            }}
+            onChange={(e) => updateField('termsAccepted', e.target.checked)}
             className="mt-1 w-4 h-4 flex-shrink-0"
           />
           <Label htmlFor="terms-accepted-staff" className="text-sm font-normal text-slate-700 cursor-pointer leading-snug">
@@ -448,9 +503,36 @@ const MembershipRegistration = () => {
           )}
         </div>
 
-        {form.paymentMethod === 'paypal' && (
+        {form.paymentMethod === 'stripe' && (
           form.termsAccepted ? (
-            <div id="paypal-button-container-admin" className="min-h-[120px]" />
+            <div className="space-y-3">
+              <div>
+                <Label htmlFor="cardholder-name-admin">Nombre en la tarjeta</Label>
+                <Input
+                  id="cardholder-name-admin"
+                  value={cardholderName}
+                  onChange={(e) => setCardholderName(e.target.value)}
+                  placeholder={form.ownerName || 'Como aparece en la tarjeta'}
+                  autoComplete="cc-name"
+                />
+              </div>
+              <div>
+                <Label>Datos de la tarjeta</Label>
+                <div id="stripe-card-element-admin" className="mt-1 rounded-md border border-input bg-white px-3 py-3 shadow-sm" />
+              </div>
+              {cardError && (
+                <p className="text-sm text-red-600">{cardError}</p>
+              )}
+              <Button
+                type="button"
+                className="w-full text-lg py-6"
+                disabled={loading || !cardReady || !isStripeConfigured()}
+                onClick={handleStripeSubmit}
+              >
+                <CreditCard className="w-5 h-5 mr-2" />
+                {loading ? 'Procesando pago...' : `Pagar $${monthlyTotal.toFixed(2)}/mes y activar membresía`}
+              </Button>
+            </div>
           ) : (
             <p className="text-sm text-slate-500 text-center">
               Acepta los Términos y Condiciones para mostrar las opciones de pago.
@@ -483,7 +565,8 @@ const MembershipRegistration = () => {
           setStep('plans');
           setSelectedPlanKey(null);
           setCreated(null);
-          paypalRendered.current = false;
+          setCardholderName('');
+          setCardError(null);
           setForm({
             ownerName: '',
             email: '',
@@ -494,7 +577,7 @@ const MembershipRegistration = () => {
             member4: '',
             member5: '',
             member6: '',
-            paymentMethod: 'paypal',
+            paymentMethod: 'stripe',
             termsAccepted: false,
           });
         }}>

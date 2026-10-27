@@ -911,7 +911,7 @@ export const voidSale = async (saleId, voidedByName, reason = null) => {
       .in('id', itemInventoryIds);
     if (deptError) throw deptError;
     if ((itemProducts || []).some(p => p.department === 'membresias')) {
-      throw new Error('Los pagos de membresía no se pueden anular desde aquí. Gestiona el reembolso en PayPal o con el administrador.');
+      throw new Error('Los pagos de membresía no se pueden anular desde aquí. Gestiona el reembolso en Stripe/PayPal según el procesador de la membresía.');
     }
   }
 

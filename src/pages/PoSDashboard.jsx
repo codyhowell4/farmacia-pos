@@ -28,6 +28,7 @@ import {
   registerMembershipAtPos, ensureMembershipPlanProducts,
 } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
+import { loadStripe } from '@stripe/stripe-js';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -111,9 +112,17 @@ const PoSDashboard = () => {
   const [membershipRevisionProducts, setMembershipRevisionProducts] = useState([]);
   const [membershipPlanProducts, setMembershipPlanProducts] = useState([]);
   const [membershipSignupOpen, setMembershipSignupOpen] = useState(false);
+  const [membershipSignupInitialPlan, setMembershipSignupInitialPlan] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const searchInputRef = useRef(null);
   const completingSaleRef = useRef(false);
+  // Stripe card element (single card payments in checkout): the Stripe
+  // instance is cached, the card Element mounts once per entry into card
+  // mode and is destroyed on leave (see effect below).
+  const stripePromiseRef = useRef(null);
+  const stripeRef = useRef(null);
+  const stripeCardElementRef = useRef(null);
+  const cardElementMountRef = useRef(null);
 
   useEffect(() => {
     if (!user?.locationId) return;
@@ -172,6 +181,36 @@ const PoSDashboard = () => {
     }).catch(console.error);
     searchInputRef.current?.focus();
   }, [user?.locationId]);
+
+  // Mount the Stripe card Element when checkout is in single-payment card
+  // mode; destroy it when leaving so re-entering gets a fresh element.
+  useEffect(() => {
+    if (view !== 'checkout' || paymentMethod !== 'card' || isSplitPayment) return undefined;
+    const stripeKey = import.meta.env.VITE_STRIPE_PUBLIC_KEY;
+    if (!stripeKey || !cardElementMountRef.current) return undefined;
+    let cancelled = false;
+    if (!stripePromiseRef.current) {
+      stripePromiseRef.current = loadStripe(stripeKey);
+    }
+    stripePromiseRef.current.then((stripe) => {
+      if (cancelled || !stripe || !cardElementMountRef.current || stripeCardElementRef.current) return;
+      stripeRef.current = stripe;
+      const cardElement = stripe.elements().create('card', {
+        hidePostalCode: true,
+        style: { base: { fontSize: '16px', color: '#0f172a' } },
+      });
+      cardElement.mount(cardElementMountRef.current);
+      stripeCardElementRef.current = cardElement;
+    });
+    return () => {
+      cancelled = true;
+      if (stripeCardElementRef.current) {
+        stripeCardElementRef.current.unmount();
+        stripeCardElementRef.current.destroy();
+        stripeCardElementRef.current = null;
+      }
+    };
+  }, [view, paymentMethod, isSplitPayment]);
 
   const loadRecentSales = async () => {
     try {
@@ -443,10 +482,14 @@ const PoSDashboard = () => {
   };
 
   const addToCart = (medicine, quantity = 1) => {
-    // Fee products are never added manually: they must go through the
-    // "Registrar Miembro" dialog so the titular's data is captured.
+    // Fee products are never added directly: clicking one opens the
+    // "Registrar Miembro" dialog with the matching plan preselected so the
+    // titular's data is captured.
     if (isMembershipFeeItem(medicine)) {
-      toast({ title: 'Registro de membresía', description: 'Para cobrar una membresía usa el botón "Registrar Miembro" — se deben capturar los datos del titular.', variant: 'destructive' });
+      const planKey = Object.values(MEMBERSHIP_SIGNUP_PLANS)
+        .find((plan) => plan.productName === medicine.name)?.key || null;
+      setMembershipSignupInitialPlan(planKey);
+      setMembershipSignupOpen(true);
       return;
     }
     const invItem = inventory.find(i => i.id === medicine.id);
@@ -959,10 +1002,9 @@ const PoSDashboard = () => {
           reference = transferenciaReference;
           bankAccountId = selectedBankAccount?.id;
         } else if (paymentMethod === 'card') {
-          if (!cardReference.trim()) {
-            toast({ title: 'Aprobación requerida', description: 'Ingresa el número de aprobación', variant: 'destructive' });
-            return;
-          }
+          // Single card payments are charged with Stripe below; the confirmed
+          // PaymentIntent id becomes the reference. (Split card payments keep
+          // the typed approval number — validated in addSplitPayment.)
           reference = cardReference;
         }
 
@@ -1129,6 +1171,75 @@ const PoSDashboard = () => {
         }
       }
 
+      // ── Stripe card charge (single card payment) ──────────────────
+      // Authorize the ticket total, confirm the card client-side (3DS handled
+      // by Stripe), then let the sale proceed. The hold is captured after the
+      // sale is registered and voided if the sale fails. Split card payments
+      // keep the external-terminal flow (typed approval number).
+      let stripeCharge = null; // { paymentIntentId, stripeCustomerId, paymentMethodId, captured }
+      if (paymentMethod === 'card' && !isSplitPayment) {
+        const stripe = stripeRef.current;
+        const cardElement = stripeCardElementRef.current;
+        if (!stripe || !cardElement) {
+          toast({
+            title: 'Formulario de tarjeta no listo',
+            description: import.meta.env.VITE_STRIPE_PUBLIC_KEY
+              ? 'El formulario de tarjeta aún se está cargando. Espera un momento e intenta de nuevo.'
+              : 'Falta configurar la clave pública de Stripe (VITE_STRIPE_PUBLIC_KEY).',
+            variant: 'destructive',
+          });
+          return;
+        }
+        try {
+          const { data: authData, error: authError } = await supabase.functions.invoke('stripe-pos-charge', {
+            body: {
+              action: 'authorize',
+              amount_mxn: finalTotal,
+              customer_email: selectedCustomer?.email || selectedMembership?._signup?.email || undefined,
+              customer_name: selectedCustomer?.full_name || selectedMembership?._signup?.fullName || undefined,
+              has_membership_signup: isSignupMembership,
+            },
+          });
+          if (authError || authData?.error) {
+            throw new Error(authError?.message || authData.error);
+          }
+          const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(authData.client_secret, {
+            payment_method: { card: cardElement },
+          });
+          if (confirmError || !paymentIntent) {
+            // Release the authorization so the hold does not linger.
+            try {
+              await supabase.functions.invoke('stripe-pos-charge', {
+                body: { action: 'void', payment_intent_id: authData.payment_intent_id },
+              });
+            } catch (voidErr) {
+              console.warn('Failed to void Stripe authorization after confirm failure:', voidErr);
+            }
+            throw new Error(confirmError?.message || 'No se pudo confirmar la tarjeta.');
+          }
+          stripeCharge = {
+            paymentIntentId: authData.payment_intent_id,
+            stripeCustomerId: authData.stripe_customer_id,
+            paymentMethodId: typeof paymentIntent.payment_method === 'string'
+              ? paymentIntent.payment_method
+              : paymentIntent.payment_method?.id,
+            captured: false,
+          };
+          // The confirmed PaymentIntent id is the payment reference
+          // (lands in sale_payments.reference_number).
+          if (payments[0]) payments[0].reference_number = stripeCharge.paymentIntentId;
+          setCardReference(stripeCharge.paymentIntentId);
+        } catch (stripeErr) {
+          console.error('Stripe card charge failed:', stripeErr);
+          toast({
+            title: 'Cobro con tarjeta rechazado',
+            description: stripeErr.message || 'La tarjeta fue rechazada. No se registró la venta.',
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+
       try {
         const cashPayment = payments?.find(p => p?.payment_method === 'cash');
 
@@ -1264,6 +1375,7 @@ const PoSDashboard = () => {
         // the real membership now, link it to the sale, then email the
         // onboarding link (portal account + password setup).
         const signupInfo = isSignupMembership ? selectedMembership?._signup : null;
+        let posSignupResult = null;
         if (signupInfo) {
           try {
             const signupResult = await registerMembershipAtPos({
@@ -1276,6 +1388,7 @@ const PoSDashboard = () => {
               visitsUsed: usedVisits,
               termsAcceptedAt: signupInfo.termsAcceptedAt,
             });
+            posSignupResult = signupResult;
             toast({ title: 'Membresía registrada', description: `Plan ID: ${signupResult.plan_id}` });
             // Stamp the free pulsera on the brand-new titular's account.
             if (freePulseraInTicket && signupResult?.membership_id) {
@@ -1330,6 +1443,50 @@ const PoSDashboard = () => {
               description: signupErr.message || 'Registra la membresía manualmente desde Admin y vincúlala al cliente.',
               variant: 'destructive',
             });
+          }
+        }
+
+        // Stripe: capture the authorization now that the sale is registered.
+        // A capture failure must NOT roll back the sale — flag it for admin.
+        if (stripeCharge?.paymentIntentId) {
+          try {
+            const { data: capData, error: capError } = await supabase.functions.invoke('stripe-pos-charge', {
+              body: { action: 'capture', payment_intent_id: stripeCharge.paymentIntentId },
+            });
+            if (capError || capData?.error) throw new Error(capError?.message || capData.error);
+            stripeCharge.captured = true;
+          } catch (captureErr) {
+            console.error('Stripe capture failed:', captureErr);
+            toast({
+              title: 'Venta registrada, error al cobrar — revisa Stripe',
+              description: `La venta quedó guardada pero el cobro no se capturó (${stripeCharge.paymentIntentId}). Revisa el panel de Stripe.`,
+              variant: 'destructive',
+            });
+          }
+          // Card-paid membership signup: create the monthly subscription. The
+          // signup month rode this ticket, so billing starts next month
+          // (trial_end handled server-side). Non-fatal — the membership
+          // already works like a cash one if this fails.
+          if (posSignupResult?.membership_id && stripeCharge.stripeCustomerId && stripeCharge.paymentMethodId) {
+            try {
+              const { data: subData, error: subError } = await supabase.functions.invoke('stripe-pos-charge', {
+                body: {
+                  action: 'subscribe',
+                  membership_id: posSignupResult.membership_id,
+                  stripe_customer_id: stripeCharge.stripeCustomerId,
+                  payment_method_id: stripeCharge.paymentMethodId,
+                  plan_type: signupInfo.planKey,
+                },
+              });
+              if (subError || subData?.error) throw new Error(subError?.message || subData.error);
+            } catch (subErr) {
+              console.error('Stripe subscribe failed:', subErr);
+              toast({
+                title: 'Membresía activa, pero el cargo recurrente no quedó configurado',
+                description: 'Configura la suscripción de la membresía manualmente desde Admin.',
+                variant: 'destructive',
+              });
+            }
           }
         }
 
@@ -1502,6 +1659,16 @@ const PoSDashboard = () => {
         }, 500);
       } catch (e) {
         console.error('Sale error:', e);
+        // A Stripe authorization exists but the sale failed — release the hold.
+        if (stripeCharge?.paymentIntentId && !stripeCharge.captured) {
+          try {
+            await supabase.functions.invoke('stripe-pos-charge', {
+              body: { action: 'void', payment_intent_id: stripeCharge.paymentIntentId },
+            });
+          } catch (voidErr) {
+            console.warn('Failed to void Stripe authorization after sale failure:', voidErr);
+          }
+        }
         toast({ title: 'Error al procesar venta', description: e.message || 'Error desconocido', variant: 'destructive' });
       }
     } finally {
@@ -1868,7 +2035,7 @@ const PoSDashboard = () => {
                   <Button
                     variant="outline"
                     className="w-full mt-2 border-apolo-navy/30 text-apolo-navy hover:bg-apolo-navy/5"
-                    onClick={() => setMembershipSignupOpen(true)}
+                    onClick={() => { setMembershipSignupInitialPlan(null); setMembershipSignupOpen(true); }}
                   >
                     <UserPlus className="w-4 h-4 mr-2" /> Registrar Miembro
                   </Button>
@@ -2030,15 +2197,30 @@ const PoSDashboard = () => {
                 {/* Card Payment */}
                 {paymentMethod === 'card' && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
-                    <Label>Número de Aprobación</Label>
-                    <Input 
-                      placeholder="Ingresa número de aprobación" 
-                      value={cardReference}
-                      onChange={e => setCardReference(e.target.value)}
-                    />
-                    <p className="text-sm text-slate-500">Monto a pagar: {formatMXN(isSplitPayment ? remainingForSplit : finalTotal)}</p>
-                    {isSplitPayment && (
-                      <Button onClick={addSplitPayment} className="w-full" variant="outline">Agregar pago con tarjeta</Button>
+                    {isSplitPayment ? (
+                      <>
+                        <Label>Número de Aprobación</Label>
+                        <Input
+                          placeholder="Ingresa número de aprobación"
+                          value={cardReference}
+                          onChange={e => setCardReference(e.target.value)}
+                        />
+                        <p className="text-sm text-slate-500">Monto a pagar: {formatMXN(remainingForSplit)}</p>
+                        <Button onClick={addSplitPayment} className="w-full" variant="outline">Agregar pago con tarjeta</Button>
+                      </>
+                    ) : (
+                      <>
+                        <Label>Datos de la tarjeta</Label>
+                        {import.meta.env.VITE_STRIPE_PUBLIC_KEY ? (
+                          <div ref={cardElementMountRef} className="border border-slate-300 rounded-md p-3 bg-white" />
+                        ) : (
+                          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
+                            Falta configurar la clave pública de Stripe (VITE_STRIPE_PUBLIC_KEY) — contacta al administrador.
+                          </p>
+                        )}
+                        <p className="text-sm text-slate-500">Monto a pagar: {formatMXN(finalTotal)}</p>
+                        <p className="text-xs text-slate-400">El cobro se procesa con Stripe (incluye 3-D Secure) al presionar "Finalizar venta".</p>
+                      </>
                     )}
                   </motion.div>
                 )}
@@ -2199,6 +2381,7 @@ const PoSDashboard = () => {
           open={membershipSignupOpen}
           onOpenChange={setMembershipSignupOpen}
           onConfirm={handleMembershipSignupConfirm}
+          initialPlan={membershipSignupInitialPlan}
         />
       </div>
     );
@@ -2406,7 +2589,7 @@ const PoSDashboard = () => {
                   <Button
                     variant="outline"
                     className="w-full mt-2 border-apolo-navy/30 text-apolo-navy hover:bg-apolo-navy/5"
-                    onClick={() => setMembershipSignupOpen(true)}
+                    onClick={() => { setMembershipSignupInitialPlan(null); setMembershipSignupOpen(true); }}
                   >
                     <UserPlus className="w-4 h-4 mr-2" /> Registrar Miembro
                   </Button>
@@ -2518,6 +2701,7 @@ const PoSDashboard = () => {
         open={membershipSignupOpen}
         onOpenChange={setMembershipSignupOpen}
         onConfirm={handleMembershipSignupConfirm}
+        initialPlan={membershipSignupInitialPlan}
       />
     </>
   );

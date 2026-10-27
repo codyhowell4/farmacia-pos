@@ -15,16 +15,16 @@ const INITIAL_FORM = { fullName: '', email: '', phone: '', termsAccepted: false 
 // POS "Registrar Miembro" dialog: captures the titular's data and the plan so
 // the fee can ride the current ticket. The real membership is only created
 // server-side once the sale completes (pos_register_membership RPC).
-const MembershipSignupDialog = ({ open, onOpenChange, onConfirm }) => {
+const MembershipSignupDialog = ({ open, onOpenChange, onConfirm, initialPlan }) => {
   const [planKey, setPlanKey] = useState('individual');
   const [form, setForm] = useState(INITIAL_FORM);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    setPlanKey('individual');
+    setPlanKey(MEMBERSHIP_SIGNUP_PLANS[initialPlan] ? initialPlan : 'individual');
     setForm(INITIAL_FORM);
     setError('');
-  }, [open]);
+  }, [open, initialPlan]);
 
   const updateField = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 

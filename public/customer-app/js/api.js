@@ -1020,7 +1020,8 @@ window.FarmaciaAPI = (function () {
      * edge function (verify_jwt on; sends the session access token).
      * action 'cancel' → { success, effective_date, paypal_cancelled, warning? }
      * action 'resume' → { success } or { success: false, reason, message }
-     *   ('paypal_resignup' for PayPal memberships, which must re-sign up).
+     *   ('paypal_resignup' for PayPal and Stripe memberships, which must
+     *   re-sign up at /membresias).
      * Returns { data, error } like the other API methods.
      */
     async cancelMyMembership(membershipId, action) {

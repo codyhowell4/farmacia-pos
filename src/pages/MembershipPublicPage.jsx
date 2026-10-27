@@ -4,8 +4,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
-import { renderPayPalButtons, PAYPAL_PLAN_IDS, isPayPalConfigured } from '@/lib/paypal';
-import { Users, User, CheckCircle, Activity, MapPin, ArrowLeft, Clock, RefreshCw } from 'lucide-react';
+import { getStripe, isStripeConfigured } from '@/lib/stripe';
+import { Users, User, CheckCircle, Activity, MapPin, ArrowLeft, Clock, RefreshCw, CreditCard } from 'lucide-react';
 
 const REVISION_SUMMARY = 'Revisión semestral gratis (valor $775): incluye Biometría Hemática, Examen General de Orina, Química Sanguínea de 12 elementos y Consulta';
 
@@ -42,7 +42,7 @@ const PLANS = {
 };
 
 const PUBLIC_ORG_ID = import.meta.env.VITE_PUBLIC_ORG_ID;
-const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paypal-subscription`;
+const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-membership-signup`;
 
 // DOB entry: dd/mm/aaaa (Mexican standard) via a masked text input — the
 // native date picker follows the device locale (mm/dd/yyyy on US laptops).
@@ -76,21 +76,24 @@ const isMinorDobIso = (iso) => {
   return Math.floor((Date.now() - new Date(iso).getTime()) / (365.25 * 86400000)) < 18;
 };
 
+const CARD_DECLINED_MESSAGE = 'Tu banco rechazó el cargo — intenta con otra tarjeta';
+
 const MembershipPublicPage = () => {
   const { toast } = useToast();
   const [step, setStep] = useState('plans');
   const [selectedPlanKey, setSelectedPlanKey] = useState(null);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState(null);
-  // Set when PayPal charged but activation failed after all retries: drives
+  // Set when Stripe charged but activation failed after all retries: drives
   // the "pago recibido" screen instead of a bare error. Money was taken, so
   // the UX must never look like the purchase failed.
   const [pending, setPending] = useState(null);
   const [createdSnapshot, setCreatedSnapshot] = useState(null);
-  const paypalRendered = useRef(false);
-  // True once the PayPal buttons are on screen for the current form state;
-  // used to lock the terms checkbox so it can't be unchecked mid-payment.
-  const [paypalReady, setPaypalReady] = useState(false);
+  // Holds the mounted Stripe card element for the current form state.
+  const stripeCardRef = useRef(null);
+  const [cardholderName, setCardholderName] = useState('');
+  const [cardError, setCardError] = useState(null);
+  const [cardReady, setCardReady] = useState(false);
 
   const [form, setForm] = useState({
     ownerName: '',
@@ -128,9 +131,9 @@ const MembershipPublicPage = () => {
 
   const updateField = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
-  // Shared validation for the PayPal onApprove path (uses the ref snapshot)
-  // and the local validate(). Includes the minor-guardian evidence (R2-21):
-  // a titular under 18 cannot hold the account without padre/madre/tutor data.
+  // Validation for the payment submit path. Includes the minor-guardian
+  // evidence (R2-21): a titular under 18 cannot hold the account without
+  // padre/madre/tutor data.
   const validateMembershipForm = (f) => {
     if (!f.ownerName.trim()) return 'El nombre del titular es obligatorio.';
     const dobIso = parseDobMx(f.dob);
@@ -144,61 +147,105 @@ const MembershipPublicPage = () => {
     if (f.password.length < 10) return 'La contraseña debe tener al menos 10 caracteres.';
     if (f.password !== f.confirmPassword) return 'Las contraseñas no coinciden.';
     if (!f.termsAccepted) return 'Debes aceptar los Términos y Condiciones y el Aviso de Privacidad.';
-    if (!isPayPalConfigured()) return 'PayPal no está configurado.';
+    if (!isStripeConfigured()) return 'Stripe no está configurado.';
     return null;
   };
 
-  const validate = () => validateMembershipForm(form);
+  // Mount the Stripe card element once the terms checkbox is on. Unmounts
+  // when the user unchecks terms or leaves the form.
+  useEffect(() => {
+    if (step !== 'form' || !plan || !form.termsAccepted || !isStripeConfigured()) return undefined;
+    let cancelled = false;
+    let card = null;
+    getStripe().then((stripe) => {
+      if (cancelled) return;
+      const container = document.getElementById('stripe-card-element');
+      if (!container) return;
+      const elements = stripe.elements();
+      card = elements.create('card');
+      card.mount(container);
+      card.on('change', (e) => setCardError(e.error ? e.error.message : null));
+      stripeCardRef.current = { stripe, card };
+      setCardReady(true);
+    }).catch((err) => {
+      console.error('Failed to load Stripe:', err);
+      if (!cancelled) setCardError('No se pudo cargar el formulario de pago. Intenta de nuevo.');
+    });
+    return () => {
+      cancelled = true;
+      stripeCardRef.current = null;
+      setCardReady(false);
+      if (card) card.unmount();
+    };
+  }, [step, plan, form.termsAccepted]);
 
-  const getFamilyMembers = () => {
-    if (selectedPlanKey !== 'familiar') return [];
-    return [form.member2, form.member3, form.member4, form.member5, form.member6]
-      .map((m) => m.trim())
-      .filter(Boolean);
-  };
-
-  // Sends the activation to the edge function. Throws with the server's
-  // error message on failure; callers decide whether to retry.
-  const submitRegistration = async (subscriptionId, planKey, snapshot) => {
+  // Shared body for the 'start' and 'confirm' calls to the signup function.
+  // DOB (ISO) always; guardian evidence only for a minor titular — the edge
+  // function forwards these into the customers insert (R2-21).
+  const buildSignupPayload = (planKey, snapshot) => {
     const familyMembers = planKey === 'familiar'
       ? [snapshot.member2, snapshot.member3, snapshot.member4, snapshot.member5, snapshot.member6]
           .map((m) => m.trim())
           .filter(Boolean)
       : [];
 
-    // DOB (ISO) always; guardian evidence only for a minor titular — the
-    // edge function forwards these into the customers insert (R2-21).
     const dobIso = parseDobMx(snapshot.dob);
     const titularIsMinor = isMinorDobIso(dobIso);
 
+    return {
+      plan_type: planKey,
+      password: snapshot.password,
+      customer: {
+        full_name: snapshot.ownerName.trim(),
+        email: snapshot.email.trim(),
+        phone: snapshot.phone.trim(),
+        date_of_birth: dobIso,
+        ...(titularIsMinor ? {
+          guardian_name: snapshot.guardianName.trim(),
+          guardian_relationship: snapshot.guardianRelationship,
+        } : {}),
+      },
+      member_names: familyMembers,
+      trackers_to_fulfill: 0,
+      org_id: PUBLIC_ORG_ID,
+      terms_accepted_at: new Date().toISOString(),
+    };
+  };
+
+  // Sends the activation to the edge function. Throws with the server's
+  // error message on failure; callers decide whether to retry.
+  const submitSignup = async (payload) => {
     const res = await fetch(EDGE_FUNCTION_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        subscription_id: subscriptionId,
-        plan_type: planKey,
-        password: snapshot.password,
-        customer: {
-          full_name: snapshot.ownerName.trim(),
-          email: snapshot.email.trim(),
-          phone: snapshot.phone.trim(),
-          date_of_birth: dobIso,
-          ...(titularIsMinor ? {
-            guardian_name: snapshot.guardianName.trim(),
-            guardian_relationship: snapshot.guardianRelationship,
-          } : {}),
-        },
-        member_names: familyMembers,
-        trackers_to_fulfill: 0,
-        org_id: PUBLIC_ORG_ID,
-        terms_accepted_at: new Date().toISOString(),
-      }),
+      body: JSON.stringify(payload),
     });
 
     const result = await res.json();
     if (!res.ok || result.error) {
       throw new Error(result.error || 'Error al registrar la membresía');
     }
+    return result;
+  };
+
+  // The payment may already have happened at Stripe when a submit fails, so
+  // a failure here is almost always transient (network blip, function cold
+  // start, schema cache reload). Retry before ever bothering the user with
+  // it. The edge function treats a repeated payment method / subscription id
+  // as a replay.
+  const submitSignupWithRetry = async (payload) => {
+    let result = null;
+    let lastError = null;
+    for (let attempt = 0; attempt < 3 && !result; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+      try {
+        result = await submitSignup(payload);
+      } catch (err) {
+        console.error(`[membresias] activation attempt ${attempt + 1} failed:`, err);
+        lastError = err;
+      }
+    }
+    if (!result) throw (lastError || new Error('Error al registrar la membresía'));
     return result;
   };
 
@@ -212,52 +259,98 @@ const MembershipPublicPage = () => {
     });
   };
 
-  const handlePayPalApprove = async (data) => {
+  const handleStripeSubmit = async () => {
     const currentForm = formRef.current;
     const currentPlanKey = selectedPlanKeyRef.current;
 
+    // The card stays on the server until the form validates — no charge
+    // happens on an invalid form, so a plain error is fine here.
     const validationError = validateMembershipForm(currentForm);
-
     if (validationError) {
-      // PayPal may already have taken the money by the time onApprove runs,
-      // so point the user at the pharmacy instead of showing a bare error.
+      toast({ title: 'Verifica los datos', description: validationError, variant: 'destructive' });
+      return;
+    }
+
+    const stripeCtx = stripeCardRef.current;
+    if (!stripeCtx) {
       toast({
-        title: 'Verifica los datos',
-        description: `${validationError} Si ya completaste el pago en PayPal, contacta a la farmacia para resolverlo antes de intentar de nuevo.`,
+        title: 'Formulario de pago no listo',
+        description: 'Espera a que cargue el campo de tarjeta e intenta de nuevo.',
         variant: 'destructive',
       });
       return;
     }
 
     const snapshot = { ...currentForm };
+    const basePayload = buildSignupPayload(currentPlanKey, snapshot);
     setLoading(true);
+    setCardError(null);
     try {
-      // The payment already happened at PayPal, so a failure here is almost
-      // always transient (network blip, function cold start, schema cache
-      // reload). Retry before ever bothering the user with it.
-      let result = null;
-      let lastError = null;
-      for (let attempt = 0; attempt < 3 && !result; attempt++) {
-        if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+      const { paymentMethod, error: pmError } = await stripeCtx.stripe.createPaymentMethod({
+        type: 'card',
+        card: stripeCtx.card,
+        billing_details: {
+          name: cardholderName.trim() || snapshot.ownerName.trim(),
+          email: snapshot.email.trim(),
+        },
+      });
+
+      if (pmError) {
+        setCardError(pmError.code === 'card_declined' ? CARD_DECLINED_MESSAGE : pmError.message);
+        return;
+      }
+
+      const startPayload = { ...basePayload, action: 'start', payment_method_id: paymentMethod.id };
+      let result;
+      try {
+        result = await submitSignupWithRetry(startPayload);
+      } catch (err) {
+        setPending({ payload: startPayload, planKey: currentPlanKey, snapshot, error: err.message });
+        setStep('pending');
+        return;
+      }
+
+      if (result.status === 'active') {
+        finishRegistration(result, snapshot);
+        return;
+      }
+
+      if (result.status === 'requires_payment_action' && result.client_secret) {
+        const { error: confirmError } = await stripeCtx.stripe.confirmCardPayment(result.client_secret);
+        if (confirmError) {
+          // 3DS failed or was declined — no charge completed.
+          setCardError(CARD_DECLINED_MESSAGE);
+          toast({
+            title: 'No se pudo completar el pago',
+            description: CARD_DECLINED_MESSAGE,
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        const confirmPayload = { ...startPayload, action: 'confirm', subscription_id: result.subscription_id };
+        let confirmed;
         try {
-          result = await submitRegistration(data.subscriptionID, currentPlanKey, snapshot);
+          confirmed = await submitSignupWithRetry(confirmPayload);
         } catch (err) {
-          console.error(`[membresias] activation attempt ${attempt + 1} failed:`, err);
-          lastError = err;
+          setPending({ payload: confirmPayload, planKey: currentPlanKey, snapshot, error: err.message });
+          setStep('pending');
+          return;
+        }
+        if (confirmed.status === 'active') {
+          finishRegistration(confirmed, snapshot);
+          return;
         }
       }
 
-      if (result) {
-        finishRegistration(result, snapshot);
-      } else {
-        setPending({
-          subscriptionId: data.subscriptionID,
-          planKey: currentPlanKey,
-          snapshot,
-          error: lastError?.message || null,
-        });
-        setStep('pending');
-      }
+      throw new Error('Respuesta inesperada del servidor de pagos');
+    } catch (err) {
+      console.error('[membresias] stripe signup failed:', err);
+      toast({
+        title: 'Error',
+        description: err.message || 'No se pudo registrar la membresía.',
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
@@ -267,7 +360,8 @@ const MembershipPublicPage = () => {
     if (!pending) return;
     setLoading(true);
     try {
-      const result = await submitRegistration(pending.subscriptionId, pending.planKey, pending.snapshot);
+      const result = await submitSignup(pending.payload);
+      if (result.status !== 'active') throw new Error('La membresía aún no se activa.');
       finishRegistration(result, pending.snapshot);
       setPending(null);
     } catch (err) {
@@ -282,33 +376,6 @@ const MembershipPublicPage = () => {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (step === 'form' && plan && form.termsAccepted && !paypalRendered.current && isPayPalConfigured()) {
-      paypalRendered.current = true;
-      renderPayPalButtons({
-        containerId: 'paypal-button-container',
-        planId: PAYPAL_PLAN_IDS[selectedPlanKey],
-        onApprove: handlePayPalApprove,
-        onError: (err) => {
-          console.error('PayPal error:', err);
-          toast({
-            title: 'Error de PayPal',
-            description: 'No se pudo cargar el botón de pago. Intenta de nuevo.',
-            variant: 'destructive',
-          });
-        },
-      }).then(() => {
-        // Buttons are on screen for the current form state: lock the terms
-        // checkbox so it can't be unchecked mid-payment. Guard against a
-        // stale resolve after the user unchecked terms while the SDK loaded.
-        if (formRef.current.termsAccepted) setPaypalReady(true);
-      }).catch((err) => {
-        console.error('Failed to render PayPal buttons:', err);
-        paypalRendered.current = false;
-      });
-    }
-  }, [step, plan, form.termsAccepted, selectedPlanKey]);
 
   const renderPlans = () => (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -363,7 +430,7 @@ const MembershipPublicPage = () => {
     const titularIsMinor = isMinorDobIso(formDobIso);
     return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <Button variant="outline" onClick={() => { setStep('plans'); paypalRendered.current = false; setPaypalReady(false); }} className="flex items-center gap-2">
+      <Button variant="outline" onClick={() => setStep('plans')} className="flex items-center gap-2">
         <ArrowLeft className="w-4 h-4" /> Volver a planes
       </Button>
 
@@ -492,9 +559,9 @@ const MembershipPublicPage = () => {
           </div>
         )}
 
-        {!isPayPalConfigured() && (
+        {!isStripeConfigured() && (
           <div className="p-3 bg-yellow-50 text-yellow-800 text-sm rounded-lg">
-            PayPal no está configurado. Agrega las variables de entorno de PayPal para continuar.
+            Stripe no está configurado. Agrega las variables de entorno de Stripe para continuar.
           </div>
         )}
 
@@ -511,14 +578,7 @@ const MembershipPublicPage = () => {
               id="terms-accepted"
               type="checkbox"
               checked={form.termsAccepted}
-              disabled={paypalReady}
-              onChange={(e) => {
-                updateField('termsAccepted', e.target.checked);
-                if (!e.target.checked) {
-                  paypalRendered.current = false;
-                  setPaypalReady(false);
-                }
-              }}
+              onChange={(e) => updateField('termsAccepted', e.target.checked)}
               className="mt-1 w-4 h-4 flex-shrink-0"
             />
             <Label htmlFor="terms-accepted" className="text-sm font-normal text-slate-700 cursor-pointer leading-snug">
@@ -534,14 +594,37 @@ const MembershipPublicPage = () => {
             </Label>
           </div>
 
-          {paypalReady && (
-            <p className="text-xs text-slate-500">
-              Ya puedes pagar con PayPal — términos aceptados. Si necesitas modificarlos, vuelve a la lista de planes.
-            </p>
-          )}
-
           {form.termsAccepted ? (
-            <div id="paypal-button-container" className="min-h-[120px]" />
+            <div className="space-y-3">
+              <div>
+                <Label htmlFor="cardholder-name">Nombre en la tarjeta</Label>
+                <Input
+                  id="cardholder-name"
+                  value={cardholderName}
+                  onChange={(e) => setCardholderName(e.target.value)}
+                  placeholder={form.ownerName || 'Como aparece en la tarjeta'}
+                  autoComplete="cc-name"
+                />
+              </div>
+              <div>
+                <Label>Datos de la tarjeta</Label>
+                <div id="stripe-card-element" className="mt-1 rounded-md border border-input bg-white px-3 py-3 shadow-sm" />
+              </div>
+              {cardError && (
+                <p className="text-sm text-red-600">{cardError}</p>
+              )}
+              <Button
+                className="w-full text-lg py-6"
+                disabled={loading || !cardReady || !isStripeConfigured()}
+                onClick={handleStripeSubmit}
+              >
+                <CreditCard className="w-5 h-5 mr-2" />
+                {loading ? 'Procesando pago...' : `Pagar $${monthlyTotal.toFixed(2)}/mes y activar membresía`}
+              </Button>
+              <p className="text-xs text-slate-500 text-center">
+                Cargo mensual automático procesado de forma segura por Stripe. Puedes cancelar cuando quieras.
+              </p>
+            </div>
           ) : (
             <p className="text-sm text-slate-500 text-center">
               Debes aceptar los Términos y Condiciones para continuar con el pago.
@@ -583,23 +666,25 @@ const MembershipPublicPage = () => {
     </div>
   );
 
-  // PayPal charged but activation didn't confirm: reassure, keep the
+  // Stripe charged but activation didn't confirm: reassure, keep the
   // evidence on screen, and offer a manual retry (safe — the edge function
-  // treats a repeated subscription id as a replay).
+  // treats a repeated payment method / subscription id as a replay).
   const renderPending = () => (
     <div className="max-w-xl mx-auto text-center space-y-6">
       <Clock className="w-16 h-16 text-amber-500 mx-auto" />
       <h1 className="text-3xl font-bold text-slate-900">¡Recibimos tu pago!</h1>
       <p className="text-lg text-slate-600">
-        PayPal procesó tu pago correctamente. Estamos terminando de activar tu membresía — normalmente toma solo unos minutos.
+        Stripe procesó tu pago correctamente. Estamos terminando de activar tu membresía — normalmente toma solo unos minutos.
       </p>
       <div className="bg-slate-50 rounded-xl p-6 space-y-2 text-left">
         <p className="text-sm text-slate-500">Plan</p>
         <p className="font-medium">{pending?.planKey ? PLANS[pending.planKey].name : ''}</p>
         <p className="text-sm text-slate-500">Titular</p>
         <p className="font-medium">{pending?.snapshot?.ownerName}</p>
-        <p className="text-sm text-slate-500">ID de suscripción de PayPal</p>
-        <p className="font-mono font-medium break-all">{pending?.subscriptionId}</p>
+        <p className="text-sm text-slate-500">Referencia de pago</p>
+        <p className="font-mono font-medium break-all">
+          {pending?.payload?.subscription_id || pending?.payload?.payment_method_id}
+        </p>
       </div>
       <Button className="w-full text-lg py-6" disabled={loading} onClick={handleRetryActivation}>
         <RefreshCw className={`w-5 h-5 mr-2 ${loading ? 'animate-spin' : ''}`} />

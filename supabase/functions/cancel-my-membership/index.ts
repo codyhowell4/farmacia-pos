@@ -7,11 +7,13 @@
 //     request_membership_cancellation RPC (benefits continue until
 //     next_renewal_date; the process_membership_renewals cron flips the row
 //     to 'cancelled' after that). PayPal-processor memberships also get their
-//     subscription cancelled at PayPal so billing actually stops; the
-//     webhook's CANCELLED echo respects pending_cancellation.
+//     subscription cancelled at PayPal so billing actually stops (the
+//     webhook's CANCELLED echo respects pending_cancellation); Stripe
+//     memberships get cancel_at_period_end=true so billing stops at period
+//     end (the webhook's customer.subscription.deleted then flips the row).
 //   action 'resume': clears the pending flag via resume_membership. Only
-//     meaningful for cash memberships — a cancelled PayPal subscription
-//     cannot be un-cancelled, so PayPal members get { reason:
+//     meaningful for cash memberships — a cancelled PayPal/Stripe
+//     subscription cannot be un-cancelled, so those members get { reason:
 //     'paypal_resignup' } and re-sign up from the public memberships page.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
@@ -96,6 +98,34 @@ const cancelPayPalSubscription = async (
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`PayPal cancel failed: ${res.status} ${text}`);
+  }
+
+  return true;
+};
+
+// Schedules the Stripe subscription to cancel at period end (benefits run
+// until next_renewal_date, same user-facing semantics as the PayPal path).
+// Stripe's customer.subscription.deleted webhook then flips the membership
+// to 'cancelled' at period end.
+const cancelStripeSubscriptionAtPeriodEnd = async (
+  env: Record<string, string>,
+  subscriptionId: string
+) => {
+  const res = await fetch(
+    `https://api.stripe.com/v1/subscriptions/${subscriptionId}`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.STRIPE_SECRET_KEY!}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'cancel_at_period_end=true',
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Stripe cancel failed: ${res.status} ${text}`);
   }
 
   return true;
@@ -200,11 +230,11 @@ Deno.serve(async (req) => {
         }, 200);
       }
 
-      if (membership.payment_processor === 'paypal') {
+      if (['paypal', 'stripe'].includes(membership.payment_processor as string)) {
         return jsonResponse({
           success: false,
           reason: 'paypal_resignup',
-          message: 'Las suscripciones de PayPal no se pueden reanudar una vez canceladas. Puedes reactivar tu membresía cuando quieras desde la página de membresías; conservamos tus pagos acumulados.',
+          message: 'Las suscripciones en línea no se pueden reanudar una vez canceladas. Puedes reactivar tu membresía cuando quieras desde la página de membresías; conservamos tus pagos acumulados.',
         }, 200);
       }
 
@@ -256,10 +286,30 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Stop Stripe billing too: cancel_at_period_end keeps benefits running
+    // until effective_date, and the webhook's customer.subscription.deleted
+    // flips the row to 'cancelled' at period end. A Stripe failure never
+    // rolls back the flag (the member asked to cancel); it is logged and
+    // flagged in the response so staff can follow up.
+    let stripeCancelled = false;
+    if (membership.payment_processor === 'stripe' && membership.processor_subscription_id) {
+      try {
+        await cancelStripeSubscriptionAtPeriodEnd(
+          env,
+          membership.processor_subscription_id as string
+        );
+        stripeCancelled = true;
+      } catch (stripeErr) {
+        console.error('[cancel-my-membership] Stripe cancel failed:', stripeErr);
+        warning = 'Tu membresía quedó programada para cancelarse, pero no pudimos detener el cobro en Stripe automáticamente. Por favor avisa al personal de la farmacia.';
+      }
+    }
+
     return jsonResponse({
       success: true,
       effective_date: effectiveDate,
       paypal_cancelled: paypalCancelled,
+      stripe_cancelled: stripeCancelled,
       ...(warning ? { warning } : {}),
     }, 200);
   } catch (err) {

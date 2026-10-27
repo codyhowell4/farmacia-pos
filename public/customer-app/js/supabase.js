@@ -13,11 +13,12 @@ const SUPABASE_CONFIG = {
   URL: 'https://ieinjhonepkudxxpmuly.supabase.co',
   ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImllaW5qaG9uZXBrdWR4eHBtdWx5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NDc2MzgsImV4cCI6MjA5MDMyMzYzOH0.Zc79127QCi3VcrK_WYWv_-cQdBtpweYqTt3zziMJBno',
   DEFAULT_ORG_ID: '718f51b5-dc67-4f70-8aa9-1a315cd1deeb',
-  // PayPal client ID for consult payments. Mirrors VITE_PAYPAL_CLIENT_ID
-  // from the React app (see src/lib/paypal.js). PayPal client ids are
-  // public by design (they ship in every frontend bundle); the secret
-  // stays in the edge function. Used to load the SDK with intent=capture.
-  PAYPAL_CLIENT_ID: 'BAAA3M9gUtfL61Q0gIqGgUjK5Zhd8_0vfYlnciKZgA_ETWEp4xcEaqXbRqwsPhQVB3yNcH9w_pSF5BtHS8'
+  // Stripe publishable key for consult payments. Mirrors
+  // VITE_STRIPE_PUBLIC_KEY from the React app (.env.local). Publishable
+  // keys are public by design (they ship in every frontend bundle); the
+  // secret stays in the edge function. Used to create the Stripe.js
+  // instance that confirms card payments.
+  STRIPE_PUBLISHABLE_KEY: 'pk_live_51UTUHUPVj8V6K5BA2fR7qMfSnC4wv0NrKQ4Joris0deDJ7gnLerkEZ7luLYR3c2vNb0zW0kd7ZkKJWFrCqGKwmDO00b6TSRYnX'
 };
 
 // Expose config globally so API layer can read DEFAULT_ORG_ID

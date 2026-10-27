@@ -247,6 +247,15 @@ The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional m
 - Stock adjustments require a reason and are logged in `stock_adjustments`.
 - Optional per-product fields (2026-10-19): `laboratorio` (lab/manufacturer, also a CSV-import column and table-search term) and `image_url` (product photo; uploads go to the public `inventory-images` storage bucket with staff-only writes, via `uploadInventoryImage` in db.js; thumbnails show in the add/edit dialog and the table's Nombre cell). Migration: `20261019120000_inventory_laboratorio_image.sql`.
 
+### Payments — Stripe (2026-10-21, replaces PayPal for new billing)
+- **All NEW billing is Stripe** (card form, 3DS handled by Stripe.js). Existing `payment_processor='paypal'` members keep renewing on PayPal — the 5 `paypal-*` edge functions stay deployed for them.
+- **Membership signup** (public `/membresias` + admin-assisted): card form → `stripe-membership-signup` (public; two-phase for 3DS: `start` creates customer/PM/subscription with `payment_behavior=default_incomplete` → client confirms → `confirm` provisions: `public_signup_membership` RPC, portal account, notifications; orphan subs are cancelled on guard refusals).
+- **POS card**: checkout Tarjeta now mounts a Stripe card element (no more typed approval code). Flow: `stripe-pos-charge` (staff JWT) `authorize` (manual capture; `setup_future_usage` when the ticket carries a membership signup) → `confirmCardPayment` → sale → `capture`; sale failure → `void`. Membership signup on a card ticket then calls `subscribe` (subscription with `trial_end` = +1 month — the first month already rode the ticket). Membership fee products clicked in POS search open `MembershipSignupDialog` with the plan preselected (`initialPlan` prop).
+- **Teleconsulta**: `stripe-capture-consult` (`action:'create'` makes the PaymentIntent with metadata-bound appointment; verify path enforces metadata + amount before creating the Daily room).
+- **Renewals**: `stripe-webhook` (signature-verified, `stripe_webhook_events` dedupe) — `invoice.paid` with `billing_reason='subscription_cycle'` → `record_membership_payment` + `next_renewal_date` from `current_period_end`; `invoice.payment_failed` → paused + notify; `customer.subscription.deleted` → cancelled (cancels are `cancel_at_period_end`). The renewals cron and `_impl_record_membership_payment` skip `stripe` rows exactly like `paypal` rows (migration `20261021120000_stripe_memberships.sql`).
+- **Admin**: status edits on Stripe memberships sync via `stripe-subscription-status`; cancellation self-service (`cancel-my-membership`) cancels Stripe at period end.
+- Stripe catalog (live): Product/Price `Membresía Apolo Individual` $150 MXN/mes, `Membresía Apolo Familiar` $500 MXN/mes; webhook endpoint registered on the Stripe account. Secrets: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_INDIVIDUAL/FAMILIAR` (edge secrets); `VITE_STRIPE_PUBLIC_KEY` + price IDs are frontend env.
+
 ### Shifts (`ShiftContext.jsx`)
 - A cashier must open a shift (starting cash) before using PoS (`ShiftGate`).
 - Closing a shift calculates expected cash from DB sales and shows variance.
@@ -293,7 +302,8 @@ The frontend is fully static; Supabase does all backend work. See `docs/HOSTING.
 
 ### Environment variables (both platforms)
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_PUBLIC_ORG_ID`
-- `VITE_PAYPAL_ENV`, `VITE_PAYPAL_CLIENT_ID`, `VITE_PAYPAL_PLAN_INDIVIDUAL`, `VITE_PAYPAL_PLAN_FAMILIAR`
+- `VITE_STRIPE_PUBLIC_KEY`, `VITE_STRIPE_PRICE_INDIVIDUAL`, `VITE_STRIPE_PRICE_FAMILIAR`
+- LEGACY (existing PayPal members only): `VITE_PAYPAL_ENV`, `VITE_PAYPAL_CLIENT_ID`, `VITE_PAYPAL_PLAN_INDIVIDUAL`, `VITE_PAYPAL_PLAN_FAMILIAR`
 
 ### Build Output
 - Vite builds to `dist/`.
