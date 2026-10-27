@@ -76,3 +76,21 @@ verify_jwt = false
 # paypal-capture-consult for new payments; same public posture.
 [functions.stripe-capture-consult]
 verify_jwt = false
+
+# Public Plan Empresa signup (Stripe SetupIntent → trialing subscription,
+# quantity = seats) — no session yet by definition. Abuse bounded by per-IP
+# rate limiting; client-facing errors are generic (R2-38).
+[functions.empresa-signup]
+verify_jwt = false
+
+# Plan Empresa roster activation via the one-time setup_token (48 h TTL) —
+# no session; the token is the capability. Abuse bounded by per-IP rate
+# limiting.
+[functions.empresa-setup]
+verify_jwt = false
+
+# Plan Empresa roster management — caller is the employer's portal session;
+# the function additionally enforces membership ownership (customers
+# .profile_id or the owner membership_members.claimed_user_id).
+[functions.empresa-roster]
+verify_jwt = true

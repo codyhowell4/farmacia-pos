@@ -3795,6 +3795,7 @@ export const registerMembershipAtPos = async ({
     p_payment_method: paymentMethod,
     p_visits_used: visitsUsed,
     p_terms_accepted_at: termsAcceptedAt,
+    p_free_first_month: true,
   });
   if (error) throw error;
   return data;

@@ -2384,6 +2384,9 @@ async function renderMembresias() {
       </div>
     </div>
 
+    <!-- Mi Empresa roster (resolved async; stays empty for non-empresa members) -->
+    <div id="membresias-empresa" style="padding: 0 1rem;"></div>
+
     <!-- Negocios afiliados (resolved async) -->
     <div id="membresias-socios"></div>
   `;
@@ -2654,11 +2657,141 @@ async function renderMembresias() {
       </div>
     `;
   }
+  // ---- Mi Empresa roster (only renders when the user owns an empresa membership) ----
+  renderEmpresaSection();
 }
 
-// Self-service cancellation: cancel at period end (benefits continue until
-// the next renewal date; no partial refunds; revision progress — pagos
-// acumulados — is preserved on later reactivation).
+// Employer admin: loads the roster via the empresa-roster edge function.
+// Guests and non-empresa members get a 403/404 from 'list' — the section
+// simply stays empty in that case.
+async function renderEmpresaSection() {
+  const container = document.getElementById('membresias-empresa');
+  if (!container || currentPage !== 'membresias' || !currentAuthUser) return;
+
+  const { data: roster, error } = await FarmaciaAPI.empresaRoster({ action: 'list' });
+  if (error || !roster) {
+    if (error && error.status !== 403 && error.status !== 404) {
+      console.warn('[renderEmpresaSection] list failed:', error.message);
+    }
+    container.innerHTML = '';
+    return;
+  }
+  if (currentPage !== 'membresias') return; // navigated away while loading
+
+  const seats = Number(roster.seats) || 0;
+  const seatsUsed = Number(roster.seats_used) || 0;
+  const pricePerSeat = Number(roster.price_per_seat) || 100;
+  const monthly = Number(roster.monthly_amount) || seats * pricePerSeat;
+  const members = Array.isArray(roster.members) ? roster.members : [];
+
+  const memberRow = (m) => `
+    <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 0; border-top: 1px solid #EEF2F9;">
+      <div style="width: 36px; height: 36px; border-radius: 50%; background: #EDF1FB; color: #1E2A8A; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.95rem; flex-shrink: 0;">${escapeHtml((m.name || '?').charAt(0).toUpperCase())}</div>
+      <div style="min-width: 0; flex: 1;">
+        <div style="font-weight: 600; color: #1a1a2e; font-size: 0.9rem;">
+          ${escapeHtml(m.name || 'Empleado')}
+          ${m.is_owner ? '<span style="font-size: 0.65rem; background: #EDF1FB; color: #1E2A8A; padding: 0.15rem 0.5rem; border-radius: 10px; font-weight: 700; margin-left: 0.375rem; white-space: nowrap;">TITULAR</span>' : ''}
+        </div>
+        <div style="font-size: 0.75rem; color: #64748b; font-family: monospace;">${escapeHtml(m.sub_id || '')}</div>
+        ${(m.email || m.phone) ? `<div style="font-size: 0.75rem; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(m.email || m.phone)}</div>` : ''}
+      </div>
+      ${!m.is_owner ? `<button onclick="empresaRemoveMember('${m.id}')" style="background: none; border: 1px solid #fecaca; color: #b91c1c; border-radius: 10px; padding: 0.4rem 0.625rem; font-size: 0.75rem; font-weight: 600; cursor: pointer; flex-shrink: 0;">Quitar</button>` : ''}
+    </div>
+  `;
+
+  container.innerHTML = `
+    <div style="background: rgba(255,255,255,0.95); border-radius: 20px; padding: 1.25rem; border: 1px solid #E3E8F2; margin-top: 1rem;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem;">
+        <div style="min-width: 0;">
+          <div style="font-weight: 700; font-size: 1rem; color: #1E2A8A;">🏢 Mi Empresa</div>
+          <div style="font-size: 0.85rem; color: #1a1a2e; font-weight: 600; margin-top: 0.15rem;">${escapeHtml(roster.company_name || 'Mi empresa')}</div>
+        </div>
+        <div style="text-align: right; flex-shrink: 0;">
+          <div style="font-size: 0.7rem; color: #64748b;">Mensualidad</div>
+          <div style="font-size: 1.15rem; font-weight: 800; color: #1a1a2e;">${formatPrice(monthly)}</div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-top: 0.75rem; background: #F8FAFD; border-radius: 12px; padding: 0.625rem 0.875rem;">
+        <span style="color: #64748b;">Lugares usados</span>
+        <span style="font-weight: 700; color: #1a1a2e;">${seatsUsed} / ${seats}</span>
+      </div>
+
+      <div style="margin-top: 0.25rem;">
+        ${members.length ? members.map(memberRow).join('') : '<div style="font-size: 0.85rem; color: #64748b; padding: 0.75rem 0;">Aún no hay empleados registrados.</div>'}
+      </div>
+
+      <!-- Add employee -->
+      <div style="margin-top: 0.75rem; border-top: 1px solid #EEF2F9; padding-top: 0.875rem;">
+        <div style="font-weight: 700; font-size: 0.9rem; color: #1E2A8A; margin-bottom: 0.5rem;">Agregar empleado</div>
+        <div id="empresa-add-error" style="display: none; background: #fee2e2; color: #dc2626; border-radius: 12px; padding: 0.625rem 0.875rem; margin-bottom: 0.625rem; font-size: 0.8rem;"></div>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <input id="empresa-add-name" type="text" placeholder="Nombre completo" style="padding: 0.75rem; border: 1px solid #E3E8F2; border-radius: 12px; font-size: 0.9rem; width: 100%; box-sizing: border-box;">
+          <input id="empresa-add-email" type="email" placeholder="Correo electrónico (opcional si das teléfono)" style="padding: 0.75rem; border: 1px solid #E3E8F2; border-radius: 12px; font-size: 0.9rem; width: 100%; box-sizing: border-box;">
+          <input id="empresa-add-phone" type="tel" placeholder="Teléfono (opcional si das correo)" style="padding: 0.75rem; border: 1px solid #E3E8F2; border-radius: 12px; font-size: 0.9rem; width: 100%; box-sizing: border-box;">
+        </div>
+        <p style="font-size: 0.75rem; color: #64748b; margin: 0.5rem 0; line-height: 1.5;">
+          Cada empleado suma ${formatPrice(pricePerSeat)} a tu mensualidad. Si le das correo, recibirá un email para crear su contraseña y entrar a su portal. <strong style="color: #359268;">Primer mes gratis.</strong>
+        </p>
+        <button id="empresa-add-btn" onclick="empresaAddMember()" style="width: 100%; padding: 0.85rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer;">Agregar empleado</button>
+      </div>
+    </div>
+  `;
+}
+
+function showEmpresaAddError(message) {
+  const box = document.getElementById('empresa-add-error');
+  if (box) {
+    box.textContent = message;
+    box.style.display = 'block';
+  } else {
+    showToast(message, 'error');
+  }
+}
+
+window.empresaAddMember = async function() {
+  const nameEl = document.getElementById('empresa-add-name');
+  const emailEl = document.getElementById('empresa-add-email');
+  const phoneEl = document.getElementById('empresa-add-phone');
+  const btn = document.getElementById('empresa-add-btn');
+  const name = (nameEl?.value || '').trim();
+  const email = (emailEl?.value || '').trim();
+  const phone = (phoneEl?.value || '').trim();
+
+  const errBox = document.getElementById('empresa-add-error');
+  if (errBox) errBox.style.display = 'none';
+
+  if (!name) return showEmpresaAddError('Escribe el nombre del empleado.');
+  if (!email && !phone) return showEmpresaAddError('Captura al menos un correo o un teléfono.');
+
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Agregando...'; }
+  const { error } = await FarmaciaAPI.empresaRoster({
+    action: 'add',
+    name,
+    ...(email ? { email } : {}),
+    ...(phone ? { phone } : {}),
+  });
+  if (error) {
+    showEmpresaAddError(error.message || 'No se pudo agregar al empleado.');
+    if (btn) { btn.disabled = false; btn.textContent = 'Agregar empleado'; }
+    return;
+  }
+  showToast('Empleado agregado a tu empresa', 'success');
+  renderEmpresaSection();
+};
+
+window.empresaRemoveMember = async function(memberId) {
+  if (!memberId) return;
+  if (!confirm('¿Quitar a este empleado de tu empresa? Perderá los beneficios de la membresía.')) return;
+
+  const { error } = await FarmaciaAPI.empresaRoster({ action: 'remove', member_id: memberId });
+  if (error) {
+    showToast(error.message || 'No se pudo quitar al empleado.', 'error');
+    return;
+  }
+  showToast('Empleado eliminado de tu empresa', 'success');
+  renderEmpresaSection();
+};
 async function handleCancelMembership(membershipId) {
   if (!membershipId) return;
 

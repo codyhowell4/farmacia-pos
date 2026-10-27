@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/components/ui/use-toast';
 import { getStripe, isStripeConfigured } from '@/lib/stripe';
-import { Users, User, CheckCircle, Activity, MapPin, ArrowLeft, Clock, RefreshCw, CreditCard } from 'lucide-react';
+import { Users, User, CheckCircle, Activity, MapPin, ArrowLeft, CreditCard } from 'lucide-react';
 
 const REVISION_SUMMARY = 'Revisión semestral gratis (valor $775): incluye Biometría Hemática, Examen General de Orina, Química Sanguínea de 12 elementos y Consulta';
 
@@ -76,7 +76,8 @@ const isMinorDobIso = (iso) => {
   return Math.floor((Date.now() - new Date(iso).getTime()) / (365.25 * 86400000)) < 18;
 };
 
-const CARD_DECLINED_MESSAGE = 'Tu banco rechazó el cargo — intenta con otra tarjeta';
+const CARD_REJECTED_MESSAGE = 'Tu banco rechazó la tarjeta — intenta con otra.';
+const BANK_VERIFYING_MESSAGE = 'Tu banco aún está verificando la tarjeta — espera unos segundos y vuelve a intentarlo.';
 
 const MembershipPublicPage = () => {
   const { toast } = useToast();
@@ -84,10 +85,6 @@ const MembershipPublicPage = () => {
   const [selectedPlanKey, setSelectedPlanKey] = useState(null);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState(null);
-  // Set when Stripe charged but activation failed after all retries: drives
-  // the "pago recibido" screen instead of a bare error. Money was taken, so
-  // the UX must never look like the purchase failed.
-  const [pending, setPending] = useState(null);
   const [createdSnapshot, setCreatedSnapshot] = useState(null);
   // Holds the mounted Stripe card element for the current form state.
   const stripeCardRef = useRef(null);
@@ -223,16 +220,16 @@ const MembershipPublicPage = () => {
 
     const result = await res.json();
     if (!res.ok || result.error) {
-      throw new Error(result.error || 'Error al registrar la membresía');
+      const err = new Error(result.error || 'Error al registrar la membresía');
+      err.status = res.status;
+      throw err;
     }
     return result;
   };
 
-  // The payment may already have happened at Stripe when a submit fails, so
-  // a failure here is almost always transient (network blip, function cold
+  // A failed submit is almost always transient (network blip, function cold
   // start, schema cache reload). Retry before ever bothering the user with
-  // it. The edge function treats a repeated payment method / subscription id
-  // as a replay.
+  // it. The edge function treats a repeated signup as a replay.
   const submitSignupWithRetry = async (payload) => {
     let result = null;
     let lastError = null;
@@ -263,8 +260,8 @@ const MembershipPublicPage = () => {
     const currentForm = formRef.current;
     const currentPlanKey = selectedPlanKeyRef.current;
 
-    // The card stays on the server until the form validates — no charge
-    // happens on an invalid form, so a plain error is fine here.
+    // Nothing is charged at signup (first month is free), so a plain error
+    // on an invalid form is fine here.
     const validationError = validateMembershipForm(currentForm);
     if (validationError) {
       toast({ title: 'Verifica los datos', description: validationError, variant: 'destructive' });
@@ -286,90 +283,62 @@ const MembershipPublicPage = () => {
     setLoading(true);
     setCardError(null);
     try {
-      const { paymentMethod, error: pmError } = await stripeCtx.stripe.createPaymentMethod({
-        type: 'card',
-        card: stripeCtx.card,
-        billing_details: {
-          name: cardholderName.trim() || snapshot.ownerName.trim(),
-          email: snapshot.email.trim(),
+      // 1. Register the signup — the function creates the Stripe customer and
+      // a SetupIntent. The whole submit is re-runnable: 'start' replays on a
+      // repeated attempt.
+      const setup = await submitSignupWithRetry({ ...basePayload, action: 'start' });
+      if (setup.status !== 'requires_setup' || !setup.client_secret) {
+        throw new Error('Respuesta inesperada del servidor de pagos');
+      }
+
+      // 2. Save and verify the card; 3DS runs inside confirmCardSetup.
+      const { setupIntent, error: setupError } = await stripeCtx.stripe.confirmCardSetup(setup.client_secret, {
+        payment_method: {
+          card: stripeCtx.card,
+          billing_details: {
+            name: cardholderName.trim() || snapshot.ownerName.trim(),
+            email: snapshot.email.trim(),
+          },
         },
       });
-
-      if (pmError) {
-        setCardError(pmError.code === 'card_declined' ? CARD_DECLINED_MESSAGE : pmError.message);
+      if (setupError) {
+        setCardError(CARD_REJECTED_MESSAGE);
+        toast({
+          title: 'No se pudo verificar la tarjeta',
+          description: CARD_REJECTED_MESSAGE,
+          variant: 'destructive',
+        });
         return;
       }
 
-      const startPayload = { ...basePayload, action: 'start', payment_method_id: paymentMethod.id };
+      // 3. Activate the membership with the verified card.
       let result;
       try {
-        result = await submitSignupWithRetry(startPayload);
+        result = await submitSignupWithRetry({
+          ...basePayload,
+          action: 'confirm',
+          setup_intent_id: setupIntent.id,
+          stripe_customer_id: setup.stripe_customer_id,
+        });
       } catch (err) {
-        setPending({ payload: startPayload, planKey: currentPlanKey, snapshot, error: err.message });
-        setStep('pending');
-        return;
-      }
-
-      if (result.status === 'active') {
-        finishRegistration(result, snapshot);
-        return;
-      }
-
-      if (result.status === 'requires_payment_action' && result.client_secret) {
-        const { error: confirmError } = await stripeCtx.stripe.confirmCardPayment(result.client_secret);
-        if (confirmError) {
-          // 3DS failed or was declined — no charge completed.
-          setCardError(CARD_DECLINED_MESSAGE);
-          toast({
-            title: 'No se pudo completar el pago',
-            description: CARD_DECLINED_MESSAGE,
-            variant: 'destructive',
-          });
+        if (err.status === 402) {
+          // The bank hasn't finished verifying — the user can simply press
+          // the button again to re-run setup confirmation.
+          setCardError(BANK_VERIFYING_MESSAGE);
+          toast({ title: 'Verificación en curso', description: BANK_VERIFYING_MESSAGE });
           return;
         }
-
-        const confirmPayload = { ...startPayload, action: 'confirm', subscription_id: result.subscription_id };
-        let confirmed;
-        try {
-          confirmed = await submitSignupWithRetry(confirmPayload);
-        } catch (err) {
-          setPending({ payload: confirmPayload, planKey: currentPlanKey, snapshot, error: err.message });
-          setStep('pending');
-          return;
-        }
-        if (confirmed.status === 'active') {
-          finishRegistration(confirmed, snapshot);
-          return;
-        }
+        throw err;
       }
-
-      throw new Error('Respuesta inesperada del servidor de pagos');
+      if (result.status !== 'active') {
+        throw new Error('Respuesta inesperada del servidor de pagos');
+      }
+      finishRegistration(result, snapshot);
     } catch (err) {
       console.error('[membresias] stripe signup failed:', err);
       toast({
         title: 'Error',
         description: err.message || 'No se pudo registrar la membresía.',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRetryActivation = async () => {
-    if (!pending) return;
-    setLoading(true);
-    try {
-      const result = await submitSignup(pending.payload);
-      if (result.status !== 'active') throw new Error('La membresía aún no se activa.');
-      finishRegistration(result, pending.snapshot);
-      setPending(null);
-    } catch (err) {
-      console.error('[membresias] manual activation retry failed:', err);
-      setPending((p) => ({ ...p, error: err.message }));
-      toast({
-        title: 'Aún no se puede activar',
-        description: 'Lo revisamos y te contactamos. Tu pago está seguro.',
         variant: 'destructive',
       });
     } finally {
@@ -404,8 +373,8 @@ const MembershipPublicPage = () => {
                 {p.name}
               </CardTitle>
               <CardDescription>
-                <span className="text-3xl font-bold text-slate-900">${p.monthlyPrice}</span>
-                <span className="text-slate-500"> / mes</span>
+                <span className="text-3xl font-bold text-green-700">Primer mes gratis</span>
+                <span className="block text-slate-500 mt-1">luego ${p.monthlyPrice} / mes</span>
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -437,7 +406,7 @@ const MembershipPublicPage = () => {
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
         <div>
           <p className="font-bold text-blue-900">{plan.name}</p>
-          <p className="text-sm text-blue-700">${plan.monthlyPrice}/mes + upgrades</p>
+          <p className="text-sm text-blue-700">Primer mes gratis — luego ${plan.monthlyPrice}/mes</p>
         </div>
         <Activity className="w-8 h-8 text-blue-600" />
       </div>
@@ -568,8 +537,9 @@ const MembershipPublicPage = () => {
         <div className="border-t pt-4 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-slate-500">Total mensual</p>
-              <p className="text-2xl font-bold text-slate-900">${monthlyTotal.toFixed(2)} MXN</p>
+              <p className="text-sm text-slate-500">Hoy</p>
+              <p className="text-2xl font-bold text-slate-900">$0.00 MXN</p>
+              <p className="text-xs text-slate-500">Primer mes gratis — luego ${monthlyTotal.toFixed(2)} MXN/mes a partir del día 30</p>
             </div>
           </div>
 
@@ -619,10 +589,10 @@ const MembershipPublicPage = () => {
                 onClick={handleStripeSubmit}
               >
                 <CreditCard className="w-5 h-5 mr-2" />
-                {loading ? 'Procesando pago...' : `Pagar $${monthlyTotal.toFixed(2)}/mes y activar membresía`}
+                {loading ? 'Activando...' : 'Activar membresía — primer mes gratis'}
               </Button>
               <p className="text-xs text-slate-500 text-center">
-                Cargo mensual automático procesado de forma segura por Stripe. Puedes cancelar cuando quieras.
+                No se cobra nada hoy; el primer cargo es el día 30. Cargo mensual automático procesado de forma segura por Stripe. Puedes cancelar cuando quieras.
               </p>
             </div>
           ) : (
@@ -666,49 +636,12 @@ const MembershipPublicPage = () => {
     </div>
   );
 
-  // Stripe charged but activation didn't confirm: reassure, keep the
-  // evidence on screen, and offer a manual retry (safe — the edge function
-  // treats a repeated payment method / subscription id as a replay).
-  const renderPending = () => (
-    <div className="max-w-xl mx-auto text-center space-y-6">
-      <Clock className="w-16 h-16 text-amber-500 mx-auto" />
-      <h1 className="text-3xl font-bold text-slate-900">¡Recibimos tu pago!</h1>
-      <p className="text-lg text-slate-600">
-        Stripe procesó tu pago correctamente. Estamos terminando de activar tu membresía — normalmente toma solo unos minutos.
-      </p>
-      <div className="bg-slate-50 rounded-xl p-6 space-y-2 text-left">
-        <p className="text-sm text-slate-500">Plan</p>
-        <p className="font-medium">{pending?.planKey ? PLANS[pending.planKey].name : ''}</p>
-        <p className="text-sm text-slate-500">Titular</p>
-        <p className="font-medium">{pending?.snapshot?.ownerName}</p>
-        <p className="text-sm text-slate-500">Referencia de pago</p>
-        <p className="font-mono font-medium break-all">
-          {pending?.payload?.subscription_id || pending?.payload?.payment_method_id}
-        </p>
-      </div>
-      <Button className="w-full text-lg py-6" disabled={loading} onClick={handleRetryActivation}>
-        <RefreshCw className={`w-5 h-5 mr-2 ${loading ? 'animate-spin' : ''}`} />
-        {loading ? 'Activando...' : 'Reintentar activación'}
-      </Button>
-      <p className="text-slate-600">
-        Si el problema continúa, contáctanos y te activamos de inmediato — tu pago está seguro:
-      </p>
-      <p className="font-medium text-slate-900">
-        Tel: +52 1 442 548 8893 · citas@apolofarmacia.com.mx
-      </p>
-      {pending?.error && (
-        <p className="text-xs text-slate-400">Detalle técnico: {pending.error}</p>
-      )}
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-apolo-bg py-12 px-4">
       <div className="max-w-6xl mx-auto">
         {step === 'plans' && renderPlans()}
         {step === 'form' && renderForm()}
         {step === 'success' && renderSuccess()}
-        {step === 'pending' && renderPending()}
       </div>
       <p className="text-xs text-slate-500 text-center mt-10">
         Farmacia Apolo · Cometa 4, San Antonio Zomeyucan, Naucalpan de Juárez · Tel: +52 1 442 548 8893

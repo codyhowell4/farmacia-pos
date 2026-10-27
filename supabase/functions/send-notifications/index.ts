@@ -54,6 +54,7 @@ interface NotificationRow {
     | 'membership_revision'
     | 'membership_receipt'
     | 'membership_welcome'
+    | 'membership_empresa_setup'
     | 'membership_payment_failed'
     | 'membership_cancelled'
     | 'affiliate_welcome'
@@ -88,6 +89,9 @@ interface NotificationRow {
     coupon_code?: string;
     portal_url?: string;
     poster_opt_in?: boolean;
+    company_name?: string;
+    seats?: number;
+    setup_url?: string;
   };
   scheduled_for: string;
 }
@@ -310,7 +314,12 @@ const buildMessage = (env: Record<string, string>, row: NotificationRow) => {
 
   if (row.template === 'membership_welcome') {
     const planId = String(row.payload.plan_id || '');
-    const planLabel = row.payload.plan_type === 'familiar' ? 'Plan Familiar' : 'Plan Individual';
+    const planLabel =
+      row.payload.plan_type === 'familiar'
+        ? 'Plan Familiar'
+        : row.payload.plan_type === 'empresa'
+          ? 'Plan Empresa'
+          : 'Plan Individual';
     const monthly = formatMoney(row.payload.monthly_amount, 'MXN');
     const visits = row.payload.visits_limit != null ? String(row.payload.visits_limit) : '';
     const pct = row.payload.discount_percent != null ? String(row.payload.discount_percent) : '';
@@ -338,6 +347,26 @@ const buildMessage = (env: Record<string, string>, row: NotificationRow) => {
       cta: { href: appUrl(env), label: 'Entrar a la app' },
     });
     return { subject: '¡Bienvenido a Membresías Apolo! — Farmacia Apolo', html, text };
+  }
+
+  // Transactional (NOT in PROMO_TEMPLATES): the Plan Empresa activation
+  // email with the one-time roster setup link (48 h TTL).
+  if (row.template === 'membership_empresa_setup') {
+    const company = String(row.payload.company_name || '');
+    const seats = row.payload.seats != null ? String(row.payload.seats) : '';
+    const setupUrl = String(row.payload.setup_url || appUrl(env));
+    const seatsText = seats ? ` con ${seats} lugares` : '';
+    const text = `${greeting} tu Plan Empresa para ${company}${seatsText} ya está activo. Asigna los lugares a tus empleados desde este enlace (vence en 48 horas): ${setupUrl} Cada empleado registrado con correo recibirá su propio correo para crear su contraseña. Farmacia Apolo.`;
+    const html = brandedEmail(env, {
+      title: 'Activa tu Plan Empresa',
+      body:
+        `<p style="margin:0 0 8px;">${escapeHtml(greeting)}</p>` +
+        `<p style="margin:0;">Tu Plan Empresa para <strong>${escapeHtml(company)}</strong>${seats ? ` con <strong>${escapeHtml(seats)} lugares</strong>` : ''} ya está activo. El siguiente paso es asignar los lugares a tus empleados.</p>` +
+        `<p style="margin:10px 0 0;"><strong>Este enlace vence en 48 horas.</strong> Cada empleado registrado con correo electrónico recibirá su propio correo para crear su contraseña y entrar al portal.</p>` +
+        `<p style="margin:10px 0 0;">Después podrás administrar tu equipo — agregar o quitar empleados — desde el portal del cliente.</p>`,
+      cta: { href: setupUrl, label: 'Asignar lugares' },
+    });
+    return { subject: 'Activa Plan Empresa — Farmacia Apolo', html, text };
   }
 
   if (row.template === 'membership_payment_failed') {

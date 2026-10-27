@@ -489,7 +489,7 @@ const AdminMemberships = () => {
                       <td className="px-4 py-3 text-slate-900">{t.customers?.full_name || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{t.customers?.phone || '—'}</td>
                       <td className="px-4 py-3 capitalize text-slate-700">
-                        {t.plan_type === 'familiar' ? 'Familiar' : 'Individual'}
+                        {t.plan_type === 'familiar' ? 'Familiar' : t.plan_type === 'empresa' ? 'Empresa' : 'Individual'}
                       </td>
                       <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
                       <td className="px-4 py-3 text-slate-700">
@@ -570,14 +570,14 @@ const AdminMemberships = () => {
                       <td className="px-4 py-3 text-slate-600">{m.customers?.phone || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{m.customers?.email || '—'}</td>
                       <td className="px-4 py-3 capitalize text-slate-700">
-                        {m.plan_type === 'familiar' ? 'Familiar' : 'Individual'}
+                        {m.plan_type === 'familiar' ? 'Familiar' : m.plan_type === 'empresa' ? 'Empresa' : 'Individual'}
                       </td>
                       <td className="px-4 py-3">
                         <button
                           onClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
                           className="flex items-center gap-1 text-apolo-navy hover:text-apolo-navy-dark"
                         >
-                          {m.plan_type === 'familiar'
+                          {m.plan_type !== 'individual'
                             ? `${m.membership_members?.length || 0} miembros`
                             : 'Detalles'}
                           {expandedId === m.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}

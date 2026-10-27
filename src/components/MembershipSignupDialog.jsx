@@ -78,6 +78,7 @@ const MembershipSignupDialog = ({ open, onOpenChange, onConfirm, initialPlan }) 
                   <PlanIcon className="w-5 h-5 text-apolo-navy mb-1" />
                   <p className="font-semibold text-sm text-slate-900">{plan.name}</p>
                   <p className="text-sm font-bold text-green-600">${plan.monthlyPrice} MXN/mes</p>
+                  <p className="text-xs font-medium text-emerald-600">Primer mes gratis — cobros desde el día 30</p>
                   <p className="text-xs text-slate-500 mt-1">{plan.visits} consultas mensuales + 10% de descuento</p>
                 </button>
               );

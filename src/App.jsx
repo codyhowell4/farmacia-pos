@@ -9,6 +9,8 @@ import CustomerRegisterPage from '@/pages/CustomerRegisterPage';
 import HomePage from '@/pages/HomePage';
 import MembershipPublicPage from '@/pages/MembershipPublicPage';
 import MembershipTermsPage from '@/pages/MembershipTermsPage';
+import MembresiaNegociosPage from '@/pages/MembresiaNegociosPage';
+import MembresiaNegociosSetupPage from '@/pages/MembresiaNegociosSetupPage';
 import AdminDashboard from '@/pages/AdminDashboard';
 import PoSDashboard from '@/pages/PoSDashboard';
 import InventoryDashboard from '@/pages/InventoryDashboard';
@@ -44,6 +46,8 @@ function App() {
             <Route path="/customer-register" element={<CustomerRegisterPage />} />
             <Route path="/membresias" element={<MembershipPublicPage />} />
             <Route path="/membresias/terminos" element={<MembershipTermsPage />} />
+            <Route path="/membresia-negocios" element={<MembresiaNegociosPage />} />
+            <Route path="/membresia-negocios/activar" element={<MembresiaNegociosSetupPage />} />
             <Route
               path="/admin/*"
               element={

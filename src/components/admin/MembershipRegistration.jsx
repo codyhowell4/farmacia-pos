@@ -46,7 +46,8 @@ const PLANS = {
 
 const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-membership-signup`;
 
-const CARD_DECLINED_MESSAGE = 'Tu banco rechazó el cargo — intenta con otra tarjeta';
+const CARD_REJECTED_MESSAGE = 'Tu banco rechazó la tarjeta — intenta con otra.';
+const BANK_VERIFYING_MESSAGE = 'Tu banco aún está verificando la tarjeta — espera unos segundos y vuelve a intentarlo.';
 
 const MembershipRegistration = () => {
   const navigate = useNavigate();
@@ -222,7 +223,9 @@ const MembershipRegistration = () => {
 
     const result = await res.json();
     if (!res.ok || result.error) {
-      throw new Error(result.error || 'Error al registrar la membresía');
+      const err = new Error(result.error || 'Error al registrar la membresía');
+      err.status = res.status;
+      throw err;
     }
     return result;
   };
@@ -265,20 +268,6 @@ const MembershipRegistration = () => {
     setLoading(true);
     setCardError(null);
     try {
-      const { paymentMethod, error: pmError } = await stripeCtx.stripe.createPaymentMethod({
-        type: 'card',
-        card: stripeCtx.card,
-        billing_details: {
-          name: cardholderName.trim() || currentForm.ownerName.trim(),
-          email: currentForm.email.trim(),
-        },
-      });
-
-      if (pmError) {
-        setCardError(pmError.code === 'card_declined' ? CARD_DECLINED_MESSAGE : pmError.message);
-        return;
-      }
-
       const basePayload = {
         plan_type: currentPlanKey,
         password: currentForm.password,
@@ -293,25 +282,51 @@ const MembershipRegistration = () => {
         terms_accepted_at: new Date().toISOString(),
       };
 
-      let result = await submitSignup({ ...basePayload, action: 'start', payment_method_id: paymentMethod.id });
+      // 1. Register the signup — creates the Stripe customer and a
+      // SetupIntent (first month is free; nothing is charged here).
+      const setup = await submitSignup({ ...basePayload, action: 'start' });
+      if (setup.status !== 'requires_setup' || !setup.client_secret) {
+        throw new Error('Respuesta inesperada del servidor de pagos');
+      }
 
-      if (result.status === 'requires_payment_action' && result.client_secret) {
-        const { error: confirmError } = await stripeCtx.stripe.confirmCardPayment(result.client_secret);
-        if (confirmError) {
-          setCardError(CARD_DECLINED_MESSAGE);
-          toast({
-            title: 'No se pudo completar el pago',
-            description: CARD_DECLINED_MESSAGE,
-            variant: 'destructive',
-          });
-          return;
-        }
+      // 2. Save and verify the card; 3DS runs inside confirmCardSetup.
+      const { setupIntent, error: setupError } = await stripeCtx.stripe.confirmCardSetup(setup.client_secret, {
+        payment_method: {
+          card: stripeCtx.card,
+          billing_details: {
+            name: cardholderName.trim() || currentForm.ownerName.trim(),
+            email: currentForm.email.trim(),
+          },
+        },
+      });
+      if (setupError) {
+        setCardError(CARD_REJECTED_MESSAGE);
+        toast({
+          title: 'No se pudo verificar la tarjeta',
+          description: CARD_REJECTED_MESSAGE,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // 3. Activate the membership with the verified card.
+      let result;
+      try {
         result = await submitSignup({
           ...basePayload,
           action: 'confirm',
-          payment_method_id: paymentMethod.id,
-          subscription_id: result.subscription_id,
+          setup_intent_id: setupIntent.id,
+          stripe_customer_id: setup.stripe_customer_id,
         });
+      } catch (err) {
+        if (err.status === 402) {
+          // The bank hasn't finished verifying — pressing the button again
+          // re-runs the flow ('start' replays on the server).
+          setCardError(BANK_VERIFYING_MESSAGE);
+          toast({ title: 'Verificación en curso', description: BANK_VERIFYING_MESSAGE });
+          return;
+        }
+        throw err;
       }
 
       if (result.status !== 'active') {
@@ -351,8 +366,8 @@ const MembershipRegistration = () => {
                 {p.name}
               </CardTitle>
               <CardDescription>
-                <span className="text-2xl font-bold text-slate-900">${p.monthlyPrice}</span>
-                <span className="text-slate-500"> / mes</span>
+                <span className="text-2xl font-bold text-green-700">Primer mes gratis</span>
+                <span className="block text-slate-500 mt-1">luego ${p.monthlyPrice} / mes</span>
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -381,7 +396,7 @@ const MembershipRegistration = () => {
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center justify-between">
         <div>
           <p className="font-bold text-blue-900">{plan.name}</p>
-          <p className="text-sm text-blue-700">${plan.monthlyPrice}/mes + complementos</p>
+          <p className="text-sm text-blue-700">Primer mes gratis — luego ${plan.monthlyPrice}/mes</p>
         </div>
         <Activity className="w-8 h-8 text-blue-600" />
       </div>
@@ -493,8 +508,18 @@ const MembershipRegistration = () => {
 
         <div className="border-t pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
-            <p className="text-sm text-slate-500">Total mensual</p>
-            <p className="text-2xl font-bold text-slate-900">${monthlyTotal.toFixed(2)} MXN</p>
+            {form.paymentMethod === 'cash' ? (
+              <>
+                <p className="text-sm text-slate-500">Total mensual</p>
+                <p className="text-2xl font-bold text-slate-900">${monthlyTotal.toFixed(2)} MXN</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-slate-500">Hoy</p>
+                <p className="text-2xl font-bold text-slate-900">$0.00 MXN</p>
+                <p className="text-xs text-slate-500">Primer mes gratis — luego ${monthlyTotal.toFixed(2)} MXN/mes a partir del día 30</p>
+              </>
+            )}
           </div>
           {form.paymentMethod === 'cash' && (
             <Button type="submit" disabled={loading || !form.termsAccepted} size="lg">
@@ -530,8 +555,11 @@ const MembershipRegistration = () => {
                 onClick={handleStripeSubmit}
               >
                 <CreditCard className="w-5 h-5 mr-2" />
-                {loading ? 'Procesando pago...' : `Pagar $${monthlyTotal.toFixed(2)}/mes y activar membresía`}
+                {loading ? 'Activando...' : 'Activar membresía — primer mes gratis'}
               </Button>
+              <p className="text-xs text-slate-500 text-center">
+                No se cobra nada hoy; el primer cargo es el día 30.
+              </p>
             </div>
           ) : (
             <p className="text-sm text-slate-500 text-center">

@@ -1081,6 +1081,48 @@ window.FarmaciaAPI = (function () {
     },
 
     /**
+     * Employer roster management via the empresa-roster edge function
+     * (verify_jwt on; sends the session access token).
+     * action 'list'   → { membership_id, plan_id, company_name, seats,
+     *                   seats_used, monthly_amount, price_per_seat, members }
+     *                   — 403/404 when the caller owns no empresa membership
+     * action 'add'    → { name, email?, phone? } — bumps the Stripe seat
+     *                   quantity when full; returns the updated roster
+     * action 'remove' → { member_id } — decrements the Stripe seat quantity
+     * Returns { data, error } like the other API methods; error.status
+     * carries the HTTP status so callers can hide the UI on 403/404.
+     */
+    async empresaRoster(payload) {
+      if (!sb) return { data: null, error: new Error('Supabase not available') };
+      try {
+        const { data: sessionData } = await sb.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (!token) throw new Error('Inicia sesión para continuar');
+
+        const cfg = window.farmaciaSupabaseConfig || {};
+        const res = await fetch(cfg.URL + '/functions/v1/empresa-roster', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(cfg.ANON_KEY ? { apikey: cfg.ANON_KEY } : {}),
+            Authorization: 'Bearer ' + token,
+          },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const err = new Error(json.error || 'No se pudo procesar la solicitud');
+          err.status = res.status;
+          throw err;
+        }
+        return { data: json, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] empresaRoster failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
+    /**
      * Get the consult price from the org's CONSULTA MEDICA MEMBRESIA
      * inventory item. Falls back to 100 if the query fails.
      */

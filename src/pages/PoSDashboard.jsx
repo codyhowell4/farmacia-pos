@@ -304,8 +304,9 @@ const PoSDashboard = () => {
   };
 
   // The membership signup fee (MEMBRESIA INDIVIDUAL/FAMILIAR) rides the ticket
-  // at full price: never discounted, never IVA'd (matches the membership-payment
-  // RPC bookings, which are iva_enabled=false).
+  // at $0 ("Primer mes gratis" — billing starts day 30): never discounted,
+  // never IVA'd (matches the membership-payment RPC bookings, which are
+  // iva_enabled=false).
   const isMembershipFeeItem = (item) => !!item && item.department === 'membresias';
   // A just-registered member has no server row yet — the pseudo membership
   // carries the signup payload and bypasses server validation.
@@ -464,9 +465,11 @@ const PoSDashboard = () => {
     setSelectedMember({ id: null, sub_id: 'NUEVA-1', name: fullName, is_owner: true });
     // Benefit pricing applies immediately: consultas ride free against the
     // fresh visit balance and regular items get the member % at totals level.
-    setCart([...cart, { ...product, quantity: 1, originalPrice: product.price, price: product.price, overrideBy: null, revisionIds: [] }]);
+    // The fee rides at $0 ("Primer mes gratis" — billing starts day 30);
+    // originalPrice keeps the catalog monthly price for reference.
+    setCart([...cart, { ...product, quantity: 1, originalPrice: product.price, price: 0, overrideBy: null, revisionIds: [] }]);
     setMembershipSignupOpen(false);
-    toast({ title: 'Membresía en el ticket', description: `${plan.name} de ${fullName} — se activa al cobrar.` });
+    toast({ title: 'Membresía en el ticket', description: `${plan.name} de ${fullName} — primer mes gratis, cobros desde el día 30.` });
   };
 
   const findPendingRevisionForMember = (item, memberId) => {
@@ -1172,11 +1175,14 @@ const PoSDashboard = () => {
       }
 
       // ── Stripe card charge (single card payment) ──────────────────
-      // Authorize the ticket total, confirm the card client-side (3DS handled
-      // by Stripe), then let the sale proceed. The hold is captured after the
-      // sale is registered and voided if the sale fails. Split card payments
-      // keep the external-terminal flow (typed approval number).
-      let stripeCharge = null; // { paymentIntentId, stripeCustomerId, paymentMethodId, captured }
+      // Paid tickets: authorize the ticket total, confirm the card
+      // client-side (3DS handled by Stripe), capture after the sale is
+      // registered, void if the sale fails. $0 tickets (free-first-month
+      // membership signup, "Primer mes gratis"): a SetupIntent saves the
+      // card instead — nothing is charged, captured, or voided; the
+      // subscription bills from day 30. Split card payments keep the
+      // external-terminal flow (typed approval number).
+      let stripeCharge = null; // { paymentIntentId?, setupIntentId?, stripeCustomerId, paymentMethodId, captured }
       if (paymentMethod === 'card' && !isSplitPayment) {
         const stripe = stripeRef.current;
         const cardElement = stripeCardElementRef.current;
@@ -1190,49 +1196,83 @@ const PoSDashboard = () => {
           });
           return;
         }
+        const isFreeTicket = finalTotal <= 0;
         try {
-          const { data: authData, error: authError } = await supabase.functions.invoke('stripe-pos-charge', {
-            body: {
-              action: 'authorize',
-              amount_mxn: finalTotal,
-              customer_email: selectedCustomer?.email || selectedMembership?._signup?.email || undefined,
-              customer_name: selectedCustomer?.full_name || selectedMembership?._signup?.fullName || undefined,
-              has_membership_signup: isSignupMembership,
-            },
-          });
-          if (authError || authData?.error) {
-            throw new Error(authError?.message || authData.error);
-          }
-          const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(authData.client_secret, {
-            payment_method: { card: cardElement },
-          });
-          if (confirmError || !paymentIntent) {
-            // Release the authorization so the hold does not linger.
-            try {
-              await supabase.functions.invoke('stripe-pos-charge', {
-                body: { action: 'void', payment_intent_id: authData.payment_intent_id },
-              });
-            } catch (voidErr) {
-              console.warn('Failed to void Stripe authorization after confirm failure:', voidErr);
+          if (isFreeTicket) {
+            // $0 ticket (primer mes gratis): save the card with a SetupIntent
+            // so the subscription can bill from day 30. No charge happens.
+            const { data: setupData, error: setupError } = await supabase.functions.invoke('stripe-pos-charge', {
+              body: {
+                action: 'setup',
+                customer_email: selectedCustomer?.email || selectedMembership?._signup?.email || undefined,
+                customer_name: selectedCustomer?.full_name || selectedMembership?._signup?.fullName || undefined,
+              },
+            });
+            if (setupError || setupData?.error) {
+              throw new Error(setupError?.message || setupData.error);
             }
-            throw new Error(confirmError?.message || 'No se pudo confirmar la tarjeta.');
+            const { error: confirmError, setupIntent } = await stripe.confirmCardSetup(setupData.client_secret, {
+              payment_method: { card: cardElement },
+            });
+            if (confirmError || !setupIntent) {
+              throw new Error(confirmError?.message || 'No se pudo confirmar la tarjeta.');
+            }
+            stripeCharge = {
+              setupIntentId: setupIntent.id,
+              stripeCustomerId: setupData.stripe_customer_id,
+              paymentMethodId: typeof setupIntent.payment_method === 'string'
+                ? setupIntent.payment_method
+                : setupIntent.payment_method?.id,
+              captured: false,
+            };
+            // The SetupIntent id is the payment reference for this $0 card
+            // sale (lands in sale_payments.reference_number).
+            if (payments[0]) payments[0].reference_number = stripeCharge.setupIntentId;
+            setCardReference(stripeCharge.setupIntentId);
+          } else {
+            const { data: authData, error: authError } = await supabase.functions.invoke('stripe-pos-charge', {
+              body: {
+                action: 'authorize',
+                amount_mxn: finalTotal,
+                customer_email: selectedCustomer?.email || selectedMembership?._signup?.email || undefined,
+                customer_name: selectedCustomer?.full_name || selectedMembership?._signup?.fullName || undefined,
+                has_membership_signup: isSignupMembership,
+              },
+            });
+            if (authError || authData?.error) {
+              throw new Error(authError?.message || authData.error);
+            }
+            const { error: confirmError, paymentIntent } = await stripe.confirmCardPayment(authData.client_secret, {
+              payment_method: { card: cardElement },
+            });
+            if (confirmError || !paymentIntent) {
+              // Release the authorization so the hold does not linger.
+              try {
+                await supabase.functions.invoke('stripe-pos-charge', {
+                  body: { action: 'void', payment_intent_id: authData.payment_intent_id },
+                });
+              } catch (voidErr) {
+                console.warn('Failed to void Stripe authorization after confirm failure:', voidErr);
+              }
+              throw new Error(confirmError?.message || 'No se pudo confirmar la tarjeta.');
+            }
+            stripeCharge = {
+              paymentIntentId: authData.payment_intent_id,
+              stripeCustomerId: authData.stripe_customer_id,
+              paymentMethodId: typeof paymentIntent.payment_method === 'string'
+                ? paymentIntent.payment_method
+                : paymentIntent.payment_method?.id,
+              captured: false,
+            };
+            // The confirmed PaymentIntent id is the payment reference
+            // (lands in sale_payments.reference_number).
+            if (payments[0]) payments[0].reference_number = stripeCharge.paymentIntentId;
+            setCardReference(stripeCharge.paymentIntentId);
           }
-          stripeCharge = {
-            paymentIntentId: authData.payment_intent_id,
-            stripeCustomerId: authData.stripe_customer_id,
-            paymentMethodId: typeof paymentIntent.payment_method === 'string'
-              ? paymentIntent.payment_method
-              : paymentIntent.payment_method?.id,
-            captured: false,
-          };
-          // The confirmed PaymentIntent id is the payment reference
-          // (lands in sale_payments.reference_number).
-          if (payments[0]) payments[0].reference_number = stripeCharge.paymentIntentId;
-          setCardReference(stripeCharge.paymentIntentId);
         } catch (stripeErr) {
           console.error('Stripe card charge failed:', stripeErr);
           toast({
-            title: 'Cobro con tarjeta rechazado',
+            title: isFreeTicket ? 'No se pudo registrar la tarjeta' : 'Cobro con tarjeta rechazado',
             description: stripeErr.message || 'La tarjeta fue rechazada. No se registró la venta.',
             variant: 'destructive',
           });
@@ -1446,8 +1486,9 @@ const PoSDashboard = () => {
           }
         }
 
-        // Stripe: capture the authorization now that the sale is registered.
-        // A capture failure must NOT roll back the sale — flag it for admin.
+        // Stripe: capture the authorization now that the sale is registered
+        // ($0 setup-intent tickets have nothing to capture). A capture
+        // failure must NOT roll back the sale — flag it for admin.
         if (stripeCharge?.paymentIntentId) {
           try {
             const { data: capData, error: capError } = await supabase.functions.invoke('stripe-pos-charge', {
@@ -1463,30 +1504,32 @@ const PoSDashboard = () => {
               variant: 'destructive',
             });
           }
-          // Card-paid membership signup: create the monthly subscription. The
-          // signup month rode this ticket, so billing starts next month
-          // (trial_end handled server-side). Non-fatal — the membership
-          // already works like a cash one if this fails.
-          if (posSignupResult?.membership_id && stripeCharge.stripeCustomerId && stripeCharge.paymentMethodId) {
-            try {
-              const { data: subData, error: subError } = await supabase.functions.invoke('stripe-pos-charge', {
-                body: {
-                  action: 'subscribe',
-                  membership_id: posSignupResult.membership_id,
-                  stripe_customer_id: stripeCharge.stripeCustomerId,
-                  payment_method_id: stripeCharge.paymentMethodId,
-                  plan_type: signupInfo.planKey,
-                },
-              });
-              if (subError || subData?.error) throw new Error(subError?.message || subData.error);
-            } catch (subErr) {
-              console.error('Stripe subscribe failed:', subErr);
-              toast({
-                title: 'Membresía activa, pero el cargo recurrente no quedó configurado',
-                description: 'Configura la suscripción de la membresía manualmente desde Admin.',
-                variant: 'destructive',
-              });
-            }
+        }
+        // Card-paid membership signup: create the monthly subscription. The
+        // first month is free ("Primer mes gratis"), so billing starts on
+        // day 30 (trial_end handled server-side). Works for both flows:
+        // payment_method_id comes from the confirmed PaymentIntent (mixed
+        // ticket) or the SetupIntent ($0 ticket). Non-fatal — the membership
+        // already works like a cash one if this fails.
+        if (stripeCharge && posSignupResult?.membership_id && stripeCharge.stripeCustomerId && stripeCharge.paymentMethodId) {
+          try {
+            const { data: subData, error: subError } = await supabase.functions.invoke('stripe-pos-charge', {
+              body: {
+                action: 'subscribe',
+                membership_id: posSignupResult.membership_id,
+                stripe_customer_id: stripeCharge.stripeCustomerId,
+                payment_method_id: stripeCharge.paymentMethodId,
+                plan_type: signupInfo.planKey,
+              },
+            });
+            if (subError || subData?.error) throw new Error(subError?.message || subData.error);
+          } catch (subErr) {
+            console.error('Stripe subscribe failed:', subErr);
+            toast({
+              title: 'Membresía activa, pero el cargo recurrente no quedó configurado',
+              description: 'Configura la suscripción de la membresía manualmente desde Admin.',
+              variant: 'destructive',
+            });
           }
         }
 
@@ -1659,7 +1702,9 @@ const PoSDashboard = () => {
         }, 500);
       } catch (e) {
         console.error('Sale error:', e);
-        // A Stripe authorization exists but the sale failed — release the hold.
+        // A Stripe authorization exists but the sale failed — release the
+        // hold. ($0 SetupIntent tickets have no paymentIntentId: nothing was
+        // charged, so nothing needs voiding.)
         if (stripeCharge?.paymentIntentId && !stripeCharge.captured) {
           try {
             await supabase.functions.invoke('stripe-pos-charge', {
@@ -1773,8 +1818,9 @@ const PoSDashboard = () => {
   const subtotalAfterDiscount = isCostPlus
     ? costPlusSubtotal
     : regularSubtotal - appliedDiscountAmount + consultationEffectiveTotal + feeSubtotal;
-  // The signup fee rides at full price and generates no IVA (matches the
-  // membership-payment RPC bookings, which are iva_enabled=false).
+  // The signup fee generates no IVA (matches the membership-payment RPC
+  // bookings, which are iva_enabled=false) — it rides at $0 anyway
+  // ("Primer mes gratis"), but the exclusion stays for legacy priced fees.
   const ivaAmount = calcIVA(subtotalAfterDiscount - feeSubtotal, taxSettings);
   const finalTotal = subtotalAfterDiscount + ivaAmount;
 
@@ -1863,9 +1909,14 @@ const PoSDashboard = () => {
               <h2 className="text-xl sm:text-2xl font-bold mb-4">Resumen del pedido</h2>
               <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
                 {cart.map(item => (
-                  <div key={item.id} className="flex justify-between items-center text-sm sm:text-base">
-                    <p>{item.name} <span className="text-slate-500">x{item.quantity}</span></p>
-                    <p>{formatMXN((item.price * item.quantity))}</p>
+                  <div key={item.id} className="text-sm sm:text-base">
+                    <div className="flex justify-between items-center">
+                      <p>{item.name} <span className="text-slate-500">x{item.quantity}</span></p>
+                      <p>{formatMXN((item.price * item.quantity))}</p>
+                    </div>
+                    {isMembershipFeeItem(item) && Number(item.price) === 0 && (
+                      <p className="text-xs text-emerald-600">Primer mes gratis — cobros desde el día 30</p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2219,6 +2270,11 @@ const PoSDashboard = () => {
                           </p>
                         )}
                         <p className="text-sm text-slate-500">Monto a pagar: {formatMXN(finalTotal)}</p>
+                        {finalTotal <= 0 && cart.some(isMembershipFeeItem) ? (
+                          <p className="text-xs text-emerald-600">Primer mes gratis — hoy no se cobra nada; la tarjeta queda guardada y la membresía se cobra desde el día 30.</p>
+                        ) : cart.some(isMembershipFeeItem) ? (
+                          <p className="text-xs text-emerald-600">La membresía es gratis este mes — se cobra desde el día 30.</p>
+                        ) : null}
                         <p className="text-xs text-slate-400">El cobro se procesa con Stripe (incluye 3-D Secure) al presionar "Finalizar venta".</p>
                       </>
                     )}
@@ -2535,6 +2591,9 @@ const PoSDashboard = () => {
                         {isMembershipPulsera(item) && Number(item.price) === 0 && (
                           <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-700">Gratis membresía</span>
                         )}
+                        {isMembershipFeeItem(item) && Number(item.price) === 0 && (
+                          <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-700">Primer mes gratis</span>
+                        )}
                         {stock != null && (
                           <p className={`text-xs ${item.quantity >= stock ? 'text-amber-600 font-medium' : 'text-slate-500'}`}>
                             Stock: {stock}{item.quantity >= stock ? ' (máx. alcanzado)' : ''}
@@ -2556,6 +2615,9 @@ const PoSDashboard = () => {
                         <Input type="number" value={item.price} onChange={e => handlePriceChange(item.id, e.target.value)} onBlur={() => handlePriceBlur(item.id)} className="w-20 h-8 text-right font-bold text-green-600" />
                       </div>
                     </div>
+                    {isMembershipFeeItem(item) && Number(item.price) === 0 && (
+                      <p className="text-xs text-emerald-600 mt-1">Primer mes gratis — cobros desde el día 30 ({formatMXN(item.originalPrice ?? 0)}/mes después)</p>
+                    )}
                     {item.requires_prescription && (
                       <div className="mt-2">
                         <Input

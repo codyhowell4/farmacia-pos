@@ -1,8 +1,8 @@
 // Supabase Edge Function: stripe-pos-charge
 // POS card operations for the Stripe terminal-less flow: manual-capture
-// PaymentIntents (authorize / capture / void) and converting a POS
-// membership signup into a Stripe subscription once the signup month has
-// been charged on the POS ticket.
+// PaymentIntents (authorize / capture / void), card vaulting via
+// SetupIntent for $0 membership-only tickets (setup), and converting a POS
+// membership signup into a Stripe subscription (subscribe).
 // Staff-only: JWT verification is ON (supabase/config.toml) and the caller
 // must have an admin or pos profile.
 
@@ -160,8 +160,40 @@ Deno.serve(async (req) => {
     const { profile } = await requireStaffUser(env, req);
     const payload = (await req.json()) as Record<string, any>;
 
-    if (!payload.action || !['authorize', 'capture', 'void', 'subscribe'].includes(payload.action)) {
-      throw new ClientError('action inválida. Usa authorize, capture, void o subscribe.');
+    if (!payload.action || !['authorize', 'capture', 'void', 'subscribe', 'setup'].includes(payload.action)) {
+      throw new ClientError('action inválida. Usa authorize, capture, void, subscribe o setup.');
+    }
+
+    if (payload.action === 'setup') {
+      // Card vaulting for a $0 POS ticket (membership-only signup with the
+      // free first month): no PaymentIntent is possible on a $0 total, so
+      // the card is 3DS-verified and vaulted via a SetupIntent instead.
+      // The caller confirms it client-side (confirmCardSetup) and passes
+      // the resulting payment_method_id to 'subscribe'.
+      let stripeCustomerId: string;
+      if (payload.customer_email) {
+        stripeCustomerId = await findOrCreateStripeCustomer(
+          env,
+          String(payload.customer_email).trim().toLowerCase(),
+          String(payload.customer_name || ''),
+          profile.org_id as string
+        );
+      } else {
+        const created = await stripeApi(env, 'POST', '/customers', {
+          name: String(payload.customer_name || ''),
+          'metadata[org_id]': profile.org_id as string,
+        });
+        stripeCustomerId = created.id as string;
+      }
+
+      const setupIntent = await stripeApi(env, 'POST', '/setup_intents', {
+        customer: stripeCustomerId,
+        usage: 'off_session',
+      });
+      return jsonResponse(
+        { client_secret: setupIntent.client_secret, stripe_customer_id: stripeCustomerId },
+        200
+      );
     }
 
     if (payload.action === 'authorize') {
@@ -265,9 +297,12 @@ Deno.serve(async (req) => {
       throw new ClientError('Esta membresía ya tiene una suscripción de Stripe activa', 409);
     }
 
-    // Make sure the card is attached to this Stripe customer (it normally
-    // is — setup_future_usage on the authorize call — but a retried or
-    // hand-entered payment method may not be).
+    // Make sure the card is attached to this Stripe customer. The
+    // payment_method_id is a plain PM id that can come from either a
+    // confirmed PaymentIntent (authorize path, setup_future_usage) or a
+    // succeeded SetupIntent (setup path); in both cases it is normally
+    // already attached, which the retrieve-check below tolerates — attach
+    // only fires for a retried or hand-entered payment method.
     const paymentMethod = await stripeApi(env, 'GET', `/payment_methods/${payload.payment_method_id}`);
     if (paymentMethod.customer !== payload.stripe_customer_id) {
       await stripeApi(env, 'POST', `/payment_methods/${payload.payment_method_id}/attach`, {
@@ -275,9 +310,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // The signup month was already charged on the POS ticket, so the
-    // subscription starts with a 1-month trial — the first Stripe invoice
-    // bills at the next renewal date (no double charge).
+    // First month free on ALL plans: the subscription starts with a
+    // 1-month trial and the first Stripe invoice bills at day 30 — no
+    // double charge on tickets where the signup month was charged, and
+    // correct billing for $0 membership-only tickets (setup path).
     const trialEnd = new Date();
     trialEnd.setMonth(trialEnd.getMonth() + 1);
 

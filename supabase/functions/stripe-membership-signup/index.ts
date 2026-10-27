@@ -1,24 +1,28 @@
 // Supabase Edge Function: stripe-membership-signup
-// Creates a Stripe customer + subscription and registers/reinstates a
-// membership. Exposed without JWT verification so the public signup page
-// (/membresias) and the admin-assisted registration page can call it.
+// Verifies a card via SetupIntent and registers/reinstates a membership
+// with a Stripe subscription. Exposed without JWT verification so the
+// public signup page (/membresias) and the admin-assisted registration
+// page can call it.
 //
-// Two-phase flow (Mexican cards almost always require 3DS, so the first
-// invoice's PaymentIntent usually needs client-side confirmation):
+// Business rule (2026 change): ALL plans get the FIRST MONTH FREE — no
+// money moves at signup; billing starts day 30. The card is still
+// 3DS-verified and vaulted via a SetupIntent so the subscription can bill
+// off-session from the first renewal.
+//
+// Two-phase SetupIntent flow (Mexican cards almost always require 3DS):
 // - action 'start': validates, runs the pre-Stripe guards, creates the
-//   Stripe customer + subscription with payment_behavior=default_incomplete.
-//   If the subscription comes back 'active' (no 3DS needed) it provisions
-//   the membership immediately. If 'incomplete' it provisions NOTHING and
-//   returns the invoice PaymentIntent's client_secret so the caller can
-//   confirm the payment client-side (Stripe.js handleNextAction).
-// - action 'confirm': after client-side confirmation, re-retrieves the
-//   subscription; when it is now 'active' it runs ALL the same guards +
-//   provisioning (idempotent/replay-safe). Still not active → 402.
-//   Incomplete subscriptions abandoned by the client are auto-canceled by
-//   Stripe after 23 h.
+//   Stripe customer + a SetupIntent (usage=off_session). Provisions
+//   NOTHING and returns the SetupIntent's client_secret so the caller can
+//   confirm the card setup client-side (Stripe.js confirmCardSetup).
+// - action 'confirm': after client-side confirmation, retrieves the
+//   SetupIntent; when it 'succeeded' it sets the card as the customer's
+//   invoice default and creates the subscription with trial_end = now +
+//   30 days (the free month), then runs ALL the same guards +
+//   provisioning (idempotent/replay-safe). Setup not succeeded → 402.
 //
 // Security posture (mirrors paypal-subscription, audit R2-9 / R2-38):
-// - Only a Stripe subscription with status 'active' activates anything.
+// - Only a succeeded SetupIntent + a created 'trialing'/'active' Stripe
+//   subscription activates anything.
 // - Existing-customer matching is by exact normalized email ONLY (no phone
 //   or substring matching, which let attackers attach to strangers).
 // - Account-takeover guard: when a portal account already exists for the
@@ -58,8 +62,8 @@ interface CustomerPayload {
 
 interface RequestPayload {
   action: 'start' | 'confirm';
-  subscription_id?: string; // confirm only: the Stripe subscription created by 'start'
-  payment_method_id?: string; // start only
+  setup_intent_id?: string; // confirm only: the SetupIntent created by 'start', confirmed client-side
+  stripe_customer_id?: string; // confirm: optional; when sent it must match the SetupIntent's customer
   plan_type: 'individual' | 'familiar';
   customer: CustomerPayload;
   member_names?: string[];
@@ -291,6 +295,7 @@ const createMembership = async (
       basic_trackers_included: plan.basicTrackers,
       basic_trackers_fulfilled: 0,
       monthly_amount: plan.price,
+      signup_amount: 0, // first month free: payment #1 is $0, billing starts day 30
       payment_method: 'stripe',
       payment_processor: 'stripe',
       processor_customer_id: stripeCustomerId,
@@ -503,18 +508,16 @@ const cancelOrphanSubscription = async (
   }
 };
 
-// Shared payload validation for both actions. 'start' requires
-// payment_method_id, 'confirm' requires subscription_id; everything else
+// Shared payload validation for both actions. 'start' needs no card data
+// (the client has no payment_method_id yet — the SetupIntent is confirmed
+// client-side); 'confirm' requires setup_intent_id. Everything else
 // (plan_type, org_id, customer email, R2-21 minor/guardian rule) is common.
 const validatePayload = (payload: RequestPayload) => {
   if (!payload.action || !['start', 'confirm'].includes(payload.action)) {
     throw new ClientError('action inválida. Usa start o confirm.');
   }
-  if (payload.action === 'start' && !payload.payment_method_id) {
-    throw new ClientError('payment_method_id requerido');
-  }
-  if (payload.action === 'confirm' && !payload.subscription_id) {
-    throw new ClientError('subscription_id requerido');
+  if (payload.action === 'confirm' && !payload.setup_intent_id) {
+    throw new ClientError('setup_intent_id requerido');
   }
   if (!payload.plan_type || !PLANS[payload.plan_type]) {
     throw new ClientError('plan_type inválido');
@@ -714,7 +717,10 @@ const provisionMembership = async (
       try {
         const { error: payError } = await supabase.rpc('record_membership_payment', {
           p_membership_id: membership.id,
-          p_amount: plan.price,
+          // First month free: no money moved at (re)signup — the Stripe
+          // subscription's trial bills from day 30. Payment #1 books as $0,
+          // matching the RPC's signup_amount=0 on the fresh-signup path.
+          p_amount: 0,
           p_payment_method: 'stripe',
           p_staff_id: null,
           p_is_signup: true,
@@ -812,119 +818,96 @@ Deno.serve(async (req) => {
     const supabase = supabaseAdmin(env);
 
     if (payload.action === 'confirm') {
-      // ── Phase 2: the client confirmed the first invoice's PaymentIntent
-      //    (3DS) with the client_secret returned by 'start'. Re-retrieve
-      //    the subscription; only a now-ACTIVE subscription provisions. ──
-      const subscriptionId = payload.subscription_id!;
+      // ── Phase 2: the client confirmed the SetupIntent (3DS) with the
+      //    client_secret returned by 'start'. Retrieve it; only a
+      //    SUCCEEDED setup vaults a card that can back a subscription. ──
+      const setupIntentId = payload.setup_intent_id!;
 
-      let subscription: Record<string, any>;
+      let setupIntent: Record<string, any>;
       try {
-        subscription = await stripeApi(env, 'GET', `/subscriptions/${subscriptionId}`, {
-          'expand[]': 'latest_invoice.payment_intent',
-        });
+        setupIntent = await stripeApi(env, 'GET', `/setup_intents/${setupIntentId}`);
       } catch (err) {
         if (err instanceof StripeApiError && err.status === 404) {
-          throw new ClientError('Suscripción de Stripe no encontrada', 404);
+          throw new ClientError('La verificación de la tarjeta no existe o expiró', 404);
         }
         throw err;
       }
 
-      // Mandatory plan binding on confirm too: the subscription's price
-      // must be the configured price for the claimed plan_type — otherwise
-      // the caller could confirm a cheaper subscription and receive this
-      // plan's benefits. A mismatch means the subscription cannot back
-      // this membership: cancel it (orphan rule) and refuse.
-      const subPriceId = subscription.items?.data?.[0]?.price?.id as string | undefined;
-      if (!subPriceId || subPriceId !== priceId) {
-        console.warn('[stripe-membership-signup] confirm price mismatch:', {
-          subPriceId,
-          planType: payload.plan_type,
-          subscriptionId,
+      if ((setupIntent.status as string || '').toLowerCase() !== 'succeeded') {
+        // 3DS not finished or card refused — do NOT create anything: the
+        // client may finish the setup and 'confirm' again.
+        console.log('[stripe-membership-signup] confirm: setup not succeeded:', {
+          setupIntentId,
+          status: setupIntent.status,
         });
-        await cancelOrphanSubscription(env, subscriptionId, 'price binding mismatch on confirm');
-        throw new ClientError('El plan de la suscripción no coincide con el plan seleccionado');
+        return jsonResponse({ error: 'La verificación de la tarjeta aún no se ha completado' }, 402);
       }
 
-      const subStatus = (subscription.status as string || '').toLowerCase();
-      if (subStatus !== 'active') {
-        // Still incomplete (3DS not finished or payment failed) — do NOT
-        // cancel: the client may finish the action and 'confirm' again;
-        // abandoned incomplete subscriptions auto-cancel after 23 h.
-        console.log('[stripe-membership-signup] confirm: subscription not active yet:', {
-          subscriptionId,
-          status: subStatus,
-          paymentIntentStatus: subscription.latest_invoice?.payment_intent?.status,
+      // The SetupIntent must be attached to a Stripe customer; when the
+      // caller also sends stripe_customer_id (the one 'start' returned) it
+      // must match — otherwise the vaulted card would back a subscription
+      // on a customer the caller doesn't control.
+      const stripeCustomerId = (payload.stripe_customer_id || setupIntent.customer) as
+        | string
+        | undefined;
+      if (!setupIntent.customer || !stripeCustomerId) {
+        console.warn('[stripe-membership-signup] confirm: setup intent has no customer:', {
+          setupIntentId,
         });
-        return jsonResponse({ error: 'El pago aún no se ha completado' }, 402);
+        throw new ClientError('La verificación de la tarjeta no está asociada a un cliente');
+      }
+      if (payload.stripe_customer_id && setupIntent.customer !== payload.stripe_customer_id) {
+        console.warn('[stripe-membership-signup] confirm: setup intent customer mismatch:', {
+          setupIntentId,
+        });
+        throw new ClientError('La verificación de la tarjeta no coincide con el cliente');
       }
 
-      return await provisionMembership(
-        env,
-        supabase,
-        payload,
-        plan,
-        subscription.customer as string,
-        subscriptionId
-      );
-    }
+      const paymentMethodId = setupIntent.payment_method as string | undefined;
+      if (!paymentMethodId) {
+        throw new ClientError('La verificación de la tarjeta no guardó un método de pago');
+      }
 
-    // ── action === 'start' ──
-
-    // Pre-Stripe guards: refuse doomed signups before creating anything
-    // billable. The same checks run again inside provisionMembership after
-    // billing (idempotent).
-    const preFlight = await checkSignupGuards(supabase, payload, null);
-    if (preFlight.kind === 'refusal') return preFlight.response;
-
-    // ── Stripe: customer → attach payment method → default invoice PM →
-    //    subscription with payment_behavior=default_incomplete. When the
-    //    card needs 3DS the first invoice's PaymentIntent stays
-    //    requires_action and the subscription lands on 'incomplete'; the
-    //    caller confirms it client-side and calls action 'confirm'. ──
-    const stripeCustomer = await stripeApi(env, 'POST', '/customers', {
-      email: normalizeEmail(payload.customer.email),
-      name: payload.customer.full_name || '',
-      'metadata[org_id]': payload.org_id,
-    });
-    const stripeCustomerId = stripeCustomer.id as string;
-
-    let subscription: Record<string, any>;
-    try {
-      await stripeApi(env, 'POST', `/payment_methods/${payload.payment_method_id}/attach`, {
-        customer: stripeCustomerId,
-      });
+      // Vault the card as the customer's invoice default, then create the
+      // subscription with trial_end = now + 30 days: the FIRST MONTH IS
+      // FREE — no money moves at signup, Stripe bills the first renewal on
+      // day 30 off-session with this card.
       await stripeApi(env, 'POST', `/customers/${stripeCustomerId}`, {
-        'invoice_settings[default_payment_method]': payload.payment_method_id,
+        'invoice_settings[default_payment_method]': paymentMethodId,
       });
-      subscription = await stripeApi(env, 'POST', '/subscriptions', {
+
+      const trialEnd = Math.floor((Date.now() + 30 * 86400000) / 1000);
+      const subscription = await stripeApi(env, 'POST', '/subscriptions', {
         customer: stripeCustomerId,
         'items[0][price]': priceId,
-        default_payment_method: payload.payment_method_id!,
-        payment_behavior: 'default_incomplete',
-        'expand[]': 'latest_invoice.payment_intent',
+        default_payment_method: paymentMethodId,
+        trial_end: String(trialEnd),
       });
-    } catch (err) {
-      if (err instanceof StripeApiError && (err.type === 'card_error' || err.status === 402)) {
-        console.error('[stripe-membership-signup] card refused:', {
-          code: err.code,
-          status: err.status,
+
+      const stripeSubscriptionId = subscription.id as string;
+      const subStatus = (subscription.status as string || '').toLowerCase();
+
+      // 'trialing' is the expected success now (free first month);
+      // 'active' is accepted too. Anything else means the subscription
+      // cannot bill the vaulted card at renewal: cancel it (orphan rule)
+      // and answer 402.
+      if (!['active', 'trialing'].includes(subStatus)) {
+        console.error('[stripe-membership-signup] subscription not active/trialing on confirm:', {
+          subscriptionId: stripeSubscriptionId,
+          status: subStatus,
         });
+        await cancelOrphanSubscription(env, stripeSubscriptionId, `unexpected status=${subStatus}`);
         return jsonResponse(
           {
             error:
-              'El pago con tarjeta fue rechazado. Verifica los datos y los fondos de la tarjeta e intenta de nuevo.',
+              'No se pudo crear la suscripción con la tarjeta verificada. Intenta de nuevo o contacta a la farmacia.',
           },
           402
         );
       }
-      throw err;
-    }
 
-    const stripeSubscriptionId = subscription.id as string;
-    const subStatus = (subscription.status as string || '').toLowerCase();
-
-    // No 3DS needed: the first invoice already paid — provision now.
-    if (subStatus === 'active') {
+      // From here provisionMembership owns the orphan rule: any guard
+      // refusal or provisioning failure cancels the subscription.
       return await provisionMembership(
         env,
         supabase,
@@ -935,48 +918,41 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 3DS (or another next-action) required: provision NOTHING, hand the
-    // invoice PaymentIntent's client_secret back for client-side
-    // confirmation. The client then calls action 'confirm'.
-    if (subStatus === 'incomplete') {
-      const clientSecret = subscription.latest_invoice?.payment_intent?.client_secret as
-        | string
-        | undefined;
-      if (!clientSecret) {
-        await cancelOrphanSubscription(
-          env,
-          stripeSubscriptionId,
-          'incomplete subscription without payment intent client_secret'
-        );
-        throw new Error('Stripe subscription incomplete but no payment intent client_secret');
-      }
-      return jsonResponse(
-        {
-          success: true,
-          status: 'requires_payment_action',
-          subscription_id: stripeSubscriptionId,
-          stripe_customer_id: stripeCustomerId,
-          client_secret: clientSecret,
-        },
-        200
-      );
-    }
+    // ── action === 'start' ──
 
-    // Any other status (incomplete_expired, canceled, ...) means the first
-    // payment did not and will not confirm on this subscription: cancel it
-    // so it cannot bill later and answer 402.
-    console.error('[stripe-membership-signup] unexpected subscription status on start:', {
-      subscriptionId: stripeSubscriptionId,
-      status: subStatus,
-      paymentIntentStatus: subscription.latest_invoice?.payment_intent?.status,
+    // Pre-Stripe guards: refuse doomed signups before creating anything.
+    // The same checks run again inside provisionMembership after the
+    // subscription is created (idempotent — a portal account could appear
+    // between start and confirm, or a concurrent signup could win the
+    // race).
+    const preFlight = await checkSignupGuards(supabase, payload, null);
+    if (preFlight.kind === 'refusal') return preFlight.response;
+
+    // ── Stripe: customer → SetupIntent (usage=off_session). No payment
+    //    method is attached and no subscription is created here — the
+    //    client confirms the card setup (3DS) with the client_secret via
+    //    Stripe.js confirmCardSetup, then calls action 'confirm'. No money
+    //    moves on this path. ──
+    const stripeCustomer = await stripeApi(env, 'POST', '/customers', {
+      email: normalizeEmail(payload.customer.email),
+      name: payload.customer.full_name || '',
+      'metadata[org_id]': payload.org_id,
     });
-    await cancelOrphanSubscription(env, stripeSubscriptionId, `unexpected status=${subStatus}`);
+    const stripeCustomerId = stripeCustomer.id as string;
+
+    const setupIntent = await stripeApi(env, 'POST', '/setup_intents', {
+      customer: stripeCustomerId,
+      usage: 'off_session',
+    });
+
     return jsonResponse(
       {
-        error:
-          'No se pudo completar el pago con tu tarjeta. Es posible que tu banco requiera una verificación adicional o que la tarjeta no tenga fondos. Intenta con otra tarjeta o contacta a tu banco.',
+        success: true,
+        status: 'requires_setup',
+        client_secret: setupIntent.client_secret,
+        stripe_customer_id: stripeCustomerId,
       },
-      402
+      200
     );
   } catch (err) {
     console.error('[stripe-membership-signup] error:', err);
