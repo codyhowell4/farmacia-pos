@@ -20,6 +20,7 @@ const emptyForm = {
   contact_email: '',
   sort_order: 0,
   active: true,
+  partner_type: 'afiliado',
 };
 
 const withTimeout = (promise, ms, step) =>
@@ -113,8 +114,9 @@ const AdminPartners = () => {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!editing.name.trim() || !editing.offer.trim()) {
-      toast({ title: 'Verifica los datos', description: 'Nombre y oferta son obligatorios.', variant: 'destructive' });
+    const isPoster = editing.partner_type === 'poster';
+    if (!editing.name.trim() || (!isPoster && !editing.offer.trim())) {
+      toast({ title: 'Verifica los datos', description: isPoster ? 'El nombre es obligatorio.' : 'Nombre y oferta son obligatorios.', variant: 'destructive' });
       return;
     }
     if (logoFile && logoFile.size > 5 * 1024 * 1024) {
@@ -126,7 +128,7 @@ const AdminPartners = () => {
     const payload = {
       name: editing.name.trim(),
       category: editing.category.trim() || null,
-      offer: editing.offer.trim(),
+      offer: editing.offer.trim() || (isPoster ? 'Programa póster — 10% en sus compras en Apolo' : ''),
       description: editing.description.trim() || null,
       phone: editing.phone.trim() || null,
       whatsapp: editing.whatsapp.trim() || null,
@@ -135,6 +137,9 @@ const AdminPartners = () => {
       contact_email: (editing.contact_email || '').trim() || null,
       sort_order: Number(editing.sort_order) || 0,
       active: !!editing.active,
+      partner_type: isPoster ? 'poster' : 'afiliado',
+      // Solo póster implica participación en el programa (y su cupón).
+      ...(isPoster ? { poster_opt_in: true } : {}),
     };
 
     try {
@@ -197,6 +202,7 @@ const AdminPartners = () => {
           <h1 className="text-2xl font-bold text-slate-900">Afiliados</h1>
           <p className="text-sm text-slate-500">
             Negocios aliados que ofrecen descuentos o beneficios a los miembros. Se muestran en la sección de membresía de la app.
+            Los de tipo <strong>Solo póster</strong> exhiben nuestro póster a cambio de 10% en sus compras — nunca aparecen en la app.
             También pueden registrarse solos en <span className="font-medium">afiliados.apolofarmacia.com.mx</span>.
           </p>
         </div>
@@ -244,9 +250,11 @@ const AdminPartners = () => {
               <p className="text-sm font-medium text-apolo-navy">{p.offer}</p>
               {p.description && <p className="text-sm text-slate-600">{p.description}</p>}
 
-              {p.poster_opt_in && (
+              {(p.partner_type === 'poster' || p.poster_opt_in) && (
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">📋 Póster</span>
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800">
+                    {p.partner_type === 'poster' ? '📋 Solo póster' : '📋 Póster'}
+                  </span>
                   {p.coupon_code && (
                     <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded-full bg-indigo-50 text-apolo-navy flex items-center gap-1">
                       <Ticket className="w-3 h-3" /> {p.coupon_code}
@@ -290,6 +298,17 @@ const AdminPartners = () => {
           {editing && (
             <form onSubmit={handleSave} className="space-y-4">
               <div>
+                <Label>Tipo de afiliado</Label>
+                <select
+                  value={editing.partner_type || 'afiliado'}
+                  onChange={(e) => setEditing({ ...editing, partner_type: e.target.value })}
+                  className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white"
+                >
+                  <option value="afiliado">Afiliado completo (visible en la app)</option>
+                  <option value="poster">Solo póster (10% por exhibir el póster, sin aparecer en la app)</option>
+                </select>
+              </div>
+              <div>
                 <Label>Nombre del negocio *</Label>
                 <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} required />
               </div>
@@ -301,15 +320,17 @@ const AdminPartners = () => {
                   onChange={(e) => setEditing({ ...editing, category: e.target.value })}
                 />
               </div>
-              <div>
-                <Label>Oferta para miembros *</Label>
-                <Input
-                  placeholder="Ej. 15% de descuento mostrando tu tarjeta digital"
-                  value={editing.offer}
-                  onChange={(e) => setEditing({ ...editing, offer: e.target.value })}
-                  required
-                />
-              </div>
+              {editing.partner_type !== 'poster' && (
+                <div>
+                  <Label>Oferta para miembros *</Label>
+                  <Input
+                    placeholder="Ej. 15% de descuento mostrando tu tarjeta digital"
+                    value={editing.offer}
+                    onChange={(e) => setEditing({ ...editing, offer: e.target.value })}
+                    required
+                  />
+                </div>
+              )}
               <div>
                 <Label>Descripción</Label>
                 <Input

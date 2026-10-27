@@ -74,6 +74,13 @@
     .check input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--green); flex-shrink: 0; }
     .hp { position: absolute; left: -9999px; top: -9999px; height: 1px; width: 1px; overflow: hidden; }
 
+    /* Tipo de registro: afiliado completo vs solo póster */
+    .typeopt { display: flex; gap: 0.7rem; align-items: flex-start; border: 1.5px solid var(--line); border-radius: 12px; padding: 0.8rem 0.9rem; cursor: pointer; margin-top: 0.6rem; background: #fbfcfe; transition: border-color 0.15s, background 0.15s; }
+    .typeopt.sel { border-color: var(--green); background: #f0f9f4; }
+    .typeopt input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--green); flex-shrink: 0; }
+    .typeopt strong { display: block; font-size: 0.88rem; color: var(--ink); }
+    .typeopt span { display: block; font-size: 0.78rem; color: var(--muted); line-height: 1.45; margin-top: 0.15rem; }
+
     /* Coupon digital card (mirrors the membership card) */
     .coupon-card {
       position: relative; overflow: hidden; border-radius: 20px; padding: 1.3rem 1.25rem 1.15rem;
@@ -216,10 +223,20 @@
       if (isRegister) {
         html += '<div class="card">' +
           '<h2>Registra tu negocio</h2>' +
-          '<p class="sub">Tu negocio aparecerá en la sección de negocios afiliados de la app de Farmacia Apolo, visible para todos nuestros miembros.</p>' +
+          '<p class="sub">Elige cómo quieres participar: como afiliado visible en la app de Farmacia Apolo, o solo colgando nuestro póster a cambio de 10% de descuento en tus compras.</p>' +
           '<form id="register-form" novalidate>' +
+          '<label style="margin-top:0;">Tipo de registro *</label>' +
+          '<div class="typeopt sel" id="t-afiliado" onclick="setListingType(\'afiliado\')">' +
+          '<input type="radio" name="listing-type" checked>' +
+          '<div><strong>Afiliado completo</strong>' +
+          '<span>Tu negocio aparece en la app de Farmacia Apolo y ofreces un descuento a nuestros miembros.</span></div></div>' +
+          '<div class="typeopt" id="t-poster" onclick="setListingType(\'poster\')">' +
+          '<input type="radio" name="listing-type">' +
+          '<div><strong>Solo póster</strong>' +
+          '<span>Cuelgas nuestro póster en tu local y obtienes <strong>10% de descuento en tus compras</strong> en Apolo. Tu negocio NO aparece en la app.</span></div></div>' +
           '<label for="r-name">Nombre del negocio *</label>' +
           '<input type="text" id="r-name" maxlength="120" required>' +
+          '<div id="listing-fields">' +
           '<label for="r-category">Categoría</label>' +
           '<input type="text" id="r-category" maxlength="60" placeholder="Ej. gimnasio, óptica, laboratorio, restaurante">' +
           '<label for="r-offer">Oferta para miembros *</label>' +
@@ -234,19 +251,20 @@
           '<input type="file" id="r-logo" accept="image/*"></div>' +
           '</div>' +
           '<p class="muted" style="margin-top:0.35rem;">Opcional. JPG o PNG de máx. 5 MB — aparecerá en tu ficha dentro de la app.</p>' +
+          '</div>' +
           '<div class="row2">' +
           '<div><label for="r-phone">Teléfono</label><input type="tel" id="r-phone" maxlength="30"></div>' +
           '<div><label for="r-whatsapp">WhatsApp</label><input type="tel" id="r-whatsapp" maxlength="30"></div>' +
           '</div>' +
           '<label for="r-address">Dirección</label>' +
           '<input type="text" id="r-address" maxlength="200">' +
-          '<label for="r-website">Sitio web</label>' +
-          '<input type="url" id="r-website" maxlength="200" placeholder="https://...">' +
+          '<div id="website-field"><label for="r-website">Sitio web</label>' +
+          '<input type="url" id="r-website" maxlength="200" placeholder="https://..."></div>' +
           '<label for="r-email">Correo electrónico *</label>' +
           '<input type="email" id="r-email" maxlength="160" autocomplete="email" required>' +
           '<p class="muted" style="margin-top:0.35rem;">A este correo te llegarán tu bienvenida y el enlace para crear tu contraseña.</p>' +
-          '<div class="check"><input type="checkbox" id="r-poster">' +
-          '<span>Quiero colgar un póster en mi local para obtener <strong>10% de descuento en cualquiera de mis compras en Apolo Farmacia</strong>.</span></div>' +
+          '<div class="check" id="poster-check-row"><input type="checkbox" id="r-poster">' +
+          '<span>También quiero colgar un póster en mi local para obtener <strong>10% de descuento en cualquiera de mis compras en Apolo Farmacia</strong>.</span></div>' +
           '<div class="check"><input type="checkbox" id="r-privacy">' +
           '<span>He leído y acepto el <button type="button" class="link" onclick="showPrivacy()">Aviso de Privacidad</button>. *</span></div>' +
           '<div class="hp" aria-hidden="true"><label>Empresa<input type="text" id="r-company" tabindex="-1" autocomplete="off"></label></div>' +
@@ -287,6 +305,21 @@
     window.goLogin = function () { renderAuth('login'); };
     window.goRegister = function () { renderAuth('register'); };
 
+    // Afiliado completo vs solo póster: póster oculta los campos de la ficha
+    // pública (oferta, logo, etc.) — su trato es solo el cupón de 10%.
+    window.setListingType = function (type) {
+      state.listingType = type === 'poster' ? 'poster' : 'afiliado';
+      var poster = state.listingType === 'poster';
+      document.getElementById('t-afiliado').classList.toggle('sel', !poster);
+      document.getElementById('t-poster').classList.toggle('sel', poster);
+      document.getElementById('listing-fields').style.display = poster ? 'none' : 'block';
+      document.getElementById('website-field').style.display = poster ? 'none' : 'block';
+      document.getElementById('poster-check-row').style.display = poster ? 'none' : 'flex';
+      document.getElementById('register-btn').textContent = poster
+        ? 'Registrarme y obtener mi cupón de 10%'
+        : 'Crear mi cuenta y publicar mi negocio';
+    };
+
     function renderForgot() {
       setHtml(brandHeader('Recuperar contraseña', '') +
         '<div class="card"><h2>Restablecer contraseña</h2>' +
@@ -303,15 +336,20 @@
     }
     window.goForgot = function () { renderForgot(); };
 
-    function renderSuccess(email) {
+    function renderSuccess(email, posterOnly) {
+      var detail = posterOnly
+        ? '<p class="muted" style="text-align:left;">1. <strong>Tu bienvenida con tu cupón de 10%</strong> — muéstralo en caja antes de pagar.<br>' +
+          '2. El enlace para <strong>crear tu contraseña</strong> y entrar a tu portal (ahí verás tu cupón cuando quieras).</p>' +
+          '<p class="muted" style="margin-top:0.8rem;">Tu negocio NO aparece en la app — tu participación es solo el póster. Gracias por exhibirnos en tu local.</p>'
+        : '<p class="muted" style="text-align:left;">1. <strong>Tu bienvenida</strong> como negocio afiliado (con tu cupón, si lo pediste).<br>' +
+          '2. El enlace para <strong>crear tu contraseña</strong> y entrar a tu portal.</p>' +
+          '<p class="muted" style="margin-top:0.8rem;">Tu negocio ya está visible en la app de Farmacia Apolo. Desde tu portal podrás cambiar tu logo y editar tu información.</p>';
       setHtml(brandHeader('¡Registro recibido!', '') +
         '<div class="card center">' +
         '<div style="font-size:2.6rem;">📬</div>' +
         '<h2 style="margin-top:0.4rem;">Revisa tu correo</h2>' +
         '<p class="sub" style="margin-top:0.5rem;">Enviamos a <strong>' + esc(email) + '</strong> dos correos:</p>' +
-        '<p class="muted" style="text-align:left;">1. <strong>Tu bienvenida</strong> como negocio afiliado (con tu cupón, si lo pediste).<br>' +
-        '2. El enlace para <strong>crear tu contraseña</strong> y entrar a tu portal.</p>' +
-        '<p class="muted" style="margin-top:0.8rem;">Tu negocio ya está visible en la app de Farmacia Apolo. Desde tu portal podrás cambiar tu logo y editar tu información.</p>' +
+        detail +
         '<button class="btn ghost" onclick="goLogin()">Ir a entrar</button>' +
         '</div>');
     }
@@ -404,9 +442,16 @@
         '<div id="logo-msg" class="msg" style="display:none;"></div>' +
         '</div>';
 
-      // Listing form
-      html += '<div class="card">' +
-        '<h2>Información de mi negocio</h2>' +
+      // Listing form — los socios solo-póster no aparecen en la app, así que
+      // en lugar del editor de ficha ven una nota del programa.
+      if (p.partner_type === 'poster') {
+        html += '<div class="card">' +
+          '<h2>Programa póster</h2>' +
+          '<p class="sub">Tu negocio no aparece en la app de Farmacia Apolo. Tu participación es el póster en tu local; tu cupón de 10% está arriba. Si quieres cambiar tus datos de contacto o convertirte en afiliado completo (visible en la app), escríbenos por WhatsApp.</p>' +
+          '</div>';
+      } else {
+        html += '<div class="card">' +
+          '<h2>Información de mi negocio</h2>' +
         '<p class="sub">Así aparece en la app para los miembros de Farmacia Apolo.</p>' +
         '<form id="listing-form" novalidate>' +
         '<label for="e-name">Nombre del negocio *</label>' +
@@ -435,9 +480,12 @@
         '<p class="sub">Así te ven los miembros (toca la tarjeta en la app para ver todos tus datos).</p>' +
         '<div id="preview-slot">' + partnerCardPreview(p) + '</div>' +
         '</div>';
+      }
 
       setHtml(html);
-      document.getElementById('listing-form').addEventListener('submit', handleSaveListing);
+      if (p.partner_type !== 'poster') {
+        document.getElementById('listing-form').addEventListener('submit', handleSaveListing);
+      }
       var logoInput = document.getElementById('logo-input');
       if (logoInput) logoInput.addEventListener('change', handleLogoUpload);
     }
@@ -499,25 +547,29 @@
     function handleRegister(ev) {
       ev.preventDefault();
       var btn = document.getElementById('register-btn');
+      var posterOnly = state.listingType === 'poster';
       var val = function (id) { return document.getElementById(id).value.trim(); };
       var payload = {
         org_id: ORG_ID,
+        listing_type: posterOnly ? 'poster' : 'afiliado',
         name: val('r-name'),
-        category: val('r-category'),
-        offer: val('r-offer'),
-        description: val('r-description'),
+        category: posterOnly ? '' : val('r-category'),
+        offer: posterOnly ? '' : val('r-offer'),
+        description: posterOnly ? '' : val('r-description'),
         phone: val('r-phone'),
         whatsapp: val('r-whatsapp'),
         address: val('r-address'),
-        website: val('r-website'),
+        website: posterOnly ? '' : val('r-website'),
         email: val('r-email').toLowerCase(),
-        poster_opt_in: document.getElementById('r-poster').checked,
-        logo: state.regLogo,
+        poster_opt_in: posterOnly ? true : document.getElementById('r-poster').checked,
+        logo: posterOnly ? null : state.regLogo,
         company: document.getElementById('r-company').value // honeypot
       };
 
-      if (!payload.name || !payload.offer || !payload.email) {
-        showMsg('register-msg', 'error', 'Nombre del negocio, oferta y correo son obligatorios.');
+      if (!payload.name || !payload.email || (!posterOnly && !payload.offer)) {
+        showMsg('register-msg', 'error', posterOnly
+          ? 'Nombre del negocio y correo son obligatorios.'
+          : 'Nombre del negocio, oferta y correo son obligatorios.');
         return;
       }
       if (!document.getElementById('r-privacy').checked) {
@@ -537,16 +589,16 @@
         });
       }).then(function (r) {
         if (r.status === 200 && r.body && r.body.ok) {
-          renderSuccess(payload.email);
+          renderSuccess(payload.email, posterOnly);
         } else {
           showMsg('register-msg', 'error', (r.body && r.body.error) || 'No se pudo completar el registro. Inténtalo más tarde.');
           btn.disabled = false;
-          btn.textContent = 'Crear mi cuenta y publicar mi negocio';
+          btn.textContent = posterOnly ? 'Registrarme y obtener mi cupón de 10%' : 'Crear mi cuenta y publicar mi negocio';
         }
       }).catch(function () {
         showMsg('register-msg', 'error', 'Sin conexión. Revisa tu internet e inténtalo de nuevo.');
         btn.disabled = false;
-        btn.textContent = 'Crear mi cuenta y publicar mi negocio';
+        btn.textContent = posterOnly ? 'Registrarme y obtener mi cupón de 10%' : 'Crear mi cuenta y publicar mi negocio';
       });
     }
 

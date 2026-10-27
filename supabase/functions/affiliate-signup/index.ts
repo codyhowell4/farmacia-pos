@@ -37,6 +37,7 @@ interface SignupPayload {
   website?: string;
   email: string;
   poster_opt_in?: boolean;
+  listing_type?: string; // 'afiliado' (public listing) | 'poster' (solo póster)
   logo?: string; // optional data:image/jpeg;base64,... from the form
   company?: string; // honeypot — must be empty
 }
@@ -130,7 +131,11 @@ Deno.serve(async (req) => {
     // ── Validation (generic message — details only in logs) ─────────────
     const orgId = clean(payload.org_id, 64);
     const name = clean(payload.name, 120);
-    const offer = clean(payload.offer, 200);
+    const isPosterOnly = payload.listing_type === 'poster';
+    // Poster-only partners don't publish a member offer — the 10% coupon IS
+    // the deal. `offer` is NOT NULL in the table, so it carries the program
+    // label instead of a public offer.
+    const offer = clean(payload.offer, 200) || (isPosterOnly ? 'Programa póster — 10% en sus compras en Apolo' : null);
     const email = (clean(payload.email, 160) || '').toLowerCase();
     if (!orgId || !name || name.length < 2 || !offer || offer.length < 2 || !EMAIL_RE.test(email)) {
       console.warn('[affiliate-signup] invalid payload:', {
@@ -145,16 +150,17 @@ Deno.serve(async (req) => {
     const listing = {
       org_id: orgId,
       name,
-      category: clean(payload.category, 60),
+      category: isPosterOnly ? null : clean(payload.category, 60),
       offer,
-      description: clean(payload.description, 500),
+      description: isPosterOnly ? null : clean(payload.description, 500),
       phone: clean(payload.phone, 30),
       whatsapp: clean(payload.whatsapp, 30),
       address: clean(payload.address, 200),
-      website: clean(payload.website, 200),
+      website: isPosterOnly ? null : clean(payload.website, 200),
       active: true,
       sort_order: 100,
-      poster_opt_in: payload.poster_opt_in === true,
+      poster_opt_in: isPosterOnly ? true : payload.poster_opt_in === true,
+      partner_type: isPosterOnly ? 'poster' : 'afiliado',
       contact_email: email,
     };
 
@@ -218,12 +224,8 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'No se pudo completar el registro. Inténtalo más tarde.' }, 500);
     }
 
-    // ── Logo (optional) ─────────────────────────────────────────────────
-    // The form sends a client-side-resized JPEG as a data URL. Upload via
-    // service role (registrant is anonymous) and store the public URL. A
-    // logo failure must never fail the signup — they can upload it later
-    // from their portal.
-    const logoDataUrl = typeof payload.logo === 'string' ? payload.logo.trim() : '';
+    // ── Logo (optional; nunca para socios solo-póster) ──────────────────
+    const logoDataUrl = !isPosterOnly && typeof payload.logo === 'string' ? payload.logo.trim() : '';
     if (logoDataUrl) {
       try {
         const match = /^data:image\/jpeg;base64,([A-Za-z0-9+/=\s]+)$/.exec(logoDataUrl);
@@ -293,6 +295,7 @@ Deno.serve(async (req) => {
         category: listing.category || '',
         offer,
         poster_opt_in: listing.poster_opt_in,
+        listing_type: listing.partner_type,
       },
     });
     if (signupNotifyError) console.error('[affiliate-signup] signup notify failed:', signupNotifyError.message);
