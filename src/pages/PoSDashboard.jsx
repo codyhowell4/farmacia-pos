@@ -182,10 +182,14 @@ const PoSDashboard = () => {
     searchInputRef.current?.focus();
   }, [user?.locationId]);
 
-  // Mount the Stripe card Element when checkout is in single-payment card
-  // mode; destroy it when leaving so re-entering gets a fresh element.
+  // Mount the Stripe card Element only when checkout is in single-payment
+  // card mode AND the ticket carries a membership signup (department
+  // 'membresias'). Everything else on card uses the external terminal with
+  // a typed approval code, like before. Destroy on leave so re-entering
+  // gets a fresh element.
   useEffect(() => {
     if (view !== 'checkout' || paymentMethod !== 'card' || isSplitPayment) return undefined;
+    if (!cart.some((i) => i?.department === 'membresias')) return undefined;
     const stripeKey = import.meta.env.VITE_STRIPE_PUBLIC_KEY;
     if (!stripeKey || !cardElementMountRef.current) return undefined;
     let cancelled = false;
@@ -210,7 +214,7 @@ const PoSDashboard = () => {
         stripeCardElementRef.current = null;
       }
     };
-  }, [view, paymentMethod, isSplitPayment]);
+  }, [view, paymentMethod, isSplitPayment, cart]);
 
   const loadRecentSales = async () => {
     try {
@@ -1005,9 +1009,15 @@ const PoSDashboard = () => {
           reference = transferenciaReference;
           bankAccountId = selectedBankAccount?.id;
         } else if (paymentMethod === 'card') {
-          // Single card payments are charged with Stripe below; the confirmed
-          // PaymentIntent id becomes the reference. (Split card payments keep
-          // the typed approval number — validated in addSplitPayment.)
+          // Membership tickets (signup fee in the cart) are charged with
+          // Stripe below; the confirmed PaymentIntent id becomes the
+          // reference. Everything else keeps the external-terminal flow:
+          // typed approval number. (Split card payments validate in
+          // addSplitPayment.)
+          if (!cart.some((i) => i?.department === 'membresias') && !cardReference.trim()) {
+            toast({ title: 'Aprobación requerida', description: 'Ingresa el número de aprobación', variant: 'destructive' });
+            return;
+          }
           reference = cardReference;
         }
 
@@ -1183,7 +1193,9 @@ const PoSDashboard = () => {
       // subscription bills from day 30. Split card payments keep the
       // external-terminal flow (typed approval number).
       let stripeCharge = null; // { paymentIntentId?, setupIntentId?, stripeCustomerId, paymentMethodId, captured }
-      if (paymentMethod === 'card' && !isSplitPayment) {
+      // Stripe only for membership tickets — everything else on card keeps
+      // the external-terminal flow (typed approval code, validated above).
+      if (paymentMethod === 'card' && !isSplitPayment && cart.some((i) => i?.department === 'membresias')) {
         const stripe = stripeRef.current;
         const cardElement = stripeCardElementRef.current;
         if (!stripe || !cardElement) {
@@ -2259,7 +2271,7 @@ const PoSDashboard = () => {
                         <p className="text-sm text-slate-500">Monto a pagar: {formatMXN(remainingForSplit)}</p>
                         <Button onClick={addSplitPayment} className="w-full" variant="outline">Agregar pago con tarjeta</Button>
                       </>
-                    ) : (
+                    ) : cart.some(isMembershipFeeItem) ? (
                       <>
                         <Label>Datos de la tarjeta</Label>
                         {import.meta.env.VITE_STRIPE_PUBLIC_KEY ? (
@@ -2270,12 +2282,22 @@ const PoSDashboard = () => {
                           </p>
                         )}
                         <p className="text-sm text-slate-500">Monto a pagar: {formatMXN(finalTotal)}</p>
-                        {finalTotal <= 0 && cart.some(isMembershipFeeItem) ? (
+                        {finalTotal <= 0 ? (
                           <p className="text-xs text-emerald-600">Primer mes gratis — hoy no se cobra nada; la tarjeta queda guardada y la membresía se cobra desde el día 30.</p>
-                        ) : cart.some(isMembershipFeeItem) ? (
+                        ) : (
                           <p className="text-xs text-emerald-600">La membresía es gratis este mes — se cobra desde el día 30.</p>
-                        ) : null}
+                        )}
                         <p className="text-xs text-slate-400">El cobro se procesa con Stripe (incluye 3-D Secure) al presionar "Finalizar venta".</p>
+                      </>
+                    ) : (
+                      <>
+                        <Label>Número de Aprobación</Label>
+                        <Input
+                          placeholder="Ingresa número de aprobación"
+                          value={cardReference}
+                          onChange={e => setCardReference(e.target.value)}
+                        />
+                        <p className="text-sm text-slate-500">Monto a pagar: {formatMXN(finalTotal)}</p>
                       </>
                     )}
                   </motion.div>
