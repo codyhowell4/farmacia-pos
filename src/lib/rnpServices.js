@@ -134,6 +134,10 @@ const invoke = async (body) => {
 
 export const getRnpSaldo = () => invoke({ action: 'saldo' });
 
+// The authoritative catalog cache is server-side (rnp_catalog_cache: RNP's
+// obtenerProductos runs at most once per category per 24 h for the whole
+// org, since every successful RNP response may carry a cost). This
+// in-memory copy only saves edge-function round trips within a session.
 const CATALOG_TTL_MS = 30 * 60 * 1000;
 const catalogCache = new Map(); // categoria → { at, items }
 export const getRnpProductos = async (categoria, { force = false } = {}) => {

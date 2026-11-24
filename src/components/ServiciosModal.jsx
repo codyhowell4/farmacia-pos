@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Smartphone, Wifi, Receipt, Gift, ArrowLeft, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { Smartphone, Wifi, Receipt, Gift, ArrowLeft, AlertTriangle, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -67,6 +67,8 @@ const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
     }
   };
 
+  // obtenerSaldo may carry a cost per RNP's docs: called ONLY when the
+  // modal opens (no manual refresh, no polling).
   useEffect(() => {
     if (open) {
       setS(fresh());
@@ -176,9 +178,7 @@ const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
             <span className="px-2.5 py-1 rounded-md bg-slate-100 text-xs text-slate-700">
               Saldo servicios <b className="text-slate-900">{saldo.servicios != null ? formatMXN(saldo.servicios) : '—'}</b>
             </span>
-            <button type="button" onClick={loadSaldo} className="p-1 text-slate-500 hover:text-apolo-navy" aria-label="Actualizar saldos">
-              {saldo.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            </button>
+            {saldo.loading && <Loader2 className="w-4 h-4 animate-spin text-slate-500" aria-label="Consultando saldos" />}
             {saldo.error && <span className="text-xs text-red-600">{saldo.error}</span>}
           </div>
         </DialogHeader>

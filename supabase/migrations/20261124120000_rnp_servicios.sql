@@ -112,3 +112,21 @@ create trigger rnp_transactions_guard_trg
 -- 2. Mark RNP service lines on the sale.
 alter table public.sale_items add column if not exists rnp_op_id uuid;
 create index if not exists sale_items_rnp_op_idx on public.sale_items (rnp_op_id) where rnp_op_id is not null;
+
+-- 3. Catalog cache (obtenerProductos). Every successful RNP webservice
+--    response may carry a cost, so the catalog is fetched at most ONCE per
+--    category per 24 h per org and served from here to every cashier.
+--    `refreshing_at` is a claim so two cashiers can't both refresh.
+--    Service role only (RLS on, no policies).
+create table if not exists public.rnp_catalog_cache (
+  org_id uuid not null references public.organizations(id) on delete cascade,
+  categoria text not null check (categoria in ('recargas', 'tarjetas', 'servicios', 'digitales', 'todos')),
+  items jsonb not null default '[]'::jsonb,
+  raw jsonb,
+  fetched_at timestamptz not null default 'epoch',
+  refreshing_at timestamptz,
+  primary key (org_id, categoria)
+);
+
+alter table public.rnp_catalog_cache enable row level security;
+revoke all on public.rnp_catalog_cache from anon, authenticated;

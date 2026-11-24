@@ -7,8 +7,11 @@
 // logged in public.rnp_transactions with the credentials stripped.
 //
 // Actions (POST JSON { action, ... }):
-//   saldo      → obtenerSaldo                     (read only)
-//   productos  → obtenerProductos {categoria, carrier?}   (read only)
+//   saldo      → obtenerSaldo  (read only; the POS calls it only when the
+//                Servicios modal opens)
+//   productos  → obtenerProductos {categoria}  (read only; served from a
+//                24 h org-wide cache — RNP is called at most once a day
+//                per category, since every successful response may cost)
 //   recarga    → realizarRecarga  (category recarga | paquete)
 //   servicio   → realizarServicio (category servicio | tarjeta)
 //   vincular   → link {op_ids[]} to a completed {sale_id}
@@ -30,6 +33,10 @@ const RNP_NS = 'https://recargastodomexico.com/api/index.php';
 const RNP_TIMEOUT_MS = 90_000;
 const SAME_PHONE_BLOCK_MS = 5 * 60_000;
 const CATEGORIAS = ['recargas', 'tarjetas', 'servicios', 'digitales', 'todos'];
+// obtenerProductos: at most once per category per 24 h per org.
+const CATALOG_TTL_MS = 24 * 60 * 60_000;
+// A refresh claim (and a failed refresh's cool-down) lasts 10 minutes.
+const CATALOG_CLAIM_MS = 10 * 60_000;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -410,29 +417,86 @@ Deno.serve(async (req) => {
     }
 
     // ── productos ────────────────────────────────────────────
+    // Every successful RNP response may carry a cost: the catalog is
+    // fetched at most once per category per 24 h for the whole org and
+    // served from rnp_catalog_cache to every cashier. A claim
+    // (refreshing_at) stops two cashiers from refreshing together; a
+    // failed refresh keeps its claim for CATALOG_CLAIM_MS (no hammering).
     if (action === 'productos') {
       const categoria = String(payload.categoria || 'todos').toLowerCase();
       if (!CATEGORIAS.includes(categoria)) throw new ClientError('categoria inválida');
-      const carrier = payload.carrier ? String(payload.carrier).slice(0, 120) : '';
+      const wantRaw = payload.include_raw === true && (caller.kind === 'service' || caller.role === 'admin');
+      const key = { org_id: caller.orgId, categoria };
+
+      const { error: seedErr } = await db
+        .from('rnp_catalog_cache')
+        .upsert(key, { onConflict: 'org_id,categoria', ignoreDuplicates: true });
+      if (seedErr) throw seedErr;
+      const { data: cached, error: cacheErr } = await db
+        .from('rnp_catalog_cache')
+        .select('items, raw, fetched_at')
+        .eq('org_id', caller.orgId)
+        .eq('categoria', categoria)
+        .maybeSingle();
+      if (cacheErr) throw cacheErr;
+
+      const reply = (row: { items: unknown; raw?: unknown; fetched_at: string } | null, source: string) => {
+        const body: Record<string, unknown> = {
+          ok: true,
+          categoria,
+          source, // 'cache' | 'rnp' | 'stale'
+          fetched_at: row?.fetched_at ?? null,
+          items: Array.isArray(row?.items) ? row!.items : [],
+        };
+        if (wantRaw) body.raw = row?.raw ?? null;
+        return jsonResponse(body);
+      };
+      const hasItems = Array.isArray(cached?.items) && (cached!.items as unknown[]).length > 0;
+      const fresh = cached && Date.now() - new Date(cached.fetched_at).getTime() < CATALOG_TTL_MS;
+      if (fresh) return reply(cached, 'cache');
+
+      // Claim the refresh (only one caller per category at a time).
+      const nowIso = new Date().toISOString();
+      const claimCutoff = new Date(Date.now() - CATALOG_CLAIM_MS).toISOString();
+      const ttlCutoff = new Date(Date.now() - CATALOG_TTL_MS).toISOString();
+      const { data: claimed, error: claimErr } = await db
+        .from('rnp_catalog_cache')
+        .update({ refreshing_at: nowIso })
+        .eq('org_id', caller.orgId)
+        .eq('categoria', categoria)
+        .lt('fetched_at', ttlCutoff)
+        .or(`refreshing_at.is.null,refreshing_at.lt."${claimCutoff}"`)
+        .select('org_id');
+      if (claimErr) throw claimErr;
+      if (!claimed || claimed.length === 0) {
+        if (hasItems) return reply(cached, 'stale');
+        return jsonResponse({ ok: false, error: 'El catálogo se está actualizando. Intenta de nuevo en unos minutos.' }, 409);
+      }
+
       const c = credentials(env);
-      const fields: Array<[string, unknown]> = [
+      const { real, redacted } = buildInner('Productos', [
         ['Tipo', 1], ['Usuario', c.user], ['Password', c.pass], ['ApiKey', c.key], ['Categoria', categoria],
-      ];
-      if (carrier) fields.push(['Carrier', carrier]);
-      const { real, redacted } = buildInner('Productos', fields);
+      ]);
       const r = await callRnp('obtenerProductos', real);
       const err = rnpError(r.inner) || r.fault || r.transportError || (r.answered ? null : 'Respuesta ilegible');
       // Catalog answers can be large: keep the first 200 KB in the log.
       await logReadOnly(db, caller, 'obtenerProductos', envelope('obtenerProductos', redacted), {
         ...r,
         rawResponse: r.rawResponse ? r.rawResponse.slice(0, 200_000) : null,
-      }, !err, err, { carrier: carrier || null, product_name: categoria });
-      if (err) return jsonResponse({ ok: false, error: `RNP: ${err}` }, 502);
-      const body: Record<string, unknown> = { ok: true, categoria, items: normalizeCatalog(r.inner!) };
-      if (payload.include_raw === true && (caller.kind === 'service' || caller.role === 'admin')) {
-        body.raw = toPlain(r.inner!);
+      }, !err, err, { product_name: categoria });
+      if (err) {
+        // Keep the claim (cool-down) and serve the previous catalog if any.
+        if (hasItems) return reply(cached, 'stale');
+        return jsonResponse({ ok: false, error: `RNP: ${err}` }, 502);
       }
-      return jsonResponse(body);
+      const row = { items: normalizeCatalog(r.inner!), raw: toPlain(r.inner!), fetched_at: new Date().toISOString() };
+      const { error: saveErr } = await db
+        .from('rnp_catalog_cache')
+        .update({ ...row, refreshing_at: null })
+        .eq('org_id', caller.orgId)
+        .eq('categoria', categoria);
+      if (saveErr) console.error('[rnp-servicios] catalog cache save failed:', saveErr);
+      return reply(row, 'rnp');
     }
 
     // ── vincular ─────────────────────────────────────────────
