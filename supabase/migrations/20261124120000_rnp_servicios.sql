@@ -72,6 +72,9 @@ create policy rnp_transactions_admin_read on public.rnp_transactions
 -- No insert/update/delete policies: only the service role (edge function) writes.
 
 revoke all on public.rnp_transactions from anon;
+-- Writes (and TRUNCATE, which bypasses RLS and the delete trigger) are
+-- service-role only.
+revoke insert, update, delete, truncate on public.rnp_transactions from authenticated;
 
 -- Request columns are frozen after insert; no deletes at all (conciliación).
 create or replace function public.rnp_transactions_guard()
