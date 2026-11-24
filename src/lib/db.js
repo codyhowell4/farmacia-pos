@@ -899,6 +899,12 @@ export const voidSale = async (saleId, voidedByName, reason = null) => {
   if (fetchError) throw fetchError;
   if (sale.voided) throw new Error('Venta ya fue anulada');
 
+  // Servicios RNP (recargas / pagos / tarjetas de regalo) have no refunds
+  // at the provider: voiding would refund money RNP already consumed.
+  if ((sale.sale_items || []).some(i => i.rnp_op_id)) {
+    throw new Error('Esta venta incluye servicios RNP (recargas/pagos/tarjetas), que no tienen devolución. Usa Devolución solo para los productos.');
+  }
+
   // Membership-payment bookings (plan products in the 'membresias' department,
   // created by record_membership_payment) must not be voided here: voiding
   // removes the revenue row but leaves payments_made/visits/revisions intact,

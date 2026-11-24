@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon, Award, UserPlus, UserCircle } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon, Award, UserPlus, UserCircle, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,6 +35,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { enqueueRxJob, flushRxQueue } from '@/lib/rxQueue';
+import ServiciosModal from '@/components/ServiciosModal';
+import ServiciosResultDialog from '@/components/ServiciosResultDialog';
+import {
+  isRnpCartLine, isRnpServiceLine, cartHasRnp, rnpLinesTotal, sendRnpLine, linkRnpOpsToSale,
+  isRefundableStatus, RNP_ALLOWED_PAYMENT_METHODS, RNP_SEND_CUSTOMER_EMAIL, RNP_STORE_EMAIL, formatPhone,
+} from '@/lib/rnpServices';
 
 const PAYMENT_METHODS = [
   { id: 'cash', label: 'Efectivo', icon: DollarSign, color: 'from-green-500 to-emerald-600' },
@@ -114,6 +120,10 @@ const PoSDashboard = () => {
   const [membershipSignupOpen, setMembershipSignupOpen] = useState(false);
   const [membershipSignupInitialPlan, setMembershipSignupInitialPlan] = useState(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  // Servicios RNP (recargas / paquetes / pagos de servicios / tarjetas de regalo)
+  const [serviciosOpen, setServiciosOpen] = useState(false);
+  const [rnpSending, setRnpSending] = useState(false);
+  const [rnpOutcome, setRnpOutcome] = useState(null);
   const searchInputRef = useRef(null);
   const completingSaleRef = useRef(false);
   // Stripe card element (single card payments in checkout): the Stripe
@@ -615,6 +625,8 @@ const PoSDashboard = () => {
       let blocked = false;
       const updated = currentCart.map(item => {
         if (item.id !== id) return item;
+        // Servicios RNP: one operation per line, quantity fixed at 1.
+        if (isRnpCartLine(item)) return item;
         // The membership fee quantity is fixed at 1 (one signup per ticket);
         // removing the line goes through removeFromCart, which cancels the signup.
         if (isMembershipFeeItem(item)) return item;
@@ -673,6 +685,12 @@ const PoSDashboard = () => {
 
   const removeFromCart = (id) => {
     const removedItem = cart.find((item) => item.id === id);
+    // Servicios RNP: the service line and its Comisión line leave together.
+    if (isRnpCartLine(removedItem)) {
+      const opId = removedItem.rnp?.opId || removedItem.rnpFeeFor;
+      setCart(cart.filter((item) => (item.rnp?.opId || item.rnpFeeFor) !== opId));
+      return;
+    }
     const filtered = cart.filter((item) => item.id !== id);
     // Removing the signup fee cancels the whole signup: the pseudo membership
     // leaves with it and the remaining lines lose member pricing.
@@ -773,6 +791,8 @@ const PoSDashboard = () => {
   const handlePriceChange = (id, newPriceStr) => {
     // The membership fee price is the plan price — fixed, no manual overrides.
     if (isMembershipFeeItem(cart.find((item) => item.id === id))) return;
+    // Servicios RNP: amount and comisión are fixed (the amount is what RNP charges).
+    if (isRnpCartLine(cart.find((item) => item.id === id))) return;
     const newPrice = parseFloat(newPriceStr);
     if (isNaN(newPrice)) return;
     setCart(cart.map(item => item.id === id ? { ...item, price: newPrice } : item));
@@ -780,7 +800,7 @@ const PoSDashboard = () => {
 
   const handlePriceBlur = (id) => {
     const item = cart.find(item => item.id === id);
-    if (!item || isMembershipFeeItem(item)) return;
+    if (!item || isMembershipFeeItem(item) || isRnpCartLine(item)) return;
     if (item.price === item.originalPrice) return;
     const discountPercentage = ((item.originalPrice - item.price) / item.originalPrice) * 100;
     // Cualquier aumento de precio requiere PIN de administrador (riesgo de
@@ -976,11 +996,49 @@ const PoSDashboard = () => {
     }
   };
 
+  // Ticket data for an RNP cart line (service or comisión).
+  const rnpTicketInfo = (item, outcomes) => {
+    if (!item || !isRnpCartLine(item)) return null;
+    if (item.rnpFeeFor) return { fee: true };
+    const o = outcomes.find((x) => x.line.id === item.id);
+    return {
+      tag: item.rnp.tag,
+      phone: formatPhone(item.rnp.phone),
+      status: o?.result?.status || 'pendiente',
+      autorizacion: o?.result?.autorizacion || null,
+      venta: o?.result?.venta || null,
+      codigo: o?.result?.codigo || null,
+    };
+  };
+
+  // Servicios RNP: lines come from ServiciosModal (service + comisión).
+  // Membership signups are charged on their own ticket (Stripe card flow).
+  const addRnpLines = (lines) => {
+    if (cart.some((i) => i?.department === 'membresias')) {
+      toast({ title: 'Ticket con membresía', description: 'Cobra la membresía en un ticket aparte antes de agregar servicios.', variant: 'destructive' });
+      return;
+    }
+    setCart((prev) => [...prev, ...lines]);
+    toast({ title: 'Servicio agregado', description: lines[0]?.name });
+  };
+
   const completeSale = async (patient, prescription) => {
     if (completingSaleRef.current || isCompletingSale) return;
     completingSaleRef.current = true;
     setIsCompletingSale(true);
     try {
+      // Servicios RNP: cash or card only, single payment, no membership signup.
+      if (cartHasRnp(cart)) {
+        if (isSplitPayment || !RNP_ALLOWED_PAYMENT_METHODS.includes(paymentMethod)) {
+          toast({ title: 'Forma de pago no permitida', description: 'Los tickets con servicios se cobran solo en efectivo o tarjeta (un solo pago).', variant: 'destructive' });
+          return;
+        }
+        if (cart.some((i) => i?.department === 'membresias')) {
+          toast({ title: 'Ticket con membresía', description: 'Cobra la membresía en un ticket aparte.', variant: 'destructive' });
+          return;
+        }
+      }
+
       // Build payments array
       let payments = [];
 
@@ -1061,6 +1119,7 @@ const PoSDashboard = () => {
         return;
       }
       const outOfStockItems = cart.filter(item => {
+        if (isRnpCartLine(item)) return false; // services RNP: no stock
         const invItem = inventory.find(i => i.id === item.id);
         if (isServiceItem(invItem)) return false;
         return !invItem || item.quantity > invItem.quantity;
@@ -1085,7 +1144,7 @@ const PoSDashboard = () => {
           validation = await validateMembershipCheckout(
             selectedMembership.id,
             selectedMember?.id || null,
-            cart.map((item) => ({ inventory_id: item.id, qty: item.quantity }))
+            cart.filter((item) => !isRnpCartLine(item)).map((item) => ({ inventory_id: item.id, qty: item.quantity }))
           );
         } catch (validationErr) {
           console.error('validate_membership_checkout failed:', validationErr);
@@ -1292,12 +1351,74 @@ const PoSDashboard = () => {
         }
       }
 
+      // ── Servicios RNP ─────────────────────────────────────────
+      // Payment is already collected (cash counted / card approval typed).
+      // Each service line is sent ONCE, in order. Lines RNP explicitly
+      // rejected (or that never left our server) leave the sale and their
+      // amount + comisión is returned to the customer; aprobadas and
+      // pendientes stay on the sale (pendiente = do NOT resend). The op_id
+      // on each line makes a second "Completar venta" replay the stored
+      // result instead of sending again.
+      const rnpOutcomes = []; // [{ line, feeLine, result }]
+      let rnpRefund = 0;
+      let saleCart = cart;
+      let saleFinalTotal = finalTotal;
+      let saleSubtotal = subtotalAfterDiscount;
+      if (cartHasRnp(cart)) {
+        setRnpSending(true);
+        try {
+          const rnpEmail = (RNP_SEND_CUSTOMER_EMAIL && selectedCustomer?.email) || RNP_STORE_EMAIL || '';
+          for (const line of cart.filter(isRnpServiceLine)) {
+            const result = await sendRnpLine(line, { shiftId: activeShift?.id || null, email: rnpEmail });
+            const feeLine = cart.find((i) => i.rnpFeeFor === line.rnp.opId) || null;
+            rnpOutcomes.push({ line, feeLine, result });
+          }
+        } finally {
+          setRnpSending(false);
+        }
+        const refundIds = new Set();
+        rnpOutcomes.forEach((o) => {
+          if (!isRefundableStatus(o.result.status)) return;
+          refundIds.add(o.line.id);
+          rnpRefund += Number(o.line.price) || 0;
+          if (o.feeLine) {
+            refundIds.add(o.feeLine.id);
+            rnpRefund += Number(o.feeLine.price) || 0;
+          }
+        });
+        rnpRefund = Math.round(rnpRefund * 100) / 100;
+        saleCart = cart.filter((i) => !refundIds.has(i.id));
+        saleFinalTotal = Math.round((finalTotal - rnpRefund) * 100) / 100;
+        saleSubtotal = subtotalAfterDiscount - rnpRefund;
+        payments = payments.map((p, idx) => (idx === 0 ? { ...p, amount: saleFinalTotal } : p));
+        logAudit({
+          action: AUDIT_ACTIONS.SALE_COMPLETE,
+          user,
+          details: `Servicios RNP: ${rnpOutcomes.map((o) => `${o.line.rnp.category} ${formatMXN(o.line.price)} …${String(o.line.rnp.phone).slice(-4)} → ${o.result.status}${o.result.autorizacion ? ` aut ${o.result.autorizacion}` : ''}`).join(' | ')}${rnpRefund > 0 ? ` | devolver ${formatMXN(rnpRefund)}` : ''}`,
+        });
+
+        // Every service was refused and nothing else is on the ticket: no
+        // sale to record — return the full amount.
+        if (saleCart.length === 0) {
+          setRnpOutcome({
+            outcomes: rnpOutcomes,
+            refund: rnpRefund,
+            paymentMethod,
+            saleRecorded: false,
+          });
+          setCart([]); setDiscount(null); setDiscountCode(''); setAmountGiven(''); setChange(0);
+          setPaymentMethod('cash'); setView('main'); setCardReference('');
+          setSelectedCustomer(null);
+          return;
+        }
+      }
+
       try {
         const cashPayment = payments?.find(p => p?.payment_method === 'cash');
 
         let remainingVisits = isMembershipActive ? (selectedMembership?.visits_remaining || 0) : 0;
         let usedVisits = 0;
-        const saleItems = cart.map((item) => {
+        const saleItems = saleCart.map((item) => {
           let price = item.price;
           let originalPrice = item.originalPrice;
           if (isMembershipActive && isMembershipConsultation(item)) {
@@ -1322,13 +1443,16 @@ const PoSDashboard = () => {
             }
           }
           return {
-            inventory_id: item.id,
+            inventory_id: isRnpCartLine(item) ? null : item.id,
             name: item.name,
             quantity: item.quantity,
             price,
             original_price: originalPrice,
             override_by: item.overrideBy || null,
             rx_number: rxNumbers[item.id] || null,
+            // Only RNP lines carry the key, so regular sales never depend
+            // on the rnp_op_id column.
+            ...(isRnpCartLine(item) ? { rnp_op_id: item.rnp?.opId || item.rnpFeeFor } : {}),
           };
         });
 
@@ -1338,10 +1462,10 @@ const PoSDashboard = () => {
           shift_id: activeShift?.id || null,
           salesperson_id: user?.id || null,
           salesperson_name: user?.name || null,
-          total: finalTotal,
+          total: saleFinalTotal,
           // Post-discount, pre-IVA subtotal (same semantics as the
           // membership-payment RPC bookings and total - iva_amount reporting).
-          subtotal: subtotalAfterDiscount,
+          subtotal: saleSubtotal,
           payment_method: isSplitPayment ? (payments[0]?.payment_method || 'cash') : paymentMethod,
           amount_given: cashPayment ? cashPayment.amount : null,
           change_due: cashPayment ? (cashPayment.amount - (cashPayment.amountApplied || cashPayment.amount)) : null,
@@ -1636,8 +1760,13 @@ const PoSDashboard = () => {
           }
         }
 
-        logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(finalTotal)} | ${isSplitPayment ? 'split' : paymentMethod} | ${cart.length} item(s)` });
-        toast({ title: '¡Venta completada!', description: `${formatMXN(finalTotal)} ${isSplitPayment ? '(pago dividido)' : ''}` });
+        if (rnpOutcomes.length > 0) {
+          linkRnpOpsToSale(sale.id, rnpOutcomes.map((o) => o.line.rnp.opId))
+            .catch((linkErr) => console.warn('Failed to link RNP ops to sale:', linkErr));
+        }
+
+        logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(saleFinalTotal)} | ${isSplitPayment ? 'split' : paymentMethod} | ${cart.length} item(s)` });
+        toast({ title: '¡Venta completada!', description: `${formatMXN(saleFinalTotal)} ${isSplitPayment ? '(pago dividido)' : ''}` });
 
         // Prepare sale data for receipt. Los datos de receta salen del modal
         // de captura — el ticket los imprime aunque el registro en
@@ -1652,8 +1781,9 @@ const PoSDashboard = () => {
           paymentMethod: saleRecord.payment_method,
           payment_method: saleRecord.payment_method,
           customer_name: selectedCustomer?.full_name || null,
-          items: saleItems.map(item => ({
+          items: saleItems.map((item, idx) => ({
             ...item,
+            rnp: rnpTicketInfo(saleCart[idx], rnpOutcomes),
             rxNumber: item.rx_number,
             requiresPrescription: cart.find(c => c.id === item.inventory_id)?.requires_prescription,
             receta: cart.find(c => c.id === item.inventory_id)?.requires_prescription ? recetaInfo : null,
@@ -1670,12 +1800,24 @@ const PoSDashboard = () => {
           iva: { rate: taxSettings.ivaRate, amount: ivaAmount },
           pharmacyLocation: user?.pharmacyLocation || user?.locationId,
           amountGiven: cashPayment ? (paymentMethod === 'cash' && !isSplitPayment ? parseFloat(amountGiven) : cashPayment.amount) : null,
-          changeDue: cashPayment ? ((paymentMethod === 'cash' && !isSplitPayment ? parseFloat(amountGiven) : cashPayment.amount) - finalTotal) : null,
+          changeDue: cashPayment ? ((paymentMethod === 'cash' && !isSplitPayment ? parseFloat(amountGiven) : cashPayment.amount) - saleFinalTotal) : null,
         };
 
-        // Show receipt modal
+        // Show receipt modal (tickets with services show the RNP result
+        // first; its "Imprimir ticket" opens the receipt)
         setCompletedSale(saleData);
-        setReceiptOpen(true);
+        if (rnpOutcomes.length > 0) {
+          setRnpOutcome({
+            outcomes: rnpOutcomes,
+            refund: rnpRefund,
+            paymentMethod,
+            saleRecorded: true,
+            saleTotal: saleFinalTotal,
+            changeDue: saleData.changeDue,
+          });
+        } else {
+          setReceiptOpen(true);
+        }
 
         // Reintenta registros sanitarios pendientes de ventas anteriores
         retryRxQueue();
@@ -1727,6 +1869,11 @@ const PoSDashboard = () => {
           }
         }
         toast({ title: 'Error al procesar venta', description: e.message || 'Error desconocido', variant: 'destructive' });
+        // Services already went to RNP: show their result so nobody
+        // re-sends them (a retry of this ticket replays the stored result).
+        if (rnpOutcomes.length > 0) {
+          setRnpOutcome({ outcomes: rnpOutcomes, refund: rnpRefund, paymentMethod, saleRecorded: false, saleFailed: true });
+        }
       }
     } finally {
       completingSaleRef.current = false;
@@ -1770,7 +1917,11 @@ const PoSDashboard = () => {
   const isMembershipActive = selectedMembership?.status === 'active';
   const originalSubtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const consultationItems = isMembershipActive ? cart.filter((item) => isMembershipConsultation(item)) : [];
-  const regularItems = isMembershipActive ? cart.filter((item) => !isMembershipConsultation(item) && !isMembershipFeeItem(item)) : cart;
+  // Servicios RNP lines (service amount + comisión) are pass-through: no
+  // discount, no IVA on top — they are added back at face value below.
+  const regularItems = (isMembershipActive ? cart.filter((item) => !isMembershipConsultation(item) && !isMembershipFeeItem(item)) : cart)
+    .filter((item) => !isRnpCartLine(item));
+  const rnpSubtotal = rnpLinesTotal(cart);
   const regularSubtotal = regularItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const feeSubtotal = cart.filter(isMembershipFeeItem).reduce((sum, item) => sum + item.price * item.quantity, 0);
   const originalConsultationSubtotal = consultationItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -1829,11 +1980,11 @@ const PoSDashboard = () => {
   const discountAmount = isCostPlus ? originalSubtotal - costPlusSubtotal : appliedDiscountAmount;
   const subtotalAfterDiscount = isCostPlus
     ? costPlusSubtotal
-    : regularSubtotal - appliedDiscountAmount + consultationEffectiveTotal + feeSubtotal;
+    : regularSubtotal - appliedDiscountAmount + consultationEffectiveTotal + feeSubtotal + rnpSubtotal;
   // The signup fee generates no IVA (matches the membership-payment RPC
   // bookings, which are iva_enabled=false) — it rides at $0 anyway
   // ("Primer mes gratis"), but the exclusion stays for legacy priced fees.
-  const ivaAmount = calcIVA(subtotalAfterDiscount - feeSubtotal, taxSettings);
+  const ivaAmount = calcIVA(subtotalAfterDiscount - feeSubtotal - rnpSubtotal, taxSettings);
   const finalTotal = subtotalAfterDiscount + ivaAmount;
 
   // Hypothetical member savings for the Cobrar upsell note: anything labeled
@@ -1841,15 +1992,24 @@ const PoSDashboard = () => {
   // Informational only — real member pricing comes from selectedMembership.
   const isConsultaNamedItem = (item) => /consulta/i.test(item?.name || '');
   const upsellConsultaSavings = cart
+    .filter((item) => !isRnpCartLine(item))
     .filter(isConsultaNamedItem)
     .reduce((sum, item) => sum + item.price * item.quantity, 0);
   const upsellOtherSavings = cart
-    .filter((item) => !isConsultaNamedItem(item))
+    .filter((item) => !isConsultaNamedItem(item) && !isRnpCartLine(item))
     .reduce((sum, item) => sum + item.price * item.quantity, 0) * 0.1;
   const membershipUpsellSavings = upsellConsultaSavings + upsellOtherSavings;
   // What they'd pay today as a member (savings knock down the pre-IVA base).
   const upsellMemberBase = Math.max(0, subtotalAfterDiscount - membershipUpsellSavings);
   const membershipUpsellTotal = upsellMemberBase + calcIVA(upsellMemberBase, taxSettings);
+
+  // Tickets with Servicios RNP: cash or card only, no split payment.
+  const ticketHasRnp = cartHasRnp(cart);
+  useEffect(() => {
+    if (!ticketHasRnp) return;
+    if (isSplitPayment) { setIsSplitPayment(false); setSplitPayments([]); }
+    if (!RNP_ALLOWED_PAYMENT_METHODS.includes(paymentMethod)) setPaymentMethod('cash');
+  }, [ticketHasRnp, isSplitPayment, paymentMethod]);
 
   useEffect(() => {
     const given = parseFloat(amountGiven);
@@ -2197,7 +2357,15 @@ const PoSDashboard = () => {
             <div>
               <h2 className="text-xl sm:text-2xl font-bold mb-4">Pago</h2>
               <div className="space-y-4">
+                {ticketHasRnp && (
+                  <div className="p-3 rounded-lg bg-apolo-navy/5 border border-apolo-navy/20 text-sm text-slate-700 space-y-1">
+                    <p className="font-semibold text-apolo-navy">Este ticket lleva servicios: solo efectivo o tarjeta.</p>
+                    <p>Se envían a Red Nacional de Pagos en cuanto se completa el cobro. Si alguno es rechazado, el sistema te indica cuánto devolver.</p>
+                  </div>
+                )}
+
                 {/* Split Payment Toggle */}
+                {!ticketHasRnp && (
                 <div className="flex items-center justify-between bg-slate-50 p-3 rounded-lg">
                   <Label className="cursor-pointer">Pago dividido</Label>
                   <button
@@ -2212,12 +2380,13 @@ const PoSDashboard = () => {
                     <span className={`inline-block w-5 h-5 bg-white rounded-full shadow-md transform transition-transform ${isSplitPayment ? 'translate-x-8' : 'translate-x-1'}`} />
                   </button>
                 </div>
+                )}
 
                 {/* Payment Method */}
                 <div>
                   <Label className="mb-2 block">{isSplitPayment ? 'Agregar pago:' : 'Método de pago'}</Label>
                   <div className="grid grid-cols-4 gap-2">
-                    {PAYMENT_METHODS.map(m => {
+                    {PAYMENT_METHODS.filter(m => !ticketHasRnp || RNP_ALLOWED_PAYMENT_METHODS.includes(m.id)).map(m => {
                       const Icon = m.icon;
                       return (
                         <button key={m.id} onClick={() => { setPaymentMethod(m.id); setAmountGiven(''); }}
@@ -2461,6 +2630,12 @@ const PoSDashboard = () => {
           onConfirm={handleMembershipSignupConfirm}
           initialPlan={membershipSignupInitialPlan}
         />
+        <ServiciosResultDialog
+          sending={rnpSending}
+          outcome={rnpOutcome}
+          onClose={() => setRnpOutcome(null)}
+          onPrint={() => { setRnpOutcome(null); setReceiptOpen(true); }}
+        />
       </div>
     );
   }
@@ -2515,6 +2690,9 @@ const PoSDashboard = () => {
                 )}
               </form>
               <div className="flex items-center gap-2">
+                <Button onClick={() => setServiciosOpen(true)} size="sm" className="hidden sm:inline-flex bg-apolo-navy hover:bg-apolo-navy-dark text-white">
+                  <Receipt className="w-4 h-4 mr-2" />Servicios
+                </Button>
                 <Button onClick={() => setReturnOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-orange-600 border-orange-200 hover:bg-orange-50">
                   <RotateCcw className="w-4 h-4 mr-2" />Devolución
                 </Button>
@@ -2606,7 +2784,16 @@ const PoSDashboard = () => {
                           <img src={item.image_url} alt="" loading="lazy" className="w-10 h-10 rounded-md object-contain bg-slate-50 border border-slate-100 flex-shrink-0" />
                         )}
                         <div className="min-w-0">
+                          {item.rnp && (
+                            <span className="mr-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-apolo-navy/10 text-apolo-navy">{item.rnp.tag}</span>
+                          )}
+                          {item.rnpFeeFor && (
+                            <span className="mr-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">COMISIÓN</span>
+                          )}
                           <span className="font-medium text-sm">{item.name}</span>
+                          {item.rnp && (
+                            <p className="text-xs text-slate-500">Tel. {formatPhone(item.rnp.phone)}</p>
+                          )}
                         {item.requires_prescription && (
                           <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700">Rx</span>
                         )}
@@ -2626,6 +2813,12 @@ const PoSDashboard = () => {
                       </div>
                       <button onClick={() => removeFromCart(item.id)} className="text-red-500 hover:text-red-700 p-1"><Trash2 className="w-4 h-4" /></button>
                     </div>
+                    {isRnpCartLine(item) ? (
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-slate-500">1 operación</span>
+                      <span className="font-bold text-green-600">{formatMXN(item.price)}</span>
+                    </div>
+                    ) : (
                     <div className="flex justify-between items-center">
                       <div className="flex items-center space-x-2">
                         <button onClick={() => updateQuantity(item.id, -1)} className="bg-slate-100 hover:bg-slate-200 rounded p-1"><Minus className="w-4 h-4" /></button>
@@ -2637,6 +2830,7 @@ const PoSDashboard = () => {
                         <Input type="number" value={item.price} onChange={e => handlePriceChange(item.id, e.target.value)} onBlur={() => handlePriceBlur(item.id)} className="w-20 h-8 text-right font-bold text-green-600" />
                       </div>
                     </div>
+                    )}
                     {isMembershipFeeItem(item) && Number(item.price) === 0 && (
                       <p className="text-xs text-emerald-600 mt-1">Primer mes gratis — cobros desde el día 30 ({formatMXN(item.originalPrice ?? 0)}/mes después)</p>
                     )}
@@ -2752,6 +2946,13 @@ const PoSDashboard = () => {
       </Dialog>
       <CloseShiftModal open={closeShiftOpen} onOpenChange={setCloseShiftOpen} />
       <ReceiptModal open={receiptOpen} onOpenChange={setReceiptOpen} sale={completedSale} autoPrint={true} />
+      <ServiciosModal open={serviciosOpen} onOpenChange={setServiciosOpen} cart={cart} onAdd={addRnpLines} />
+      <ServiciosResultDialog
+        sending={rnpSending}
+        outcome={rnpOutcome}
+        onClose={() => setRnpOutcome(null)}
+        onPrint={() => { setRnpOutcome(null); setReceiptOpen(true); }}
+      />
       <PatientModal open={patientModalOpen} onOpenChange={setPatientModalOpen} onConfirm={handlePatientConfirm} />
       <PrescriptionModal 
         open={prescriptionModalOpen} 

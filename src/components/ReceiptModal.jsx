@@ -56,6 +56,16 @@ const ReceiptContent = ({ sale, orgInfo }) => {
               <span>{item.quantity} × {formatMXN(item.price)}</span>
               {item.rxNumber && !item.receta && <span>Rx: {item.rxNumber}</span>}
             </div>
+            {item.rnp && !item.rnp.fee && (
+              <div className="text-slate-600 pl-2">
+                <p>[{item.rnp.tag}] Tel. {item.rnp.phone}</p>
+                {(item.rnp.venta || item.rnp.autorizacion) && (
+                  <p>Folio RNP {item.rnp.venta || '—'} · Aut. {item.rnp.autorizacion || '—'}</p>
+                )}
+                {item.rnp.codigo && <p className="font-bold text-black">Código: {item.rnp.codigo}</p>}
+                {item.rnp.status === 'pendiente' && <p className="font-bold">PENDIENTE DE CONFIRMACIÓN</p>}
+              </div>
+            )}
             {item.requiresPrescription && item.receta && (
               <p className="text-slate-500 pl-2">
                 {[

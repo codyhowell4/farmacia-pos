@@ -94,3 +94,8 @@ verify_jwt = false
 # .profile_id or the owner membership_members.claimed_user_id).
 [functions.empresa-roster]
 verify_jwt = true
+
+# Servicios RNP (recargas / pagos de servicios / tarjetas de regalo) — staff
+# only; the function additionally requires an active admin/pos profile.
+[functions.rnp-servicios]
+verify_jwt = true

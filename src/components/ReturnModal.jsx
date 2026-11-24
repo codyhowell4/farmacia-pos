@@ -63,7 +63,8 @@ const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
     }
   };
 
-  const returnableItems = (foundSale?.sale_items || []).filter(item => item.quantity > 0);
+  // Servicios RNP lines (rnp_op_id) are not returnable: no refunds at the provider.
+  const returnableItems = (foundSale?.sale_items || []).filter(item => item.quantity > 0 && !item.rnp_op_id);
 
   const isMermaItem = (item) => {
     const flags = item.inventory_id ? flagsById[item.inventory_id] : null;
