@@ -64,7 +64,7 @@ const ServiciosResultDialog = ({ sending, outcome, onClose, onPrint }) => {
                   <span className="font-bold">{formatMXN(Number(o.line.price) + fee)}</span>
                 </div>
                 <p className="font-medium">{o.line.name}</p>
-                <p className="text-slate-500">Tel. {formatPhone(o.line.rnp.phone)}</p>
+                <p className="text-slate-500">{o.line.rnp.refLabel ? `Ref. ${o.line.rnp.phone}` : `Tel. ${formatPhone(o.line.rnp.phone)}`}</p>
                 {(o.result.venta || o.result.autorizacion) && (
                   <p className="text-slate-600">Folio RNP {o.result.venta || '—'} · Aut. {o.result.autorizacion || '—'}</p>
                 )}

@@ -55,7 +55,10 @@ const newOpId = () =>
       return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
     }));
 
-// draft: { category, carrierLabel, carrierParam, productLabel, phone, amount }
+// draft: { category, carrierLabel, carrierParam, productLabel, phone, amount,
+//          montoParam?, refLabel?, email? }
+// montoParam = the catalog's exact <Monto> (package codes like "10005");
+// email = customer email captured on the form (required by realizarServicio).
 export const buildRnpCartLines = (draft) => {
   const opId = newOpId();
   const cat = RNP_CATEGORIES[draft.category];
@@ -89,6 +92,9 @@ export const buildRnpCartLines = (draft) => {
       phone: draft.phone,
       amount,
       fee,
+      montoParam: draft.montoParam || null,
+      refLabel: draft.refLabel || null,
+      email: draft.email || null,
     },
   };
   const feeLine = {
@@ -163,9 +169,10 @@ export const sendRnpLine = async (line, { shiftId, email }) => {
       carrier: r.carrierParam,
       product_label: `${r.carrierLabel || ''} ${r.productLabel || ''}`.trim(),
       monto: r.amount,
+      monto_param: r.montoParam || undefined,
       phone: r.phone,
       fee: r.fee,
-      email: r.action === 'servicio' ? email || RNP_STORE_EMAIL || '' : undefined,
+      email: r.action === 'servicio' ? r.email || email || RNP_STORE_EMAIL || '' : undefined,
       shift_id: shiftId,
     });
     const status = ['aprobada', 'rechazada', 'pendiente', 'no_enviada'].includes(data?.status) ? data.status : 'pendiente';

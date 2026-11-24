@@ -58,7 +58,7 @@ const ReceiptContent = ({ sale, orgInfo }) => {
             </div>
             {item.rnp && !item.rnp.fee && (
               <div className="text-slate-600 pl-2">
-                <p>[{item.rnp.tag}] Tel. {item.rnp.phone}</p>
+                <p>[{item.rnp.tag}] {item.rnp.refLabel ? 'Ref.' : 'Tel.'} {item.rnp.phone}</p>
                 {(item.rnp.venta || item.rnp.autorizacion) && (
                   <p>Folio RNP {item.rnp.venta || '—'} · Aut. {item.rnp.autorizacion || '—'}</p>
                 )}

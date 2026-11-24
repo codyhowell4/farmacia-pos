@@ -10,10 +10,10 @@ import {
   getRnpSaldo, getRnpProductos, buildRnpCartLines, formatPhone, isRnpServiceLine,
 } from '@/lib/rnpServices';
 
-// Pago de servicios / Tarjetas de regalo stay disabled until the live
-// catalog (obtenerProductos servicios + tarjetas) has been reviewed with
-// the owner (task step 1). Flip to true once the form is validated.
-export const RNP_SERVICIOS_FORM_READY = false;
+// Pago de servicios / Tarjetas de regalo: enabled 2026-11-24 after the live
+// catalog review (Carrier = product `Pines`; reference field named by the
+// catalog's `Concepto`; customer email required by realizarServicio).
+export const RNP_SERVICIOS_FORM_READY = true;
 
 const TILES = [
   { key: 'recarga', icon: Smartphone, title: 'Recarga de saldo', sub: 'Tiempo aire para cualquier compañía', categoria: 'recargas' },
@@ -24,13 +24,16 @@ const TILES = [
 
 // Package detection inside the 'recargas' catalog (RNP returns plain
 // recargas and paquetes together; `tipo` / name tell them apart).
+// Live catalog: packages are their own carriers (TELCEL_INTERNET_AMIGO,
+// TELCEL_SIN_LIMITE) with coded Monto values.
 const isPackageProduct = (p) =>
+  /INTERNET|SIN_LIMITE|PAQUETE|DATOS/i.test(String(p.carrier_id || '')) ||
   /paquete|internet|datos|\bgb\b|\bmb\b|ilimitad|redes|amigo sin l[ií]mite/i.test(`${p.tipo || ''} ${p.nombre || ''} ${p.descripcion || ''}`);
 
 const groupByCarrier = (items) => {
   const map = new Map();
   for (const p of items) {
-    const label = (p.carrier_nombre || p.carrier_id || p.nombre || '').toString().trim();
+    const label = (p.carrier_nombre || p.carrier_id || p.nombre || '').toString().trim().replace(/_/g, ' ');
     if (!label) continue;
     if (!map.has(label)) map.set(label, { label, id: p.carrier_id || null, products: [] });
     map.get(label).products.push(p);
@@ -47,8 +50,12 @@ const rowCls = (sel) =>
     sel ? 'border-2 border-apolo-navy bg-apolo-navy/5 text-apolo-navy' : 'border-slate-200 bg-white text-slate-800 hover:border-slate-300'
   }`;
 
+// Tarjetas share Nombre across amounts ("AMAZON"); Pines is the specific
+// product ("AMAZON 100", "CINEMEX - 2 BOLETOS NORMALES").
+const productDisplay = (p) => (p ? (p.pines && p.pines !== p.nombre ? p.pines : p.nombre) || '' : '');
+
 const fresh = () => ({
-  step: 'menu', cat: null, carrier: null, product: null, amount: null, customAmount: '', phone: '', phone2: '', ok: false,
+  step: 'menu', cat: null, carrier: null, product: null, amount: null, customAmount: '', phone: '', phone2: '', email: '', ok: false,
 });
 
 const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
@@ -121,30 +128,44 @@ const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
     return 0;
   })();
 
-  const phoneOk = /^\d{10}$/.test(s.phone) && s.phone === s.phone2;
+  // Pagos de servicio (and tag-type tarjetas) take the biller reference
+  // named by the catalog's Concepto instead of a 10-digit cell number.
+  const refMode = s.cat === 'servicio' || (s.cat === 'tarjeta' && !!s.product && !/CELULAR/i.test(s.product.concepto || ''));
+  const refLabel = refMode ? (s.product?.concepto || 'Referencia') : null;
+  const cleanRef = (v) => (refMode ? v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 40) : v.replace(/\D/g, '').slice(0, 10));
+  const phoneOk = (refMode ? /^[A-Z0-9]{4,40}$/.test(s.phone) : /^\d{10}$/.test(s.phone)) && s.phone === s.phone2;
+  // realizarServicio (servicios + tarjetas) requires the customer's email.
+  const needsEmail = s.cat === 'servicio' || s.cat === 'tarjeta';
+  const emailOk = !needsEmail || /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(s.email.trim());
   const phoneMismatch = s.phone2.length > 0 && s.phone !== s.phone2 && (s.phone2.length >= s.phone.length || s.phone2.length === 10);
   const phoneInCart = (cart || []).some((i) => isRnpServiceLine(i) && i.rnp.phone === s.phone);
   const amountOk = s.cat === 'recarga'
     ? Number.isInteger(amount) && amount > 0
     : amount >= 1 && amount <= 5000;
-  const formOk = !!carrier && (s.cat === 'recarga' || !!s.product) && amountOk && phoneOk && !phoneInCart;
+  const formOk = !!carrier && (s.cat === 'recarga' || !!s.product) && amountOk && phoneOk && !phoneInCart && emailOk;
 
   const fee = Number(RNP_FEES[s.cat] || 0);
 
   const draft = () => {
-    // Carrier parameter sent to RNP:
-    //  · recarga  → the carrier (id when the catalog has one, else name)
-    //  · paquete / servicio / tarjeta → the product name from obtenerProductos
-    // (to be confirmed against the live catalog — step 1).
+    // Parameters sent to RNP (from the live catalog, 2026-11-24):
+    //  · recarga / paquete → Carrier = carrier @id, Monto = the product's
+    //    exact catalog Monto (paquetes use coded values, e.g. 10005)
+    //  · servicio / tarjeta → Carrier = product Pines (unique per product),
+    //    Monto = catalog Monto, or the typed amount for "Monto Libre"
     const isRecarga = s.cat === 'recarga';
-    const productNombre = s.product?.nombre || openProduct?.nombre || '';
+    const product = isRecarga ? fixedProducts.find((p) => Number(p.monto) === amount) || null : s.product;
+    const productNombre = productDisplay(product || openProduct);
+    const viaCarrier = s.cat === 'recarga' || s.cat === 'paquete';
     return {
       category: s.cat,
       carrierLabel: carrier?.label || '',
-      carrierParam: isRecarga ? (carrier?.id || carrier?.label) : productNombre,
+      carrierParam: viaCarrier ? (carrier?.id || carrier?.label) : (product?.pines || product?.nombre || ''),
+      montoParam: product && Number(product.monto) > 0 ? product.monto_param || null : null,
       productLabel: isRecarga ? formatMXN(amount) : productNombre,
       phone: s.phone,
       amount,
+      refLabel,
+      email: needsEmail ? s.email.trim() : null,
     };
   };
 
@@ -154,8 +175,8 @@ const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
     onOpenChange(false);
   };
 
-  const phoneLabel = s.cat === 'servicio'
-    ? 'Número / referencia de 10 dígitos'
+  const phoneLabel = refMode
+    ? `${refLabel} (escríbela dos veces)`
     : s.cat === 'tarjeta'
       ? 'Celular del cliente (10 dígitos)'
       : 'Número celular (10 dígitos)';
@@ -262,7 +283,7 @@ const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
                   {(fixedProducts.length > 0 ? fixedProducts : openProduct ? [openProduct] : []).map((p, idx) => (
                     <button key={`${p.nombre}-${idx}`} type="button" className={rowCls(s.product === p)}
                       onClick={() => set({ product: p, customAmount: '' })}>
-                      <span>{p.nombre}{p.descripcion ? <span className="block text-xs text-slate-500">{p.descripcion}</span> : null}</span>
+                      <span>{productDisplay(p)}{p.descripcion ? <span className="block text-xs text-slate-500">{p.descripcion}</span> : null}</span>
                       <span className="font-bold whitespace-nowrap">{Number(p.monto) > 0 ? formatMXN(p.monto) : 'Monto abierto'}</span>
                     </button>
                   ))}
@@ -281,18 +302,27 @@ const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
               <div>
                 <Label className="mb-2 block">3. {phoneLabel}</Label>
                 <div className="grid sm:grid-cols-2 gap-3">
-                  <Input inputMode="numeric" autoComplete="off" maxLength={10} placeholder="10 dígitos" value={s.phone}
-                    onChange={(e) => set({ phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                  <Input inputMode={refMode ? 'text' : 'numeric'} autoComplete="off" maxLength={refMode ? 40 : 10} placeholder={refMode ? 'Letras y números, sin espacios' : '10 dígitos'} value={s.phone}
+                    onChange={(e) => set({ phone: cleanRef(e.target.value) })}
                     className="text-lg tracking-wider" />
-                  <Input inputMode="numeric" autoComplete="off" maxLength={10} placeholder="Confirmar número" value={s.phone2}
+                  <Input inputMode={refMode ? 'text' : 'numeric'} autoComplete="off" maxLength={refMode ? 40 : 10} placeholder={refMode ? 'Confirmar referencia' : 'Confirmar número'} value={s.phone2}
                     onPaste={(e) => e.preventDefault()}
-                    onChange={(e) => set({ phone2: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                    onChange={(e) => set({ phone2: cleanRef(e.target.value) })}
                     className={`text-lg tracking-wider ${phoneMismatch ? 'border-red-400 bg-red-50' : ''}`} />
                 </div>
                 {phoneMismatch && (
                   <p className="mt-2 flex items-center gap-1.5 text-sm text-red-600">
                     <AlertTriangle className="w-4 h-4" /> Los números no coinciden. Revísalo con el cliente.
                   </p>
+                )}
+                {needsEmail && (
+                  <div className="mt-3">
+                    <Label className="mb-1 block">4. Correo del cliente (obligatorio)</Label>
+                    <Input type="email" autoComplete="off" placeholder="cliente@correo.com" value={s.email}
+                      onChange={(e) => set({ email: e.target.value.slice(0, 160) })}
+                      className={`max-w-sm ${s.email && !emailOk ? 'border-red-400 bg-red-50' : ''}`} />
+                    <p className="mt-1 text-xs text-slate-500">RNP envía el comprobante{s.cat === 'tarjeta' ? ' / código' : ''} a este correo.</p>
+                  </div>
                 )}
                 {phoneOk && phoneInCart && (
                   <p className="mt-2 flex items-center gap-1.5 text-sm text-red-600">
@@ -326,13 +356,14 @@ const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
               <span>Lee los datos en voz alta al cliente antes de agregarlos. Una recarga o pago enviado no se puede cancelar ni devolver.</span>
             </div>
             <div className="text-center py-2">
-              <p className="text-sm text-slate-500">{s.cat === 'servicio' ? 'Número / referencia' : 'Número'}</p>
-              <p className="text-4xl sm:text-5xl font-bold tracking-wider text-slate-900">{formatPhone(s.phone)}</p>
+              <p className="text-sm text-slate-500">{refMode ? refLabel : 'Número'}</p>
+              <p className={`${refMode && s.phone.length > 12 ? 'text-2xl sm:text-3xl break-all' : 'text-4xl sm:text-5xl'} font-bold tracking-wider text-slate-900`}>{refMode ? s.phone : formatPhone(s.phone)}</p>
+              {needsEmail && <p className="mt-1 text-sm text-slate-600">Correo: <b>{s.email.trim()}</b></p>}
             </div>
             <div className="rounded-lg border border-slate-200 divide-y divide-slate-100 text-sm">
               <div className="flex justify-between px-3 py-2"><span className="text-slate-500">{s.cat === 'servicio' ? 'Servicio' : s.cat === 'tarjeta' ? 'Tarjeta' : 'Compañía'}</span><span className="font-medium">{carrier?.label}</span></div>
               {s.cat !== 'recarga' && (
-                <div className="flex justify-between px-3 py-2"><span className="text-slate-500">Producto</span><span className="font-medium text-right">{s.product?.nombre}</span></div>
+                <div className="flex justify-between px-3 py-2"><span className="text-slate-500">Producto</span><span className="font-medium text-right">{productDisplay(s.product)}</span></div>
               )}
               <div className="flex justify-between px-3 py-2"><span className="text-slate-500">Monto</span><span className="font-medium">{formatMXN(amount)}</span></div>
               <div className="flex justify-between px-3 py-2"><span className="text-slate-500">Comisión Apolo</span><span className="font-medium">{formatMXN(fee)}</span></div>

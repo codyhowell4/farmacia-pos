@@ -310,42 +310,71 @@ const rnpError = (inner: XNode | null) => {
 const isTruthyExito = (v: string | null) =>
   v != null && ['1', 'true', 'si', 'sí', 'ok', 'exito', 'éxito', 'aprobada', 'success'].includes(v.trim().toLowerCase());
 
-// Catalog normalization. Built defensively: any element carrying a
-// Nombre + Monto pair is a product; carrier data comes from the product
-// itself or its nearest Carrier ancestor (attributes or child elements).
-const normalizeCatalog = (inner: XNode) => {
+// Catalog normalization (v2, from the plain view of obtenerProductos).
+// Live catalog shape (verified 2026-11-24):
+//   Productos > Resultado > Carrier[@id,@nombre] > Producto[@tipo]
+//   recargas : Nombre, Monto, VIP            (Carrier sent = @id)
+//   servicios: Nombre, Concepto, Monto ("Monto Libre" = open), Comision, Pines
+//   tarjetas : Nombre, Concepto, Monto, Comision, Pines (Pines unique per product)
+// Package products (TELCEL_INTERNET_AMIGO / TELCEL_SIN_LIMITE) carry a
+// CODED Monto: price × 1000 + suffix (e.g. "INTERNET AMIGO 10" → 10005).
+// `monto_param` is the exact string RNP listed (sent back verbatim);
+// `monto` is the price charged. A coded product is kept only when the
+// decoded price appears in its name — otherwise it is dropped (never guess
+// a price).
+const CATALOG_VERSION = 2;
+const asArray = (v: unknown) => (Array.isArray(v) ? v : v == null ? [] : [v]);
+const str = (v: unknown) => (typeof v === 'string' ? v.trim() : v == null ? null : String(v).trim());
+const decodePrice = (montoRaw: string | null, nombre: string) => {
+  if (montoRaw == null || !/^\d+(\.\d+)?$/.test(montoRaw)) return { monto: null, ok: true }; // open amount
+  const n = Number(montoRaw);
+  if (n <= 5000) return { monto: n, ok: true };
+  const price = Math.floor(n / 1000);
+  const inName = (nombre.match(/\d+(\.\d+)?/g) || []).map(Number).includes(price);
+  return inName && price > 0 && price <= 5000 ? { monto: price, ok: true } : { monto: null, ok: false };
+};
+const normalizeCatalog = (plain: unknown) => {
   const items: Array<Record<string, unknown>> = [];
-  const walk = (node: XNode, carrier: { id: string | null; nombre: string | null } | null) => {
-    let ctx = carrier;
-    if (/^carrier$/i.test(node.name) && node.children.length > 0) {
-      ctx = {
-        id: childText(node, 'id', 'Id', 'ID', 'IdCarrier'),
-        nombre: childText(node, 'nombre', 'Nombre', 'name'),
-      };
+  const carriers: any[] = [];
+  const collect = (o: any) => {
+    if (!o || typeof o !== 'object') return;
+    if (Array.isArray(o)) return o.forEach(collect);
+    for (const [k, v] of Object.entries(o)) {
+      if (k === 'Carrier') carriers.push(...asArray(v));
+      else collect(v);
     }
-    const nombre = childText(node, 'Nombre', 'nombre');
-    const monto = childText(node, 'Monto', 'monto');
-    if (nombre != null && monto != null && !/^carrier$/i.test(node.name)) {
-      const ownCarrier = node.children.find((c) => /^carrier$/i.test(c.name));
+  };
+  collect(plain);
+  for (const c of carriers) {
+    if (!c || typeof c !== 'object') continue;
+    const cid = str(c['@id']);
+    const cnombre = str(c['@nombre']) || cid;
+    for (const p of asArray(c.Producto) as any[]) {
+      if (!p || typeof p !== 'object') continue;
+      const nombre = str(p.Nombre) || '';
+      const montoRaw = str(p.Monto);
+      const { monto, ok } = decodePrice(montoRaw, nombre);
+      if (!ok || !cid) continue;
       items.push({
-        carrier_id: (ownCarrier && (childText(ownCarrier, 'id', 'Id') || null)) || childText(node, 'CarrierId', 'IdCarrier') || ctx?.id || null,
-        carrier_nombre:
-          (ownCarrier && (childText(ownCarrier, 'nombre', 'Nombre') || (ownCarrier.children.length === 0 ? ownCarrier.text.trim() : null))) ||
-          childText(node, 'CarrierNombre') ||
-          ctx?.nombre ||
-          null,
-        tipo: childText(node, 'tipo', 'Tipo'),
+        v: CATALOG_VERSION,
+        carrier_id: cid,
+        carrier_nombre: cnombre,
+        tipo: str(p['@tipo']),
         nombre,
-        monto: toNumber(monto),
-        neto: toNumber(childText(node, 'Neto', 'neto')),
-        descripcion: childText(node, 'Descripcion', 'descripcion'),
+        monto,
+        monto_param: monto == null ? null : montoRaw,
+        concepto: str(p.Concepto),
+        pines: str(p.Pines),
+        comision: toNumber(str(p.Comision)),
+        neto: null,
+        descripcion: null,
       });
     }
-    for (const c of node.children) walk(c, ctx);
-  };
-  walk(inner, null);
+  }
   return items;
 };
+const isCurrentCatalog = (items: unknown) =>
+  Array.isArray(items) && items.length > 0 && (items[0] as Record<string, unknown>)?.v === CATALOG_VERSION;
 
 // ── Log helpers ──────────────────────────────────────────────
 
@@ -451,6 +480,15 @@ Deno.serve(async (req) => {
         if (wantRaw) body.raw = row?.raw ?? null;
         return jsonResponse(body);
       };
+      // Cache written by an older normalizer: rebuild items from the stored
+      // raw answer (no RNP call).
+      if (cached && cached.raw && !isCurrentCatalog(cached.items)) {
+        const rebuilt = normalizeCatalog(cached.raw);
+        if (rebuilt.length > 0) {
+          cached.items = rebuilt;
+          await db.from('rnp_catalog_cache').update({ items: rebuilt }).eq('org_id', caller.orgId).eq('categoria', categoria);
+        }
+      }
       const hasItems = Array.isArray(cached?.items) && (cached!.items as unknown[]).length > 0;
       const fresh = cached && Date.now() - new Date(cached.fetched_at).getTime() < CATALOG_TTL_MS;
       if (fresh) return reply(cached, 'cache');
@@ -489,7 +527,8 @@ Deno.serve(async (req) => {
         if (hasItems) return reply(cached, 'stale');
         return jsonResponse({ ok: false, error: `RNP: ${err}` }, 502);
       }
-      const row = { items: normalizeCatalog(r.inner!), raw: toPlain(r.inner!), fetched_at: new Date().toISOString() };
+      const plain = toPlain(r.inner!);
+      const row = { items: normalizeCatalog(plain), raw: plain, fetched_at: new Date().toISOString() };
       const { error: saveErr } = await db
         .from('rnp_catalog_cache')
         .update({ ...row, refreshing_at: null })
@@ -527,14 +566,30 @@ Deno.serve(async (req) => {
     if (action === 'recarga' && !['recarga', 'paquete'].includes(category)) throw new ClientError('category inválida');
     if (action === 'servicio' && !['servicio', 'tarjeta'].includes(category)) throw new ClientError('category inválida');
 
-    const phone = String(payload.phone || '').replace(/\D/g, '');
-    if (!/^\d{10}$/.test(phone)) throw new ClientError('El número debe tener 10 dígitos');
+    // Phone: 10-digit cell for recargas/paquetes and code-by-SMS tarjetas;
+    // for pagos de servicio (and tag-type tarjetas) it carries the biller
+    // reference named by the catalog's Concepto (contrato, código de barras,
+    // alfanumérico…): 4–40 letters/digits, no spaces or dashes.
+    const phoneRaw = String(payload.phone || '').trim();
+    const phone = action === 'recarga' ? phoneRaw.replace(/\D/g, '') : phoneRaw.replace(/[\s-]/g, '').toUpperCase();
+    if (action === 'recarga' && !/^\d{10}$/.test(phone)) throw new ClientError('El número debe tener 10 dígitos');
+    if (action === 'servicio' && !/^[A-Z0-9]{4,40}$/.test(phone)) throw new ClientError('Referencia inválida (4 a 40 letras o números)');
     const carrier = String(payload.carrier || '').trim();
     if (!carrier || carrier.length > 160) throw new ClientError('Compañía / producto inválido');
 
+    // montoNum = price charged; monto = exact <Monto> sent to RNP. A catalog
+    // product's Monto (monto_param) is sent verbatim — package codes like
+    // "10005" must decode (÷1000) to the price charged.
     const montoNum = Number(payload.monto);
+    const montoParam = payload.monto_param != null ? String(payload.monto_param).trim() : '';
     let monto: string;
-    if (action === 'recarga') {
+    if (montoParam) {
+      if (!/^\d{1,7}(\.\d{1,2})?$/.test(montoParam)) throw new ClientError('Monto inválido');
+      const mp = Number(montoParam);
+      const matches = mp <= 5000 ? Math.abs(mp - montoNum) < 0.005 : Math.floor(mp / 1000) === montoNum;
+      if (!matches || !(montoNum > 0) || montoNum > 5000) throw new ClientError('Monto inválido');
+      monto = montoParam;
+    } else if (action === 'recarga') {
       if (!Number.isInteger(montoNum) || montoNum <= 0 || montoNum > 5000) throw new ClientError('Monto inválido');
       monto = String(montoNum);
     } else {
@@ -546,8 +601,11 @@ Deno.serve(async (req) => {
 
     let email = '';
     if (action === 'servicio') {
+      // realizarServicio requires an Email: the CUSTOMER's, captured on the
+      // form (no store-email fallback).
       const candidate = String(payload.email || '').trim();
-      email = EMAIL_RE.test(candidate) ? candidate : (env.RNP_STORE_EMAIL || '').trim();
+      if (!EMAIL_RE.test(candidate) || candidate.length > 160) throw new ClientError('Correo del cliente inválido');
+      email = candidate;
     }
 
     // Shift must be open and in the caller's org.
@@ -582,7 +640,7 @@ Deno.serve(async (req) => {
         product_name: payload.product_label ? String(payload.product_label).slice(0, 200) : carrier,
         phone,
         email: email || null,
-        amount: Number(monto),
+        amount: montoNum,
         fee: feeValue,
         status: 'enviando',
         request_xml: envelope(method, redacted),

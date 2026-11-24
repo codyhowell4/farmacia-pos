@@ -1003,7 +1003,8 @@ const PoSDashboard = () => {
     const o = outcomes.find((x) => x.line.id === item.id);
     return {
       tag: item.rnp.tag,
-      phone: formatPhone(item.rnp.phone),
+      phone: item.rnp.refLabel ? item.rnp.phone : formatPhone(item.rnp.phone),
+      refLabel: item.rnp.refLabel || null,
       status: o?.result?.status || 'pendiente',
       autorizacion: o?.result?.autorizacion || null,
       venta: o?.result?.venta || null,
@@ -2792,7 +2793,7 @@ const PoSDashboard = () => {
                           )}
                           <span className="font-medium text-sm">{item.name}</span>
                           {item.rnp && (
-                            <p className="text-xs text-slate-500">Tel. {formatPhone(item.rnp.phone)}</p>
+                            <p className="text-xs text-slate-500">{item.rnp.refLabel ? `Ref. ${item.rnp.phone}` : `Tel. ${formatPhone(item.rnp.phone)}`}</p>
                           )}
                         {item.requires_prescription && (
                           <span className="ml-2 px-1.5 py-0.5 rounded text-xs font-bold bg-blue-100 text-blue-700">Rx</span>
