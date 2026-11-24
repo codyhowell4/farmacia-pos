@@ -19,6 +19,13 @@ export const RNP_STORE_EMAIL = '';
 // Send the ticket customer's email to RNP (else always the store email).
 export const RNP_SEND_CUSTOMER_EMAIL = true;
 
+// Alerta de saldo bajo (MXN). The live value is a setting stored in
+// rnp_balance.low_balance_threshold (Admin › Servicios RNP); this is the
+// fallback when it can't be read.
+export const RNP_LOW_BALANCE_DEFAULT = 200;
+export const isRnpBalanceLow = (saldo, threshold = RNP_LOW_BALANCE_DEFAULT) =>
+  saldo != null && Number.isFinite(Number(saldo)) && Number(saldo) < Number(threshold ?? RNP_LOW_BALANCE_DEFAULT);
+
 // Montos sugeridos para recargas cuando el catálogo no trae montos fijos.
 export const RNP_DEFAULT_RECARGA_AMOUNTS = [20, 30, 50, 100, 150, 200, 300, 500];
 
@@ -36,6 +43,20 @@ export const RNP_ALLOWED_PAYMENT_METHODS = ['cash', 'card'];
 // A service adds TWO cart lines: the service itself (amount sent to RNP)
 // and the Comisión Apolo (fee). Both are quantity 1, not editable, not
 // discounted, outside the IVA base, and carry no inventory_id.
+// Saved sale_items: both RNP lines carry rnp_op_id; the comisión line is
+// named "Comisión servicio — …" (see buildRnpCartLines).
+export const isRnpFeeSaleItem = (item) => !!item?.rnp_op_id && /^Comisi[oó]n servicio/i.test(item?.name || '');
+export const isRnpServiceSaleItem = (item) => !!item?.rnp_op_id && !isRnpFeeSaleItem(item);
+export const rnpSaleTotals = (sales) => {
+  let services = 0; let fees = 0; let count = 0;
+  (sales || []).forEach((s) => (s?.sale_items || []).forEach((i) => {
+    const amt = Number(i.price || 0) * Number(i.quantity || 0);
+    if (isRnpServiceSaleItem(i)) { services += amt; if (amt > 0) count += 1; }
+    else if (isRnpFeeSaleItem(i)) fees += amt;
+  }));
+  return { services: Math.round(services * 100) / 100, fees: Math.round(fees * 100) / 100, count };
+};
+
 export const isRnpCartLine = (item) => !!(item?.rnp || item?.rnpFeeFor);
 export const isRnpServiceLine = (item) => !!item?.rnp;
 export const isRnpFeeLine = (item) => !!item?.rnpFeeFor;
@@ -188,3 +209,40 @@ export const linkRnpOpsToSale = (saleId, opIds) =>
 
 // Refundable = RNP explicitly refused it, or it never left our server.
 export const isRefundableStatus = (status) => status === 'rechazada' || status === 'no_enviada';
+
+// ── Corte de caja ────────────────────────────────────────────
+// RNP lines on a shift (rnp_shift_summary RPC) and the drawer adjustment:
+//   + cash_add_back    Fallida ops sold in cash on this shift whose refund
+//                      has not left this drawer (the sale was already
+//                      reduced, but the money is still in the drawer)
+//   − cash_refunds_out cash refunds paid from this drawer for ops sold on
+//                      other shifts
+// Never blocks a shift close: on error the adjustment is 0 and `error` is set.
+export const EMPTY_RNP_SHIFT_SUMMARY = {
+  count: 0, pending_count: 0, services_amount: 0, fees_amount: 0,
+  services_cash: 0, fees_cash: 0, services_card: 0, fees_card: 0, by_category: {},
+  fallidas_count: 0, fallidas_amount: 0, cash_add_back: 0, cash_refunds_out: 0,
+};
+export const loadRnpShiftSummary = async (getRnpShiftSummary, shiftId) => {
+  if (!shiftId) return { ...EMPTY_RNP_SHIFT_SUMMARY };
+  try {
+    const d = await getRnpShiftSummary(shiftId);
+    const num = (v) => Number(v || 0);
+    return {
+      ...EMPTY_RNP_SHIFT_SUMMARY,
+      ...d,
+      count: num(d?.count), pending_count: num(d?.pending_count),
+      services_amount: num(d?.services_amount), fees_amount: num(d?.fees_amount),
+      services_cash: num(d?.services_cash), fees_cash: num(d?.fees_cash),
+      services_card: num(d?.services_card), fees_card: num(d?.fees_card),
+      fallidas_count: num(d?.fallidas_count), fallidas_amount: num(d?.fallidas_amount),
+      cash_add_back: num(d?.cash_add_back), cash_refunds_out: num(d?.cash_refunds_out),
+      by_category: d?.by_category || {},
+    };
+  } catch (e) {
+    console.error('[rnp] shift summary failed:', e);
+    return { ...EMPTY_RNP_SHIFT_SUMMARY, error: e?.message || 'No disponible' };
+  }
+};
+export const rnpCashAdjustment = (summary) =>
+  Math.round((Number(summary?.cash_add_back || 0) - Number(summary?.cash_refunds_out || 0)) * 100) / 100;

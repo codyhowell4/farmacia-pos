@@ -3910,3 +3910,122 @@ export const deletePartner = async (id) => {
     .eq('org_id', orgId);
   if (error) throw error;
 };
+
+// ── Servicios RNP: pendientes, devoluciones, corte y saldos (2026-11-24) ──
+// rnp_transactions is admin-read (RLS); writes go through definer RPCs.
+const RNP_SALE_METHODS = ['realizarRecarga', 'realizarServicio'];
+
+// Pending = no confirmation from RNP (timeout / unreadable) or stuck while
+// sending. Never resend: the admin resolves them from the RNP portal.
+export const listRnpPending = async () => {
+  const { data, error } = await supabase
+    .from('rnp_transactions')
+    .select('id, created_at, created_by_name, category, carrier, product_name, phone, email, amount, fee, status, error_text, sale_id, shift_id, op_id, location_id')
+    .in('method', RNP_SALE_METHODS)
+    .in('status', ['pendiente', 'enviando'])
+    .is('resolution', null)
+    .order('created_at', { ascending: true })
+    .limit(500);
+  if (error) throw error;
+  return data || [];
+};
+
+export const countRnpPending = async () => {
+  const { count, error } = await supabase
+    .from('rnp_transactions')
+    .select('id', { count: 'exact', head: true })
+    .in('method', RNP_SALE_METHODS)
+    .in('status', ['pendiente', 'enviando'])
+    .is('resolution', null);
+  if (error) throw error;
+  return count || 0;
+};
+
+export const listRnpRefundsDue = async () => {
+  const { data, error } = await supabase
+    .from('rnp_transactions')
+    .select('id, created_at, created_by_name, category, carrier, product_name, phone, amount, fee, refund_amount, refund_method, sale_id, shift_id, location_id, resolved_by_name, resolved_at, resolution_note, op_id')
+    .eq('resolution', 'fallida')
+    .eq('refund_status', 'por_devolver')
+    .order('resolved_at', { ascending: true })
+    .limit(500);
+  if (error) throw error;
+  return data || [];
+};
+
+export const listRnpResolved = async (limit = 30) => {
+  const { data, error } = await supabase
+    .from('rnp_transactions')
+    .select('id, created_at, created_by_name, category, carrier, product_name, phone, amount, fee, status, resolution, autorizacion, resolved_by_name, resolved_at, resolution_note, refund_amount, refund_status, refund_method, refunded_by_name, refunded_at, sale_id, op_id')
+    .not('resolution', 'is', null)
+    .order('resolved_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+};
+
+// Ticket info for a set of sale ids (folio = #last 8 of the id, as printed
+// on the ticket).
+export const getSaleFoliosByIds = async (ids) => {
+  const unique = [...new Set((ids || []).filter(Boolean))];
+  if (unique.length === 0) return {};
+  const { data, error } = await supabase.from('sales').select('id, timestamp, payment_method, total').in('id', unique);
+  if (error) throw error;
+  return Object.fromEntries((data || []).map((s) => [s.id, { ...s, folio: `#${s.id.slice(-8).toUpperCase()}` }]));
+};
+
+// Sale id for ops not yet linked (vincular runs after the sale saves).
+export const getSaleIdsByRnpOps = async (opIds) => {
+  const unique = [...new Set((opIds || []).filter(Boolean))];
+  if (unique.length === 0) return {};
+  const { data, error } = await supabase.from('sale_items').select('sale_id, rnp_op_id').in('rnp_op_id', unique);
+  if (error) throw error;
+  return Object.fromEntries((data || []).map((r) => [r.rnp_op_id, r.sale_id]));
+};
+
+export const resolveRnpPending = async (id, resolution, { autorizacion = null, note = null } = {}) => {
+  const { data, error } = await supabase.rpc('rnp_resolve_pending', {
+    p_id: id, p_resolution: resolution, p_autorizacion: autorizacion, p_note: note,
+  });
+  if (error) throw error;
+  return data;
+};
+
+export const markRnpRefunded = async (id, shiftId = null) => {
+  const { data, error } = await supabase.rpc('rnp_mark_refunded', { p_id: id, p_shift_id: shiftId });
+  if (error) throw error;
+  return data;
+};
+
+// Open shifts (drawer a cash refund can come out of).
+export const listOpenShiftsForRefund = async () => {
+  const { data, error } = await supabase
+    .from('shifts')
+    .select('id, opened_by_name, opened_at, location_id')
+    .eq('status', 'open')
+    .order('opened_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+};
+
+// Corte de caja: RNP lines + drawer adjustments (any org staff).
+export const getRnpShiftSummary = async (shiftId) => {
+  const { data, error } = await supabase.rpc('rnp_shift_summary', { p_shift_id: shiftId });
+  if (error) throw error;
+  return data || null;
+};
+
+export const getRnpBalance = async () => {
+  const { data, error } = await supabase
+    .from('rnp_balance')
+    .select('saldo_recargas, saldo_servicios, recargas_at, servicios_at, recargas_source, servicios_source, low_balance_threshold')
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+};
+
+export const setRnpLowBalanceThreshold = async (threshold) => {
+  const { data, error } = await supabase.rpc('rnp_set_low_balance_threshold', { p_threshold: threshold });
+  if (error) throw error;
+  return data;
+};

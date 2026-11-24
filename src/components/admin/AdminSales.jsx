@@ -5,6 +5,7 @@ import { Search, Calendar, DollarSign, Download, ChevronDown, ChevronUp, CreditC
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import { rnpSaleTotals } from '@/lib/rnpServices';
 import { exportSalesCSV, printReport } from '@/lib/exportUtils';
 
 const PaymentBadge = ({ method }) => {
@@ -146,6 +147,9 @@ const AdminSales = () => {
   const totalByCash = activeSalesForStats.filter(s => !s.payment_method || s.payment_method === 'cash').reduce((sum, s) => sum + s.total, 0);
   const totalByCard = activeSalesForStats.filter(s => s.payment_method === 'card').reduce((sum, s) => sum + s.total, 0);
   const totalByInsurance = activeSalesForStats.filter(s => s.payment_method === 'insurance').reduce((sum, s) => sum + s.total, 0);
+  // Servicios RNP: the service amount is passed through to RNP; only the
+  // comisión is store income. Fallida lines were zeroed on the sale.
+  const rnpTotals = rnpSaleTotals(activeSalesForStats);
 
   const toggleExpand = (id) => {
     setExpandedSale(expandedSale === id ? null : id);
@@ -175,6 +179,23 @@ const AdminSales = () => {
           <DollarSign className="w-8 h-8 mb-2" /><p className="text-sm opacity-90">Average Sale</p><p className="text-3xl font-bold">${filteredSales.length > 0 ? (totalRevenue / filteredSales.length).toFixed(2) : '0.00'}</p>
         </motion.div>
       </div>
+
+      {(rnpTotals.services > 0 || rnpTotals.fees > 0) && (
+        <div className="bg-white rounded-xl shadow p-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+          <div>
+            <p className="text-slate-500">Servicios RNP ({rnpTotals.count}) — pago a RNP</p>
+            <p className="text-xl font-bold text-slate-900">{formatMXN(rnpTotals.services)}</p>
+          </div>
+          <div>
+            <p className="text-slate-500">Comisiones RNP — ingreso</p>
+            <p className="text-xl font-bold text-green-700">{formatMXN(rnpTotals.fees)}</p>
+          </div>
+          <div>
+            <p className="text-slate-500">Total sin servicios RNP (ventas + comisiones)</p>
+            <p className="text-xl font-bold text-slate-900">{formatMXN(totalRevenue - rnpTotals.services)}</p>
+          </div>
+        </div>
+      )}
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="bg-white rounded-xl shadow-lg p-6">
         <div className="mb-6 flex gap-3 items-center">

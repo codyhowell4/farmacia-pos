@@ -8,7 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useShift } from '@/contexts/ShiftContext';
 import { useToast } from '@/components/ui/use-toast';
-import { getShiftSales, getInventory } from '@/lib/db';
+import { getShiftSales, getInventory, getRnpShiftSummary } from '@/lib/db';
+import { RNP_CATEGORIES, EMPTY_RNP_SHIFT_SUMMARY, loadRnpShiftSummary, rnpCashAdjustment } from '@/lib/rnpServices';
 
 const CloseShiftModal = ({ open, onOpenChange }) => {
   const { activeShift, closeShift } = useShift();
@@ -20,10 +21,16 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
   const [shiftSales, setShiftSales] = useState({ cash: 0, card: 0, insurance: 0, transferencia: 0, total: 0, count: 0, sales: [] });
   const [inventory, setInventory] = useState([]);
   const [closedShift, setClosedShift] = useState(null); // Snapshot after closing
+  // Servicios RNP on this shift (rnp_shift_summary): their own lines in the
+  // corte + the cash adjustment for Fallida refunds.
+  const [rnp, setRnp] = useState(EMPTY_RNP_SHIFT_SUMMARY);
+  const rnpAdj = rnpCashAdjustment(rnp);
+  const showRnp = rnp.count > 0 || rnp.fallidas_count > 0 || rnpAdj !== 0 || rnp.cash_refunds_out > 0;
   const reportRef = useRef(null);
 
   useEffect(() => {
     if (!activeShift || !open) return;
+    loadRnpShiftSummary(getRnpShiftSummary, activeShift.id).then(setRnp);
     
     // Load sales and inventory data (getShiftSales is pos-safe: scoped to
     // this shift, no customers embed — the old getSales() is admin-only now).
@@ -83,7 +90,7 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
     e.preventDefault();
     const amount = parseFloat(closingCash);
     if (isNaN(amount) || amount < 0) { toast({ title: 'Cantidad inválida', variant: 'destructive' }); return; }
-    const expected = activeShift.starting_cash + shiftSales.cash;
+    const expected = activeShift.starting_cash + shiftSales.cash + rnpAdj;
     setSummary({ closingCash: amount, expectedCash: expected, variance: amount - expected });
     setStep('summary');
   };
@@ -169,6 +176,9 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
 
     shiftSales.sales.forEach(sale => {
       (sale.sale_items || []).forEach(item => {
+        // Servicios RNP (recargas/pagos/tarjetas + comisión) are not
+        // products: they get their own section from rnp_shift_summary.
+        if (item.rnp_op_id) return;
         const invItem = inventory.find(i => i.id === item.inventory_id);
         const dept = invItem?.department || 'Sin departamento';
         const itemType = invItem?.item_type || 'product';
@@ -233,6 +243,18 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
               </div>
             </div>
 
+            {showRnp && (
+              <div className="rounded-lg p-3 border border-apolo-navy/20 bg-apolo-navy/5 text-sm space-y-1">
+                <p className="font-semibold text-apolo-navy">Servicios RNP en este turno ({rnp.count})</p>
+                <div className="flex justify-between"><span className="text-slate-600">Servicios cobrados (pago a RNP)</span><span className="font-medium">{formatMXN(rnp.services_amount)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-600">Comisiones (ingreso Apolo)</span><span className="font-medium">{formatMXN(rnp.fees_amount)}</span></div>
+                <p className="text-xs text-slate-500">Ya incluidos en Efectivo / Tarjeta arriba.</p>
+                {rnp.pending_count > 0 && (
+                  <p className="text-xs text-orange-700 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> {rnp.pending_count} pendiente(s) de confirmar: el administrador las resuelve en Admin › Servicios RNP.</p>
+                )}
+              </div>
+            )}
+
             <form onSubmit={handlePreview} className="space-y-4">
               <div className="space-y-2">
                 <Label>Conteo de efectivo al cierre (MXN)</Label>
@@ -264,6 +286,18 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
                 <div className="flex justify-between"><span className="text-slate-500">Ingresos totales</span><span className="font-medium">{formatMXN(shiftSales.total)}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Efectivo inicial</span><span className="font-medium">{formatMXN(activeShift?.starting_cash)}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Ventas en efectivo</span><span className="font-medium">+ {formatMXN(shiftSales.cash)}</span></div>
+                {showRnp && (rnp.services_cash > 0 || rnp.fees_cash > 0) && (
+                  <>
+                    <div className="flex justify-between pl-3 text-xs"><span className="text-slate-500">incluye Servicios RNP (pago a RNP)</span><span>{formatMXN(rnp.services_cash)}</span></div>
+                    <div className="flex justify-between pl-3 text-xs"><span className="text-slate-500">incluye Comisiones RNP</span><span>{formatMXN(rnp.fees_cash)}</span></div>
+                  </>
+                )}
+                {rnp.cash_add_back > 0 && (
+                  <div className="flex justify-between"><span className="text-slate-500">RNP fallidas por devolver (siguen en caja)</span><span className="font-medium">+ {formatMXN(rnp.cash_add_back)}</span></div>
+                )}
+                {rnp.cash_refunds_out > 0 && (
+                  <div className="flex justify-between"><span className="text-slate-500">Devoluciones RNP entregadas de esta caja</span><span className="font-medium">− {formatMXN(rnp.cash_refunds_out)}</span></div>
+                )}
                 <div className="flex justify-between font-semibold border-t pt-2"><span>Esperado en caja</span><span>{formatMXN(summary.expectedCash)}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Efectivo contado</span><span className="font-medium">{formatMXN(summary.closingCash)}</span></div>
               </div>
@@ -382,6 +416,42 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
                 </div>
               </div>
 
+              {/* Servicios RNP */}
+              {showRnp && (
+                <div className="section">
+                  <h3>SERVICIOS RNP</h3>
+                  {Object.entries(rnp.by_category || {}).map(([cat, d]) => (
+                    <div key={cat} className="row">
+                      <span>{RNP_CATEGORIES[cat]?.label || cat} ({d.count}):</span>
+                      <span>{formatMXN(d.amount)}</span>
+                    </div>
+                  ))}
+                  <div className="row">
+                    <span>Servicios (pago a RNP):</span>
+                    <span>{formatMXN(rnp.services_amount)}</span>
+                  </div>
+                  <div className="row bold">
+                    <span>Comisiones (ingreso):</span>
+                    <span>{formatMXN(rnp.fees_amount)}</span>
+                  </div>
+                  <div className="row">
+                    <span>  en efectivo:</span>
+                    <span>{formatMXN(rnp.services_cash + rnp.fees_cash)}</span>
+                  </div>
+                  <div className="row">
+                    <span>  con tarjeta:</span>
+                    <span>{formatMXN(rnp.services_card + rnp.fees_card)}</span>
+                  </div>
+                  {rnp.pending_count > 0 && <p>Pendientes de confirmar: {rnp.pending_count}</p>}
+                  {rnp.fallidas_count > 0 && (
+                    <div className="row">
+                      <span>Fallidas (no son ingreso) ({rnp.fallidas_count}):</span>
+                      <span>{formatMXN(rnp.fallidas_amount)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Cash Summary */}
               <div className="section">
                 <h3>RESUMEN DE CAJA</h3>
@@ -393,6 +463,18 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
                   <span>Ventas en efectivo:</span>
                   <span>+ {formatMXN(shiftSales.cash)}</span>
                 </div>
+                {rnp.cash_add_back > 0 && (
+                  <div className="row">
+                    <span>RNP fallidas en caja:</span>
+                    <span>+ {formatMXN(rnp.cash_add_back)}</span>
+                  </div>
+                )}
+                {rnp.cash_refunds_out > 0 && (
+                  <div className="row">
+                    <span>Devoluciones RNP:</span>
+                    <span>− {formatMXN(rnp.cash_refunds_out)}</span>
+                  </div>
+                )}
                 <div className="row">
                   <span>Efectivo esperado:</span>
                   <span>{formatMXN(summary?.expectedCash)}</span>

@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
-import { getOpenShift, createShift, closeShiftDb, getShiftSales } from '@/lib/db';
+import { getOpenShift, createShift, closeShiftDb, getShiftSales, getRnpShiftSummary } from '@/lib/db';
+import { loadRnpShiftSummary, rnpCashAdjustment } from '@/lib/rnpServices';
 import { clearRxQueue } from '@/lib/rxQueue';
 import { formatMXN } from '@/lib/currency';
 
@@ -51,7 +52,9 @@ export const ShiftProvider = ({ children }) => {
     const totalCard = shiftSales.filter(s => s && s.payment_method === 'card').reduce((sum, s) => sum + (s?.total || 0), 0);
     const totalInsurance = shiftSales.filter(s => s && s.payment_method === 'insurance').reduce((sum, s) => sum + (s?.total || 0), 0);
     const totalRevenue = shiftSales.filter(s => s).reduce((sum, s) => sum + (s?.total || 0), 0);
-    const expectedCash = activeShift.starting_cash + totalCash;
+    // Servicios RNP: Fallida refunds still in / already out of this drawer.
+    const rnp = await loadRnpShiftSummary(getRnpShiftSummary, activeShift.id);
+    const expectedCash = activeShift.starting_cash + totalCash + rnpCashAdjustment(rnp);
     const variance = parseFloat(closingCash) - expectedCash;
 
     const closedShift = await closeShiftDb(activeShift.id, {
@@ -74,7 +77,7 @@ export const ShiftProvider = ({ children }) => {
     logAudit({
       action: AUDIT_ACTIONS.SHIFT_CLOSE,
       user,
-      details: `Ingresos: ${formatMXN(totalRevenue)} | Variación: ${formatMXN(variance)}`,
+      details: `Ingresos: ${formatMXN(totalRevenue)} | Variación: ${formatMXN(variance)}${rnp.count || rnpCashAdjustment(rnp) ? ` | RNP: servicios ${formatMXN(rnp.services_amount)}, comisiones ${formatMXN(rnp.fees_amount)}${rnpCashAdjustment(rnp) ? `, ajuste efectivo ${formatMXN(rnpCashAdjustment(rnp))}` : ''}` : ''}`,
     });
     return { ...closedShift, summary: { totalSales: shiftSales.length, totalRevenue, totalCash, totalCard, totalInsurance } };
   };

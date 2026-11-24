@@ -8,6 +8,7 @@ import { formatMXN } from '@/lib/currency';
 import {
   RNP_FEES, RNP_CATEGORIES, RNP_DEFAULT_RECARGA_AMOUNTS,
   getRnpSaldo, getRnpProductos, buildRnpCartLines, formatPhone, isRnpServiceLine,
+  RNP_LOW_BALANCE_DEFAULT, isRnpBalanceLow,
 } from '@/lib/rnpServices';
 
 // Pago de servicios / Tarjetas de regalo: enabled 2026-11-24 after the live
@@ -61,16 +62,19 @@ const fresh = () => ({
 const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
   const [s, setS] = useState(fresh());
   const set = (patch) => setS((prev) => ({ ...prev, ...patch }));
-  const [saldo, setSaldo] = useState({ loading: false, recargas: null, servicios: null, error: null });
+  const [saldo, setSaldo] = useState({ loading: false, recargas: null, servicios: null, error: null, threshold: RNP_LOW_BALANCE_DEFAULT });
   const [catalog, setCatalog] = useState({ loading: false, error: null, items: [] });
 
   const loadSaldo = async () => {
     setSaldo((p) => ({ ...p, loading: true, error: null }));
     try {
       const d = await getRnpSaldo();
-      setSaldo({ loading: false, recargas: d?.saldo_recargas ?? null, servicios: d?.saldo_servicios ?? null, error: null });
+      setSaldo({
+        loading: false, recargas: d?.saldo_recargas ?? null, servicios: d?.saldo_servicios ?? null, error: null,
+        threshold: Number.isFinite(Number(d?.low_balance_threshold)) ? Number(d.low_balance_threshold) : RNP_LOW_BALANCE_DEFAULT,
+      });
     } catch (e) {
-      setSaldo({ loading: false, recargas: null, servicios: null, error: e.message || 'No disponible' });
+      setSaldo({ loading: false, recargas: null, servicios: null, error: e.message || 'No disponible', threshold: RNP_LOW_BALANCE_DEFAULT });
     }
   };
 
@@ -211,6 +215,18 @@ const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
             {saldo.loading && <Loader2 className="w-4 h-4 animate-spin text-slate-500" aria-label="Consultando saldos" />}
             {saldo.error && <span className="text-xs text-red-600">{saldo.error}</span>}
           </div>
+          {(isRnpBalanceLow(saldo.recargas, saldo.threshold) || isRnpBalanceLow(saldo.servicios, saldo.threshold)) && (
+            <div role="alert" className="mt-2 flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>
+                Saldo RNP bajo (menos de {formatMXN(saldo.threshold)}):{' '}
+                {[isRnpBalanceLow(saldo.recargas, saldo.threshold) && `recargas ${formatMXN(saldo.recargas)}`,
+                  isRnpBalanceLow(saldo.servicios, saldo.threshold) && `servicios ${formatMXN(saldo.servicios)}`]
+                  .filter(Boolean).join(' · ')}
+                . Una operación mayor al saldo será rechazada. Avisa al administrador.
+              </span>
+            </div>
+          )}
         </DialogHeader>
 
         {s.step === 'menu' && (

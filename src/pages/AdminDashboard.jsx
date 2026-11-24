@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -39,6 +39,10 @@ import AdminArco from '@/components/admin/AdminArco';
 import AdminPartners from '@/components/admin/AdminPartners';
 import AdminKpis from '@/components/admin/AdminKpis';
 import StaffProfile from '@/components/StaffProfile';
+import AdminRnpServicios from '@/components/admin/AdminRnpServicios';
+import { countRnpPending, getRnpBalance } from '@/lib/db';
+import { isRnpBalanceLow, RNP_LOW_BALANCE_DEFAULT } from '@/lib/rnpServices';
+import { formatMXN } from '@/lib/currency';
 
 const AdminDashboard = () => {
   const { logout, user } = useAuth();
@@ -47,6 +51,24 @@ const AdminDashboard = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  // Servicios RNP: pending-operation badge + low-balance alert (no RNP calls;
+  // reads the log and the last known balance).
+  const [rnpPending, setRnpPending] = useState(0);
+  const [rnpBalance, setRnpBalance] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([countRnpPending().catch(() => 0), getRnpBalance().catch(() => null)]).then(([n, b]) => {
+      if (!alive) return;
+      setRnpPending(n || 0);
+      setRnpBalance(b);
+    });
+    return () => { alive = false; };
+  }, [location.pathname]);
+  const rnpThreshold = Number(rnpBalance?.low_balance_threshold ?? RNP_LOW_BALANCE_DEFAULT);
+  const rnpLow = [
+    isRnpBalanceLow(rnpBalance?.saldo_recargas, rnpThreshold) && `recargas ${formatMXN(rnpBalance.saldo_recargas)}`,
+    isRnpBalanceLow(rnpBalance?.saldo_servicios, rnpThreshold) && `servicios ${formatMXN(rnpBalance.saldo_servicios)}`,
+  ].filter(Boolean);
   
   const getCurrentTab = () => {
     const path = location.pathname;
@@ -77,6 +99,7 @@ const AdminDashboard = () => {
     if (path.includes('/reorder-report')) return 'reorder-report';
     if (path.includes('/lost-sales')) return 'lost-sales';
     if (path.includes('/kpis')) return 'kpis';
+    if (path.includes('/servicios-rnp')) return 'servicios-rnp';
     return 'overview';
   };
   
@@ -288,6 +311,16 @@ const AdminDashboard = () => {
         <BookOpen className="w-5 h-5" />
         <span className="font-medium">Contabilidad</span>
       </button>
+      <button onClick={() => navigateTo('/admin/servicios-rnp', 'servicios-rnp')} className={navButtonClass(isActive('servicios-rnp'))}>
+        <Smartphone className="w-5 h-5" />
+        <span className="font-medium flex-1 text-left">Servicios RNP</span>
+        {rnpPending > 0 && (
+          <span className="min-w-[1.5rem] px-1.5 py-0.5 rounded-full bg-orange-500 text-white text-xs font-bold text-center" aria-label={`${rnpPending} operaciones RNP pendientes`}>
+            {rnpPending}
+          </span>
+        )}
+        {rnpPending === 0 && rnpLow.length > 0 && <AlertTriangle className="w-4 h-4 text-amber-300" aria-label="Saldo RNP bajo" />}
+      </button>
     </nav>
   );
 
@@ -374,6 +407,23 @@ const AdminDashboard = () => {
                 </div>
             </aside>
             <main className="lg:col-span-8 xl:col-span-9">
+              {activeTab !== 'servicios-rnp' && (rnpPending > 0 || rnpLow.length > 0) && (
+                <button
+                  type="button"
+                  onClick={() => navigateTo('/admin/servicios-rnp', 'servicios-rnp')}
+                  className="w-full mb-4 flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-left text-sm text-amber-800 hover:bg-amber-100"
+                >
+                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>
+                    <b>Servicios RNP:</b>{' '}
+                    {[
+                      rnpPending > 0 && `${rnpPending} operación${rnpPending === 1 ? '' : 'es'} pendiente${rnpPending === 1 ? '' : 's'} de confirmar`,
+                      rnpLow.length > 0 && `saldo bajo (${rnpLow.join(', ')}; umbral ${formatMXN(rnpThreshold)})`,
+                    ].filter(Boolean).join(' · ')}
+                    . Ver detalles →
+                  </span>
+                </button>
+              )}
               <Routes>
                 <Route path="/" element={<AdminOverview />} />
                 <Route path="/users" element={<AdminUsers />} />
@@ -401,6 +451,7 @@ const AdminDashboard = () => {
                 <Route path="/reorder-report" element={<AdminReorderReport />} />
                 <Route path="/lost-sales" element={<AdminLostSales />} />
                 <Route path="/kpis" element={<AdminKpis />} />
+                <Route path="/servicios-rnp" element={<AdminRnpServicios />} />
                 <Route path="/settings" element={<AdminSettings />} />
                 <Route path="/profile" element={<StaffProfile />} />
               </Routes>

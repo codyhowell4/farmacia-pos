@@ -8,6 +8,7 @@ import { DateInput } from '@/components/ui/date-input';
 import { Label } from '@/components/ui/label';
 
 import { getSales, getInventory, getActivePrescriptionCount, getPreorders, getAppointments } from '@/lib/db';
+import { rnpSaleTotals } from '@/lib/rnpServices';
 
 const AdminOverview = () => {
   const [stats, setStats] = useState({
@@ -52,9 +53,14 @@ const AdminOverview = () => {
       const appointmentsToday = appointments.filter(a => a.appointment_date && a.appointment_date.startsWith(today)).length;
       const pendingOrders = sales.filter(s => !s.voided && (s.status === 'pending' || s.status === 'processing')).length;
       
+      // Servicios RNP: service amount = pass-through to RNP (not income);
+      // the comisión is income. Shown as their own cards when present.
+      const rnp = rnpSaleTotals(filteredSales.filter(s => !s.voided));
       setStats({
         totalSales: filteredSales.length,
         totalRevenue,
+        rnpServices: rnp.services,
+        rnpFees: rnp.fees,
         totalInventory: inventory.length,
         lowStockItems,
         outOfStockItems,
@@ -79,6 +85,10 @@ const AdminOverview = () => {
     { label: 'Recargas pendientes', value: stats.pendingPreorders, icon: Pill, color: 'from-teal-500 to-emerald-600', path: '/admin/preorders' },
     { label: 'Citas hoy', value: stats.appointmentsToday, icon: Clock, color: 'from-violet-500 to-purple-600', path: '/admin/appointments' },
     { label: 'Pedidos pendientes', value: stats.pendingOrders, icon: ShoppingCart, color: 'from-orange-500 to-red-600', path: '/admin/orders' },
+    ...((stats.rnpServices || 0) > 0 || (stats.rnpFees || 0) > 0 ? [
+      { label: 'Servicios RNP (incluidos en ingresos; se pagan a RNP)', value: formatMXN(stats.rnpServices || 0), icon: DollarSign, color: 'from-slate-500 to-slate-700', path: '/admin/servicios-rnp', money: true },
+      { label: 'Comisiones RNP (ingreso)', value: formatMXN(stats.rnpFees || 0), icon: DollarSign, color: 'from-green-600 to-teal-600', path: '/admin/servicios-rnp', money: true },
+    ] : []),
   ];
 
   return (

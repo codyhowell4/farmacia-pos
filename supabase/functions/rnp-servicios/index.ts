@@ -417,6 +417,30 @@ const credentials = (env: Record<string, string>) => {
   return { user, pass, key };
 };
 
+// ── Balances (rnp_balance) ───────────────────────────────────
+// Last known RNP balances: from obtenerSaldo (modal open) and from the
+// NuevoSaldo RNP returns after each sale — never an extra paid call.
+const DEFAULT_LOW_BALANCE = 200;
+const saveBalance = async (
+  db: SupabaseClient,
+  orgId: string,
+  patch: { recargas?: number | null; servicios?: number | null },
+  source: 'obtenerSaldo' | 'NuevoSaldo'
+) => {
+  const now = new Date().toISOString();
+  const row: Record<string, unknown> = { org_id: orgId, updated_at: now };
+  if (patch.recargas != null) Object.assign(row, { saldo_recargas: patch.recargas, recargas_at: now, recargas_source: source });
+  if (patch.servicios != null) Object.assign(row, { saldo_servicios: patch.servicios, servicios_at: now, servicios_source: source });
+  if (Object.keys(row).length <= 2) return;
+  const { error } = await db.from('rnp_balance').upsert(row, { onConflict: 'org_id' });
+  if (error) console.error('[rnp-servicios] balance save failed:', error);
+};
+const lowBalanceThreshold = async (db: SupabaseClient, orgId: string) => {
+  const { data } = await db.from('rnp_balance').select('low_balance_threshold').eq('org_id', orgId).maybeSingle();
+  const n = Number(data?.low_balance_threshold);
+  return Number.isFinite(n) ? n : DEFAULT_LOW_BALANCE;
+};
+
 // ── Handler ──────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -441,10 +465,14 @@ Deno.serve(async (req) => {
       const err = rnpError(r.inner) || r.fault || r.transportError || (r.answered ? null : 'Respuesta ilegible');
       await logReadOnly(db, caller, 'obtenerSaldo', envelope('obtenerSaldo', redacted), r, !err, err);
       if (err) return jsonResponse({ ok: false, error: `RNP: ${err}` }, 502);
+      const saldoRecargas = toNumber(findFirst(r.inner!, 'SaldoRecargas')?.text ?? null);
+      const saldoServicios = toNumber(findFirst(r.inner!, 'SaldoServicios')?.text ?? null);
+      await saveBalance(db, caller.orgId, { recargas: saldoRecargas, servicios: saldoServicios }, 'obtenerSaldo');
       return jsonResponse({
         ok: true,
-        saldo_recargas: toNumber(findFirst(r.inner!, 'SaldoRecargas')?.text ?? null),
-        saldo_servicios: toNumber(findFirst(r.inner!, 'SaldoServicios')?.text ?? null),
+        saldo_recargas: saldoRecargas,
+        saldo_servicios: saldoServicios,
+        low_balance_threshold: await lowBalanceThreshold(db, caller.orgId),
       });
     }
 
@@ -728,6 +756,12 @@ Deno.serve(async (req) => {
       rnp_fecha: fecha,
       duration_ms: r.durationMs,
     });
+
+    // NuevoSaldo = the balance RNP reports after this operation, for the
+    // pool the method draws from (recargas vs servicios).
+    if (nuevoSaldo != null && r.answered) {
+      await saveBalance(db, caller.orgId, action === 'recarga' ? { recargas: nuevoSaldo } : { servicios: nuevoSaldo }, 'NuevoSaldo');
+    }
 
     return jsonResponse({
       status,

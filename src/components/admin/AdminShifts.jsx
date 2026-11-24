@@ -10,7 +10,8 @@ import { Search } from 'lucide-react';
 import { exportShiftsSummaryCSV, printReport } from '@/lib/exportUtils';
 import { useToast } from '@/components/ui/use-toast';
 
-import { getShifts, getShiftSales, getSalesSince, closeShiftDb, updateShift, updateSale, createShift } from '@/lib/db';
+import { getShifts, getShiftSales, getSalesSince, closeShiftDb, updateShift, updateSale, createShift, getRnpShiftSummary } from '@/lib/db';
+import { loadRnpShiftSummary, rnpCashAdjustment } from '@/lib/rnpServices';
 
 const formatShiftDate = (value) => {
   if (!value) return '-';
@@ -155,7 +156,9 @@ const AdminShifts = () => {
       });
 
       const totalRevenue = shiftSales.reduce((sum, s) => sum + (s?.total || 0), 0);
-      const expectedCash = (shift.starting_cash || 0) + totalCash;
+      // Servicios RNP: Fallida refunds still in / already out of this drawer.
+      const rnp = await loadRnpShiftSummary(getRnpShiftSummary, shift.id);
+      const expectedCash = (shift.starting_cash || 0) + totalCash + rnpCashAdjustment(rnp);
       const variance = cash - expectedCash;
 
       await closeShiftDb(shift.id, {
