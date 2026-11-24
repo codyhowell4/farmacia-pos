@@ -11,7 +11,7 @@ import {
 } from '@/lib/rnpServices';
 
 // Pago de servicios / Tarjetas de regalo: enabled 2026-11-24 after the live
-// catalog review (Carrier = product `Pines`; reference field named by the
+// catalog review (Carrier = product `Nombre` per the RNP manual; reference field named by the
 // catalog's `Concepto`; customer email required by realizarServicio).
 export const RNP_SERVICIOS_FORM_READY = true;
 
@@ -112,7 +112,13 @@ const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
 
   // Fixed-amount products for the chosen carrier (monto > 0). Products
   // with monto 0/empty mean "open amount" (typed, 1.00–5000.00).
+  // RNP identifies a servicio/tarjeta by Nombre + Monto. When two catalog
+  // products share both (e.g. two CINEPOLIS combos at $100) RNP can't tell
+  // which one is meant: those products are hidden rather than risk
+  // delivering the wrong one.
   const fixedProducts = (carrier?.products || []).filter((p) => Number(p.monto) > 0)
+    .filter((p, _i, all) => s.cat === 'recarga' || s.cat === 'paquete'
+      || all.filter((q) => q.nombre === p.nombre && Number(q.monto) === Number(p.monto)).length === 1)
     .sort((a, b) => Number(a.monto) - Number(b.monto));
   const openProduct = (carrier?.products || []).find((p) => !(Number(p.monto) > 0)) || null;
 
@@ -150,8 +156,11 @@ const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
     // Parameters sent to RNP (from the live catalog, 2026-11-24):
     //  · recarga / paquete → Carrier = carrier @id, Monto = the product's
     //    exact catalog Monto (paquetes use coded values, e.g. 10005)
-    //  · servicio / tarjeta → Carrier = product Pines (unique per product),
-    //    Monto = catalog Monto, or the typed amount for "Monto Libre"
+    //  · servicio / tarjeta → Carrier = product Nombre (RNP manual:
+    //    producto_nombre from obtenerProductos, e.g. "FACTURAS TELMEX"),
+    //    Monto = catalog Monto, or the typed amount for "Monto Libre".
+    //    Tarjetas share a Nombre across amounts; RNP tells them apart by
+    //    Monto (ambiguous Nombre+Monto pairs are hidden, see below).
     const isRecarga = s.cat === 'recarga';
     const product = isRecarga ? fixedProducts.find((p) => Number(p.monto) === amount) || null : s.product;
     const productNombre = productDisplay(product || openProduct);
@@ -159,7 +168,7 @@ const ServiciosModal = ({ open, onOpenChange, cart, onAdd }) => {
     return {
       category: s.cat,
       carrierLabel: carrier?.label || '',
-      carrierParam: viaCarrier ? (carrier?.id || carrier?.label) : (product?.pines || product?.nombre || ''),
+      carrierParam: viaCarrier ? (carrier?.id || carrier?.label) : (product?.nombre || ''),
       montoParam: product && Number(product.monto) > 0 ? product.monto_param || null : null,
       productLabel: isRecarga ? formatMXN(amount) : productNombre,
       phone: s.phone,

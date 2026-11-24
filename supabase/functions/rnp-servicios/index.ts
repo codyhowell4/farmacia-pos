@@ -316,6 +316,9 @@ const isTruthyExito = (v: string | null) =>
 //   recargas : Nombre, Monto, VIP            (Carrier sent = @id)
 //   servicios: Nombre, Concepto, Monto ("Monto Libre" = open), Comision, Pines
 //   tarjetas : Nombre, Concepto, Monto, Comision, Pines (Pines unique per product)
+// RNP manual: realizarRecarga <Carrier> = company (carrier @id), <Monto> =
+// integer; realizarServicio <Carrier> = product Nombre (producto_nombre),
+// gift-card PIN comes back in <Codigo>.
 // Package products (TELCEL_INTERNET_AMIGO / TELCEL_SIN_LIMITE) carry a
 // CODED Monto: price × 1000 + suffix (e.g. "INTERNET AMIGO 10" → 10005).
 // `monto_param` is the exact string RNP listed (sent back verbatim);
@@ -585,6 +588,8 @@ Deno.serve(async (req) => {
     let monto: string;
     if (montoParam) {
       if (!/^\d{1,7}(\.\d{1,2})?$/.test(montoParam)) throw new ClientError('Monto inválido');
+      // realizarRecarga: <Monto> is an integer (RNP manual).
+      if (action === 'recarga' && !/^\d{1,7}$/.test(montoParam)) throw new ClientError('Monto inválido');
       const mp = Number(montoParam);
       const matches = mp <= 5000 ? Math.abs(mp - montoNum) < 0.005 : Math.floor(mp / 1000) === montoNum;
       if (!matches || !(montoNum > 0) || montoNum > 5000) throw new ClientError('Monto inválido');
