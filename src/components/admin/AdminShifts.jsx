@@ -10,7 +10,7 @@ import { Search } from 'lucide-react';
 import { exportShiftsSummaryCSV, printReport } from '@/lib/exportUtils';
 import { useToast } from '@/components/ui/use-toast';
 
-import { getShifts, getShiftSales, getSalesSince, closeShiftDb, updateShift, updateSale, createShift, getRnpShiftSummary } from '@/lib/db';
+import { getShifts, getShiftSales, getSalesSince, closeShiftDb, updateShift, updateSale, createShift, getRnpShiftSummary, getRnpTotalsByShift } from '@/lib/db';
 import { loadRnpShiftSummary, rnpCashAdjustment } from '@/lib/rnpServices';
 
 const formatShiftDate = (value) => {
@@ -57,17 +57,30 @@ const AdminShifts = () => {
     getShifts().then(data => setShifts(data)).catch(console.error);
   }, []);
 
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
     if (!exportStartDate || !exportEndDate) {
       toast({ title: 'Selecciona un rango de fechas', description: 'Elige la fecha de inicio y fin para descargar el CSV.', variant: 'destructive' });
       return;
     }
-    const exported = exportShiftsSummaryCSV(shifts, exportStartDate, exportEndDate);
+    // Servicios RNP as their own 'Servicios' rows (same split as Contabilidad).
+    // If it can't be loaded, export as before (all Medicamento) and say so.
+    let rnpByShift = {};
+    let rnpFailed = false;
+    try {
+      rnpByShift = await getRnpTotalsByShift(shifts.filter(s => s.status === 'closed'));
+    } catch (e) {
+      console.error('[turnos csv] RNP split failed:', e);
+      rnpFailed = true;
+    }
+    const exported = exportShiftsSummaryCSV(shifts, exportStartDate, exportEndDate, rnpByShift);
     if (exported === 0) {
       toast({ title: 'Sin turnos cerrados en este rango', description: 'No hay turnos cerrados entre las fechas seleccionadas.', variant: 'destructive' });
       return;
     }
-    toast({ title: 'CSV descargado', description: `${exported} turno(s) exportado(s).` });
+    toast({
+      title: 'CSV descargado',
+      description: `${exported} turno(s) exportado(s).${rnpFailed ? ' No se pudieron separar los Servicios RNP: todo quedó como Medicamento.' : ''}`,
+    });
   };
 
   const handlePrint = () => {

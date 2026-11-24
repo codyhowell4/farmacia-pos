@@ -69,7 +69,10 @@ export const exportShiftsCSV = (shifts) => {
   downloadCSV([headers.join(','), ...rows].join('\n'), 'shifts_report.csv');
 };
 
-export const exportShiftsSummaryCSV = (shifts, startDate, endDate) => {
+// rnpByShift (optional, from getRnpTotalsByShift): Servicios RNP get their
+// own 'Servicios' row per shift; Medicamento keeps the rest (same split as
+// Admin › Contabilidad). Without it the output is as before.
+export const exportShiftsSummaryCSV = (shifts, startDate, endDate, rnpByShift = {}) => {
   const start = startDate ? new Date(`${startDate}T00:00:00`) : null;
   const end = endDate ? new Date(`${endDate}T23:59:59.999`) : null;
 
@@ -87,17 +90,26 @@ export const exportShiftsSummaryCSV = (shifts, startDate, endDate) => {
   if (filtered.length === 0) return 0;
 
   const headers = ['Date', 'Cajero', 'Ingresos', 'Categoria', 'Subcategoria', '# de ventas'];
-  const rows = filtered.map(s => {
+  const rows = filtered.flatMap(s => {
     const date = new Date(s.closed_at || s.opened_at);
     const dateStr = `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
-    return [
+    const cajero = `"${(s.opened_by_name || '').replace(/"/g, '""')}"`;
+    const rnp = rnpByShift?.[s.id];
+    const hasRnp = rnp && (rnp.atClose !== 0 || rnp.current !== 0);
+    const medicamento = hasRnp ? (s.total_revenue || 0) - rnp.atClose : (s.total_revenue || 0);
+    const out = [[
       `"${dateStr}"`,
-      `"${(s.opened_by_name || '').replace(/"/g, '""')}"`,
-      (s.total_revenue || 0).toFixed(2),
+      cajero,
+      medicamento.toFixed(2),
       'Revenue',
       'Medicamento',
       s.total_sales || 0,
-    ].join(',');
+    ].join(',')];
+    if (hasRnp) {
+      // # de ventas left empty: those tickets are already counted above.
+      out.push([`"${dateStr}"`, cajero, rnp.current.toFixed(2), 'Revenue', 'Servicios', ''].join(','));
+    }
+    return out;
   });
 
   downloadCSV([headers.join(','), ...rows].join('\n'), 'turnos_resumen.csv');
