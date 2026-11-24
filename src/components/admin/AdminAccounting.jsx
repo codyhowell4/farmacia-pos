@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { formatMXN } from '@/lib/currency';
-import { getShifts, getExpenses, createExpense, updateExpense, deleteExpense, getManualRevenue, createManualRevenue, updateManualRevenue, deleteManualRevenue } from '@/lib/db';
+import { getShifts, getExpenses, createExpense, updateExpense, deleteExpense, getManualRevenue, createManualRevenue, updateManualRevenue, deleteManualRevenue, getRnpTotalsByShift } from '@/lib/db';
 
 const EXPENSE_CATEGORIES = [
   'Artículos de oficina',
@@ -33,6 +33,8 @@ const AdminAccounting = () => {
   const [shifts, setShifts] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [manualRevenue, setManualRevenue] = useState([]);
+  // Servicios RNP per closed shift (booked as Ingresos › Servicios).
+  const [rnpByShift, setRnpByShift] = useState({});
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
@@ -76,6 +78,11 @@ const AdminAccounting = () => {
         getManualRevenue(startDate || null, endDate || null),
       ]);
       setShifts(shiftsData || []);
+      // RNP lines are not Medicamento: split them out per shift. On error
+      // the shift rows stay as before (all Medicamento).
+      getRnpTotalsByShift((shiftsData || []).filter((s) => s.status === 'closed'))
+        .then(setRnpByShift)
+        .catch((e) => { console.error('[contabilidad] RNP split failed:', e); setRnpByShift({}); });
       setExpenses(expensesData || []);
       setManualRevenue(manualRevenueData || []);
     } catch (err) {
@@ -99,19 +106,44 @@ const AdminAccounting = () => {
         if (endDate && d > new Date(`${endDate}T23:59:59`)) return false;
         return true;
       })
-      .map((s) => ({
-        id: `shift-${s.id}`,
-        type: 'revenue',
-        date: s.closed_at || s.opened_at,
-        description: `Cierre De Caja ${s.locations?.name || 'Sucursal'}`,
-        amount: s.total_revenue || 0,
-        category: 'Ingresos',
-        subcategory: 'Medicamento',
-        totalSales: s.total_sales || 0,
-        avgOrder: s.total_sales > 0 ? (s.total_revenue || 0) / s.total_sales : 0,
-        raw: s,
-        source: 'shift',
-      }));
+      .flatMap((s) => {
+        const row = {
+          id: `shift-${s.id}`,
+          type: 'revenue',
+          date: s.closed_at || s.opened_at,
+          description: `Cierre De Caja ${s.locations?.name || 'Sucursal'}`,
+          amount: s.total_revenue || 0,
+          category: 'Ingresos',
+          subcategory: 'Medicamento',
+          totalSales: s.total_sales || 0,
+          avgOrder: s.total_sales > 0 ? (s.total_revenue || 0) / s.total_sales : 0,
+          raw: s,
+          source: 'shift',
+        };
+        // Servicios RNP (recargas, paquetes, pagos de servicios, tarjetas de
+        // regalo + comisiones): their own row under Ingresos › Servicios.
+        // Medicamento keeps the rest of what the shift closed with; a
+        // Fallida resolved after the close leaves Servicios (not income).
+        const rnp = rnpByShift[s.id];
+        if (!rnp || (rnp.atClose === 0 && rnp.current === 0)) return [row];
+        const medicamento = Math.round(((s.total_revenue || 0) - rnp.atClose) * 100) / 100;
+        return [
+          { ...row, amount: medicamento, avgOrder: s.total_sales > 0 ? medicamento / s.total_sales : 0 },
+          {
+            id: `shift-rnp-${s.id}`,
+            type: 'revenue',
+            date: s.closed_at || s.opened_at,
+            description: `Servicios RNP ${s.locations?.name || 'Sucursal'} (${rnp.ops} operación${rnp.ops === 1 ? '' : 'es'})`,
+            amount: rnp.current,
+            category: 'Ingresos',
+            subcategory: 'Servicios',
+            totalSales: null,
+            avgOrder: null,
+            raw: s,
+            source: 'shift',
+          },
+        ];
+      });
 
     const manual = manualRevenue.map((r) => ({
       id: `manual-${r.id}`,
@@ -128,7 +160,7 @@ const AdminAccounting = () => {
     }));
 
     return [...shiftRevenue, ...manual];
-  }, [shifts, manualRevenue, startDate, endDate]);
+  }, [shifts, manualRevenue, startDate, endDate, rnpByShift]);
 
   const expenseTransactions = useMemo(() => {
     return expenses.map((e) => ({

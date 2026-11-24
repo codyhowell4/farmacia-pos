@@ -1,10 +1,16 @@
 // Export utilities for CSV and print-to-PDF
+import { isRnpServiceSaleItem, isRnpFeeSaleItem } from '@/lib/rnpServices';
+
+// Last column of the sales CSV: marks Servicios RNP lines (pass-through to
+// RNP vs the store's comisión). Empty for regular products/services.
+const rnpMarker = (item) =>
+  isRnpServiceSaleItem(item) ? 'Servicio RNP' : isRnpFeeSaleItem(item) ? 'Comision RNP' : '';
 
 export const exportSalesCSV = (sales) => {
   const headers = [
     'Folio','Sale ID','Date','Salesperson','Pharmacy','Payment Method','Status',
     'Item Name','Qty','Unit Price','Original Price','Override By',
-    'Sale Total','Discount Code','Discount %','Discount Amount'
+    'Sale Total','Discount Code','Discount %','Discount Amount','RNP'
   ];
   const rows = sales.flatMap(sale =>
     (sale.sale_items || sale.items || []).map(item => [
@@ -24,6 +30,7 @@ export const exportSalesCSV = (sales) => {
       `"${sale.discount_code || sale.discount?.code || ''}"`,
       sale.discount_value || sale.discount?.value || 0,
       (sale.discount_amount || sale.discount?.amount || 0).toFixed(2),
+      `"${rnpMarker(item)}"`,
     ].join(','))
   );
   downloadCSV([headers.join(','), ...rows].join('\n'), 'sales_report.csv');

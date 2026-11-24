@@ -4029,3 +4029,62 @@ export const setRnpLowBalanceThreshold = async (threshold) => {
   if (error) throw error;
   return data;
 };
+
+// Contabilidad: RNP lines (service + comisión) per shift, so closed-shift
+// revenue can be booked as Ingresos › Servicios instead of Medicamento.
+// Returns { [shiftId]: { current, atClose, ops } } where
+//   current = RNP income now (Fallida lines are zeroed on the sale)
+//   atClose = RNP amount that was inside shifts.total_revenue when the
+//             shift closed (a Fallida resolved AFTER the close was still
+//             counted then at its original price)
+export const getRnpTotalsByShift = async (shifts) => {
+  const byId = Object.fromEntries((shifts || []).filter((s) => s?.id).map((s) => [s.id, s]));
+  const ids = Object.keys(byId);
+  if (ids.length === 0) return {};
+  const items = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const rows = await fetchAllPages(() =>
+      supabase
+        .from('sale_items')
+        .select('price, original_price, quantity, rnp_op_id, sales!inner(shift_id, voided)')
+        .not('rnp_op_id', 'is', null)
+        .in('sales.shift_id', chunk)
+        .eq('sales.voided', false)
+    );
+    items.push(...(rows || []));
+  }
+  if (items.length === 0) return {};
+  const opIds = [...new Set(items.map((r) => r.rnp_op_id))];
+  const resolvedAt = {};
+  for (let i = 0; i < opIds.length; i += 200) {
+    const { data, error } = await supabase
+      .from('rnp_transactions')
+      .select('op_id, resolution, resolved_at')
+      .in('op_id', opIds.slice(i, i + 200))
+      .eq('resolution', 'fallida');
+    if (error) throw error;
+    (data || []).forEach((t) => { resolvedAt[t.op_id] = t.resolved_at; });
+  }
+  const out = {};
+  items.forEach((r) => {
+    const shiftId = r.sales?.shift_id;
+    const shift = byId[shiftId];
+    if (!shift) return;
+    const qty = Number(r.quantity || 0);
+    const now = Number(r.price || 0) * qty;
+    const fallidaAfterClose = resolvedAt[r.rnp_op_id] && shift.closed_at
+      && new Date(resolvedAt[r.rnp_op_id]) > new Date(shift.closed_at);
+    const atClose = fallidaAfterClose ? Number(r.original_price ?? r.price ?? 0) * qty : now;
+    const o = (out[shiftId] ||= { current: 0, atClose: 0, ops: new Set() });
+    o.current += now;
+    o.atClose += atClose;
+    o.ops.add(r.rnp_op_id);
+  });
+  Object.values(out).forEach((o) => {
+    o.current = Math.round(o.current * 100) / 100;
+    o.atClose = Math.round(o.atClose * 100) / 100;
+    o.ops = o.ops.size;
+  });
+  return out;
+};
