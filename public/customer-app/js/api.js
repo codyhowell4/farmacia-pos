@@ -1994,6 +1994,20 @@ window.FarmaciaAPI = (function () {
      * for the signed-in customer. Returns null when it can't be read so
      * the UI can leave the control untouched instead of guessing.
      */
+    // true only when the customer's latest signed 'privacidad' document is
+    // the active aviso text (RPC my_consent_currency, Aviso v3 work).
+    // Any error/missing RPC → false (analytics stays off).
+    async hasSignedCurrentAviso() {
+      if (!sb) return false;
+      try {
+        const { data, error } = await sb.rpc('my_consent_currency');
+        if (error) throw error;
+        return data?.privacidad === true;
+      } catch (err) {
+        return false;
+      }
+    },
+
     async getMarketingOptOut() {
       if (!sb) return null;
       try {
