@@ -162,6 +162,11 @@ const AdminDiscounts = () => {
                   <td className="px-4 py-3 text-sm font-medium text-slate-900 flex items-center">
                     <Ticket className="w-4 h-4 mr-2 text-slate-500" />
                     {discount.code}
+                    {discount.restricted_to_profile_id && (
+                      <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[11px] font-semibold">
+                        Personal{discount.include_rnp ? ' · incluye servicios RNP' : ''}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm font-bold text-green-600">
                     {discount.type === 'cost_plus' ? `Costo +${discount.value}%` : `${discount.value}%`}

@@ -61,7 +61,7 @@ const ServiciosResultDialog = ({ sending, outcome, onClose, onPrint }) => {
               <div key={o.line.id} className="rounded-lg border border-slate-200 p-3 text-sm space-y-1">
                 <div className="flex items-center justify-between gap-2">
                   <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${b.cls}`}>{b.label}</span>
-                  <span className="font-bold">{formatMXN(Number(o.line.price) + fee)}</span>
+                  <span className="font-bold">{formatMXN(o.charged ?? (Number(o.line.price) + fee))}</span>
                 </div>
                 <p className="font-medium">{o.line.name}</p>
                 <p className="text-slate-500">{o.line.rnp.refLabel ? `Ref. ${o.line.rnp.phone}` : `Tel. ${formatPhone(o.line.rnp.phone)}`}</p>

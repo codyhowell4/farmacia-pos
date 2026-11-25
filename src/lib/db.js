@@ -4056,35 +4056,41 @@ export const getRnpTotalsByShift = async (shifts) => {
   }
   if (items.length === 0) return {};
   const opIds = [...new Set(items.map((r) => r.rnp_op_id))];
-  const resolvedAt = {};
+  // Fallida ops: refund_amount = exactly what was zeroed on the sale (what
+  // the customer was charged; $0 on a personal-code test sale).
+  const fallida = {};
   for (let i = 0; i < opIds.length; i += 200) {
     const { data, error } = await supabase
       .from('rnp_transactions')
-      .select('op_id, resolution, resolved_at')
+      .select('op_id, resolution, resolved_at, refund_amount')
       .in('op_id', opIds.slice(i, i + 200))
       .eq('resolution', 'fallida');
     if (error) throw error;
-    (data || []).forEach((t) => { resolvedAt[t.op_id] = t.resolved_at; });
+    (data || []).forEach((t) => { fallida[t.op_id] = t; });
   }
   const out = {};
+  const perOp = {}; // `${shiftId}|${opId}` → current
   items.forEach((r) => {
     const shiftId = r.sales?.shift_id;
+    if (!byId[shiftId]) return;
+    const key = `${shiftId}|${r.rnp_op_id}`;
+    perOp[key] = (perOp[key] || 0) + Number(r.price || 0) * Number(r.quantity || 0);
+  });
+  Object.entries(perOp).forEach(([key, current]) => {
+    const [shiftId, opId] = key.split('|');
     const shift = byId[shiftId];
-    if (!shift) return;
-    const qty = Number(r.quantity || 0);
-    const now = Number(r.price || 0) * qty;
-    const fallidaAfterClose = resolvedAt[r.rnp_op_id] && shift.closed_at
-      && new Date(resolvedAt[r.rnp_op_id]) > new Date(shift.closed_at);
-    const atClose = fallidaAfterClose ? Number(r.original_price ?? r.price ?? 0) * qty : now;
-    const o = (out[shiftId] ||= { current: 0, atClose: 0, ops: new Set() });
-    o.current += now;
+    const f = fallida[opId];
+    // A Fallida resolved AFTER the close was still inside total_revenue then.
+    const afterClose = f && shift.closed_at && f.resolved_at && new Date(f.resolved_at) > new Date(shift.closed_at);
+    const atClose = current + (afterClose ? Number(f.refund_amount || 0) : 0);
+    const o = (out[shiftId] ||= { current: 0, atClose: 0, ops: 0 });
+    o.current += current;
     o.atClose += atClose;
-    o.ops.add(r.rnp_op_id);
+    o.ops += 1;
   });
   Object.values(out).forEach((o) => {
     o.current = Math.round(o.current * 100) / 100;
     o.atClose = Math.round(o.atClose * 100) / 100;
-    o.ops = o.ops.size;
   });
   return out;
 };

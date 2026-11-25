@@ -765,6 +765,18 @@ const PoSDashboard = () => {
   const applyDiscount = async () => {
     try {
       const foundDiscount = await findDiscount(discountCode);
+      // Personal codes (e.g. CODY, owner test sales) only work for their
+      // owner's login. The server refuses the sale too (trigger on sales).
+      if (foundDiscount?.restricted_to_profile_id && foundDiscount.restricted_to_profile_id !== user?.id) {
+        logAudit({
+          action: AUDIT_ACTIONS.DISCOUNT_APPLIED,
+          user,
+          details: `Código personal ${foundDiscount.code} RECHAZADO: no pertenece a este usuario`,
+        });
+        toast({ title: 'Código no autorizado', description: 'Este código es personal y no se puede usar con tu cuenta.', variant: 'destructive' });
+        setDiscount(null);
+        return;
+      }
       if (foundDiscount) {
         setDiscount(foundDiscount);
         logAudit({
@@ -1372,7 +1384,9 @@ const PoSDashboard = () => {
           for (const line of cart.filter(isRnpServiceLine)) {
             const result = await sendRnpLine(line, { shiftId: activeShift?.id || null, email: rnpEmail });
             const feeLine = cart.find((i) => i.rnpFeeFor === line.rnp.opId) || null;
-            rnpOutcomes.push({ line, feeLine, result });
+            // charged = what the customer paid for this service + comisión
+            // ($0 with a personal include_rnp code like CODY).
+            rnpOutcomes.push({ line, feeLine, result, charged: rnpCharged(line.price) + rnpCharged(feeLine?.price) });
           }
         } finally {
           setRnpSending(false);
@@ -1381,10 +1395,10 @@ const PoSDashboard = () => {
         rnpOutcomes.forEach((o) => {
           if (!isRefundableStatus(o.result.status)) return;
           refundIds.add(o.line.id);
-          rnpRefund += Number(o.line.price) || 0;
+          rnpRefund += rnpCharged(o.line.price);
           if (o.feeLine) {
             refundIds.add(o.feeLine.id);
-            rnpRefund += Number(o.feeLine.price) || 0;
+            rnpRefund += rnpCharged(o.feeLine.price);
           }
         });
         rnpRefund = Math.round(rnpRefund * 100) / 100;
@@ -1422,6 +1436,13 @@ const PoSDashboard = () => {
         const saleItems = saleCart.map((item) => {
           let price = item.price;
           let originalPrice = item.originalPrice;
+          // RNP lines covered by a personal include_rnp code are stored at the
+          // charged price (original_price keeps the face value), so RNP
+          // income reports read what was actually collected.
+          if (rnpDiscountPct > 0 && isRnpCartLine(item)) {
+            price = rnpCharged(item.price);
+            originalPrice = item.price;
+          }
           if (isMembershipActive && isMembershipConsultation(item)) {
             // Prefer the server-validated free/paid split so consumption
             // matches the authoritative validation.
@@ -1472,7 +1493,7 @@ const PoSDashboard = () => {
           change_due: cashPayment ? (cashPayment.amount - (cashPayment.amountApplied || cashPayment.amount)) : null,
           discount_code: useMembershipDiscount ? 'MEMBRESIA' : (discount?.code || null),
           discount_value: useMembershipDiscount ? membershipDiscountPercent : (discount?.value || null),
-          discount_amount: discountAmount || null,
+          discount_amount: saleDiscountAmount || null,
           iva_enabled: taxSettings.ivaEnabled,
           iva_rate: taxSettings.ivaRate,
           iva_amount: ivaAmount || null,
@@ -1790,12 +1811,12 @@ const PoSDashboard = () => {
             receta: cart.find(c => c.id === item.inventory_id)?.requires_prescription ? recetaInfo : null,
           })),
           payments: payments,
-          discount: (discount || useMembershipDiscount) && discountAmount !== 0
+          discount: (discount || useMembershipDiscount) && (saleDiscountAmount !== 0 || rnpDiscountPct > 0)
             ? {
                 code: useMembershipDiscount ? 'MEMBRESIA' : (discount?.code || null),
                 name: appliedDiscountLabel,
                 percent: appliedDiscountPercent,
-                amount: discountAmount,
+                amount: saleDiscountAmount,
               }
             : null,
           iva: { rate: taxSettings.ivaRate, amount: ivaAmount },
@@ -1977,15 +1998,27 @@ const PoSDashboard = () => {
       ? null
       : discount?.value || null;
 
+  // Codes flagged include_rnp (only personal codes, e.g. CODY) also cover
+  // the Servicios RNP lines + comisiones. Every other code leaves them at
+  // face value (rnpDiscountPct = 0 → identical to before).
+  const rnpDiscountPct = discount && !isCostPlus && !useMembershipDiscount && discount.include_rnp
+    ? Math.min(100, Math.max(0, Number(discount.value) || 0))
+    : 0;
+  const rnpCharged = (price) => Math.round(Number(price || 0) * (1 - rnpDiscountPct / 100) * 100) / 100;
+  const rnpDiscountAmount = Math.round((rnpSubtotal - rnpCharged(rnpSubtotal)) * 100) / 100;
+
   const subtotal = originalSubtotal;
-  const discountAmount = isCostPlus ? originalSubtotal - costPlusSubtotal : appliedDiscountAmount;
-  const subtotalAfterDiscount = isCostPlus
+  const discountAmount = (isCostPlus ? originalSubtotal - costPlusSubtotal : appliedDiscountAmount) + rnpDiscountAmount;
+  // Discount stored on the sale: RNP lines are saved at the charged price,
+  // so their share is not repeated in sales.discount_amount.
+  const saleDiscountAmount = discountAmount - rnpDiscountAmount;
+  const subtotalAfterDiscount = (isCostPlus
     ? costPlusSubtotal
-    : regularSubtotal - appliedDiscountAmount + consultationEffectiveTotal + feeSubtotal + rnpSubtotal;
+    : regularSubtotal - appliedDiscountAmount + consultationEffectiveTotal + feeSubtotal + rnpSubtotal) - rnpDiscountAmount;
   // The signup fee generates no IVA (matches the membership-payment RPC
   // bookings, which are iva_enabled=false) — it rides at $0 anyway
   // ("Primer mes gratis"), but the exclusion stays for legacy priced fees.
-  const ivaAmount = calcIVA(subtotalAfterDiscount - feeSubtotal - rnpSubtotal, taxSettings);
+  const ivaAmount = calcIVA(subtotalAfterDiscount + rnpDiscountAmount - feeSubtotal - rnpSubtotal, taxSettings);
   const finalTotal = subtotalAfterDiscount + ivaAmount;
 
   // Hypothetical member savings for the Cobrar upsell note: anything labeled
