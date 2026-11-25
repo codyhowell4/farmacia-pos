@@ -75,29 +75,26 @@
     </main>
 
     <!-- Bottom Navigation - 5 Tabs -->
-    <nav class="bottom-nav">
-      <a href="#" class="nav-item" data-page="consulta">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        Consulta
+    <nav class="bottom-nav" aria-label="Navegación principal">
+      <a href="#" class="nav-item" data-page="inicio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>
+        Inicio
       </a>
       <a href="#" class="nav-item" data-page="salud">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
         Salud
       </a>
-      <a href="#" class="nav-item" data-page="pulsera">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="1"/><path d="M4 17l5 1 .75-1.5"/><path d="M15 21v-4l-4-3 1-6"/><path d="M7 12V9l5-1 3 3 3 1"/></svg>
-        Pulsera
+      <a href="#" class="nav-item" data-page="monedas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>
+        Monedas
       </a>
-      <a href="#" class="nav-item" data-page="shop">
-        <span style="position: relative; display: flex; flex-direction: column; align-items: center;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-          <span id="nav-cart-badge" style="position: absolute; top: -4px; right: 2px; background: #E0A63E; color: #141B5E; font-size: 0.6rem; padding: 1px 5px; border-radius: 8px; font-weight: 700; display: none;"></span>
-        </span>
-        Compras
+      <a href="#" class="nav-item" data-page="ahorro">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+        Ahorro
       </a>
-      <a href="#" class="nav-item" data-page="membresias">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        Membresías
+      <a href="#" class="nav-item" data-page="consulta">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3v6a6 6 0 0 0 12 0V3"/><path d="M12 15v2a4 4 0 0 0 8 0v-2"/><circle cx="20" cy="13" r="2"/></svg>
+        Consulta
       </a>
     </nav>
 
@@ -181,6 +178,10 @@
           <span class="menu-icon">📄</span>
           <span>Mis Recetas</span>
         </a>
+        <a href="#" class="menu-item" data-page="membresias">
+          <span class="menu-icon">⭐</span>
+          <span>Membresías</span>
+        </a>
         <a href="#" class="menu-item" data-page="orders">
           <span class="menu-icon">📦</span>
           <span>Mis Pedidos</span>
@@ -236,7 +237,7 @@
   <!-- Supabase integration (Phase 1) -->
   <script src="/vendor/supabase-js.min.js"></script>
   <script src="js/supabase.js?v=1"></script>
-  <script src="js/api.js?v=8"></script>
+  <script src="js/api.js?v=9"></script>
   <script src="js/consentDocs.js?v=4"></script>
 
   <!-- PWA: register the service worker on every load (installability) and
@@ -250,6 +251,6 @@
   </script>
   <script src="js/install.js?v=1"></script>
 
-  <script type="module" src="js/app.js?v=26"></script>
+  <script type="module" src="js/app.js?v=27"></script>
 </body>
 </html>

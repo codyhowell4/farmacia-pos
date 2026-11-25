@@ -22,6 +22,7 @@ import { VoiceAI, HealthFAQ } from './voiceAI.js';
 import { FastingTracker, SleepTracker, CheckInSystem } from './tracking.js';
 import { NotificationManager } from './notifications.js';
 import { renderPulsera } from './pulsera.js?v=6';
+import { registerApolo, renderInicio, renderMonedas, renderAhorro, renderChequeo, getApoloStreak } from './apolo.js?v=1';
 
 // Toast notifications (CSS in style.css)
 function showToast(message, type = 'info') {
@@ -39,7 +40,7 @@ function showToast(message, type = 'info') {
 }
 
 // State
-let currentPage = 'consulta';
+let currentPage = 'inicio';
 
 // DOM Elements
 const mainContent = document.getElementById('main-content');
@@ -113,6 +114,15 @@ const PAID_PAGE_NAMES = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+  // App Apolo screens (Inicio, Monedas, Ahorro, Chequeo) live in apolo.js.
+  registerApolo({
+    getAuthUser: () => currentAuthUser,
+    getProfile: () => currentCustomerProfile,
+    showToast,
+    goPage: (p) => window.goPage(p),
+    getMain: () => mainContent,
+  });
+
   // Check if onboarding is needed
   // The profile-onboarding modal (height/IMC, fitness era) is retired along
   // with the fitness sections — do not auto-show it.
@@ -135,7 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
   } else if (wantsFirma) {
     renderFirmaRegistro();
   } else {
-    renderPage('consulta'); // Start page: Consulta (free for all users)
+    renderPage('inicio'); // Start page: Inicio (home)
   }
   setupNavigation();
   setupMenuNavigation();
@@ -144,9 +154,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Show 🔒 badges on paid sections while tier is unknown/free
   updateTierBadges();
   
-  // Set Consulta nav as active by default
+  // Inicio is the home tab
   navItems.forEach(nav => nav.classList.remove('active'));
-  document.querySelector('.bottom-nav .nav-item[data-page="consulta"]')?.classList.add('active');
+  document.querySelector('.bottom-nav .nav-item[data-page="inicio"]')?.classList.add('active');
   
   // Initial cart badge update
   updateCartBadge();
@@ -307,7 +317,7 @@ function renderLogin() {
       </div>
       
       <div style="text-align: center; margin-top: 1.5rem; color: rgba(255,255,255,0.5); font-size: 0.8rem;">
-        O continúa como <button onclick="renderPage('consulta')" style="background: none; border: none; color: #46AC78; cursor: pointer;">invitado</button>
+        O continúa como <button onclick="goPage('inicio')" style="background: none; border: none; color: #46AC78; cursor: pointer;">invitado</button>
       </div>
     </div>
   `;
@@ -361,10 +371,10 @@ async function handleLogin() {
     return;
   }
 
-  currentPage = 'consulta';
+  currentPage = 'inicio';
   navItems.forEach(nav => nav.classList.remove('active'));
-  document.querySelector('[data-page="consulta"]')?.classList.add('active');
-  renderPage('consulta');
+  document.querySelector('.bottom-nav [data-page="inicio"]')?.classList.add('active');
+  renderPage('inicio');
   scheduleMisDatosPrompt();
   showToast('Bienvenido de vuelta, ' + (currentCustomerProfile?.name || currentAuthUser.email), 'success');
 }
@@ -616,7 +626,7 @@ function renderSignup() {
       </div>
       
       <div style="text-align: center; margin-top: 1.5rem; color: rgba(255,255,255,0.5); font-size: 0.8rem;">
-        O continúa como <button onclick="renderPage('consulta')" style="background: none; border: none; color: #46AC78; cursor: pointer;">invitado</button>
+        O continúa como <button onclick="goPage('inicio')" style="background: none; border: none; color: #46AC78; cursor: pointer;">invitado</button>
       </div>
     </div>
   `;
@@ -708,10 +718,10 @@ async function handleSignup() {
       if (await checkConsentGate()) return;
       // Health onboarding wizard (one-time, skippable) comes after consent
       if (await checkHealthOnboardingGate()) return;
-      currentPage = 'consulta';
+      currentPage = 'inicio';
       navItems.forEach(nav => nav.classList.remove('active'));
-      document.querySelector('[data-page="consulta"]')?.classList.add('active');
-      renderPage('consulta');
+      document.querySelector('.bottom-nav [data-page="inicio"]')?.classList.add('active');
+      renderPage('inicio');
     }, 1500);
   }
 }
@@ -1470,12 +1480,12 @@ async function routePostAuthLanding() {
     renderCheckinForm();
     return;
   }
-  let landingPage = 'consulta';
+  let landingPage = 'inicio';
   try {
     const membership = await FarmaciaAPI.getMembershipDetails();
     if (membership?.isFamilyMember) landingPage = 'membresias';
   } catch (e) {
-    console.warn('[Auth] Membership check failed; landing on Consulta:', e);
+    console.warn('[Auth] Membership check failed; landing on Inicio:', e);
   }
   currentPage = landingPage;
   navItems.forEach(nav => nav.classList.remove('active'));
@@ -2128,10 +2138,10 @@ async function handleFirmaRegistroSubmit() {
   // Health onboarding wizard (one-time, skippable) comes after consent
   if (await checkHealthOnboardingGate()) return;
 
-  currentPage = 'consulta';
+  currentPage = 'inicio';
   navItems.forEach(nav => nav.classList.remove('active'));
-  document.querySelector('.bottom-nav .nav-item[data-page="consulta"]')?.classList.add('active');
-  renderPage('consulta');
+  document.querySelector('.bottom-nav .nav-item[data-page="inicio"]')?.classList.add('active');
+  renderPage('inicio');
 }
 
 // ============================================================
@@ -2255,7 +2265,7 @@ async function handleCheckinSubmit(e) {
         <p style="margin: 0 auto 0.5rem; max-width: 340px; font-size: 0.95rem; opacity: 0.9; line-height: 1.6;">
           El doctor${result.doctor_assigned ? ` (${escapeHtml(result.doctor_assigned)})` : ''} ya puede ver tu información. Avisa al personal que ya hiciste check-in.
         </p>
-        <button onclick="renderPage('consulta')" style="margin-top: 1.5rem; padding: 0.9rem 2rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 700; font-size: 1rem; cursor: pointer;">Volver al inicio</button>
+        <button onclick="goPage('inicio')" style="margin-top: 1.5rem; padding: 0.9rem 2rem; background: linear-gradient(135deg, #46AC78, #359268); color: white; border: none; border-radius: 12px; font-weight: 700; font-size: 1rem; cursor: pointer;">Volver al inicio</button>
       </div>
     `;
     window.scrollTo(0, 0);
@@ -2917,7 +2927,7 @@ async function handleLogout() {
 
   updateMenuUserInfo();
   closeMenu();
-  renderPage('consulta');
+  window.goPage('inicio');
   showToast('Sesión cerrada', 'info');
 }
 
@@ -3333,6 +3343,10 @@ function renderPage(page) {
   }
 
   switch(page) {
+    case 'inicio': renderInicio(); break;
+    case 'monedas': renderMonedas(); break;
+    case 'ahorro': renderAhorro(); break;
+    case 'chequeo': renderChequeo(); break;
     case 'consulta': renderConsulta(); break;
     case 'salud': renderSalud(); break;
     case 'pulsera': renderPulsera(); break;
@@ -3408,7 +3422,11 @@ function renderHome() {
   const activeMinutes = Store.getActiveMinutes() || 0;
 
   // Get streak (would come from Store in real implementation)
-  const streakDays = 12;
+  // Real streak (Monedas Apolo server streak, or the on-device one).
+  const streakDays = window.__apoloStreak ?? 0;
+  getApoloStreak().then((n) => {
+    if (n !== window.__apoloStreak) { window.__apoloStreak = n; const el = document.querySelector('.streak-days-value'); if (el) el.textContent = `${n} días`; }
+  }).catch(() => {});
 
   // Calculate display values
   const exerciseGoal = 60;
@@ -3492,7 +3510,7 @@ function renderHome() {
     <div class="streak-card">
       <div class="flame">🔥</div>
       <div class="content">
-        <div class="days">${streakDays} días</div>
+        <div class="days streak-days-value">${streakDays} días</div>
         <div class="message">¡Sigue con tu racha!</div>
       </div>
     </div>

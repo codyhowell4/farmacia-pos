@@ -891,6 +891,108 @@ window.FarmaciaAPI = (function () {
      * null on any error so the UI keeps the schedule-based estimate.
      * estimated_wait_minutes is null when no doctor is clocked in.
      */
+    // ── App Apolo: Monedas Apolo + Ahorro + Chequeo (2026-11-25) ──
+    // Every coin rule is enforced server-side (coins_* RPCs). Only the fact
+    // that a goal was met is sent — never health values (aviso §7).
+    async coinsMyStatus() {
+      if (!sb) return null;
+      try {
+        const { data, error } = await sb.rpc('coins_my_status');
+        if (error) throw error;
+        return data || null;
+      } catch (err) {
+        console.warn('[FarmaciaAPI] coinsMyStatus error:', err.message);
+        return null;
+      }
+    },
+
+    async coinsEnroll(consentVersion) {
+      if (!sb) return { error: new Error('Sin conexión') };
+      const { data, error } = await sb.rpc('coins_enroll', { p_consent_version: consentVersion });
+      return { data, error };
+    },
+
+    async coinsUnenroll() {
+      if (!sb) return { error: new Error('Sin conexión') };
+      const { data, error } = await sb.rpc('coins_unenroll');
+      return { data, error };
+    },
+
+    // kind: 'steps' | 'weight' | 'dose' (slot 'HH:MM' for doses)
+    async coinsClaim(kind, slot = null) {
+      if (!sb) return { data: null, error: new Error('Sin conexión') };
+      const { data, error } = await sb.rpc('coins_claim', { p_kind: kind, p_slot: slot });
+      return { data, error };
+    },
+
+    // Public rewards ladder (shown to guests too).
+    async getCoinTiersPublic() {
+      if (!sb) return [];
+      try {
+        const orgId = (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
+        const { data, error } = await sb.from('coin_reward_tiers').select('id, coins, title, kind, percent, cap_amount, applies_to')
+          .eq('org_id', orgId).eq('active', true).order('coins');
+        if (error) throw error;
+        return data || [];
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getCoinTiersPublic error:', err.message);
+        return [];
+      }
+    },
+
+    async getGenericOptions(query = null) {
+      if (!sb) return [];
+      try {
+        const orgId = (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID;
+        const { data, error } = await sb.rpc('apolo_generic_search', { p_org_id: orgId, p_query: query || null });
+        if (error) throw error;
+        return Array.isArray(data) ? data : [];
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getGenericOptions error:', err.message);
+        return [];
+      }
+    },
+
+    async getMySavings() {
+      if (!sb) return null;
+      try {
+        const { data, error } = await sb.rpc('apolo_my_savings');
+        if (error) throw error;
+        return data || null;
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getMySavings error:', err.message);
+        return null;
+      }
+    },
+
+    // Chequeo en sucursal: lands in appointments (type in_person,
+    // service 'chequeo') so staff see it in their agenda.
+    async createChequeoAppointment({ dateIso, tests, notes }) {
+      if (!sb) return { data: null, error: new Error('Sin conexión') };
+      const user = await getAuthUser();
+      if (!user) return { data: null, error: new Error('Inicia sesión para agendar') };
+      try {
+        const { data: customer, error: custErr } = await sb.from('customers').select('id, org_id').eq('profile_id', user.id).single();
+        if (custErr) throw custErr;
+        const labels = { glucosa: 'Glucosa', presion: 'Presión', peso: 'Peso e IMC' };
+        const { data, error } = await sb.from('appointments').insert({
+          org_id: customer.org_id || (window.farmaciaSupabaseConfig || {}).DEFAULT_ORG_ID,
+          customer_id: customer.id,
+          appointment_date: dateIso,
+          status: 'pending',
+          type: 'in_person',
+          service: 'chequeo',
+          service_detail: { tests, notes: notes || null },
+          notes: `Chequeo: ${tests.map((t) => labels[t] || t).join(', ')}${notes ? ` · ${notes}` : ''}`,
+        }).select().single();
+        if (error) throw error;
+        return { data, error: null };
+      } catch (err) {
+        console.error('[FarmaciaAPI] createChequeoAppointment failed:', err.message);
+        return { data: null, error: err };
+      }
+    },
+
     async getQueueStatus() {
       if (!sb) return null;
       try {
