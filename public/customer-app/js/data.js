@@ -480,80 +480,21 @@ export const STORAGE_KEYS = {
 
 // Initialize storage with defaults
 export function initializeStorage() {
-  if (!localStorage.getItem(STORAGE_KEYS.MEDICINES)) {
-    // Test medicines for the pharmacy
-    const testMedicines = [
-      { id: 'med_1', name: 'Paracetamol 500mg', brand: 'Genérico', price: 45.00, category: 'otc', description: 'Analgésico y antipirético', stock: 100 },
-      { id: 'med_2', name: 'Ibuprofeno 400mg', brand: 'Advil', price: 89.50, category: 'otc', description: 'Antiinflamatorio no esteroideo', stock: 80 },
-      { id: 'med_3', name: 'Amoxicilina 500mg', brand: 'Genérico', price: 125.00, category: 'prescription', description: 'Antibiótico de amplio espectro', stock: 50 },
-      { id: 'med_4', name: 'Loratadina 10mg', brand: 'Claritin', price: 156.00, category: 'otc', description: 'Antihistamínico para alergias', stock: 60 },
-      { id: 'med_5', name: 'Omeprazol 20mg', brand: 'Prilosec', price: 198.00, category: 'otc', description: 'Inhibidor de bomba de protones', stock: 70 },
-      { id: 'med_6', name: 'Vitamina C 1000mg', brand: 'Redoxon', price: 245.00, category: 'vitamins', description: 'Suplemento vitamínico', stock: 90 },
-      { id: 'med_7', name: 'Complejo B', brand: 'Genérico', price: 78.00, category: 'vitamins', description: 'Vitaminas del complejo B', stock: 85 },
-      { id: 'med_8', name: 'Metformina 850mg', brand: 'Glucophage', price: 189.00, category: 'prescription', description: 'Antidiabético oral', stock: 40 },
-      { id: 'med_9', name: 'Aspirina 100mg', brand: 'Bayer', price: 65.00, category: 'otc', description: 'Anticoagulante y analgésico', stock: 120 },
-      { id: 'med_10', name: 'Vitamina D3', brand: 'Caltrate', price: 175.00, category: 'vitamins', description: 'Suplemento de vitamina D', stock: 75 },
-      { id: 'med_11', name: 'Losartán 50mg', brand: 'Cozaar', price: 234.00, category: 'prescription', description: 'Antihipertensivo', stock: 45 },
-      { id: 'med_12', name: 'Azitromicina 500mg', brand: 'Zithromax', price: 289.00, category: 'prescription', description: 'Antibiótico macrólido', stock: 35 }
-    ];
-    localStorage.setItem(STORAGE_KEYS.MEDICINES, JSON.stringify(testMedicines));
-  }
+  // No demo data (2026-11-25): the shop only shows real inventory_catalog
+  // products and "Mis pedidos" only real orders. Remove the demo catalog
+  // and the seeded test orders that older versions stored on the device.
+  try {
+    localStorage.removeItem(STORAGE_KEYS.MEDICINES);
+    const orders = JSON.parse(localStorage.getItem(STORAGE_KEYS.ORDERS) || '[]');
+    const DEMO_ORDER_IDS = new Set(['PED-2847', 'PED-2756', 'PED-2612', 'PED-2498']);
+    const real = Array.isArray(orders) ? orders.filter((o) => !DEMO_ORDER_IDS.has(o && o.id)) : [];
+    if (!Array.isArray(orders) || real.length !== orders.length) localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(real));
+  } catch (e) { /* storage blocked */ }
   if (!localStorage.getItem(STORAGE_KEYS.CART)) {
     localStorage.setItem(STORAGE_KEYS.CART, JSON.stringify([]));
   }
   if (!localStorage.getItem(STORAGE_KEYS.ORDERS)) {
-    // Test orders for purchase history
-    const testOrders = [
-      {
-        id: 'PED-2847',
-        date: '2025-05-28',
-        status: 'Entregado',
-        total: 334.50,
-        items: [
-          { name: 'Paracetamol 500mg', quantity: 2, price: 45.00 },
-          { name: 'Ibuprofeno 400mg', quantity: 1, price: 89.50 },
-          { name: 'Vitamina C 1000mg', quantity: 1, price: 245.00 }
-        ],
-        delivery: 'Recogida en tienda',
-        payment: 'Tarjeta'
-      },
-      {
-        id: 'PED-2756',
-        date: '2025-05-15',
-        status: 'Entregado',
-        total: 189.00,
-        items: [
-          { name: 'Metformina 850mg', quantity: 1, price: 189.00 }
-        ],
-        delivery: 'Envío a domicilio',
-        payment: 'Efectivo'
-      },
-      {
-        id: 'PED-2612',
-        date: '2025-04-22',
-        status: 'Entregado',
-        total: 512.50,
-        items: [
-          { name: 'Omeprazol 20mg', quantity: 2, price: 198.00 },
-          { name: 'Aspirina 100mg', quantity: 1, price: 65.00 },
-          { name: 'Complejo B', quantity: 2, price: 78.00 }
-        ],
-        delivery: 'Recogida en tienda',
-        payment: 'Tarjeta'
-      },
-      {
-        id: 'PED-2498',
-        date: '2025-03-10',
-        status: 'Cancelado',
-        total: 156.00,
-        items: [
-          { name: 'Loratadina 10mg', quantity: 1, price: 156.00 }
-        ],
-        delivery: 'Envío a domicilio',
-        payment: 'Tarjeta'
-      }
-    ];
-    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(testOrders));
+    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify([]));
   }
   if (!localStorage.getItem(STORAGE_KEYS.VITALS_LOG)) {
     localStorage.setItem(STORAGE_KEYS.VITALS_LOG, JSON.stringify([]));

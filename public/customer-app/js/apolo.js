@@ -1033,3 +1033,36 @@ window.apoloSaveSleep = function () {
   closeSheet();
   window.apoloRefreshSalud && window.apoloRefreshSalud();
 };
+
+// ============================================================
+// LOGIN WALL — welcome screen for visitors without a session
+// (2026-11-25). No shop, prices, consulta, salud or membresías content.
+// ============================================================
+export function renderAuthLoading() {
+  ctx.getMain().innerHTML = wrap(`<div style="min-height:60vh;display:flex;align-items:center;justify-content:center;color:${MUTED};font-size:14px;" aria-live="polite">Cargando…</div>`);
+}
+export function renderWelcome() {
+  const feat = (icon, title, sub) => `
+    <div style="display:flex;align-items:center;gap:12px;">${iconBox(icon, '#EEF0FA', NAVY)}
+      <div><div style="font-size:14px;font-weight:700;">${title}</div><div style="font-size:12px;color:${MUTED};">${sub}</div></div></div>`;
+  ctx.getMain().innerHTML = wrap(`
+    <div style="padding:24px 20px 32px;display:flex;flex-direction:column;gap:18px;max-width:430px;margin:0 auto;">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding-top:8px;">
+        <img src="/brand/apolo-logo.png" alt="Farmacia Apolo" width="72" height="72" style="width:72px;height:72px;object-fit:contain;background:#fff;border-radius:18px;box-shadow:0 6px 20px rgba(20,27,94,0.10);">
+        <h1 style="margin:0;font-size:24px;font-weight:800;color:${NAVY};">Bienvenido a Farmacia Apolo</h1>
+        <p style="margin:0;font-size:14px;color:${MUTED};line-height:1.5;">Tu salud, tus medicinas y tus recompensas en un solo lugar.</p>
+      </div>
+      ${card(`<div style="display:flex;flex-direction:column;gap:14px;">
+        ${feat('cal', 'Consulta médica', 'Presencial o por videollamada')}
+        ${feat('pill', 'Tus medicinas', 'Recordatorios y resurtido')}
+        ${feat('coin', 'Monedas Apolo', 'Recompensas por cuidarte')}
+        ${feat('tag', 'Ahorro', 'Membresía y equivalentes más baratos')}
+      </div>`)}
+      <button type="button" onclick="goPage('signup')" style="${btnPrimary}">Crear cuenta gratis</button>
+      <button type="button" onclick="goPage('login')" style="${btnOutline};min-height:48px;">Iniciar sesión</button>
+      <nav aria-label="Información legal" style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px 16px;font-size:12px;">
+        <a href="#" onclick="event.preventDefault();goPage('privacidad')" style="color:${NAVY};min-height:44px;display:inline-flex;align-items:center;">Aviso de privacidad</a>
+        <a href="/membresias/terminos" target="_blank" rel="noopener" style="color:${NAVY};min-height:44px;display:inline-flex;align-items:center;">Términos de la membresía</a>
+      </nav>
+    </div>`);
+}

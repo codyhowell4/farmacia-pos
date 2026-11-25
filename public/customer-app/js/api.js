@@ -376,10 +376,10 @@ window.FarmaciaAPI = (function () {
      * Only OTC products: Rx-only rows are excluded here (null counts as
      * OTC) and the place_store_order RPC rejects them server-side anyway.
      * Paginates past PostgREST's 1000-row cap via _fetchAllPages.
-     * Falls back to localStorage apollo_medicines.
+     * Real catalog only: no local/demo fallback (an error shows an empty shop).
      */
     async getProducts() {
-      const fallback = () => lsGet('apollo_medicines', []);
+      const fallback = () => [];
 
       if (!sb) {
         console.log('[FarmaciaAPI] getProducts fallback');
@@ -389,7 +389,7 @@ window.FarmaciaAPI = (function () {
       try {
         const data = await _fetchAllPages(() => sb
           .from('inventory_catalog')
-          .select('id, name, "use", price, quantity, requires_prescription, category, image_url, barcode, low_stock_threshold')
+          .select('id, name, "use", price, quantity, requires_prescription, category, image_url, barcode, low_stock_threshold, laboratorio')
           .gt('quantity', 0)
           .or('requires_prescription.is.null,requires_prescription.eq.false')
           .order('name'));
@@ -399,7 +399,8 @@ window.FarmaciaAPI = (function () {
           return data.map(item => ({
             id:                   item.id,
             name:                 item.name,
-            brand:                item.barcode || 'Genérico',
+            // Brand = the product's laboratorio (never the barcode).
+            brand:                item.laboratorio || '',
             price:                parseFloat(item.price) || 0,
             category:             item.category || 'otc',
             description:          item.use || '',

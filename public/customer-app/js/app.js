@@ -1,6 +1,6 @@
 // Simple Farmacia App
-import { Store } from './store.js?v=9';
-import { getGuideCategories, getGuideArticles, getArticle, searchGuides } from './data.js?v=8';
+import { Store } from './store.js?v=10';
+import { getGuideCategories, getGuideArticles, getArticle, searchGuides } from './data.js?v=9';
 import { 
   calculateBMR, 
   calculateTDEE, 
@@ -22,7 +22,7 @@ import { VoiceAI, HealthFAQ } from './voiceAI.js';
 import { FastingTracker, SleepTracker, CheckInSystem } from './tracking.js';
 import { NotificationManager } from './notifications.js';
 import { renderPulsera } from './pulsera.js?v=6';
-import { registerApolo, renderInicio, renderMonedas, renderAhorro, renderChequeo, getApoloStreak, renderMiControl, renderBienestar } from './apolo.js?v=3';
+import { registerApolo, renderInicio, renderMonedas, renderAhorro, renderChequeo, getApoloStreak, renderMiControl, renderBienestar, renderWelcome, renderAuthLoading } from './apolo.js?v=4';
 
 // Toast notifications (CSS in style.css)
 function showToast(message, type = 'info') {
@@ -58,6 +58,11 @@ const notifBadge = document.getElementById('notif-badge');
 // Auth state
 let currentAuthUser = null;
 let currentCustomerProfile = null;
+// Login wall (2026-11-25): until the session check finishes we show a
+// neutral loading screen; without a session only the welcome screen and
+// the auth/legal pages render (PUBLIC_PAGES).
+let authResolved = false;
+const PUBLIC_PAGES = new Set(['login', 'signup', 'forgot-password', 'family-activation', 'privacidad', 'welcome']);
 
 // Membership tier ('free' | 'paid') - resolved after login / session restore.
 // Defaults to 'free' (fail closed) while loading or for guests.
@@ -189,12 +194,15 @@ document.addEventListener('DOMContentLoaded', () => {
 async function initAuth() {
   if (!FarmaciaAPI.isSupabaseAvailable()) {
     console.log('[Auth] Supabase not available, staying in guest mode');
+    authResolved = true;
     updateMenuUserInfo();
+    if (!isPasswordRecovery && !pendingCheckin) renderPage(currentPage);
     return;
   }
   
   try {
     const user = await FarmaciaAPI.getCurrentUser();
+    authResolved = true;
     if (user) {
       currentAuthUser = user;
       console.log('[Auth] Session restored');
@@ -234,10 +242,13 @@ async function initAuth() {
       updateMenuUserInfo();
       // Check-in requires an account: send guests to login first
       if (pendingCheckin) renderLogin();
+      else if (!isPasswordRecovery && !document.getElementById('firma-name')) renderPage(currentPage);
     }
   } catch (e) {
     console.warn('[Auth] Session check failed:', e);
+    authResolved = true;
     updateMenuUserInfo();
+    if (!isPasswordRecovery && !pendingCheckin) renderPage(currentPage);
   }
 }
 
@@ -345,7 +356,7 @@ function renderLogin() {
       </div>
       
       <div style="text-align: center; margin-top: 1.5rem; color: rgba(255,255,255,0.5); font-size: 0.8rem;">
-        O continúa como <button onclick="goPage('inicio')" style="background: none; border: none; color: #46AC78; cursor: pointer;">invitado</button>
+        <button onclick="goPage('welcome')" style="background: none; border: none; color: #46AC78; cursor: pointer; min-height: 44px;">← Volver al inicio</button>
       </div>
     </div>
   `;
@@ -654,7 +665,7 @@ function renderSignup() {
       </div>
       
       <div style="text-align: center; margin-top: 1.5rem; color: rgba(255,255,255,0.5); font-size: 0.8rem;">
-        O continúa como <button onclick="goPage('inicio')" style="background: none; border: none; color: #46AC78; cursor: pointer;">invitado</button>
+        <button onclick="goPage('welcome')" style="background: none; border: none; color: #46AC78; cursor: pointer; min-height: 44px;">← Volver al inicio</button>
       </div>
     </div>
   `;
@@ -879,6 +890,7 @@ function renderPrivacidad() {
   const liStyle = 'font-size: 0.85rem; color: rgba(255,255,255,0.85); line-height: 1.6; margin-bottom: 0.25rem;';
 
   mainContent.innerHTML = `
+    ${currentAuthUser ? '' : `<button type="button" onclick="goPage('welcome')" style="margin: 0.75rem 1rem 0; min-height: 44px; background: none; border: none; color: #1E2A8A; font-weight: 700; font-size: 0.95rem; cursor: pointer;">← Volver</button>`}
     <!-- Header -->
     <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
       <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📄 Aviso de Privacidad</h1>
@@ -1345,7 +1357,8 @@ window.retryConsentGate = retryConsentGate;
 
 // Hide/show the app chrome (bottom nav + header actions) while the gate is up
 function setAppChromeVisible(visible) {
-  const display = visible ? '' : 'none';
+  // Login wall: guests never see the nav / menu / search.
+  const display = visible && currentAuthUser ? '' : 'none';
   const bottomNav = document.querySelector('.bottom-nav');
   const headerActions = document.querySelector('.header-actions');
   const searchBox = document.querySelector('.search-box');
@@ -3348,6 +3361,18 @@ function renderPage(page) {
     return;
   }
 
+  // Login wall: no app content without a session.
+  if (!currentAuthUser) {
+    setAppChromeVisible(false);
+    if (!PUBLIC_PAGES.has(page)) {
+      if (!authResolved) { renderAuthLoading(); return; }
+      renderWelcome();
+      return;
+    }
+  } else {
+    setAppChromeVisible(true);
+  }
+
   // Clear any running intervals
   if (window.fastTimerInterval) clearInterval(window.fastTimerInterval);
   
@@ -3372,6 +3397,7 @@ function renderPage(page) {
 
   switch(page) {
     case 'inicio': renderInicio(); break;
+    case 'welcome': renderWelcome(); break;
     case 'monedas': renderMonedas(); break;
     case 'ahorro': renderAhorro(); break;
     case 'chequeo': renderChequeo(); break;
@@ -3380,7 +3406,7 @@ function renderPage(page) {
     case 'pulsera': renderPulsera(); break;
     case 'membresias': renderMembresias(); break;
     case 'caregiver': renderCaregiver(); break;
-    case 'store': renderStore(); break;
+    case 'store': renderShop(); break; // old demo "Catálogo Completo" → real catalog
     case 'shop': renderShop(); break;
     case 'orders': renderOrders(); break;
     case 'settings': renderSettings(); break;
@@ -12481,7 +12507,7 @@ async function renderShop() {
     medicines = await FarmaciaAPI.getProducts();
   } catch (e) {
     console.warn('[renderShop] Error fetching products:', e);
-    medicines = Store.getMedicines() || [];
+    medicines = [];
   }
   
   // Cache for detail views
@@ -12578,7 +12604,7 @@ window.filterShopProducts = function() {
 };
 
 window.showProductDetail = async function(medicineId) {
-  const medicines = window.__shopProducts || Store.getMedicines() || [];
+  const medicines = window.__shopProducts || [];
   const med = medicines.find(m => m.id === medicineId);
   if (!med) return;
 
@@ -13179,7 +13205,7 @@ window.reorder = function(orderId) {
   
   // Add items to cart
   order.items.forEach(item => {
-    const med = (window.__shopProducts || Store.getMedicines() || []).find(m => m.name === item.name);
+    const med = (window.__shopProducts || []).find(m => m.name === item.name);
     if (med) {
       Store.addToCart(med.id, item.quantity);
     }
@@ -13477,7 +13503,7 @@ window.renderVaccineTracker = async function() {
   const activeProfileId = Store.getActiveProfileId();
   
   // Import vaccine data
-  const { VACCINE_SCHEDULE, getAllVaccineCategories } = await import('./data.js?v=8');
+  const { VACCINE_SCHEDULE, getAllVaccineCategories } = await import('./data.js?v=9');
   const categories = getAllVaccineCategories();
   
   // Get vaccine records

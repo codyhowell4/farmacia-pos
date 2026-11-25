@@ -1,5 +1,5 @@
 // Simple Store
-import { STORAGE_KEYS, initializeStorage } from './data.js?v=8';
+import { STORAGE_KEYS, initializeStorage } from './data.js?v=9';
 
 initializeStorage();
 
