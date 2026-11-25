@@ -1,0 +1,37 @@
+/* ============================================================
+   App Apolo — one look across old and new screens (2026-11-25)
+   Mockup tokens: navy #1E2A8A, green #46AC78, Plus Jakarta Sans,
+   16 px cards with #E3E8F2 borders, navy gradient page headers.
+   Loaded after style.css; only restyles shared classes.
+   ============================================================ */
+.main { background: #F5F7FB; }
+
+/* Page header used by Ajustes, Mis Datos and other older screens */
+.date-header {
+  text-align: left;
+  padding: 18px 20px;
+  margin: 0 0 4px;
+  color: #FFFFFF;
+  background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%);
+}
+.date-header .day { display: none; }
+.date-header .title { font-size: 20px; font-weight: 800; margin: 0; display: flex; align-items: center; gap: 8px; }
+.date-header .subtitle { font-size: 13px; color: #C9D0F2; opacity: 1; margin-top: 2px; }
+
+/* Cards: same radius, border and shadow as the mockup */
+.glass-card, .white-card {
+  background: #FFFFFF;
+  border: 1px solid #E3E8F2;
+  border-radius: 16px;
+  box-shadow: 0 2px 10px rgba(20, 27, 94, 0.06);
+}
+
+/* Bottom nav: mockup weight/colors */
+.bottom-nav .nav-item { font-weight: 500; color: #5B6685; }
+.bottom-nav .nav-item.active { color: #1E2A8A; font-weight: 700; }
+
+/* Focus visibility for keyboard users */
+.main button:focus-visible, .main a:focus-visible, .bottom-nav a:focus-visible {
+  outline: 2px solid #1E2A8A;
+  outline-offset: 2px;
+}

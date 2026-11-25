@@ -22,6 +22,7 @@ import { VoiceAI, HealthFAQ } from './voiceAI.js';
 import { FastingTracker, SleepTracker, CheckInSystem } from './tracking.js';
 import { NotificationManager } from './notifications.js';
 import { renderPulsera } from './pulsera.js?v=6';
+import { startIconizer } from './icons.js?v=2';
 import { registerApolo, renderInicio, renderMonedas, renderAhorro, renderChequeo, getApoloStreak, renderMiControl, renderBienestar, renderWelcome, renderAuthLoading } from './apolo.js?v=4';
 
 // Toast notifications (CSS in style.css)
@@ -119,6 +120,9 @@ const PAID_PAGE_NAMES = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Line icons instead of emoji across every screen (icons.js)
+  startIconizer();
+
   // App Apolo screens (Inicio, Monedas, Ahorro, Chequeo) live in apolo.js.
   registerApolo({
     getAuthUser: () => currentAuthUser,
@@ -9443,7 +9447,7 @@ function renderConsulta() {
 
       <!-- Hero -->
       <div style="position: relative; overflow: hidden; border-radius: 20px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); box-shadow: 0 12px 28px rgba(20,27,94,0.30); margin-bottom: 20px;">
-        <img src="/brand/home-statue-hero.png" alt="" aria-hidden="true" style="position: absolute; right: -14px; bottom: 0; height: 132%; width: auto; pointer-events: none; -webkit-mask-image: linear-gradient(180deg, black 70%, transparent 98%); mask-image: linear-gradient(180deg, black 70%, transparent 98%);">
+        <img src="/brand/home-statue-hero.webp" alt="" aria-hidden="true" style="position: absolute; right: -14px; bottom: 0; height: 132%; width: auto; pointer-events: none; -webkit-mask-image: linear-gradient(180deg, black 70%, transparent 98%); mask-image: linear-gradient(180deg, black 70%, transparent 98%);">
         <div style="position: relative; padding: 24px 22px; max-width: 64%;">
           <div style="width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; margin-bottom: 14px;">${ICON_STETHO}</div>
           <div style="font-size: 1.55rem; font-weight: 800; color: white; line-height: 1.15;">Consulta Médica</div>
