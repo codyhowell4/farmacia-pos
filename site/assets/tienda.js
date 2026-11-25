@@ -145,14 +145,14 @@
       : PILL_SVG;
     var price = state.signedIn
       ? '<span style="font-size: 20px; font-weight: 800; color: #1E2A8A">' + fmt(it.price) + '</span>'
-      : '<span style="font-size: 14px; font-weight: 700; color: #4A5578">Inicia sesión para ver el precio</span>';
+      : '<span class="t-login-price" style="font-size: 14px; font-weight: 700; color: #4A5578">Inicia sesión para ver el precio</span>';
     var inCart = state.cart[it.id] || 0;
     var label = inCart ? 'Agregar (' + inCart + ')' : 'Agregar';
     return '<article style="flex: 1 1 220px; background: #FFFFFF; border: 1px solid #E3E8F2; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px">' +
       '<div role="img" aria-label="Foto del producto" style="height: 140px; border-radius: 12px; background: #F5F7FB; display: flex; align-items: center; justify-content: center; overflow: hidden">' + img + '</div>' +
       '<span style="font-size: 12px; font-weight: 700; color: #2F7D55">' + escHtml(it.cat) + '</span>' +
       '<h3 style="margin: 0; font-size: 16px; font-weight: 800; overflow-wrap: anywhere">' + escHtml(it.name) + '</h3>' +
-      (it.use ? '<span style="font-size: 14px; color: #4A5578; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">' + escHtml(it.use) + '</span>' : '') +
+      (it.use ? '<span class="t-use" style="font-size: 14px; color: #4A5578; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">' + escHtml(it.use) + '</span>' : '') +
       '<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto">' + price +
       '<button type="button" data-add="' + escHtml(it.id) + '" aria-label="Agregar ' + escHtml(it.name) + ' al carrito" style="min-height: 44px; padding: 0 14px; border: none; border-radius: 10px; background: #1E2A8A; color: #FFFFFF; font-weight: 700; cursor: pointer; flex-shrink: 0">' + label + '</button></div></article>';
   }
@@ -238,6 +238,74 @@
     var btn = $('[data-place-order]');
     btn.disabled = state.placing || !lines.length;
     btn.style.opacity = btn.disabled ? '0.6' : '1';
+    renderCartBar(lines, total);
+  }
+
+  // ---------- Móvil: barra "Ver pedido" + hoja inferior ----------
+  var mqMobile = window.matchMedia('(max-width: 767px)');
+  var cartBar, sheetBackdrop, sheetLastFocus = null;
+  function buildCartBar() {
+    cartBar = document.createElement('div');
+    cartBar.className = 't-cartbar m-only';
+    cartBar.setAttribute('data-section', 'barra_inferior');
+    cartBar.hidden = true;
+    cartBar.innerHTML = '<button type="button" data-open-sheet data-track-label="ver_pedido" aria-controls="tu-pedido" aria-expanded="false"></button>';
+    document.body.appendChild(cartBar);
+    sheetBackdrop = document.createElement('div');
+    sheetBackdrop.className = 't-backdrop m-only';
+    sheetBackdrop.hidden = true;
+    sheetBackdrop.addEventListener('click', function () { closeSheet(); });
+    document.body.appendChild(sheetBackdrop);
+  }
+  function renderCartBar(lines, total) {
+    if (!cartBar) buildCartBar();
+    var n = lines.reduce(function (a, l) { return a + l.qty; }, 0);
+    cartBar.hidden = n === 0;
+    document.body.classList.toggle('has-cartbar', !cartBar.hidden && mqMobile.matches);
+    var price = state.signedIn ? ' · ' + fmt(total) : '';
+    cartBar.firstChild.textContent = 'Ver pedido · ' + n + (n === 1 ? ' artículo' : ' artículos') + price;
+  }
+  function sheetFocusables() {
+    return $$('#tu-pedido button:not([disabled]), #tu-pedido a[href], #tu-pedido input').filter(function (el) {
+      return el.offsetParent !== null;
+    });
+  }
+  function openSheet() {
+    var aside = $('#tu-pedido');
+    sheetLastFocus = document.activeElement;
+    aside.classList.add('is-open');
+    aside.setAttribute('role', 'dialog');
+    aside.setAttribute('aria-modal', 'true');
+    sheetBackdrop.hidden = false;
+    document.body.classList.add('no-scroll');
+    cartBar.firstChild.setAttribute('aria-expanded', 'true');
+    var c = $('[data-sheet-close]');
+    if (c) setTimeout(function () { c.focus(); }, 50);
+  }
+  function closeSheet() {
+    var aside = $('#tu-pedido');
+    if (!aside || !aside.classList.contains('is-open')) return;
+    aside.classList.remove('is-open');
+    aside.removeAttribute('role');
+    aside.removeAttribute('aria-modal');
+    sheetBackdrop.hidden = true;
+    document.body.classList.remove('no-scroll');
+    cartBar.firstChild.setAttribute('aria-expanded', 'false');
+    if (sheetLastFocus && sheetLastFocus.focus && sheetLastFocus.offsetParent !== null) sheetLastFocus.focus();
+  }
+  document.addEventListener('keydown', function (e) {
+    var aside = $('#tu-pedido');
+    if (!aside || !aside.classList.contains('is-open')) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeSheet(); return; }
+    if (e.key !== 'Tab') return;
+    var f = sheetFocusables();
+    if (!f.length) return;
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+    else if (f.indexOf(document.activeElement) === -1) { e.preventDefault(); f[0].focus(); }
+  });
+  if (mqMobile.addEventListener) {
+    mqMobile.addEventListener('change', function () { if (!mqMobile.matches) closeSheet(); renderCart(); });
   }
 
   function renderAll() {
@@ -400,6 +468,8 @@
   // ---------- Eventos ----------
   function bind() {
     document.addEventListener('click', function (e) {
+      var sh = e.target.closest ? e.target.closest('[data-open-sheet],[data-sheet-close]') : null;
+      if (sh) { if (sh.hasAttribute('data-open-sheet')) openSheet(); else closeSheet(); return; }
       var t = e.target.closest ? e.target.closest('[data-add],[data-inc],[data-dec],[data-more],[data-cat],[data-open-login],[data-logout],[data-place-order]') : null;
       if (!t) return;
       if (t.hasAttribute('data-open-login')) {

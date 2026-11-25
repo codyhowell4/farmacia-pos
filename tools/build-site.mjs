@@ -205,6 +205,55 @@ const sectionize = (body) => {
   }).join('');
 };
 
+// Mobile layout hooks (site/assets/mobile.css). Classes only — the inline
+// design styles stay untouched, so desktop renders exactly as designed.
+const MOBILE_HOOKS = [
+  ['<div style="display: flex; flex-wrap: wrap; gap: 18px">', 'm-snap'],
+  ['<div style="display: flex; flex-wrap: wrap; gap: 24px">', 'm-grid2'],
+  ['<ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 12px">', 'm-grid2'],
+  ['<ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px">', 'm-rewards'],
+  ['<div style="flex: 1 1 360px; min-width: 0; display: flex; justify-content: center">', 'hero-media'],
+];
+const mobilize = (body) => {
+  let out = body;
+  for (const [tag, cls] of MOBILE_HOOKS) {
+    const tagged = tag.replace(/^<(\w+) /, `<$1 class="${cls}" `);
+    // Never re-grid the tienda layout row (catalog + cart): it has its own rules.
+    out = out.split(tag).map((chunk, i) => (i === 0 ? chunk : (chunk.startsWith('<div data-grid') ? tag : tagged) + chunk)).join('');
+  }
+  // Hero statue: phones get a 1x1 placeholder instead (never downloaded).
+  out = out.replace(
+    /<img src="\/sitio\/home-statue-hero\.webp"/,
+    '<picture><source media="(max-width: 767px)" srcset="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="><img src="/sitio/home-statue-hero.webp"'
+  ).replace(/(<img src="\/sitio\/home-statue-hero\.webp"[^>]*>)/, '$1</picture>');
+  return out;
+};
+
+const MENU_ICON = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>';
+const PHONE_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"></path></svg>';
+const NAV_ITEMS = [
+  ['/', 'Inicio'], ['/servicios', 'Servicios'], ['/consulta', 'Consulta'], ['/membresia', 'Membresía'],
+  ['/monedas', 'Monedas Apolo'], ['/recargas-y-pagos', 'Recargas y pagos'], ['/ubicacion', 'Ubicación'], ['/tienda', 'Tienda'],
+];
+
+// Phone header row (logo stays; desktop nav/buttons hidden by CSS) + drawer.
+const mobileHeader = (page, h) => {
+  h = h.replace('<nav aria-label="Principal" style=', '<nav class="d-only" aria-label="Principal" style=');
+  h = h.replace('<div style="display: flex; gap: 10px; flex-wrap: wrap"><a href="' + APP + '"', '<div class="d-only" style="display: flex; gap: 10px; flex-wrap: wrap"><a href="' + APP + '"');
+  const actions = `<div class="m-only m-head-actions"><a class="m-head-cta" href="${APP}" data-track-label="Crear cuenta gratis">Crear cuenta</a><button type="button" class="m-burger m-only" aria-expanded="false" aria-controls="menu-movil" aria-label="Abrir menú" data-track-label="abrir_menu">${MENU_ICON}</button></div>`;
+  h = h.replace(/<\/div><\/header>\s*$/, `${actions}\n</div></header>`);
+  const links = NAV_ITEMS.map(([href, label]) => `<a href="${href}"${href === page.path ? ' aria-current="page"' : ''}>${label}</a>`).join('');
+  const login = page.slug === 'tienda' ? `<a href="${APP}" data-open-login style="color: #1E2A8A; background: #FFFFFF">Iniciar sesión</a>` : `<a href="${APP}" style="color: #1E2A8A; background: #FFFFFF">Iniciar sesión</a>`;
+  const drawer = `<div class="m-backdrop m-only" data-for="menu-movil" hidden></div>
+<div id="menu-movil" class="m-drawer m-only" data-section="menu_movil" role="dialog" aria-modal="true" aria-label="Menú" hidden><nav aria-label="Menú móvil">${links}</nav><div class="m-drawer-actions">${login}<a href="${APP}" style="color: #FFFFFF; background: #1E2A8A">Crear cuenta gratis</a></div></div>
+`;
+  return h.trimEnd() + '\n' + drawer;
+};
+
+const bottomBar = (page) => page.slug === 'tienda' ? '' : `<div class="m-bottom-bar m-only" data-section="barra_inferior"><a class="primary" href="${APP}">Agendar consulta</a><a class="secondary" href="tel:+5214425488893" data-track-label="Llamar">${PHONE_ICON}Llamar</a></div>
+`;
+
+let MOBILE_CSS = '';
 const hash = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex').slice(0, 10);
 
 function build() {
@@ -221,11 +270,12 @@ function build() {
   }
 
   const footer = read('partials/footer.html');
+  MOBILE_CSS = read('assets/mobile.css').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s*\n\s*/g, '\n').trim() + '\n';
   const built = [];
 
   for (const page of PAGES) {
     let body = page.generated ? privacyBody() : read(`pages/${page.slug}.html`);
-    body = sectionize(body.replace(/ id=""/g, ''));
+    body = mobilize(sectionize(body.replace(/ id=""/g, '')));
     const canonical = ORIGIN + page.path;
     const h1 = (body.match(/<h1[^>]*>([\s\S]*?)<\/h1>/) || [])[1];
     if (!h1) throw new Error(`page ${page.slug} has no <h1>`);
@@ -276,8 +326,8 @@ function build() {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
-${page.path === '/' ? '<link rel="preload" as="image" href="/sitio/home-statue-hero.webp" type="image/webp">\n' : ''}<style>
-body{margin:0}
+${page.path === '/' ? '<link rel="preload" as="image" href="/sitio/home-statue-hero.webp" type="image/webp" media="(min-width: 768px)">\n' : ''}<style>
+body{margin:0;font-family:'Plus Jakarta Sans',system-ui,sans-serif}
 a{color:#1E2A8A}a:hover{color:#141B5E}
 summary::-webkit-details-marker{display:none}
 img{max-width:100%}
@@ -285,17 +335,18 @@ input,button,select,textarea{font-family:inherit}
 details[open] summary svg{transform:rotate(180deg)}
 .skip{position:absolute;left:-9999px;top:0;background:#FFFFFF;color:#1E2A8A;padding:12px 16px;z-index:10;font-weight:700}
 .skip:focus{left:8px;top:8px}
-</style>
+${MOBILE_CSS}</style>
 ${ld.map(ldScript).join('\n')}
 <script src="/sitio/analytics.js?v=${assetVersion['analytics.js']}" defer></script>
+<script src="/sitio/ui.js?v=${assetVersion['ui.js']}" defer></script>
 ${config}${formConfig}${scripts}
 </head>
 <body data-page="${page.slug}">
 <a class="skip" href="#contenido">Saltar al contenido</a>
 <div style="font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #141B3A; background: #FFFFFF">
-${header(page).replace('<header ', '<header data-section="header" ')}<main id="contenido">
+${mobileHeader(page, header(page).replace('<header ', '<header data-section="header" '))}<main id="contenido">
 ${body}</main>
-${footer.replace('<footer ', '<footer data-section="footer" ')}</div>
+${footer.replace('<footer ', '<footer data-section="footer" ').replace('<img src="/sitio/apolo-logo.webp" alt="Farmacia Apolo" style=', '<img src="/sitio/apolo-logo.webp" alt="Farmacia Apolo" width="64" height="64" loading="lazy" decoding="async" style=')}${bottomBar(page)}</div>
 </body>
 </html>
 `;

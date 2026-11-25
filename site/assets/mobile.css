@@ -1,0 +1,223 @@
+/* Farmacia Apolo — mobile layout layer (inlined into every page by
+   tools/build-site.mjs). The page markup keeps the design's inline styles;
+   everything here is scoped to phones (max-width: 767px), so desktop and
+   tablet render exactly as the approved design. !important is needed to win
+   over the inline styles. */
+
+/* Mobile-only / desktop-only chrome */
+.m-only { display: none !important; }
+
+@media (max-width: 767px) {
+  .d-only { display: none !important; }
+  .m-only { display: flex !important; }
+  .m-only[hidden] { display: none !important; }
+
+  html { -webkit-text-size-adjust: 100%; scroll-padding-top: 76px; }
+  body { overflow-x: hidden; }
+  body.has-bottom-bar { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  .skip { min-height: 44px; display: inline-flex; align-items: center; }
+
+  /* ---------- Header: compact + sticky ---------- */
+  header[data-section="header"] {
+    position: sticky; top: 0; z-index: 60;
+    padding: 8px 16px !important;
+  }
+  header[data-section="header"] > div { flex-wrap: nowrap !important; gap: 10px !important; }
+  header[data-section="header"] > div > a:first-child img { width: 44px !important; height: 44px !important; }
+  .m-head-actions { align-items: center; gap: 8px; margin-left: auto; }
+  .m-head-cta {
+    min-height: 44px; padding: 0 14px; border-radius: 12px; background: #1E2A8A; color: #FFFFFF !important;
+    display: inline-flex; align-items: center; font-weight: 800; font-size: 15px; text-decoration: none; white-space: nowrap;
+  }
+  .m-burger {
+    width: 48px; height: 48px; border: 2px solid #E3E8F2; border-radius: 12px; background: #FFFFFF;
+    align-items: center; justify-content: center; cursor: pointer; padding: 0; color: #141B3A;
+  }
+  .m-burger[aria-expanded="true"] { border-color: #1E2A8A; background: #EEF0FA; }
+
+  /* Drawer (slide-down menu) */
+  .m-drawer {
+    position: fixed; left: 0; right: 0; top: var(--hdr-h, 64px); z-index: 59;
+    max-height: calc(100vh - var(--hdr-h, 64px)); max-height: calc(100dvh - var(--hdr-h, 64px));
+    overflow-y: auto; background: #FFFFFF; border-bottom: 1px solid #E3E8F2;
+    box-shadow: 0 18px 40px rgba(20, 27, 94, 0.18);
+    flex-direction: column; padding: 8px 16px 20px;
+    transform: translateY(-8px); opacity: 0; transition: transform .18s ease, opacity .18s ease;
+  }
+  .m-drawer.is-open { transform: none; opacity: 1; }
+  .m-drawer nav { display: flex; flex-direction: column; }
+  .m-drawer nav a {
+    min-height: 48px; display: flex; align-items: center; padding: 0 4px; border-bottom: 1px solid #E3E8F2;
+    color: #141B3A; font-size: 17px; font-weight: 700; text-decoration: none;
+  }
+  .m-drawer nav a[aria-current="page"] { color: #1E2A8A; font-weight: 800; box-shadow: inset 4px 0 0 #1E2A8A; padding-left: 12px; }
+  .m-drawer .m-drawer-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  .m-drawer .m-drawer-actions a {
+    min-height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 16px; text-decoration: none; border: 2px solid #1E2A8A;
+  }
+  .m-backdrop {
+    position: fixed; inset: 0; z-index: 58; background: rgba(20, 27, 94, 0.35);
+  }
+  body.no-scroll { overflow: hidden; }
+
+  /* ---------- Sections: tighter rhythm ---------- */
+  main section { padding: 48px 16px !important; }
+  main section[data-section="hero"] { padding: 32px 16px 36px !important; }
+  main section > div { gap: 24px !important; }
+  main section[data-section="hero"] > div { gap: 16px !important; }
+  footer[data-section="footer"] { padding: 36px 16px calc(28px + env(safe-area-inset-bottom)) !important; }
+  footer[data-section="footer"] > div:first-child { gap: 20px !important; }
+
+  main h1 { font-size: 30px !important; line-height: 1.12 !important; }
+  main section[data-section="hero"] h1 { font-size: 31px !important; }
+  main h2 { font-size: 24px !important; line-height: 1.2 !important; }
+  main h3 { font-size: 18px !important; }
+  main section[data-section="hero"] p { font-size: 17px !important; }
+  main p[style*="font-size: 18px"], main p[style*="font-size: 19px"] { font-size: 17px !important; }
+
+  /* Body copy never below 16px */
+  main p[style*="font-size: 15px"], main span[style*="font-size: 15px"],
+  main li[style*="font-size: 15px"], main td, main th, footer span, footer a {
+    font-size: 16px !important;
+  }
+
+  /* Cards: less padding */
+  main article { padding: 18px !important; gap: 10px !important; }
+  main div[style*="border-radius: 22px; padding: 32px"] { padding: 22px !important; }
+
+  /* ---------- Hero ---------- */
+  .hero-media { display: none !important; }
+  main section[data-section="hero"] a[style*="min-height: 52px"] {
+    width: 100%; justify-content: center; box-sizing: border-box;
+  }
+  main section[data-section="hero"] div[style*="gap: 14px 28px"] { gap: 10px !important; margin-top: 0 !important; }
+
+  /* ---------- Horizontal scroll-snap rows ---------- */
+  .m-snap {
+    flex-wrap: nowrap !important; overflow-x: auto; scroll-snap-type: x mandatory;
+    margin: 0 -16px !important; padding: 2px 16px 10px !important; gap: 12px !important;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+  }
+  .m-snap::-webkit-scrollbar { display: none; }
+  .m-snap > * { flex: 0 0 80% !important; max-width: 300px; scroll-snap-align: start; box-sizing: border-box; }
+
+  /* ---------- 2-column grids ---------- */
+  .m-grid2 { display: grid !important; grid-template-columns: 1fr 1fr; gap: 10px !important; }
+  .m-grid2 > * { min-width: 0; }
+  .m-grid2 > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .m-grid2 > li[style*="padding: 16px 18px"] { padding: 12px !important; font-size: 15px !important; align-items: flex-start !important; }
+  /* App features / steps as compact tiles */
+  .m-grid2 > div[style*="flex: 1 1 240px"] { flex-direction: column !important; gap: 8px !important; }
+
+  /* Monedas: 10 rewards as compact 2-up tiles */
+  .m-rewards { display: grid !important; grid-template-columns: 1fr 1fr; gap: 10px !important; }
+  .m-rewards > li {
+    flex-direction: column !important; align-items: flex-start !important; gap: 8px !important; padding: 12px !important;
+  }
+  .m-rewards > li > span:first-child { width: 28px !important; height: 28px !important; font-size: 14px; }
+  .m-rewards > li > span:nth-child(2) { font-size: 15px !important; line-height: 1.35; }
+  .m-rewards > li > span:last-child { min-width: 0 !important; font-size: 14px !important; padding: 4px 10px !important; }
+
+  /* Servicios page rows: icon + text side by side, CTA under */
+  main section div[style*="flex: 999 1 560px"] { gap: 14px !important; }
+  main section div[style*="flex: 999 1 560px"] > div:first-child { width: 48px !important; height: 48px !important; }
+
+  /* ---------- Membresía ---------- */
+  ul.m-collapsed > li:nth-child(n+5) { display: none !important; }
+  .m-more {
+    min-height: 44px; align-items: center; justify-content: center; border: none; background: #EEF0FA; color: #1E2A8A;
+    border-radius: 10px; font-weight: 800; font-size: 15px; cursor: pointer; width: 100%;
+  }
+  /* Comparison table: fits 358px */
+  main table { min-width: 0 !important; table-layout: fixed; }
+  main table th, main table td { padding: 10px 4px !important; overflow-wrap: break-word; hyphens: auto; }
+  main table th:first-child, main table td:first-child { width: 38%; padding-left: 0 !important; }
+  main div:has(> table) { overflow-x: visible !important; }
+
+  /* ---------- Tap targets ---------- */
+  footer[data-section="footer"] a { display: flex; min-height: 44px; align-items: center; }
+  footer[data-section="footer"] div[style*="gap: 8px"] { gap: 0 !important; }
+  main p a, main span a, .m-inline-link { display: inline-flex; min-height: 44px; align-items: center; }
+  main label[style*="min-height: 36px"] { min-height: 44px !important; }
+  main input[type="radio"] { width: 20px; height: 20px; }
+
+  /* ---------- Bottom action bar ---------- */
+  .m-bottom-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;
+    gap: 10px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: rgba(255, 255, 255, 0.97); border-top: 1px solid #E3E8F2;
+    box-shadow: 0 -8px 24px rgba(20, 27, 94, 0.10);
+    transition: transform .2s ease;
+  }
+  .m-bottom-bar.is-hidden { transform: translateY(110%); }
+  .m-bottom-bar a {
+    min-height: 52px; border-radius: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;
+    font-weight: 800; font-size: 16px; text-decoration: none;
+  }
+  .m-bottom-bar a.primary { flex: 1 1 auto; background: #46AC78; color: #FFFFFF; }
+  .m-bottom-bar a.secondary { flex: 0 0 auto; padding: 0 18px; border: 2px solid #1E2A8A; color: #1E2A8A; background: #FFFFFF; }
+
+  /* ---------- Tienda ---------- */
+  [data-chips] {
+    flex-wrap: nowrap !important; overflow-x: auto; margin: 0 -16px; padding: 2px 16px 6px;
+    scrollbar-width: none; scroll-snap-type: x proximity;
+  }
+  [data-chips]::-webkit-scrollbar { display: none; }
+  [data-chips] > button { flex: 0 0 auto; scroll-snap-align: start; }
+  [data-grid] {
+    display: grid !important; grid-template-columns: 1fr 1fr; gap: 10px !important; flex: 1 1 100% !important;
+  }
+  [data-grid] > div[aria-hidden="true"] { display: none !important; }
+  [data-grid] > p, [data-grid] > div:not([aria-hidden]) { grid-column: 1 / -1; }
+  [data-grid] article { padding: 10px !important; gap: 6px !important; border-radius: 14px !important; min-width: 0; }
+  [data-grid] article > div[role="img"] { height: 84px !important; border-radius: 10px !important; }
+  [data-grid] article > div[role="img"] svg { width: 28px; height: 28px; }
+  [data-grid] article > h3 {
+    font-size: 14px !important; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  [data-grid] article > span:first-of-type { font-size: 13px !important; }
+  [data-grid] article > .t-use { display: none !important; }
+  [data-grid] article > div:last-child { flex-direction: column; align-items: stretch !important; gap: 6px !important; }
+  [data-grid] article > div:last-child > span { font-size: 16px !important; }
+  [data-grid] article > div:last-child > span.t-login-price { font-size: 14px !important; line-height: 1.3; }
+  [data-grid] article button[data-add] { min-height: 44px !important; width: 100%; font-size: 15px; }
+
+  /* Cart becomes a bottom sheet */
+  aside#tu-pedido {
+    position: fixed !important; left: 0; right: 0; bottom: 0; z-index: 70; margin: 0;
+    max-height: 85vh; max-height: 85dvh; overflow-y: auto; border-radius: 20px 20px 0 0 !important;
+    padding: 8px 16px calc(20px + env(safe-area-inset-bottom)) !important;
+    transform: translateY(105%); transition: transform .22s ease; visibility: hidden;
+    box-shadow: 0 -18px 40px rgba(20, 27, 94, 0.25);
+  }
+  aside#tu-pedido.is-open { transform: none; visibility: visible; }
+  aside#tu-pedido::before {
+    content: ""; display: block; width: 40px; height: 4px; margin: 0 auto 6px; border-radius: 4px; background: #D5DBEA; flex-shrink: 0;
+  }
+  aside#tu-pedido h2 { padding-right: 52px; }
+  .t-sheet-close {
+    position: absolute; top: 14px; right: 12px;
+    width: 44px; height: 44px; border: none; border-radius: 12px; background: #F5F7FB; color: #141B3A;
+    font-size: 26px; line-height: 1; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .t-backdrop { position: fixed; inset: 0; z-index: 68; background: rgba(20, 27, 94, 0.35); }
+  body.has-cartbar { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+  aside#tu-pedido button[data-inc], aside#tu-pedido button[data-dec] { width: 44px !important; height: 44px !important; }
+  .t-cartbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 65;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: rgba(255,255,255,0.97);
+    border-top: 1px solid #E3E8F2; box-shadow: 0 -8px 24px rgba(20, 27, 94, 0.10);
+  }
+  .t-cartbar button {
+    flex: 1 1 auto; min-height: 52px; border: none; border-radius: 12px; background: #46AC78; color: #FFFFFF;
+    font-weight: 800; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  [data-login-bar], [data-user-bar] { padding: 12px 14px !important; }
+  [data-login-bar] a[href*="customer-app"] { width: 100%; box-sizing: border-box; }
+  dialog { max-height: 90dvh; }
+}
+
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  .m-drawer, .m-bottom-bar, aside#tu-pedido { transition: none; }
+}
