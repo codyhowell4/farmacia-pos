@@ -36,21 +36,28 @@
   if (debug) cfg.debug_mode = true;
   window.gtag('config', ID, cfg);
 
+  var ready = false;
+  var readyCbs = [];
+  function onReady(cb) { if (ready) cb(); else readyCbs.push(cb); }
   function loadGtag() {
     if (document.getElementById('gtag-js')) return;
     var s = document.createElement('script');
     s.id = 'gtag-js';
     s.async = true;
     s.src = 'https://www.googletagmanager.com/gtag/js?id=' + ID;
+    s.onload = function () { ready = true; readyCbs.splice(0).forEach(function (cb) { cb(); }); };
     document.head.appendChild(s);
   }
-  // After first paint: two animation frames, then idle (or a timeout).
-  requestAnimationFrame(function () {
-    requestAnimationFrame(function () {
-      if ('requestIdleCallback' in window) window.requestIdleCallback(loadGtag, { timeout: 2000 });
-      else setTimeout(loadGtag, 1);
-    });
-  });
+  // Performance: gtag.js costs ~0.5-0.9 s of main-thread time on phones, so
+  // it loads on the first interaction (or 5 s after load), never during the
+  // first render. Events queue in dataLayer meanwhile, nothing is lost.
+  var triggers = ['pointerdown', 'keydown', 'scroll', 'touchstart'];
+  function kick() {
+    triggers.forEach(function (t) { window.removeEventListener(t, kick, { passive: true }); });
+    loadGtag();
+  }
+  triggers.forEach(function (t) { window.addEventListener(t, kick, { passive: true }); });
+  window.addEventListener('load', function () { setTimeout(kick, 5000); });
 
   var PII = /@|\d{7,}|\+\d/;
 
@@ -76,15 +83,48 @@
     return page + '_' + name;
   }
 
+  // A link that leaves the page before gtag.js is ready would drop its
+  // events: hold the navigation until gtag has sent them (max 1 s).
+  function holdNavigation(e, el) {
+    if (ready || e.defaultPrevented || el.tagName !== 'A') return null;
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return null;
+    var href = el.getAttribute('href') || '';
+    if (!href || href.charAt(0) === '#' || /^(tel|mailto|javascript):/i.test(href)) return null;
+    if (el.target && el.target !== '_self') return null;
+    if (el.hasAttribute('download') || el.hasAttribute('data-open-login')) return null;
+    e.preventDefault();
+    var done = false;
+    var go = function () { if (!done) { done = true; location.href = el.href; } };
+    setTimeout(go, 1000);
+    return go;
+  }
+
   document.addEventListener('click', function (e) {
     var el = e.target && e.target.closest ? e.target.closest('a, button, [role="button"]') : null;
     if (!el || el.hasAttribute('data-track-skip')) return;
     var label = labelOf(el);
     var loc = locationOf(el);
-    track('button_click', { button_label: label, button_location: loc });
+    var p = { button_label: label, button_location: loc };
     var norm = label.toLowerCase();
-    if (/^agendar (mi )?consulta$/.test(norm)) track('agendar_consulta_click', { button_label: label, button_location: loc });
-    if (norm === 'crear cuenta gratis') track('sign_up_click', { button_label: label, button_location: loc });
-    if (norm === 'iniciar sesión' || norm === 'inicia sesión') track('login_click', { button_label: label, button_location: loc });
-  }, true);
+    var names = ['button_click'];
+    if (/^agendar (mi )?consulta$/.test(norm)) names.push('agendar_consulta_click');
+    if (norm === 'crear cuenta gratis') names.push('sign_up_click');
+    if (norm === 'iniciar sesión' || norm === 'inicia sesión') names.push('login_click');
+    var go = holdNavigation(e, el);
+    if (go) {
+      loadGtag();
+      var pending = names.length;
+      var cb = function () { if (--pending <= 0) go(); };
+      names.forEach(function (n) {
+        var q = {};
+        for (var k in p) q[k] = p[k];
+        q.event_callback = cb;
+        q.event_timeout = 900;
+        track(n, q);
+      });
+      onReady(function () { setTimeout(go, 400); });
+    } else {
+      names.forEach(function (n) { track(n, p); });
+    }
+  }, false);
 })();

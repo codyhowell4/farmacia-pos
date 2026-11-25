@@ -6,6 +6,9 @@
 
 # Everything else revalidates on each load (script versions are
 # cache-busted with ?v= query strings in index.html)
+/sitio/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
 /customer-app/*
   Cache-Control: public, max-age=0, must-revalidate
 
