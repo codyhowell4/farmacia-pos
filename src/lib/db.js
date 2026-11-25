@@ -831,6 +831,76 @@ export const getSales = async () => {
   );
 };
 
+// ── ONLINE STORE ORDERS (POS) ──────────────────────────────
+// Orders placed through place_store_order (website /tienda + customer app):
+// sales with no shift, not voided, still to be picked up. POS-safe: no
+// customers embed (pos role cannot read customers). Stock was already
+// decremented by the RPC.
+export const getActiveOnlineOrders = async () => {
+  const { data, error } = await supabase
+    .from('sales')
+    .select('id, timestamp, patient_name, total, status, payment_method, sale_items(id, name, quantity, price)')
+    .is('shift_id', null)
+    .eq('voided', false)
+    .in('status', ['pending', 'processing', 'ready'])
+    .order('timestamp', { ascending: true })
+    .limit(100);
+  if (error) throw error;
+  return data || [];
+};
+
+// Optimistic guard on the current status so two cashiers can't act on the
+// same order at once.
+export const markOnlineOrderReady = async (id, currentStatus) => {
+  const { data, error } = await supabase
+    .from('sales')
+    .update({ status: 'ready' })
+    .eq('id', id)
+    .eq('status', currentStatus)
+    .is('shift_id', null)
+    .select('id')
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error('El pedido cambió de estado; recarga la lista.');
+  return data;
+};
+
+// Customer paid at the counter: attach the order to the open shift with the
+// payment method so closeShift counts it. No inventory change here.
+export const completeOnlineOrderAtPos = async (id, currentStatus, { shiftId, paymentMethod, user }) => {
+  if (!['cash', 'card'].includes(paymentMethod)) throw new Error('Método de pago no válido');
+  const { data, error } = await supabase
+    .from('sales')
+    .update({
+      status: 'completed',
+      shift_id: shiftId,
+      payment_method: paymentMethod,
+      salesperson_id: user?.id || null,
+      salesperson_name: user?.name || null,
+    })
+    .eq('id', id)
+    .eq('status', currentStatus)
+    .is('shift_id', null)
+    .eq('voided', false)
+    .select('id, total')
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error('El pedido cambió de estado; recarga la lista.');
+  return data;
+};
+
+// True when the sale already took its stock at creation time (online store
+// orders: place_store_order logs 'sale' movements referencing the sale).
+export const saleStockAlreadyTaken = async (saleId) => {
+  const { count, error } = await supabase
+    .from('inventory_movements')
+    .select('id', { count: 'exact', head: true })
+    .eq('reference_id', saleId)
+    .eq('type', 'sale');
+  if (error) throw error;
+  return (count || 0) > 0;
+};
+
 // POS-safe shift sales for the close-shift flow: no customers embed
 // (pos/inventory roles cannot read the customers table).
 export const getShiftSales = async (shiftId) => {

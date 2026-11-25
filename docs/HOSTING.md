@@ -13,7 +13,47 @@ The frontend is 100% static (Vite build + the vanilla customer app) — any stat
 | **Cloudflare Pages** (same project) | Afiliados (partner) portal | `afiliados.apolofarmacia.com.mx` → `/afiliados/` |
 | **Vercel** | Testing / staging front-end | `farmacia-pos.vercel.app` |
 
-The apex domain (`apolofarmacia.com.mx` / `www`) is attached to the Pages project but scoped to public use: `/membresias` (the membership signup page) is **served directly on the main domain**, the bare root → 301 to `/membresias`, and any other extensionless path (app routes) → 301 to the `app.` subdomain (static assets and `/membresias` itself stay). The staff/customer apps live on the `app.` subdomain. To keep `/membresias` canonical on the main domain, `app.apolofarmacia.com.mx/membresias` → 301 to `https://apolofarmacia.com.mx/membresias`. The rest of the apex remains reserved for the future marketing website — when it lands, replace these redirect rules with the site.
+The apex domain (`apolofarmacia.com.mx`) serves the **public marketing website** (see "Public website" below) plus `/membresias` (the membership signup page, React route) on the same Pages project. `www` → 301 to the apex. Any other extensionless path on the apex (staff/app routes like `/pos`, `/login`) → 301 to the `app.` subdomain. The staff/customer apps live on the `app.` subdomain; `app.apolofarmacia.com.mx/membresias` → 301 to `https://apolofarmacia.com.mx/membresias` (keeps it canonical on the main domain).
+
+## Public website (apex, since 2026-11-25)
+
+Static HTML built from the approved Claude design (canvas "Sitio web Farmacia Apolo"). Sources live in `site/`; `tools/build-site.mjs` runs after `vite build` (`npm run build`) and writes the pages into `dist/`:
+
+| Route | Source | Notes |
+|---|---|---|
+| `/` | `site/pages/inicio.html` → `dist/inicio.html` | Served at `/` **only on the apex/www** by the Pages Function `functions/index.js` (matches only `/`; other hosts keep the React app at `/`). Preview on any host with `/?sitio=1`. |
+| `/servicios`, `/consulta`, `/membresia`, `/monedas`, `/recargas-y-pagos`, `/ubicacion`, `/tienda`, `/aviso-de-privacidad` | `site/pages/<slug>.html` → `dist/<slug>.html` | Pages serves `x.html` at `/x` (clean URLs win over the SPA fallback in `_redirects`). |
+| `/membresias` | React (`MembershipPublicPage`) | Unchanged; all membership CTAs link here. |
+| `/sitemap.xml`, `/robots.txt` | generated | |
+
+- Header/footer: `site/partials/`. Page `<title>`, meta description, canonical, Open Graph, `Pharmacy`/`LocalBusiness` JSON-LD (Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan; 8:00–22:00 daily) and breadcrumbs are set in `tools/build-site.mjs`. `FAQPage` JSON-LD is generated automatically from the `<details>` FAQs in each page (entries that still contain a `[PLACEHOLDER]` are skipped).
+- Text placeholders still to fill: footer `[NOMBRE Y CÉDULA]` / `[NÚMERO]` (responsable sanitario, aviso de funcionamiento), `/consulta` `[CONFIRMAR edad mínima de atención]` and `[EN VIVO]`, `/ubicacion` `[CONFIRMAR referencias…]`. Phone `+52 1 442 548 8893` is from the design (442 = Querétaro lada; confirm).
+- Images: `public/sitio/` (optimized WebP logo/hero, OG image 1200×630) generated from `public/brand/`.
+- "Iniciar sesión" / "Crear cuenta gratis" → `https://app.apolofarmacia.com.mx/customer-app/`.
+- `/aviso-de-privacidad` renders `site/aviso-de-privacidad.txt`, a copy of the active `consent_texts` `privacidad` row — re-export it when the aviso changes.
+- **Plan Empresa form** (`/` and `/membresia`, `site/assets/site.js`) → edge function `empresa-lead` (public, honeypot + 5 req/10 min per IP in `rate_limit_events`) → row in `public.empresa_leads` (staff-only RLS) + email to `adminapollo01@gmail.com` via Resend (`RESEND_API_KEY`, `EMAIL_FROM`).
+- **Tienda** (`site/assets/tienda.js`): catalog from the public RPC `get_store_catalog(p_org_id)` (in stock, no Rx, no controlled group, products only, no services/antibiotics/injectables; prices only with a session). Login uses the same Supabase project/accounts as the customer app (session is per domain, so `/tienda` has its own login dialog; phone/membership # resolve via `lookup-login-email`). "Apartar mi pedido" calls `place_store_order` (server prices, membership discount, stock lock, Rx/controlled block) → order lands in Admin › Pedidos (status *Procesando*) and in the POS "Pedidos en línea" button (polls every 45 s, toast on new orders; *Marcar listo* / *Entregar y cobrar* attaches the paid order to the open shift — stock is not touched again).
+- Migration: `20261125000000_public_site_store_and_leads.sql`.
+
+### Cloudflare rules for the apex (zone `apolofarmacia.com.mx` → Rules → Redirect Rules)
+
+Replace the old apex rules (`/` → `/membresias` and "other paths → app.") with these, in this order:
+
+1. **www → apex** — `(http.host eq "www.apolofarmacia.com.mx")` → Dynamic redirect, 301, expression `concat("https://apolofarmacia.com.mx", http.request.uri.path)`, preserve query string.
+2. **Apex app paths → app.** — expression:
+   ```
+   (http.host eq "apolofarmacia.com.mx"
+    and not http.request.uri.path in {"/" "/servicios" "/consulta" "/membresia" "/monedas" "/recargas-y-pagos" "/ubicacion" "/tienda" "/aviso-de-privacidad" "/membresias" "/membresias/terminos" "/membresia-negocios" "/membresia-negocios/activar" "/sitemap.xml" "/robots.txt"}
+    and not starts_with(http.request.uri.path, "/assets/")
+    and not starts_with(http.request.uri.path, "/sitio/")
+    and not starts_with(http.request.uri.path, "/vendor/")
+    and not starts_with(http.request.uri.path, "/brand/")
+    and not http.request.uri.path contains ".")
+   ```
+   → Dynamic redirect, 301, `concat("https://app.apolofarmacia.com.mx", http.request.uri.path)`, preserve query string.
+3. Keep the existing `app.apolofarmacia.com.mx/membresias` → apex rule and the `formularios.` / `consentimiento.` / `registro.` / `afiliados.` rules unchanged.
+
+`www` must stay attached to the Pages project (or have a proxied DNS record) so rule 1 can run.
 
 ## Tablet check-in (`formularios.` subdomain)
 

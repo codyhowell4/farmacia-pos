@@ -36,6 +36,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { enqueueRxJob, flushRxQueue } from '@/lib/rxQueue';
 import ServiciosModal from '@/components/ServiciosModal';
+import OnlineOrdersButton from '@/components/OnlineOrdersButton';
 import MonedasModal from '@/components/MonedasModal';
 import ServiciosResultDialog from '@/components/ServiciosResultDialog';
 import {
@@ -2737,6 +2738,7 @@ const PoSDashboard = () => {
                 )}
               </form>
               <div className="flex items-center gap-2">
+                <OnlineOrdersButton activeShift={activeShift} user={user} />
                 <Button onClick={() => setServiciosOpen(true)} size="sm" className="hidden sm:inline-flex bg-apolo-navy hover:bg-apolo-navy-dark text-white">
                   <Receipt className="w-4 h-4 mr-2" />Servicios
                 </Button>

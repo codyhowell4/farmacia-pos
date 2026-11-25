@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { DateInput } from '@/components/ui/date-input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
-import { getSales, updateSaleStatus, decrementInventoryItem, incrementInventory, getInventoryQuantity, createNotification } from '@/lib/db';
+import { getSales, updateSaleStatus, decrementInventoryItem, incrementInventory, getInventoryQuantity, createNotification, saleStockAlreadyTaken } from '@/lib/db';
 import { formatMXN } from '@/lib/currency';
 
 const statusConfig = {
@@ -25,6 +25,8 @@ const StatusBadge = ({ status }) => {
     </span>
   );
 };
+
+const OPEN_ORDER_STATUSES = ['pending', 'processing', 'ready', 'shipped', 'delivered'];
 
 const AdminOrders = () => {
   const [sales, setSales] = useState([]);
@@ -57,8 +59,15 @@ const AdminOrders = () => {
     try {
       const sale = sales.find((s) => s.id === id);
 
+      // Online store orders (place_store_order) already took their stock when
+      // they were placed: completing must not discount it again, and only
+      // those orders get stock back on cancel.
+      const stockTaken = (newStatus === 'completed' || newStatus === 'cancelled') && sale?.sale_items?.length > 0
+        ? await saleStockAlreadyTaken(id)
+        : false;
+
       // Pre-validate stock before completing
-      if (newStatus === 'completed' && sale?.sale_items?.length > 0) {
+      if (newStatus === 'completed' && !stockTaken && sale?.sale_items?.length > 0) {
         for (const item of sale.sale_items) {
           if (item.inventory_id && item.quantity > 0) {
             try {
@@ -101,8 +110,8 @@ const AdminOrders = () => {
         }
       }
 
-      // Restore inventory on cancel
-      if (newStatus === 'cancelled' && sale?.sale_items?.length > 0) {
+      // Restore inventory on cancel (only if this order actually took it)
+      if (newStatus === 'cancelled' && stockTaken && sale?.sale_items?.length > 0) {
         for (const item of sale.sale_items) {
           if (item.inventory_id && item.quantity > 0) {
             try {
@@ -145,7 +154,8 @@ const AdminOrders = () => {
   };
 
   const cancelAllOrders = async () => {
-    const toCancel = sales.filter((s) => !s.voided && s.status !== 'cancelled');
+    // Only open orders — never completed POS sales (this list shows all sales).
+    const toCancel = sales.filter((s) => !s.voided && !s.shift_id && OPEN_ORDER_STATUSES.includes(s.status || 'processing'));
     if (toCancel.length === 0) {
       toast({ title: 'No hay pedidos para cancelar' });
       return;
@@ -158,7 +168,7 @@ const AdminOrders = () => {
 
     for (const sale of toCancel) {
       try {
-        if (sale.sale_items?.length > 0) {
+        if (sale.sale_items?.length > 0 && (await saleStockAlreadyTaken(sale.id))) {
           for (const item of sale.sale_items) {
             if (item.inventory_id && item.quantity > 0) {
               await incrementInventory(

@@ -93,6 +93,42 @@
       "destination": "/customer-app/index.html"
     },
     {
+      "source": "/servicios",
+      "destination": "/servicios.html"
+    },
+    {
+      "source": "/consulta",
+      "destination": "/consulta.html"
+    },
+    {
+      "source": "/membresia",
+      "destination": "/membresia.html"
+    },
+    {
+      "source": "/monedas",
+      "destination": "/monedas.html"
+    },
+    {
+      "source": "/recargas-y-pagos",
+      "destination": "/recargas-y-pagos.html"
+    },
+    {
+      "source": "/ubicacion",
+      "destination": "/ubicacion.html"
+    },
+    {
+      "source": "/tienda",
+      "destination": "/tienda.html"
+    },
+    {
+      "source": "/aviso-de-privacidad",
+      "destination": "/aviso-de-privacidad.html"
+    },
+    {
+      "source": "/inicio",
+      "destination": "/inicio.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

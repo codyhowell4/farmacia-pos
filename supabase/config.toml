@@ -99,3 +99,6 @@ verify_jwt = true
 # only; the function additionally requires an active admin/pos profile.
 [functions.rnp-servicios]
 verify_jwt = true
+
+[functions.empresa-lead]
+verify_jwt = false
