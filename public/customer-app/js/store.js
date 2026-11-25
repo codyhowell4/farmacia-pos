@@ -253,7 +253,7 @@ export const Store = {
   
   // Gamification Methods
   getPointsBalance() {
-    return get('pointsBalance') || 350;
+    return get('pointsBalance') || 0;
   },
   
   addPoints(amount, reason) {
@@ -386,7 +386,7 @@ export const Store = {
   // Profile Methods
   getProfile() {
     return get('userProfile') || {
-      name: 'María García',
+      name: '',
       height: null,
       birthdate: '',
       gender: ''

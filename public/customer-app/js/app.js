@@ -1,5 +1,5 @@
 // Simple Farmacia App
-import { Store } from './store.js?v=8';
+import { Store } from './store.js?v=9';
 import { getGuideCategories, getGuideArticles, getArticle, searchGuides } from './data.js?v=8';
 import { 
   calculateBMR, 
@@ -241,6 +241,32 @@ async function initAuth() {
   }
 }
 
+// ── Menu header helpers (real user data only) ──
+function escapeHtmlApolo(v) {
+  return String(v ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+function initialsApolo(name) {
+  const parts = String(name || '').replace(/@.*/, '').trim().split(/\s+/).filter(Boolean);
+  return ((parts[0] || '?')[0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
+async function refreshMenuStatusApolo() {
+  const statusEl = document.getElementById('menu-user-status');
+  if (!statusEl || !currentAuthUser) return;
+  try {
+    const [details, coins] = await Promise.all([
+      FarmaciaAPI.getMembershipDetails().catch(() => null),
+      FarmaciaAPI.coinsMyStatus ? FarmaciaAPI.coinsMyStatus().catch(() => null) : null,
+    ]);
+    if (!currentAuthUser) return;
+    const plan = details?.isActive ? (details.plan_type || details.plan_id || '') : '';
+    const planLabel = details?.isActive
+      ? `Membresía ${/famil/i.test(plan) ? 'Familiar' : /empresa|business/i.test(plan) ? 'Empresa' : 'Individual'}`
+      : (details?.isFamilyMember ? 'Miembro familiar' : 'Sin membresía');
+    const coinsLabel = coins?.enrolled ? ` · ${Number(coins.balance || 0).toLocaleString('es-MX')} Monedas` : '';
+    statusEl.textContent = planLabel + coinsLabel;
+  } catch (e) { /* keep the sync label */ }
+}
+
 function updateMenuUserInfo() {
   const nameEl = document.getElementById('menu-user-name');
   const statusEl = document.getElementById('menu-user-status');
@@ -256,8 +282,10 @@ function updateMenuUserInfo() {
   if (currentAuthUser) {
     const displayName = currentCustomerProfile?.name || currentAuthUser.user_metadata?.full_name || currentAuthUser.email;
     nameEl.textContent = displayName;
-    statusEl.textContent = currentAuthUser.email || 'Conectado';
-    avatarEl.textContent = '👤';
+    // Real membership level + real Monedas Apolo balance (filled async).
+    statusEl.textContent = membershipTier === 'paid' ? 'Miembro Apolo' : 'Sin membresía';
+    avatarEl.textContent = initialsApolo(displayName);
+    refreshMenuStatusApolo();
     
     if (loginBtn) loginBtn.style.display = 'none';
     if (signupBtn) signupBtn.style.display = 'none';
@@ -265,10 +293,10 @@ function updateMenuUserInfo() {
     if (loginItem) loginItem.style.display = 'none';
     if (signupItem) signupItem.style.display = 'none';
   } else {
-    const profile = Store.getProfile();
-    nameEl.textContent = profile.name || 'Invitado';
-    statusEl.textContent = '🏆 Nivel Plata • 350 pts';
-    avatarEl.textContent = '👤';
+    nameEl.textContent = 'Invitado';
+    statusEl.textContent = 'Inicia sesión o crea tu cuenta';
+    avatarEl.textContent = '';
+    avatarEl.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>';
     
     if (loginBtn) loginBtn.style.display = 'block';
     if (signupBtn) signupBtn.style.display = 'block';
@@ -3907,7 +3935,7 @@ function formatDate(dateStr) {
 
 // Render Goals - Enhanced Dashboard with Edit
 function renderGoals() {
-  const points = Store.getPointsBalance() || 350;
+  const points = Store.getPointsBalance() || 0;
   const level = Store.getUserLevel() || { name: 'Bronce', color: '#b45309', bgColor: 'linear-gradient(135deg, #b45309, #92400e)', next: 500, benefits: ['Descuento 5%'] };
   const tierProgress = Store.getTierProgress() || { percent: 0, pointsToNext: 500 };
   const goals = Store.getHealthGoals() || [
@@ -4496,7 +4524,7 @@ function renderSettings() {
         <div style="padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; border-bottom: 1px solid #EEF2F7;" onclick="showProfileModal()">
           <div style="width: 40px; height: 40px; background: linear-gradient(135deg, #46AC78, #359268); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">👤</div>
           <div style="flex: 1;">
-            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">${profile.name || 'María García'}</div>
+            <div style="font-weight: 600; color: #1a1a2e; font-size: 0.95rem;">${escapeHtmlApolo((currentCustomerProfile && currentCustomerProfile.name) || profile.name || 'Mi perfil')}</div>
             <div style="font-size: 0.8rem; color: #64748b;">Editar información personal</div>
           </div>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
@@ -7139,7 +7167,7 @@ function getActivityEmoji(level) {
 // ============================================
 
 function renderProgress() {
-  const points = Store.getPointsBalance() || 350;
+  const points = Store.getPointsBalance() || 0;
   const level = Store.getUserLevel() || { name: 'Plata' };
   const goals = Store.getHealthGoals() || [];
   const history = CheckInSystem.getCheckInHistory();

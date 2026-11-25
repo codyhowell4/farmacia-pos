@@ -323,7 +323,7 @@ window.FarmaciaAPI = (function () {
      */
     async getCustomerProfile() {
       const fallback = () =>
-        lsGet('userProfile', { name: 'María García', height: null, birthdate: '', gender: '' });
+        lsGet('userProfile', { name: '', height: null, birthdate: '', gender: '' });
 
       if (!sb) {
         console.log('[FarmaciaAPI] getCustomerProfile fallback');
