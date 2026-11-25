@@ -22,7 +22,7 @@ import { VoiceAI, HealthFAQ } from './voiceAI.js';
 import { FastingTracker, SleepTracker, CheckInSystem } from './tracking.js';
 import { NotificationManager } from './notifications.js';
 import { renderPulsera } from './pulsera.js?v=6';
-import { registerApolo, renderInicio, renderMonedas, renderAhorro, renderChequeo, getApoloStreak } from './apolo.js?v=1';
+import { registerApolo, renderInicio, renderMonedas, renderAhorro, renderChequeo, getApoloStreak, renderMiControl, renderBienestar } from './apolo.js?v=2';
 
 // Toast notifications (CSS in style.css)
 function showToast(message, type = 'info') {
@@ -10997,7 +10997,9 @@ function saludHeader(active, opts = {}) {
         </div>
         ${action}
       </div>
-      <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+      <div style="display: flex; gap: 0.35rem; margin-top: 0.75rem;">
+        ${tabBtn('control', 'Mi control')}
+        ${tabBtn('bienestar', 'Bienestar')}
         ${tabBtn('citas', 'Citas')}
         ${tabBtn('recetas', 'Recetas')}
       </div>
@@ -11008,13 +11010,18 @@ function saludHeader(active, opts = {}) {
 const SALUD_CITAS_ACTION = '<button onclick="renderConsulta()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Nueva</button>';
 const SALUD_RECETAS_ACTION = '<button onclick="showUploadPrescriptionModal()" style="background: rgba(255,255,255,0.2); color: #1a1a2e; border: none; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; cursor: pointer;">+ Subir</button>';
 
+// Salud tabs: Mi control (default) · Bienestar · Citas · Recetas.
+// Mi control and Bienestar live in apolo.js.
 function renderSalud() {
+  if (!window.__saludTab) window.__saludTab = 'control';
   if (window.__saludTab === 'recetas') return renderPrescripciones();
+  if (window.__saludTab === 'control') return renderMiControl(saludHeader('control', { subtitle: 'Glucosa, presión y medicinas' }));
+  if (window.__saludTab === 'bienestar') return renderBienestar(saludHeader('bienestar', { subtitle: 'Estrés, sueño y ánimo' }));
   return renderAppointments();
 }
 
 window.switchSaludTab = function(tab) {
-  window.__saludTab = tab === 'recetas' ? 'recetas' : 'citas';
+  window.__saludTab = ['recetas', 'control', 'bienestar'].includes(tab) ? tab : 'citas';
   renderSalud();
 };
 window.renderSalud = renderSalud;

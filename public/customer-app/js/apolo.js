@@ -763,3 +763,273 @@ window.apoloBreathStart = function () {
 };
 
 window.apoloGo = function (page) { ctx.goPage(page); };
+
+// ============================================================
+// SALUD › MI CONTROL  and  SALUD › BIENESTAR   (fase 3)
+// Rendered under the existing Salud header (tabs Mi control · Bienestar ·
+// Citas · Recetas). Readings entered here stay on the device (aviso §7);
+// in-store readings come from the customer's own appointments
+// (nurse_vitals: ta "128/82", glicemia, weight_kg).
+// ============================================================
+const GLU_LOW = 80, GLU_HIGH = 130;   // ayunas, meta usual para personas con diabetes
+const dayKey = (iso) => {
+  try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format(new Date(iso)); } catch (e) { return String(iso).slice(0, 10); }
+};
+const shortDay = (date) => new Date(date + 'T12:00:00').toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+const weekdayInitial = (date) => ['D', 'L', 'M', 'M', 'J', 'V', 'S'][new Date(date + 'T12:00:00').getDay()];
+
+export const ApoloVitals = {
+  list() { return LS.get('vitals', []); },
+  add(v) { const all = ApoloVitals.list(); all.push({ ...v, at: new Date().toISOString() }); LS.set('vitals', all.slice(-400)); },
+};
+
+function glucoseStatus(v) {
+  if (v < 70) return ['Baja', '#B42318', '#FEE4E2'];
+  if (v < GLU_LOW) return ['Un poco baja', COIN_INK, COIN_BG];
+  if (v <= GLU_HIGH) return ['En tu meta', GREEN, '#E6F4EC'];
+  if (v <= 180) return ['Un poco alta', COIN_INK, COIN_BG];
+  return ['Alta', '#B42318', '#FEE4E2'];
+}
+function bpStatus(sys, dia) {
+  if (sys >= 180 || dia >= 120) return ['Muy alta: busca atención', '#B42318', '#FEE4E2'];
+  if (sys >= 140 || dia >= 90) return ['Alta', '#B42318', '#FEE4E2'];
+  if (sys >= 130 || dia >= 80) return ['Un poco alta', COIN_INK, COIN_BG];
+  if (sys >= 120) return ['Elevada', COIN_INK, COIN_BG];
+  if (sys < 90 || dia < 60) return ['Baja', COIN_INK, COIN_BG];
+  return ['Normal', GREEN, '#E6F4EC'];
+}
+
+// All readings (device + in-store), newest first.
+async function collectReadings() {
+  const local = ApoloVitals.list().map((v) => ({ ...v, source: 'app' }));
+  const store = [];
+  if (ctx.getAuthUser() && window.FarmaciaAPI?.getMyStoreVitals) {
+    (await window.FarmaciaAPI.getMyStoreVitals().catch(() => [])).forEach((a) => {
+      const nv = a.nurse_vitals || {};
+      const at = a.appointment_date;
+      const g = parseFloat(nv.glicemia);
+      if (Number.isFinite(g) && g > 0) store.push({ type: 'glucosa', value: g, at, source: 'sucursal' });
+      const m = String(nv.ta || '').match(/(\d{2,3})\s*\/\s*(\d{2,3})/);
+      if (m) store.push({ type: 'presion', sys: +m[1], dia: +m[2], at, source: 'sucursal' });
+      const w = parseFloat(nv.weight_kg);
+      if (Number.isFinite(w) && w > 0) store.push({ type: 'peso', kg: w, at, source: 'sucursal' });
+    });
+  }
+  const weights = ApoloLocal.weights().map((w) => ({ type: 'peso', kg: w.kg, at: w.date + 'T12:00:00-06:00', source: 'app' }));
+  return [...local, ...store, ...weights].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+
+function lineChart(points, { w = 316, h = 150, min, max, band = null, label = '' } = {}) {
+  // points: [{x: 0..n-1, y|null}] ; n = points.length
+  const n = points.length;
+  const pad = 14;
+  const sx = (i) => pad + (i * (w - 2 * pad)) / Math.max(1, n - 1);
+  const sy = (v) => h - pad - ((v - min) / Math.max(1, max - min)) * (h - 2 * pad);
+  const pts = points.map((p, i) => (p.y == null ? null : [sx(i), sy(p.y)]));
+  const segs = [];
+  let cur = [];
+  pts.forEach((p) => { if (p) cur.push(p); else if (cur.length) { segs.push(cur); cur = []; } });
+  if (cur.length) segs.push(cur);
+  return `<svg width="100%" viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(label)}" style="display:block;">
+    ${band ? `<rect x="${pad - 4}" y="${sy(band[1])}" width="${w - 2 * pad + 8}" height="${Math.max(2, sy(band[0]) - sy(band[1]))}" rx="6" fill="#E6F4EC"></rect>` : ''}
+    ${segs.map((sg) => `<polyline points="${sg.map((p) => p.join(',')).join(' ')}" fill="none" stroke="${NAVY}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></polyline>`).join('')}
+    ${pts.filter(Boolean).map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="${NAVY}"></circle>`).join('')}
+  </svg>`;
+}
+
+export async function renderMiControl(headerHtml) {
+  const main = ctx.getMain();
+  main.innerHTML = headerHtml + wrap(`<div id="apolo-control" style="padding:16px 16px 24px;display:flex;flex-direction:column;gap:12px;"><p style="color:${MUTED};">Cargando…</p></div>`);
+  window.apoloRefreshSalud = () => { if (document.getElementById('apolo-control')) renderMiControl(headerHtml); };
+  const box = document.getElementById('apolo-control');
+  const readings = await collectReadings();
+  const s = await loadStatus().catch(() => null);
+  const lastG = readings.find((r) => r.type === 'glucosa');
+  const lastP = readings.find((r) => r.type === 'presion');
+  const srcLabel = (r) => (r.source === 'sucursal' ? 'En sucursal' : 'Anotado por ti') + ' · ' + shortDay(dayKey(r.at));
+  const statCard = (title, valueHtml, st, r, fn) => `
+    <div style="background:#fff;border:1px solid ${BORDER};border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:6px;">
+      <span style="font-size:11px;font-weight:700;color:${MUTED};letter-spacing:.03em;">${title}</span>
+      ${valueHtml}
+      ${st ? pill(st[0], st[1], st[2]) : ''}
+      <span style="font-size:11px;color:${MUTED};">${r ? srcLabel(r) : 'Sin lecturas'}</span>
+      <button type="button" onclick="${fn}" style="min-height:40px;border:1px solid ${NAVY};border-radius:10px;background:#fff;color:${NAVY};font-weight:700;font-size:12px;cursor:pointer;margin-top:2px;">Anotar</button>
+    </div>`;
+
+  // 7-day glucose (latest reading per day)
+  const days7 = [...Array(7)].map((_, i) => mxToday(i - 6));
+  const gByDay = {};
+  readings.filter((r) => r.type === 'glucosa').forEach((r) => { const d = dayKey(r.at); if (gByDay[d] == null) gByDay[d] = r.value; });
+  const gPts = days7.map((d) => ({ y: gByDay[d] ?? null }));
+  const gVals = gPts.map((p) => p.y).filter((v) => v != null);
+  const gMin = Math.min(60, ...gVals) - 5, gMax = Math.max(160, ...gVals) + 5;
+
+  // weight trend (last 10 readings, oldest → newest)
+  const wReadings = readings.filter((r) => r.type === 'peso').slice(0, 10).reverse();
+  const wVals = wReadings.map((r) => r.kg);
+
+  const meds = ApoloLocal.meds();
+  const medRows = meds.map((m) => {
+    const left = medDaysLeft(m);
+    const tag = left == null ? pill('Anota cuántas tienes', MUTED, '#EEF0FA') : left <= 3 ? pill(left === 0 ? 'Se terminó' : `Toca en ${left} ${left === 1 ? 'día' : 'días'}`, '#B42318', '#FEE4E2') : pill(`Toca en ${left} días`);
+    return `<div style="display:flex;align-items:center;gap:12px;">${iconBox('pill')}<div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:700;">${esc(m.name)}</div><div style="font-size:12px;color:${MUTED};">${(m.times || []).map(fmtTime).join(' y ')}</div></div>${tag}</div>`;
+  }).join('');
+
+  box.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
+      ${statCard('GLUCOSA', lastG ? `<span style="font-size:26px;font-weight:800;color:${NAVY};">${Math.round(lastG.value)} <span style="font-size:12px;font-weight:600;">mg/dL</span></span>` : `<span style="font-size:22px;font-weight:800;color:${MUTED};">—</span>`, lastG ? glucoseStatus(lastG.value) : null, lastG, "apoloAddReading('glucosa')")}
+      ${statCard('PRESIÓN', lastP ? `<span style="font-size:26px;font-weight:800;color:${NAVY};">${lastP.sys}/${lastP.dia}</span>` : `<span style="font-size:22px;font-weight:800;color:${MUTED};">—</span>`, lastP ? bpStatus(lastP.sys, lastP.dia) : null, lastP, "apoloAddReading('presion')")}
+    </div>
+    ${card(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><span style="font-size:15px;font-weight:800;">Glucosa · últimos 7 días</span><span style="font-size:12px;color:${MUTED};">Meta ${GLU_LOW} a ${GLU_HIGH}</span></div>
+      ${gVals.length ? lineChart(gPts, { min: gMin, max: gMax, band: [GLU_LOW, GLU_HIGH], label: `Glucosa de los últimos 7 días: ${gVals.join(', ')} mg/dL` }) : `<p style="font-size:13px;color:${MUTED};margin:6px 0;">Anota tu glucosa o hazte un chequeo para ver tu gráfica.</p>`}
+      <div style="display:flex;justify-content:space-between;padding:0 10px;font-size:11px;color:${MUTED};font-weight:600;">${days7.map((d) => `<span>${weekdayInitial(d)}</span>`).join('')}</div>`)}
+    ${card(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><span style="font-size:15px;font-weight:800;">Peso</span>${wVals.length ? `<span style="font-size:13px;font-weight:700;">${wVals[wVals.length - 1]} kg${wVals.length > 1 ? ` <span style="color:${MUTED};font-weight:600;">(${(wVals[wVals.length - 1] - wVals[0] >= 0 ? '+' : '')}${(wVals[wVals.length - 1] - wVals[0]).toFixed(1)} kg)</span>` : ''}</span>` : ''}</div>
+      ${wVals.length > 1 ? lineChart(wReadings.map((r) => ({ y: r.kg })), { h: 110, min: Math.min(...wVals) - 2, max: Math.max(...wVals) + 2, label: `Tendencia de peso: ${wVals.join(', ')} kg` }) : `<p style="font-size:13px;color:${MUTED};margin:6px 0;">${wVals.length ? 'Anota tu peso otra vez la próxima semana para ver la tendencia.' : 'Aún no anotas tu peso.'}</p>`}
+      <button type="button" onclick="apoloEnterWeight()" style="${btnOutline};margin-top:8px;">Actualizar peso</button>`)}
+    <button type="button" onclick="apoloOpenChequeo()" style="text-align:left;background:${NAVY};border:none;border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:12px;color:#fff;cursor:pointer;">
+      <div style="width:40px;height:40px;border-radius:12px;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;">${svg('cal', '#fff')}</div>
+      <div style="flex:1;"><div style="font-size:15px;font-weight:800;">Chequeo en sucursal</div><div style="font-size:12px;color:#C9D0F2;">Glucosa, presión, peso e IMC${s?.enrolled ? ` · gana +${fmtInt(s.settings?.coins_chequeo ?? 10)} Monedas` : ''}</div></div>${svg('chev', '#fff')}
+    </button>
+    ${card(`<div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:15px;font-weight:800;">Mis medicinas</span><button type="button" onclick="apoloEditMeds()" style="min-height:40px;border:none;background:none;color:${NAVY};font-weight:700;cursor:pointer;">Editar</button></div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin:8px 0 12px;">${medRows || `<p style="font-size:13px;color:${MUTED};margin:0;">Agrega tus medicinas para tus recordatorios y para saber cuándo resurtir.</p>`}</div>
+      ${meds.length ? `<button type="button" onclick="apoloReserveRefill()" style="${btnOutline}">Apartar mi resurtido</button>` : `<button type="button" onclick="apoloMedForm()" style="${btnOutline}">Agregar medicina</button>`}`)}
+    <p style="font-size:11px;color:${MUTED};margin:0 2px;">Lo que anotas aquí se guarda solo en tu teléfono. Las metas son orientativas; tu médico define las tuyas.</p>`;
+}
+
+window.apoloAddReading = function (type) {
+  const body = type === 'glucosa' ? `
+      <label for="ar-g" style="font-size:13px;font-weight:600;">Glucosa (mg/dL)</label>
+      <input id="ar-g" type="number" inputmode="numeric" min="20" max="600" style="width:100%;margin:6px 0 10px;padding:12px;border:2px solid ${BORDER};border-radius:12px;font-size:18px;">
+      <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:14px;"><input type="checkbox" id="ar-fast" checked style="width:20px;height:20px;">En ayunas</label>` : `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+        <div><label for="ar-s" style="font-size:13px;font-weight:600;">Sistólica (alta)</label><input id="ar-s" type="number" inputmode="numeric" min="60" max="260" style="width:100%;margin-top:6px;padding:12px;border:2px solid ${BORDER};border-radius:12px;font-size:18px;"></div>
+        <div><label for="ar-d" style="font-size:13px;font-weight:600;">Diastólica (baja)</label><input id="ar-d" type="number" inputmode="numeric" min="30" max="160" style="width:100%;margin-top:6px;padding:12px;border:2px solid ${BORDER};border-radius:12px;font-size:18px;"></div>
+      </div>`;
+  openSheet(type === 'glucosa' ? 'Anotar glucosa' : 'Anotar presión', `<p style="font-size:12px;color:${MUTED};margin:0 0 10px;">Se guarda solo en tu teléfono.</p>${body}<button type="button" onclick="apoloSaveReading('${type}')" style="${btnPrimary}">Guardar</button>`);
+};
+window.apoloSaveReading = function (type) {
+  if (type === 'glucosa') {
+    const v = Number(document.getElementById('ar-g')?.value);
+    if (!(v >= 20 && v <= 600)) { ctx.showToast('Escribe un valor entre 20 y 600 mg/dL', 'warning'); return; }
+    ApoloVitals.add({ type, value: Math.round(v), fasting: !!document.getElementById('ar-fast')?.checked });
+  } else {
+    const sys = Number(document.getElementById('ar-s')?.value), dia = Number(document.getElementById('ar-d')?.value);
+    if (!(sys >= 60 && sys <= 260 && dia >= 30 && dia <= 160 && sys > dia)) { ctx.showToast('Revisa los valores de presión', 'warning'); return; }
+    ApoloVitals.add({ type, sys: Math.round(sys), dia: Math.round(dia) });
+    if (sys >= 180 || dia >= 120) ctx.showToast('Tu presión está muy alta. Si tienes dolor de pecho, falta de aire o dolor de cabeza fuerte, busca atención de inmediato.', 'error');
+  }
+  closeSheet();
+  window.apoloRefreshSalud && window.apoloRefreshSalud();
+};
+window.apoloReserveRefill = async function () {
+  if (!ctx.getAuthUser()) { ctx.showToast('Inicia sesión para apartar', 'warning'); ctx.goPage('login'); return; }
+  const meds = ApoloLocal.meds();
+  const due = meds.filter((m) => { const d = medDaysLeft(m); return d == null || d <= 7; });
+  const list = (due.length ? due : meds).map((m) => m.name);
+  openSheet('Apartar mi resurtido', `
+    <p style="font-size:14px;margin:0 0 8px;">Te apartamos en sucursal:</p>
+    <ul style="margin:0 0 12px 18px;font-size:14px;">${list.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
+    <p style="font-size:12px;color:${MUTED};margin:0 0 14px;">Al apartar, enviamos los nombres de estas medicinas a la farmacia para preparar tu pedido. Si alguna requiere receta, tráela al recogerla.</p>
+    <button type="button" onclick='apoloConfirmRefill(${JSON.stringify(list).replace(/'/g, "&#39;")})' style="${btnPrimary}">Apartar</button>`);
+};
+window.apoloConfirmRefill = async function (list) {
+  const { error } = await window.FarmaciaAPI.requestRefill({ quantity: 1, notes: `Resurtido desde la app: ${list.join(', ')}`.slice(0, 500) });
+  closeSheet();
+  if (error) { ctx.showToast('No se pudo apartar. Intenta de nuevo.', 'error'); return; }
+  ctx.showToast('¡Listo! Te avisamos cuando esté preparado.', 'success');
+};
+
+// ── BIENESTAR ──────────────────────────────────────────────────
+const MOODS = [['Muy mal', '#B42318'], ['Mal', '#C2570C'], ['Normal', '#7A5200'], ['Bien', '#2F7D55'], ['Muy bien', '#1E6B47']];
+const STRESS = ['Bajo', 'Medio', 'Alto'];
+const moodFace = (i, color) => {
+  const mouth = ['M8 16.5c1.2-1.6 2.6-2.3 4-2.3s2.8.7 4 2.3', 'M8.5 16c1-.9 2.2-1.3 3.5-1.3s2.5.4 3.5 1.3', 'M8.5 15.5h7', 'M8.5 14.5c1 .9 2.2 1.3 3.5 1.3s2.5-.4 3.5-1.3', 'M8 14c1.2 1.6 2.6 2.3 4 2.3s2.8-.7 4-2.3'][i];
+  return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9 10h.01M15 10h.01"></path><path d="${mouth}"></path></svg>`;
+};
+
+export async function renderBienestar(headerHtml) {
+  const main = ctx.getMain();
+  window.apoloRefreshSalud = () => { if (document.getElementById('apolo-bienestar')) renderBienestar(headerHtml); };
+  const today = mxToday();
+  const moods = LS.get('mood', {});
+  const stress = LS.get('stress', {});
+  const sleep = LS.get('sleep', {});
+  const s = await loadStatus().catch(() => null);
+  const streak = s && s.enrolled ? Number(s.streak || 0) : localStreak();
+  const toBonus = 7 - (streak % 7 || 0);
+  const lastSleepKey = Object.keys(sleep).sort().pop();
+  const sl = lastSleepKey ? sleep[lastSleepKey] : null;
+  const days7 = [...Array(7)].map((_, i) => mxToday(i - 6));
+  const stressVals = days7.map((d) => (stress[d] ? stress[d] : null));
+  const firstHalf = stressVals.slice(0, 3).filter(Boolean), secondHalf = stressVals.slice(4).filter(Boolean);
+  const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  const trend = firstHalf.length && secondHalf.length ? (avg(secondHalf) < avg(firstHalf) - 0.2 ? ['Bajando', GREEN, '#E6F4EC'] : avg(secondHalf) > avg(firstHalf) + 0.2 ? ['Subiendo', COIN_INK, COIN_BG] : ['Estable', NAVY, '#EEF0FA']) : null;
+  const breaths = ApoloLocal.breathSessions().filter((iso) => dayKey(iso) >= days7[0]).length;
+
+  main.innerHTML = headerHtml + wrap(`<div id="apolo-bienestar" style="padding:16px 16px 24px;display:flex;flex-direction:column;gap:12px;">
+    ${card(`<div style="font-size:15px;font-weight:800;margin-bottom:10px;">¿Cómo te sientes hoy?</div>
+      <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;">${MOODS.map(([label, color], i) => {
+        const sel = moods[today] === i + 1;
+        return `<button type="button" aria-pressed="${sel}" onclick="apoloSetMood(${i + 1})" style="min-height:72px;border-radius:12px;border:${sel ? `2px solid ${NAVY}` : `1px solid ${BORDER}`};background:${sel ? '#EEF0FA' : '#fff'};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;font-size:11px;font-weight:600;color:${INK};">${moodFace(i, color)}${label}</button>`;
+      }).join('')}</div>
+      <div style="font-size:13px;font-weight:700;margin:12px 0 8px;">¿Y tu estrés?</div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;">${STRESS.map((label, i) => {
+        const sel = stress[today] === i + 1;
+        return `<button type="button" aria-pressed="${sel}" onclick="apoloSetStress(${i + 1})" style="min-height:44px;border-radius:12px;border:${sel ? `2px solid ${NAVY}` : `1px solid ${BORDER}`};background:${sel ? '#EEF0FA' : '#fff'};font-weight:700;font-size:13px;color:${INK};cursor:pointer;">${label}</button>`;
+      }).join('')}</div>`)}
+    <div style="background:linear-gradient(135deg,#F2FBF6,#E2F5EB);border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:12px;">
+      ${iconBox('wind', '#fff', GREEN)}
+      <div style="flex:1;"><div style="font-size:15px;font-weight:800;">Respira 3 minutos</div><div style="font-size:12px;color:${MUTED};">Inhala 4, sostén 7, exhala 8. Baja el estrés antes de dormir.${breaths ? ` · ${breaths} esta semana` : ''}</div></div>
+      <button type="button" onclick="apoloBreathe()" style="min-height:44px;padding:0 14px;border:none;border-radius:12px;background:${GREEN};color:#fff;font-weight:700;cursor:pointer;">Empezar</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;">
+      <button type="button" onclick="apoloEnterSleep()" style="text-align:left;background:#fff;border:1px solid ${BORDER};border-radius:16px;padding:14px;cursor:pointer;color:${INK};">
+        <div style="font-size:11px;font-weight:700;color:${MUTED};letter-spacing:.03em;">SUEÑO ${lastSleepKey === today ? 'ANOCHE' : 'ÚLTIMO REGISTRO'}</div>
+        <div style="font-size:22px;font-weight:800;color:${NAVY};margin-top:4px;">${sl != null ? `${Math.floor(sl / 60)} h ${String(sl % 60).padStart(2, '0')} m` : '—'}</div>
+        <div style="font-size:12px;color:${NAVY};font-weight:700;margin-top:4px;">${lastSleepKey === today ? 'Editar' : 'Anotar'}</div>
+      </button>
+      <div style="background:#fff;border:1px solid ${BORDER};border-radius:16px;padding:14px;">
+        <div style="font-size:11px;font-weight:700;color:${MUTED};letter-spacing:.03em;">RACHA</div>
+        <div style="font-size:22px;font-weight:800;color:#B4520F;margin-top:4px;">${streak} ${streak === 1 ? 'día' : 'días'}</div>
+        <div style="font-size:12px;color:${MUTED};margin-top:4px;">${s?.enrolled ? `${toBonus} más para +${fmtInt(s.settings?.coins_streak7 ?? 15)} Monedas` : 'Días seguidos con una meta'}</div>
+      </div>
+    </div>
+    ${card(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><span style="font-size:15px;font-weight:800;">Tu semana</span>${trend ? pill(`Estrés ${trend[0].toLowerCase()}`, trend[1], trend[2]) : ''}</div>
+      ${weekChart(days7, moods, stress)}
+      <div style="display:flex;gap:14px;font-size:11px;color:${MUTED};margin-top:6px;"><span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#C9D0F2;margin-right:4px;"></span>Estrés</span><span><span style="display:inline-block;width:10px;height:3px;background:${GREEN};margin-right:4px;vertical-align:middle;"></span>Ánimo</span></div>`)}
+    <p style="font-size:11px;color:${MUTED};margin:0 2px;">Tu ánimo, estrés y sueño se guardan solo en tu teléfono. Respirar no da Monedas.</p>
+  </div>`);
+}
+function weekChart(days, moods, stress) {
+  const w = 316, h = 130, pad = 14, colW = (w - 2 * pad) / days.length;
+  const bars = days.map((d, i) => {
+    const v = stress[d];
+    if (!v) return '';
+    const bh = (v / 3) * (h - 2 * pad - 10);
+    return `<rect x="${pad + i * colW + colW * 0.25}" y="${h - pad - bh}" width="${colW * 0.5}" height="${bh}" rx="4" fill="#C9D0F2"></rect>`;
+  }).join('');
+  const pts = days.map((d, i) => (moods[d] ? [pad + i * colW + colW / 2, h - pad - ((moods[d] - 1) / 4) * (h - 2 * pad - 10) - 5] : null));
+  const line = pts.filter(Boolean).map((p) => p.join(',')).join(' ');
+  const has = days.some((d) => moods[d] || stress[d]);
+  return `${has ? `<svg width="100%" viewBox="0 0 ${w} ${h}" role="img" aria-label="Ánimo y estrés de los últimos 7 días" style="display:block;">${bars}${line ? `<polyline points="${line}" fill="none" stroke="${GREEN}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></polyline>` : ''}${pts.filter(Boolean).map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="${GREEN}"></circle>`).join('')}</svg>` : `<p style="font-size:13px;color:${MUTED};margin:6px 0;">Registra tu ánimo y estrés cada día para ver tu semana.</p>`}
+    <div style="display:flex;justify-content:space-around;font-size:11px;color:${MUTED};font-weight:600;">${days.map((d) => `<span>${weekdayInitial(d)}</span>`).join('')}</div>`;
+}
+window.apoloSetMood = (v) => { const m = LS.get('mood', {}); m[mxToday()] = v; LS.set('mood', m); window.apoloRefreshSalud && window.apoloRefreshSalud(); };
+window.apoloSetStress = (v) => { const m = LS.get('stress', {}); m[mxToday()] = v; LS.set('stress', m); window.apoloRefreshSalud && window.apoloRefreshSalud(); };
+window.apoloEnterSleep = function () {
+  const cur = (LS.get('sleep', {}))[mxToday()];
+  openSheet('¿Cuánto dormiste anoche?', `
+    <p style="font-size:12px;color:${MUTED};margin:0 0 10px;">Se guarda solo en tu teléfono.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+      <div><label for="sl-h" style="font-size:13px;font-weight:600;">Horas</label><input id="sl-h" type="number" inputmode="numeric" min="0" max="16" value="${cur != null ? Math.floor(cur / 60) : ''}" style="width:100%;margin-top:6px;padding:12px;border:2px solid ${BORDER};border-radius:12px;font-size:18px;"></div>
+      <div><label for="sl-m" style="font-size:13px;font-weight:600;">Minutos</label><input id="sl-m" type="number" inputmode="numeric" min="0" max="59" value="${cur != null ? cur % 60 : ''}" style="width:100%;margin-top:6px;padding:12px;border:2px solid ${BORDER};border-radius:12px;font-size:18px;"></div>
+    </div>
+    <button type="button" onclick="apoloSaveSleep()" style="${btnPrimary}">Guardar</button>`);
+};
+window.apoloSaveSleep = function () {
+  const h = Number(document.getElementById('sl-h')?.value || 0), m = Number(document.getElementById('sl-m')?.value || 0);
+  if (!(h >= 0 && h <= 16 && m >= 0 && m < 60) || h * 60 + m === 0) { ctx.showToast('Revisa las horas de sueño', 'warning'); return; }
+  const all = LS.get('sleep', {}); all[mxToday()] = Math.round(h * 60 + m); LS.set('sleep', all);
+  closeSheet();
+  window.apoloRefreshSalud && window.apoloRefreshSalud();
+};

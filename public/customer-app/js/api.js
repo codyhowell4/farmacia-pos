@@ -940,6 +940,26 @@ window.FarmaciaAPI = (function () {
       }
     },
 
+    // In-store readings (nurse vitals on the customer's own appointments:
+    // chequeos and consultas). Read-only, RLS: own appointments only.
+    async getMyStoreVitals() {
+      if (!sb) return [];
+      const user = await getAuthUser();
+      if (!user) return [];
+      try {
+        const { data: customer } = await sb.from('customers').select('id').eq('profile_id', user.id).maybeSingle();
+        if (!customer) return [];
+        const { data, error } = await sb.from('appointments').select('appointment_date, nurse_vitals, service')
+          .eq('customer_id', customer.id).not('nurse_vitals', 'is', null)
+          .order('appointment_date', { ascending: false }).limit(40);
+        if (error) throw error;
+        return data || [];
+      } catch (err) {
+        console.warn('[FarmaciaAPI] getMyStoreVitals error:', err.message);
+        return [];
+      }
+    },
+
     async getGenericOptions(query = null) {
       if (!sb) return [];
       try {
