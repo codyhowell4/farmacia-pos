@@ -158,7 +158,7 @@ async function claim(kind, slot = null) {
   const { data, error } = await window.FarmaciaAPI.coinsClaim(kind, slot);
   if (error) { ctx.showToast(error.message || 'No se pudieron registrar tus Monedas', 'warning'); return { awarded: 0 }; }
   statusCache.at = 0;
-  if (data?.awarded > 0) ctx.showToast(`+${coinsLabel(data.awarded)}`, 'success');
+  if (data?.awarded > 0) { ctx.showToast(`+${coinsLabel(data.awarded)}`, 'success'); window.apoloTrack?.coinsEarned(kind, data.awarded); }
   return data || { awarded: 0 };
 }
 
@@ -466,6 +466,13 @@ export async function renderMonedas() {
     box.innerHTML = enrollHtml() + earnHtml(s) + ladderHtml(s);
     return;
   }
+  try {
+    const seen = LS.get('ga_redeemed_seen', null);
+    const reds = (s.history || []).filter((h) => h.kind === 'redeem');
+    const newest = reds[0]?.created_at || '';
+    if (seen !== null) reds.filter((h) => h.created_at > seen).forEach((h) => window.apoloTrack?.rewardRedeemed(String(h.label || '').replace(/^Canje:\s*/, '')));
+    if (newest && newest !== seen) LS.set('ga_redeemed_seen', newest); else if (seen === null) LS.set('ga_redeemed_seen', '');
+  } catch (e) { /* ignore */ }
   const next = (s.tiers || []).find((t) => t.coins > s.balance);
   const prev = [...(s.tiers || [])].reverse().find((t) => t.coins <= s.balance);
   const base = prev ? prev.coins : 0;
@@ -709,6 +716,7 @@ window.apoloBookChequeo = async function () {
   const dateIso = new Date(`${chequeo.day}T${chequeo.time}:00-06:00`).toISOString();
   const { error } = await window.FarmaciaAPI.createChequeoAppointment({ dateIso, tests, notes: [tests.includes('glucosa') ? 'Ayuno 8 h' : '', notes].filter(Boolean).join(' · ') });
   if (error) { ctx.showToast(error.message || 'No se pudo agendar', 'error'); return; }
+  window.apoloTrack?.checkupBooked(tests);
   ctx.showToast('¡Chequeo agendado! Lo verás en Salud › Citas.', 'success');
   window.__saludTab = 'citas';
   ctx.goPage('salud');
@@ -754,6 +762,7 @@ window.apoloBreathStart = function () {
       ball.style.transform = 'scale(1)';
       phaseEl.textContent = '¡Muy bien!';
       ApoloLocal.addBreathSession();
+      window.apoloTrack?.breathingComplete();
       if (btn) { btn.style.display = ''; btn.textContent = 'Cerrar'; btn.onclick = closeSheet; }
       return;
     }
@@ -1014,7 +1023,7 @@ function weekChart(days, moods, stress) {
   return `${has ? `<svg width="100%" viewBox="0 0 ${w} ${h}" role="img" aria-label="Ánimo y estrés de los últimos 7 días" style="display:block;">${bars}${line ? `<polyline points="${line}" fill="none" stroke="${GREEN}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></polyline>` : ''}${pts.filter(Boolean).map((p) => `<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="${GREEN}"></circle>`).join('')}</svg>` : `<p style="font-size:13px;color:${MUTED};margin:6px 0;">Registra tu ánimo y estrés cada día para ver tu semana.</p>`}
     <div style="display:flex;justify-content:space-around;font-size:11px;color:${MUTED};font-weight:600;">${days.map((d) => `<span>${weekdayInitial(d)}</span>`).join('')}</div>`;
 }
-window.apoloSetMood = (v) => { const m = LS.get('mood', {}); m[mxToday()] = v; LS.set('mood', m); window.apoloRefreshSalud && window.apoloRefreshSalud(); };
+window.apoloSetMood = (v) => { const m = LS.get('mood', {}); m[mxToday()] = v; LS.set('mood', m); window.apoloTrack?.moodCheckin(); window.apoloRefreshSalud && window.apoloRefreshSalud(); };
 window.apoloSetStress = (v) => { const m = LS.get('stress', {}); m[mxToday()] = v; LS.set('stress', m); window.apoloRefreshSalud && window.apoloRefreshSalud(); };
 window.apoloEnterSleep = function () {
   const cur = (LS.get('sleep', {}))[mxToday()];

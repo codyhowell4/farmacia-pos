@@ -23,7 +23,8 @@ import { FastingTracker, SleepTracker, CheckInSystem } from './tracking.js';
 import { NotificationManager } from './notifications.js';
 import { renderPulsera } from './pulsera.js?v=6';
 import { startIconizer } from './icons.js?v=2';
-import { registerApolo, renderInicio, renderMonedas, renderAhorro, renderChequeo, getApoloStreak, renderMiControl, renderBienestar, renderWelcome, renderAuthLoading } from './apolo.js?v=4';
+import { setAnalyticsConsent, trackPage, track as gaTrack, startClickTracking } from './ga.js?v=1';
+import { registerApolo, renderInicio, renderMonedas, renderAhorro, renderChequeo, getApoloStreak, renderMiControl, renderBienestar, renderWelcome, renderAuthLoading } from './apolo.js?v=5';
 
 // Toast notifications (CSS in style.css)
 function showToast(message, type = 'info') {
@@ -122,6 +123,9 @@ const PAID_PAGE_NAMES = {
 document.addEventListener('DOMContentLoaded', () => {
   // Line icons instead of emoji across every screen (icons.js)
   startIconizer();
+  // Google Analytics: consent-gated (ga.js); only clicks while enabled
+  startClickTracking();
+  window.apoloTrack = gaTrack;
 
   // App Apolo screens (Inicio, Monedas, Ahorro, Chequeo) live in apolo.js.
   registerApolo({
@@ -278,11 +282,32 @@ async function refreshMenuStatusApolo() {
       ? `Membresía ${/famil/i.test(plan) ? 'Familiar' : /empresa|business/i.test(plan) ? 'Empresa' : 'Individual'}`
       : (details?.isFamilyMember ? 'Miembro familiar' : 'Sin membresía');
     const coinsLabel = coins?.enrolled ? ` · ${Number(coins.balance || 0).toLocaleString('es-MX')} Monedas` : '';
+    try {
+      const prev = localStorage.getItem('apolo:ga_membership');
+      const nowState = details?.isActive ? `active:${details.id || ''}` : 'none';
+      if (prev && prev !== nowState && nowState.startsWith('active')) gaTrack.membershipStart(/famil/i.test(plan) ? 'familiar' : /empresa|business/i.test(plan) ? 'empresa' : 'individual');
+      if (details) localStorage.setItem('apolo:ga_membership', nowState);
+    } catch (e) { /* storage blocked */ }
     statusEl.textContent = planLabel + coinsLabel;
   } catch (e) { /* keep the sync label */ }
 }
 
+// Google Analytics consent (Aviso v3 §8): logged in + signed the current
+// aviso + accepted secondary purposes (marketing_opt_out === false).
+async function refreshAnalyticsConsent() {
+  if (!currentAuthUser) { setAnalyticsConsent({ loggedIn: false }); return; }
+  try {
+    const [optOut, current] = await Promise.all([FarmaciaAPI.getMarketingOptOut(), FarmaciaAPI.hasSignedCurrentAviso()]);
+    if (!currentAuthUser) return;
+    setAnalyticsConsent({ loggedIn: true, signedCurrentAviso: current === true, marketingOptOut: optOut });
+  } catch (e) {
+    setAnalyticsConsent({ loggedIn: false });
+  }
+}
+window.refreshAnalyticsConsent = refreshAnalyticsConsent;
+
 function updateMenuUserInfo() {
+  refreshAnalyticsConsent();
   const nameEl = document.getElementById('menu-user-name');
   const statusEl = document.getElementById('menu-user-status');
   const avatarEl = document.getElementById('menu-user-avatar');
@@ -391,6 +416,7 @@ async function handleLogin() {
   }
   
   currentAuthUser = data.user;
+  gaTrack.login();
   currentCustomerProfile = await FarmaciaAPI.getCustomerProfile();
   await FarmaciaAPI.ensureCustomerProfile(currentCustomerProfile?.name);
   
@@ -731,6 +757,7 @@ async function handleSignup() {
   }
   
   currentAuthUser = data.user;
+  gaTrack.signUp();
   
   // Try to create customer profile (DOB + guardian evidence for minors —
   // the DB rejects a minor without guardian data; surface that message)
@@ -1179,6 +1206,7 @@ async function handleMarketingToggle() {
   const toggle = document.getElementById('marketing-toggle');
   if (toggle) toggle.disabled = true;
   const { error } = await FarmaciaAPI.setMarketingOptOut(targetOptOut);
+  refreshAnalyticsConsent();
   if (error) {
     showToast('No pudimos guardar tu preferencia. Intenta de nuevo.', 'error');
     if (toggle) toggle.disabled = false;
@@ -1501,6 +1529,7 @@ async function handleConsentOnboardingSubmit() {
   const marketingOptIn = !!document.getElementById('consent-marketing-optin')?.checked;
   FarmaciaAPI.setMarketingOptOut(!marketingOptIn).then(({ error: optErr }) => {
     if (optErr) console.warn('[Consent] marketing_opt_out write failed (best-effort):', optErr.message);
+    refreshAnalyticsConsent();
   });
 
   consentGateActive = false;
@@ -3399,6 +3428,7 @@ function renderPage(page) {
     if (saludNav) saludNav.classList.add('active');
   }
 
+  if (page !== 'salud') trackPage(page);
   switch(page) {
     case 'inicio': renderInicio(); break;
     case 'welcome': renderWelcome(); break;
@@ -9985,6 +10015,7 @@ async function callStripeCaptureConsult(body) {
 }
 
 window.showVideoConsulta = function() {
+  trackPage('consulta:video');
   // Avoid stacking overlays (booking back button re-enters here)
   document.querySelectorAll('.modal-overlay').forEach(m => m.remove());
 
@@ -10348,6 +10379,7 @@ window.confirmVideoBooking = async function(doctorId) {
     paymentStatus: pricing.paymentStatus
   });
 
+  if (!error && data) gaTrack.appointmentBooked('video');
   if (error || !data) {
     console.error('[confirmVideoBooking] createAppointment failed:', error);
     showToast('No se pudo agendar la cita: ' + (error?.message || 'error desconocido'), 'error');
@@ -10672,6 +10704,7 @@ const IN_PERSON_BLOCK_MSG = {
 };
 
 window.showInPersonConsulta = function() {
+  trackPage('consulta:en-persona');
   const locations = Store.getLocations();
   
   const modal = document.createElement('div');
@@ -10992,6 +11025,8 @@ window.confirmInPersonBooking = async function(locationId) {
     showToast('No pudimos agregarte a la fila. Revisa tu conexión e intenta de nuevo.', 'error');
     return;
   }
+  gaTrack.joinQueue();
+  gaTrack.appointmentBooked('in_person');
   
   document.querySelector('.modal-overlay').innerHTML = `
     <div style="background: white; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 1.5rem; text-align: center; overflow-y: auto;">
@@ -11061,6 +11096,7 @@ const SALUD_RECETAS_ACTION = '<button onclick="showUploadPrescriptionModal()" st
 // Mi control and Bienestar live in apolo.js.
 function renderSalud() {
   if (!window.__saludTab) window.__saludTab = 'control';
+  trackPage('salud:' + window.__saludTab);
   if (window.__saludTab === 'recetas') return renderPrescripciones();
   if (window.__saludTab === 'control') return renderMiControl(saludHeader('control', { subtitle: 'Glucosa, presión y medicinas' }));
   if (window.__saludTab === 'bienestar') return renderBienestar(saludHeader('bienestar', { subtitle: 'Estrés, sueño y ánimo' }));
@@ -12931,6 +12967,10 @@ window.processOrder = async function() {
     return;
   }
 
+  gaTrack.purchase({
+    value: order.total, transactionId: order.id,
+    items: (cart || []).map((i) => ({ item_id: i.id, item_category: i.category, quantity: i.quantity })),
+  });
   Store.clearCart();
   updateCartBadge();
   console.log('[placeOrder] Supabase order created');
