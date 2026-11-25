@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import { Toaster as SonnerToaster } from 'sonner';
 import LoginPage from '@/pages/LoginPage';
@@ -22,11 +22,23 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import ShiftGate from '@/components/ShiftGate';
 import ScreenLock from '@/components/ScreenLock';
 import useIdleLock from '@/hooks/useIdleLock';
+import { trackPublicPageView } from '@/lib/publicAnalytics';
 
 // Inactivity screen lock; must live inside AuthProvider (useAuth), LockProvider
 // (useScreenLock) and Router (useLocation).
 const IdleLockWatcher = () => {
   useIdleLock();
+  return null;
+};
+
+// GA4 on the public website routes only (page_views come from the tag +
+// Enhanced Measurement history events; see src/lib/publicAnalytics.js).
+// Staff/patient screens and token URLs are hard-disabled.
+const PublicAnalytics = () => {
+  const { pathname } = useLocation();
+  React.useEffect(() => {
+    trackPublicPageView(pathname);
+  }, [pathname]);
   return null;
 };
 
@@ -37,6 +49,7 @@ function App() {
         <LockProvider>
           <Router>
             <IdleLockWatcher />
+            <PublicAnalytics />
             <ScreenLock />
             <Routes>
             <Route path="/" element={<HomePage />} />

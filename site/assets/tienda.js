@@ -39,6 +39,29 @@
     });
   };
 
+  // GA4 (analytics.js). Only item ids + categories, never product names.
+  var track = function (name, params) {
+    try { if (window.apoloTrack) window.apoloTrack(name, params); } catch (e) { /* never break the store */ }
+  };
+  var catSlug = function (c) { return norm(c).toLowerCase().replace(/[^a-z0-9]+/g, '_'); };
+  var gaItem = function (it, qty) {
+    var o = { item_id: it.id, item_category: it.cat };
+    if (state.signedIn && it.price != null) o.price = Number(it.price);
+    if (qty) o.quantity = qty;
+    return o;
+  };
+  var lastListKey = null;
+  function trackList(list) {
+    var key = state.cat + '|' + state.query;
+    if (key === lastListKey || !list.length) return;
+    lastListKey = key;
+    track('view_item_list', {
+      item_list_id: catSlug(state.cat),
+      item_list_name: state.cat,
+      items: list.slice(0, state.shown).map(function (it) { return gaItem(it); }),
+    });
+  }
+
   var sb = null;
   var state = {
     items: [],
@@ -142,6 +165,7 @@
       html = '<p data-grid-msg style="margin: 0; font-size: 16px; color: #4A5578">No encontramos productos con esa búsqueda. Pregunta en sucursal: tenemos más productos en mostrador.</p>';
     } else {
       html = list.slice(0, state.shown).map(cardHtml).join('');
+      trackList(list);
       // Invisible spacers keep the last row's cards from stretching.
       for (var i = 0; i < 4; i++) html += '<div aria-hidden="true" style="flex: 1 1 220px; height: 0"></div>';
       if (list.length > state.shown) {
@@ -199,8 +223,8 @@
       return '<div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 15px">' +
         '<span style="flex: 1; min-width: 0; overflow-wrap: anywhere">' + escHtml(l.item.name) + ' × ' + l.qty + '</span>' +
         '<span style="display: inline-flex; gap: 4px; flex-shrink: 0">' +
-        '<button type="button" data-dec="' + escHtml(l.item.id) + '" aria-label="Quitar uno de ' + escHtml(l.item.name) + '" style="width: 32px; height: 32px; border-radius: 8px; border: 1px solid #E3E8F2; background: #FFFFFF; color: #1E2A8A; font-weight: 800; cursor: pointer">−</button>' +
-        '<button type="button" data-inc="' + escHtml(l.item.id) + '" aria-label="Agregar uno de ' + escHtml(l.item.name) + '" style="width: 32px; height: 32px; border-radius: 8px; border: 1px solid #E3E8F2; background: #FFFFFF; color: #1E2A8A; font-weight: 800; cursor: pointer">+</button></span>' +
+        '<button type="button" data-track-label="carrito_menos" data-dec="' + escHtml(l.item.id) + '" aria-label="Quitar uno de ' + escHtml(l.item.name) + '" style="width: 32px; height: 32px; border-radius: 8px; border: 1px solid #E3E8F2; background: #FFFFFF; color: #1E2A8A; font-weight: 800; cursor: pointer">−</button>' +
+        '<button type="button" data-track-label="carrito_mas" data-inc="' + escHtml(l.item.id) + '" aria-label="Agregar uno de ' + escHtml(l.item.name) + '" style="width: 32px; height: 32px; border-radius: 8px; border: 1px solid #E3E8F2; background: #FFFFFF; color: #1E2A8A; font-weight: 800; cursor: pointer">+</button></span>' +
         '<strong style="flex-shrink: 0">' + amount + '</strong></div>';
     }).join('');
     var dRow = $('[data-discount-row]');
@@ -243,6 +267,14 @@
       }
       state.cart[id] = q;
     }
+    if (delta > 0 && state.cart[id]) {
+      var it = state.byId[id];
+      track('add_to_cart', {
+        currency: 'MXN',
+        value: state.signedIn ? Math.round(Number(it.price) * delta * 100) / 100 : 0,
+        items: [gaItem(it, delta)],
+      });
+    }
     saveCart();
     renderCart();
     renderGrid();
@@ -258,6 +290,12 @@
     }
     state.placing = true;
     renderCart();
+    var estimate = lines.reduce(function (sum, l) {
+      return sum + Math.round(Number(l.item.price) * (1 - state.discount / 100) * 100) / 100 * l.qty;
+    }, 0);
+    var gaItems = lines.map(function (l) { return gaItem(l.item, l.qty); });
+    var itemCount = lines.reduce(function (n, l) { return n + l.qty; }, 0);
+    track('begin_checkout', { currency: 'MXN', value: Math.round(estimate * 100) / 100, item_count: itemCount, items: gaItems });
     setOrderStatus('Apartando tu pedido…', true);
     sb.rpc('place_store_order', {
       p_items: lines.map(function (l) { return { inventory_id: l.item.id, quantity: l.qty }; }),
@@ -266,6 +304,12 @@
     }).then(function (res) {
       if (res.error) throw res.error;
       var d = res.data || {};
+      track('purchase', {
+        currency: 'MXN',
+        value: Number(d.total) || 0,
+        item_count: itemCount,
+        items: gaItems.map(function (g) { return { item_id: g.item_id, item_category: g.item_category, quantity: g.quantity }; }),
+      });
       state.cart = {};
       saveCart();
       setOrderStatus('¡Listo! Apartamos tu pedido (folio #' + String(d.sale_id || '').slice(-6).toUpperCase() + ') por ' + fmt(d.total || 0) +
@@ -289,11 +333,12 @@
   function buildLogin() {
     dialog = document.createElement('dialog');
     dialog.setAttribute('aria-labelledby', 'login-title');
+    dialog.setAttribute('data-section', 'login');
     dialog.style.cssText = 'border: none; border-radius: 20px; padding: 0; width: min(440px, calc(100vw - 32px)); box-shadow: 0 24px 64px rgba(20,27,94,0.35); font-family: inherit; color: #141B3A';
     dialog.innerHTML =
       '<form method="dialog" data-login-form style="display: flex; flex-direction: column; gap: 14px; padding: 28px">' +
       '<div style="display: flex; justify-content: space-between; align-items: center; gap: 12px"><h2 id="login-title" style="margin: 0; font-size: 24px; font-weight: 800">Iniciar sesión</h2>' +
-      '<button type="button" data-close aria-label="Cerrar" style="width: 40px; height: 40px; border: none; border-radius: 10px; background: #F5F7FB; font-size: 22px; cursor: pointer; color: #141B3A">×</button></div>' +
+      '<button type="button" data-close data-track-label="cerrar_login" aria-label="Cerrar" style="width: 40px; height: 40px; border: none; border-radius: 10px; background: #F5F7FB; font-size: 22px; cursor: pointer; color: #141B3A">×</button></div>' +
       '<p style="margin: 0; font-size: 15px; line-height: 1.5; color: #4A5578">Usa la misma cuenta de la app Farmacia Apolo.</p>' +
       '<label style="display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 700">Correo, teléfono o número de membresía<input name="identifier" required autocomplete="username" style="min-height: 48px; border: 1px solid #E3E8F2; border-radius: 10px; padding: 0 12px; font-size: 16px"></label>' +
       '<label style="display: flex; flex-direction: column; gap: 4px; font-size: 14px; font-weight: 700">Contraseña<input name="password" type="password" required autocomplete="current-password" style="min-height: 48px; border: 1px solid #E3E8F2; border-radius: 10px; padding: 0 12px; font-size: 16px"></label>' +
@@ -372,7 +417,7 @@
       } else if (t.hasAttribute('data-inc')) addToCart(t.getAttribute('data-inc'), 1);
       else if (t.hasAttribute('data-dec')) addToCart(t.getAttribute('data-dec'), -1);
       else if (t.hasAttribute('data-more')) { state.shown += PAGE; renderGrid(); }
-      else if (t.hasAttribute('data-cat')) { state.cat = t.getAttribute('data-cat'); state.shown = PAGE; renderChips(); renderGrid(); }
+      else if (t.hasAttribute('data-cat')) { state.cat = t.getAttribute('data-cat'); state.shown = PAGE; lastListKey = null; renderChips(); renderGrid(); }
       else if (t.hasAttribute('data-logout')) { sb.auth.signOut(); }
       else if (t.hasAttribute('data-place-order')) placeOrder();
     });

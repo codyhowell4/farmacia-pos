@@ -59,6 +59,10 @@
           });
         })
         .then(function () {
+          // GA4: only a size bucket — no name/company/contact data.
+          var n = parseInt(data.employees, 10);
+          var size = n <= 10 ? '1-10' : n <= 50 ? '11-50' : n <= 200 ? '51-200' : '201+';
+          if (window.apoloTrack) window.apoloTrack('generate_lead', { company_size: size });
           form.reset();
           setStatus(status, '¡Gracias! Recibimos tu solicitud. Te contactaremos muy pronto con un plan a la medida.', true);
         })

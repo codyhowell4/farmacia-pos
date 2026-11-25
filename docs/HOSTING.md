@@ -35,6 +35,13 @@ Static HTML built from the approved Claude design (canvas "Sitio web Farmacia Ap
 - **Tienda** (`site/assets/tienda.js`): catalog from the public RPC `get_store_catalog(p_org_id)` (in stock, no Rx, no controlled group, products only, no services/antibiotics/injectables; prices only with a session). Login uses the same Supabase project/accounts as the customer app (session is per domain, so `/tienda` has its own login dialog; phone/membership # resolve via `lookup-login-email`). "Apartar mi pedido" calls `place_store_order` (server prices, membership discount, stock lock, Rx/controlled block) → order lands in Admin › Pedidos (status *Procesando*) and in the POS "Pedidos en línea" button (polls every 45 s, toast on new orders; *Marcar listo* / *Entregar y cobrar* attaches the paid order to the open shift — stock is not touched again).
 - Migration: `20261125000000_public_site_store_and_leads.sql`.
 
+### Google Analytics 4 (G-0V3V4H1RMF)
+
+- Static pages: `site/assets/analytics.js` on every page (config runs at once; gtag.js loads after first paint). Tracks `button_click` on every `<a>`/`<button>` (`button_label` = visible text or `data-track-label`; `button_location` = `<page>_<section>`, from the `data-section` names `tools/build-site.mjs` adds), plus `agendar_consulta_click`, `sign_up_click`, `login_click`. `site.js` → `generate_lead` (`company_size` bucket only). `tienda.js` → `view_item_list`, `add_to_cart`, `begin_checkout`, `purchase` (MXN; item_id/category only, never product names).
+- React public routes (`/membresias`, `/membresias/terminos`, `/membresia-negocios`): `src/lib/publicAnalytics.js`. Page views come from the tag + Enhanced Measurement history events. Every other React route sets `window['ga-disable-G-0V3V4H1RMF'] = true` (also set before each history change), so staff/patient screens and `/membresia-negocios/activar?setup=<token>` never send anything.
+- Privacy: no names, emails, phones, CURP, product names or health data in events; labels that look like an email/phone are replaced.
+- Debug: add `?debug_mode=1` to any URL (or `localStorage.apolo_ga_debug = '1'`) and open GA → Admin → DebugView.
+
 ### Cloudflare rules for the apex (zone `apolofarmacia.com.mx` → Rules → Redirect Rules)
 
 Replace the old apex rules (`/` → `/membresias` and "other paths → app.") with these, in this order:

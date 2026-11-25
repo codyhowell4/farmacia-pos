@@ -169,6 +169,42 @@ const privacyBody = () => {
 `;
 };
 
+// Stable section names for analytics button_location ("<page>_<section>"):
+// first section = hero, then the section id, else its eyebrow/h2 text.
+const SECTION_OVERRIDES = [
+  [/Plan Individual/, 'planes'],
+  [/data-empresa-form/, 'planes'],
+  [/data-grid/, 'catalogo'],
+  [/RESPONSABLE DEL TRATAMIENTO/, 'texto'],
+];
+const slug = (t) =>
+  text(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').split('_').slice(0, 3).join('_');
+const sectionize = (body) => {
+  const parts = body.split(/(?=<section\b)/);
+  const used = new Set();
+  let n = 0;
+  return parts.map((part) => {
+    if (!part.startsWith('<section')) return part;
+    const end = part.indexOf('</section>');
+    const inner = end === -1 ? part : part.slice(0, end);
+    let name;
+    if (n === 0) name = 'hero';
+    if (!name) name = (part.match(/^<section[^>]*\sid="([^"]+)"/) || [])[1];
+    if (!name) for (const [re, v] of SECTION_OVERRIDES) if (re.test(inner)) { name = v; break; }
+    if (!name) {
+      const eyebrow = inner.match(/<span style="font-size: 13px; font-weight: 800; letter-spacing: \.12em[^"]*">([^<]+)<\/span>/);
+      const h2 = inner.match(/<h2[^>]*>([\s\S]*?)<\/h2>/);
+      name = slug((eyebrow && eyebrow[1]) || (h2 && h2[1]) || `seccion_${n + 1}`);
+    }
+    let unique = name; let k = 2;
+    while (used.has(unique)) unique = `${name}_${k++}`;
+    used.add(unique);
+    n++;
+    return part.replace(/^<section\b/, `<section data-section="${unique}"`);
+  }).join('');
+};
+
 const hash = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex').slice(0, 10);
 
 function build() {
@@ -189,7 +225,7 @@ function build() {
 
   for (const page of PAGES) {
     let body = page.generated ? privacyBody() : read(`pages/${page.slug}.html`);
-    body = body.replace(/ id=""/g, '');
+    body = sectionize(body.replace(/ id=""/g, ''));
     const canonical = ORIGIN + page.path;
     const h1 = (body.match(/<h1[^>]*>([\s\S]*?)<\/h1>/) || [])[1];
     if (!h1) throw new Error(`page ${page.slug} has no <h1>`);
@@ -251,14 +287,15 @@ details[open] summary svg{transform:rotate(180deg)}
 .skip:focus{left:8px;top:8px}
 </style>
 ${ld.map(ldScript).join('\n')}
+<script src="/sitio/analytics.js?v=${assetVersion['analytics.js']}" defer></script>
 ${config}${formConfig}${scripts}
 </head>
-<body>
+<body data-page="${page.slug}">
 <a class="skip" href="#contenido">Saltar al contenido</a>
 <div style="font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #141B3A; background: #FFFFFF">
-${header(page)}<main id="contenido">
+${header(page).replace('<header ', '<header data-section="header" ')}<main id="contenido">
 ${body}</main>
-${footer}</div>
+${footer.replace('<footer ', '<footer data-section="footer" ')}</div>
 </body>
 </html>
 `;
