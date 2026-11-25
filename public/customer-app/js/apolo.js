@@ -71,7 +71,9 @@ function isoWeek(dateStr) {
   return `${d.getUTCFullYear()}-${String(week).padStart(2, '0')}`;
 }
 
-// ── Local (device-only) health data ───────────────────────────
+// ── Health data: local cache (apolo:*) synced to the customer's account
+// (patient_health_records, aviso v3 §7) by healthsync.js — except mood and
+// stress, which stay on the device only.
 const LS = {
   get(key, def) { try { const v = localStorage.getItem('apolo:' + key); return v ? JSON.parse(v) : def; } catch (e) { return def; } },
   set(key, val) { try { localStorage.setItem('apolo:' + key, JSON.stringify(val)); } catch (e) { /* storage full / blocked */ } },
@@ -361,7 +363,7 @@ window.apoloSaveSteps = async function (max, goal) {
 window.apoloEnterWeight = function () {
   const last = ApoloLocal.weights().slice(-1)[0];
   openSheet('Actualizar tu peso', `
-    <p style="font-size:13px;color:${MUTED};margin:0 0 10px;">Se guarda solo en tu teléfono.${last ? ` Último: ${last.kg} kg (${last.date}).` : ''}</p>
+    <p style="font-size:13px;color:${MUTED};margin:0 0 10px;">Se guarda en tu cuenta.${last ? ` Último: ${last.kg} kg (${last.date}).` : ''}</p>
     <label for="apolo-weight" style="font-size:13px;font-weight:600;">Peso (kg)</label>
     <input id="apolo-weight" type="number" inputmode="decimal" step="0.1" min="20" max="300" style="width:100%;margin:6px 0 14px;padding:12px;border:2px solid ${BORDER};border-radius:12px;font-size:18px;">
     <button type="button" onclick="apoloSaveWeight()" style="${btnPrimary}">Guardar</button>`);
@@ -394,7 +396,7 @@ window.apoloEditMeds = function () {
       <button type="button" onclick="apoloMedForm('${esc(m.id)}')" style="min-height:40px;border:1px solid ${BORDER};border-radius:10px;background:#fff;padding:0 12px;cursor:pointer;">Editar</button>
     </div>`).join('');
   openSheet('Mis medicinas', `
-    <p style="font-size:12px;color:${MUTED};margin:0 0 6px;">Se guardan solo en tu teléfono. Sirven para tus recordatorios y para avisarte cuándo resurtir.</p>
+    <p style="font-size:12px;color:${MUTED};margin:0 0 6px;">Se guardan en tu cuenta. Sirven para tus recordatorios y para avisarte cuándo resurtir.</p>
     ${rows || `<p style="font-size:14px;color:${MUTED};">Aún no agregas medicinas.</p>`}
     <button type="button" onclick="apoloMedForm()" style="${btnPrimary};margin-top:14px;">Agregar medicina</button>`);
 };
@@ -518,7 +520,7 @@ function enrollHtml() {
     <p style="font-size:13px;color:${MUTED};margin:0 0 10px;line-height:1.5;">
       Monedas Apolo es nuestro programa de lealtad (una finalidad secundaria de nuestro Aviso de Privacidad, por eso te pedimos activarlo).
       Para darte Monedas, la app envía a nuestros servidores <b>solo el aviso de que cumpliste una meta</b> (por ejemplo "meta de pasos", "peso actualizado" o "medicina a tiempo").
-      Tus valores de salud —pasos, peso, nombres de tus medicinas— <b>se quedan en tu teléfono</b>.
+      Para este programa no usamos tus valores de salud (pasos, peso, nombres de tus medicinas): solo la fecha en que cumpliste la meta.
       Las Monedas no son dinero ni se cambian por efectivo: solo se canjean por las recompensas de la lista, en caja. Puedes desactivarlo cuando quieras.
     </p>
     <label style="display:flex;gap:10px;align-items:flex-start;font-size:13px;margin-bottom:12px;cursor:pointer;">
@@ -902,7 +904,7 @@ export async function renderMiControl(headerHtml) {
     ${card(`<div style="display:flex;justify-content:space-between;align-items:center;"><span style="font-size:15px;font-weight:800;">Mis medicinas</span><button type="button" onclick="apoloEditMeds()" style="min-height:40px;border:none;background:none;color:${NAVY};font-weight:700;cursor:pointer;">Editar</button></div>
       <div style="display:flex;flex-direction:column;gap:12px;margin:8px 0 12px;">${medRows || `<p style="font-size:13px;color:${MUTED};margin:0;">Agrega tus medicinas para tus recordatorios y para saber cuándo resurtir.</p>`}</div>
       ${meds.length ? `<button type="button" onclick="apoloReserveRefill()" style="${btnOutline}">Apartar mi resurtido</button>` : `<button type="button" onclick="apoloMedForm()" style="${btnOutline}">Agregar medicina</button>`}`)}
-    <p style="font-size:11px;color:${MUTED};margin:0 2px;">Lo que anotas aquí se guarda solo en tu teléfono. Las metas son orientativas; tu médico define las tuyas.</p>`;
+    <p style="font-size:11px;color:${MUTED};margin:0 2px;">Lo que anotas aquí se guarda en tu cuenta y tu médico puede verlo como registrado por ti. Las metas son orientativas; tu médico define las tuyas.</p>`;
 }
 
 window.apoloAddReading = function (type) {
@@ -914,7 +916,7 @@ window.apoloAddReading = function (type) {
         <div><label for="ar-s" style="font-size:13px;font-weight:600;">Sistólica (alta)</label><input id="ar-s" type="number" inputmode="numeric" min="60" max="260" style="width:100%;margin-top:6px;padding:12px;border:2px solid ${BORDER};border-radius:12px;font-size:18px;"></div>
         <div><label for="ar-d" style="font-size:13px;font-weight:600;">Diastólica (baja)</label><input id="ar-d" type="number" inputmode="numeric" min="30" max="160" style="width:100%;margin-top:6px;padding:12px;border:2px solid ${BORDER};border-radius:12px;font-size:18px;"></div>
       </div>`;
-  openSheet(type === 'glucosa' ? 'Anotar glucosa' : 'Anotar presión', `<p style="font-size:12px;color:${MUTED};margin:0 0 10px;">Se guarda solo en tu teléfono.</p>${body}<button type="button" onclick="apoloSaveReading('${type}')" style="${btnPrimary}">Guardar</button>`);
+  openSheet(type === 'glucosa' ? 'Anotar glucosa' : 'Anotar presión', `<p style="font-size:12px;color:${MUTED};margin:0 0 10px;">Se guarda en tu cuenta.</p>${body}<button type="button" onclick="apoloSaveReading('${type}')" style="${btnPrimary}">Guardar</button>`);
 };
 window.apoloSaveReading = function (type) {
   if (type === 'glucosa') {
@@ -1006,7 +1008,7 @@ export async function renderBienestar(headerHtml) {
     ${card(`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><span style="font-size:15px;font-weight:800;">Tu semana</span>${trend ? pill(`Estrés ${trend[0].toLowerCase()}`, trend[1], trend[2]) : ''}</div>
       ${weekChart(days7, moods, stress)}
       <div style="display:flex;gap:14px;font-size:11px;color:${MUTED};margin-top:6px;"><span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#C9D0F2;margin-right:4px;"></span>Estrés</span><span><span style="display:inline-block;width:10px;height:3px;background:${GREEN};margin-right:4px;vertical-align:middle;"></span>Ánimo</span></div>`)}
-    <p style="font-size:11px;color:${MUTED};margin:0 2px;">Tu ánimo, estrés y sueño se guardan solo en tu teléfono. Respirar no da Monedas.</p>
+    <p style="font-size:11px;color:${MUTED};margin:0 2px;">Tu sueño se guarda en tu cuenta; tu ánimo y estrés, solo en tu teléfono. Respirar no da Monedas.</p>
   </div>`);
 }
 function weekChart(days, moods, stress) {
@@ -1028,7 +1030,7 @@ window.apoloSetStress = (v) => { const m = LS.get('stress', {}); m[mxToday()] = 
 window.apoloEnterSleep = function () {
   const cur = (LS.get('sleep', {}))[mxToday()];
   openSheet('¿Cuánto dormiste anoche?', `
-    <p style="font-size:12px;color:${MUTED};margin:0 0 10px;">Se guarda solo en tu teléfono.</p>
+    <p style="font-size:12px;color:${MUTED};margin:0 0 10px;">Se guarda en tu cuenta.</p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
       <div><label for="sl-h" style="font-size:13px;font-weight:600;">Horas</label><input id="sl-h" type="number" inputmode="numeric" min="0" max="16" value="${cur != null ? Math.floor(cur / 60) : ''}" style="width:100%;margin-top:6px;padding:12px;border:2px solid ${BORDER};border-radius:12px;font-size:18px;"></div>
       <div><label for="sl-m" style="font-size:13px;font-weight:600;">Minutos</label><input id="sl-m" type="number" inputmode="numeric" min="0" max="59" value="${cur != null ? cur % 60 : ''}" style="width:100%;margin-top:6px;padding:12px;border:2px solid ${BORDER};border-radius:12px;font-size:18px;"></div>

@@ -32,6 +32,7 @@ import { dayKeyInTz, timeInTz, dateInTz, DEFAULT_TZ, localDateString } from '@/l
 import PrintablePrescription from './PrintablePrescription';
 import { tryAutoSignReceta } from '@/lib/efirma';
 import PatientMedicalHistory from './PatientMedicalHistory';
+import PatientReportedData from './PatientReportedData';
 import PostVisitDialog from './PostVisitDialog';
 import SignRecetaButton from './SignRecetaButton';
 import ConsultaNotesList from './ConsultaNotesList';
@@ -1106,6 +1107,8 @@ const PatientWorkspace = () => {
           </div>
 
           <PatientMedicalHistory customer={customer} onSaved={refetchCustomer} />
+          {/* Patient-reported data from the customer app (Aviso v3 §7) */}
+          <PatientReportedData customerId={customer?.id} />
         </TabsContent>
 
         {/* NOTAS CONSULTA TAB (structured NOM-004 notes) */}

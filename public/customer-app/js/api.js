@@ -1718,14 +1718,12 @@ window.FarmaciaAPI = (function () {
           .single();
         if (custErr || !customer) return null;
 
-        const { data, error } = await sb
-          .from('consent_documents')
-          .select('type')
-          .eq('customer_id', customer.id)
-          .eq('status', 'signed');
+        // Version-aware (Aviso v3): a type counts only when the customer's
+        // latest signed copy IS the active text (RPC my_consent_currency).
+        const { data, error } = await sb.rpc('my_consent_currency');
         if (error) throw error;
-
-        return [...new Set((data || []).map(d => d.type).filter(Boolean))];
+        if (!data) return null;
+        return Object.keys(data).filter((t) => data[t] === true);
       } catch (err) {
         console.warn('[FarmaciaAPI] getMySignedConsentTypes error:', err.message);
         return null;

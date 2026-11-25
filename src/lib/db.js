@@ -4252,3 +4252,21 @@ export const getCoinsProgramStats = async () => {
   const spent = (ledger || []).filter((r) => r.coins < 0).reduce((s, r) => s - r.coins, 0);
   return { enrolled: enrolled || 0, earned30: earned, spent30: spent };
 };
+
+// ── Registrado por el paciente, no verificado (Aviso v3 §7) ─────
+// Health records the patient captured in the customer app. Read-only for
+// clinical staff (RLS: is_clinical_staff + org); never mixed with
+// clinical vitals/notes.
+export const getPatientReportedData = async (customerId) => {
+  const [recs, em] = await Promise.all([
+    supabase.from('patient_health_records')
+      .select('kind, client_id, recorded_at, updated_at, data')
+      .eq('customer_id', customerId)
+      .order('recorded_at', { ascending: false, nullsFirst: false })
+      .limit(1000),
+    supabase.from('patient_emergency_info').select('info, contacts, updated_at').eq('customer_id', customerId).maybeSingle(),
+  ]);
+  if (recs.error) throw recs.error;
+  if (em.error) throw em.error;
+  return { records: recs.data || [], emergency: em.data || null };
+};

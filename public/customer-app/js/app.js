@@ -24,6 +24,7 @@ import { NotificationManager } from './notifications.js';
 import { renderPulsera } from './pulsera.js?v=6';
 import { startIconizer } from './icons.js?v=2';
 import { setAnalyticsConsent, trackPage, track as gaTrack, startClickTracking } from './ga.js?v=1';
+import { startHealthSync, clearHealthLocal } from './healthsync.js?v=1';
 import { registerApolo, renderInicio, renderMonedas, renderAhorro, renderChequeo, getApoloStreak, renderMiControl, renderBienestar, renderWelcome, renderAuthLoading } from './apolo.js?v=5';
 
 // Toast notifications (CSS in style.css)
@@ -912,162 +913,44 @@ async function handleResetPassword() {
 }
 
 // Aviso de privacidad (LFPDPPP) - página informativa, acceso libre.
+// Aviso de Privacidad (in-app). Rendered from the same text customers sign
+// (consentDocs.js → APOLO_CONSENT_DOCS 'privacidad', = active consent_texts),
+// so the page can never drift from the signed version.
 function renderPrivacidad() {
   closeMenu();
-
-  const sectionStyle = 'margin-bottom: 1rem;';
-  const h3Style = 'margin: 0 0 0.5rem; font-size: 0.95rem; font-weight: 700; color: #46AC78;';
-  const pStyle = 'margin: 0 0 0.5rem; font-size: 0.85rem; color: rgba(255,255,255,0.85); line-height: 1.6;';
-  const liStyle = 'font-size: 0.85rem; color: rgba(255,255,255,0.85); line-height: 1.6; margin-bottom: 0.25rem;';
+  const doc = (window.APOLO_CONSENT_DOCS || []).find((d) => d.type === 'privacidad');
+  const text = (doc && doc.content) || '';
+  const esc = (v) => String(v).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const linkify = (v) => esc(v).replace(/https:\/\/[^\s)]+/g, (u) => `<a href="${u}" target="_blank" rel="noopener" style="color: #1E2A8A;">${u}</a>`);
+  const lines = text.split('\n');
+  const updated = (lines.find((l) => /^Última actualización/i.test(l)) || '').replace(/^Última actualización:\s*/i, '');
+  const body = [];
+  let open = false;
+  lines.slice(2).forEach((line) => {
+    const t = line.trim();
+    if (!t) return;
+    if (/^\d+\.\s/.test(t)) {
+      if (open) body.push('</section>');
+      body.push(`<section style="margin-bottom: 1.1rem;"><h2 style="margin: 0 0 0.5rem; font-size: 0.95rem; font-weight: 800; color: #1E2A8A;">${esc(t.charAt(0) + t.slice(1).toLowerCase().replace(/(^|\s)(lfpdppp|arco|google|supabase)/gi, (m) => m.toUpperCase()))}</h2>`);
+      open = true;
+    } else if (/^Al firmar este documento/i.test(t)) {
+      if (open) { body.push('</section>'); open = false; }
+      body.push(`<p style="margin: 0.5rem 0 0; padding: 0.75rem; background: #F2FBF6; border: 1px solid #CDEBDB; border-radius: 12px; font-size: 0.85rem; color: #141B3A; line-height: 1.6;">${esc(t)}</p>`);
+    } else {
+      body.push(`<p style="margin: 0 0 0.6rem; font-size: 0.85rem; color: #141B3A; line-height: 1.65;">${linkify(t)}</p>`);
+    }
+  });
+  if (open) body.push('</section>');
 
   mainContent.innerHTML = `
     ${currentAuthUser ? '' : `<button type="button" onclick="goPage('welcome')" style="margin: 0.75rem 1rem 0; min-height: 44px; background: none; border: none; color: #1E2A8A; font-weight: 700; font-size: 0.95rem; cursor: pointer;">← Volver</button>`}
-    <!-- Header -->
-    <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
-      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📄 Aviso de Privacidad</h1>
-      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Farmacia Apolo · Última actualización: septiembre 2026</p>
+    <div style="padding: 18px 20px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
+      <h1 style="margin: 0; font-size: 20px; font-weight: 800;">Aviso de Privacidad</h1>
+      <p style="margin: 2px 0 0; font-size: 13px; color: #C9D0F2;">Farmacia Apolo${updated ? ' · Última actualización: ' + esc(updated) : ''}</p>
     </div>
-
-    <div style="padding: 1rem;">
-      <div class="glass-card" style="padding: 1.25rem; flex-direction: column; align-items: stretch;">
-
-        <div style="${sectionStyle}">
-          <h3 style="${h3Style}">1. Responsable del tratamiento de tus datos</h3>
-          <p style="${pStyle}">
-            <strong>Farmacia Apolo</strong> (en adelante "la Farmacia"), con domicilio en Cometa 4, San
-            Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de México, México, es el responsable del
-            tratamiento de tus datos personales y de tus datos personales sensibles de salud, conforme a la
-            Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP),
-            publicada en el Diario Oficial de la Federación el 20 de marzo de 2025 y, en materia de
-            expediente clínico, a la NOM-004-SSA3-2012.
-          </p>
-        </div>
-
-        <div style="${sectionStyle}">
-          <h3 style="${h3Style}">2. Datos personales que recabamos</h3>
-          <p style="${pStyle}">Para la prestación de nuestros servicios recabamos los siguientes datos personales:</p>
-          <ul style="margin: 0; padding-left: 1.25rem;">
-            <li style="${liStyle}">Nombre completo, fecha de nacimiento y género.</li>
-            <li style="${liStyle}">Correo electrónico, teléfono y número de membresía.</li>
-            <li style="${liStyle}">Datos de contacto de emergencia.</li>
-            <li style="${liStyle}">Información de compras y pedidos en la farmacia.</li>
-          </ul>
-          <p style="${pStyle}">Además, con tu consentimiento expreso, recabamos <strong>datos personales sensibles de salud</strong>:</p>
-          <ul style="margin: 0; padding-left: 1.25rem;">
-            <li style="${liStyle}">Padecimiento actual, antecedentes y notas de consulta médica.</li>
-            <li style="${liStyle}">Diagnósticos, pronósticos, planes de tratamiento y recetas médicas.</li>
-            <li style="${liStyle}">Signos vitales, alergias, condiciones médicas y medicamentos actuales.</li>
-            <li style="${liStyle}">Métricas de salud registradas en la aplicación (peso, altura, sueño, ayuno, actividad física).</li>
-            <li style="${liStyle}">Documentos de consentimiento informado que firmes.</li>
-          </ul>
-        </div>
-
-        <div style="${sectionStyle}">
-          <h3 style="${h3Style}">3. Finalidades del tratamiento</h3>
-          <p style="${pStyle}"><strong>Finalidades primarias (necesarias):</strong></p>
-          <ul style="margin: 0; padding-left: 1.25rem;">
-            <li style="${liStyle}">Prestación de servicios de salud, incluyendo consulta médica general y teleconsulta.</li>
-            <li style="${liStyle}">Integración, resguardo y actualización de tu expediente clínico.</li>
-            <li style="${liStyle}">Despacho de medicamentos y gestión de pedidos de farmacia.</li>
-            <li style="${liStyle}">Agenda, recordatorios y seguimiento de citas médicas.</li>
-            <li style="${liStyle}">Facturación, cobro y administración de tu membresía.</li>
-          </ul>
-          <p style="${pStyle}"><strong>Finalidades secundarias (opcionales):</strong> envío de promociones, programas de lealtad y estadísticas internas de mejora del servicio. Desde el momento de la recolección puedes negarte a estas finalidades secundarias sin que por ello se te niegue el servicio: al crear tu cuenta o firmar tus documentos de consentimiento, la aplicación muestra una casilla independiente y opcional ("Acepto el uso de mis datos para finalidades secundarias"); si no la marcas, tus datos no se tratarán para finalidades secundarias. También puedes cambiar tu decisión en cualquier momento en la sección "Privacidad y mis datos" de la aplicación o por los medios descritos en la sección 5.</p>
-        </div>
-
-        <div style="${sectionStyle}">
-          <h3 style="${h3Style}">4. Transferencias de datos personales</h3>
-          <p style="${pStyle}">
-            Tus datos personales <strong>no serán transferidos</strong> a terceros sin tu consentimiento, salvo en los
-            casos previstos por el artículo 36 de la LFPDPPP, incluyendo: (a) profesionales de la salud que
-            participen en tu atención y que están obligados al secreto profesional; (b) autoridades sanitarias
-            competentes cuando así lo exija la legislación aplicable; y (c) proveedores de servicios que actúan
-            como encargados del tratamiento, bajo acuerdos de confidencialidad.
-          </p>
-          <p style="${pStyle}">
-            Para operar la aplicación, la Farmacia se auxilia de los siguientes <strong>encargados técnicos</strong>,
-            que tratan tus datos por cuenta del responsable y con las mismas protecciones previstas en este aviso y
-            en la LFPDPPP: <strong>Daily.co</strong> (plataforma de videoconsulta), <strong>Resend</strong> (correo
-            electrónico transaccional), <strong>Meta Platforms / WhatsApp</strong> (mensajería), <strong>Stripe</strong>
-            (procesamiento de pagos), <strong>Supabase</strong> (base de datos) y <strong>Cloudflare</strong>
-            (hospedaje y red de entrega de contenido). Algunos de estos encargados tratan datos en servidores
-            ubicados en Estados Unidos.
-          </p>
-          <p style="${pStyle}">
-            Tus datos sensibles de salud se almacenan y tratan conforme a la NOM-004-SSA3-2012 del expediente
-            clínico y solo el personal autorizado tiene acceso a ellos.
-          </p>
-        </div>
-
-        <div style="${sectionStyle}">
-          <h3 style="${h3Style}">5. Derechos ARCO (Acceso, Rectificación, Cancelación y Oposición)</h3>
-          <p style="${pStyle}">
-            Puedes ejercer tus derechos de Acceso, Rectificación, Cancelación u Oposición (derechos ARCO)
-            desde la sección <button type="button" onclick="renderPage('privacidad-datos')" style="background: none; border: none; padding: 0; color: #7dd3a8; font-weight: 600; font-size: 0.85rem; cursor: pointer; text-decoration: underline;">Privacidad y mis datos</button> de
-            la aplicación, enviando una solicitud al correo citas@apolofarmacia.com.mx, o presentándola directamente
-            en nuestro domicilio en Cometa 4, San Antonio Zomeyucan, 53750 Naucalpan de Juárez, Estado de
-            México, México. Tu solicitud debe incluir tu nombre completo, el derecho que deseas ejercer y
-            una descripción clara del dato respecto del cual lo ejerces.
-            La Farmacia responderá en un plazo máximo de 20 días hábiles conforme a la LFPDPPP.
-          </p>
-          <p style="${pStyle}">
-            La cancelación de tus datos personales no procederá respecto de la información que deba conservarse
-            para cumplir obligaciones legales — en particular tu expediente clínico, que se conserva al menos 5
-            años a partir de tu último acto médico conforme a la NOM-004-SSA3-2012 (numeral 5.4). En ese supuesto,
-            tus datos quedarán bloqueados y no se tratarán para finalidad distinta de su conservación, hasta que
-            concluya el plazo legal y proceda su supresión.
-          </p>
-        </div>
-
-        <div style="${sectionStyle}">
-          <h3 style="${h3Style}">6. Revocación del consentimiento</h3>
-          <p style="${pStyle}">
-            En cualquier momento puedes revocar el consentimiento que has otorgado para el tratamiento de tus
-            datos personales, incluidos tus datos sensibles de salud, sin que se leguen efectos retroactivos.
-            Para revocarlo, usa la opción "Revocar consentimientos" de la sección "Privacidad y mis datos" de la
-            aplicación, envía tu solicitud al correo citas@apolofarmacia.com.mx o preséntala en nuestro domicilio.
-            Ten en cuenta que la revocación puede implicar que no sea posible seguir prestando los servicios de
-            salud, teleconsulta o farmacia que requieran dichos datos, mismos que se pausarán hasta que firmes
-            los documentos de nuevo.
-          </p>
-        </div>
-
-        <div style="${sectionStyle}">
-          <h3 style="${h3Style}">7. Almacenamiento local en tu dispositivo y notificaciones</h3>
-          <p style="${pStyle}">
-            La aplicación guarda algunos datos de salud directamente en tu dispositivo (almacenamiento local del
-            navegador o "localStorage"), como las métricas de salud que registras (peso, altura, sueño, ayuno,
-            actividad física), tus medicamentos y recordatorios. Estos datos permanecen en tu dispositivo y no se
-            envían a nuestros servidores salvo que formen parte de tu expediente clínico; cualquier persona con
-            acceso a tu dispositivo podría verlos. Puedes eliminarlos en cualquier momento borrando los datos del
-            sitio desde la configuración de tu navegador, o al cerrar tu sesión en un dispositivo compartido.
-          </p>
-          <p style="${pStyle}">
-            Asimismo, si aceptas las notificaciones, la aplicación puede enviarte notificaciones push
-            (recordatorios de citas, de medicamentos y avisos del servicio), cuyo texto puede ser visible en la
-            pantalla de bloqueo de tu dispositivo. Puedes desactivarlas en cualquier momento desde la sección
-            "Notificaciones" de la aplicación o en la configuración de notificaciones de tu navegador o dispositivo.
-          </p>
-        </div>
-
-        <div style="${sectionStyle}">
-          <h3 style="${h3Style}">8. Cambios al aviso de privacidad</h3>
-          <p style="${pStyle}">
-            El presente aviso de privacidad puede sufrir modificaciones, cambios o actualizaciones derivadas de
-            nuevos requerimientos legales, mejoras de nuestros procesos o de nuestros servicios. Cualquier cambio
-            será publicado en esta misma sección de la aplicación y, cuando el cambio sea significativo, te lo
-            notificaremos a través de la aplicación o de tu correo electrónico registrado. La versión vigente
-            indicará siempre su fecha de última actualización.
-          </p>
-        </div>
-
-        <div style="margin-top: 0.5rem; padding: 0.75rem; background: rgba(70,172,120,0.1); border: 1px solid rgba(70,172,120,0.3); border-radius: 10px;">
-          <p style="margin: 0; font-size: 0.8rem; color: rgba(255,255,255,0.75); line-height: 1.5;">
-            Al crear tu cuenta y marcar la casilla de aceptación consientes el tratamiento de tus datos
-            personales conforme a este aviso. Si tienes dudas, acude a la Farmacia o escríbenos a
-            citas@apolofarmacia.com.mx.
-          </p>
-        </div>
+    <div style="padding: 16px;">
+      <div style="background: #FFFFFF; border: 1px solid #E3E8F2; border-radius: 16px; padding: 16px;">
+        ${body.join('')}
       </div>
     </div>
   `;
@@ -1123,12 +1006,12 @@ async function renderPrivacidadDatos() {
 
       <!-- Finalidades secundarias -->
       <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
-        <h3 style="margin: 0 0 0.25rem; font-size: 1rem; font-weight: 700; color: #1E2A8A;">Promociones y mercadotecnia</h3>
+        <h3 style="margin: 0 0 0.25rem; font-size: 1rem; font-weight: 700; color: #1E2A8A;">Finalidades secundarias</h3>
         <p style="margin: 0 0 0.75rem; font-size: 0.8rem; color: #64748b; line-height: 1.5;">
-          Finalidad secundaria (opcional). Puedes desactivarla en cualquier momento — el servicio de salud y farmacia se presta exactamente igual.
+          Promociones, programa de lealtad Monedas Apolo y estadísticas de uso de la aplicación (Google Analytics, sin datos de salud). Opcional: puedes desactivarlo en cualquier momento — el servicio de salud y farmacia se presta exactamente igual.
         </p>
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
-          <span style="font-size: 0.9rem; color: #1a1a2e; font-weight: 600;">Recibir promociones y mercadotecnia</span>
+          <span style="font-size: 0.9rem; color: #1a1a2e; font-weight: 600;">Acepto las finalidades secundarias</span>
           <button id="marketing-toggle" onclick="handleMarketingToggle()" role="switch" aria-checked="false" disabled style="flex-shrink: 0; width: 52px; height: 30px; border-radius: 15px; border: none; background: #CBD5E1; position: relative; cursor: pointer; transition: background 0.2s; opacity: 0.6;">
             <span id="marketing-toggle-knob" style="position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transition: left 0.2s;"></span>
           </button>
@@ -1195,8 +1078,8 @@ function updateMarketingToggleUI() {
   toggle.setAttribute('aria-checked', optIn ? 'true' : 'false');
   knob.style.left = optIn ? '25px' : '3px';
   status.textContent = optIn
-    ? 'Recibes promociones y mercadotecnia (finalidad secundaria).'
-    : 'No recibes promociones ni mercadotecnia.';
+    ? 'Aceptadas: promociones, Monedas Apolo y estadísticas de uso.'
+    : 'No aceptadas: sin promociones ni estadísticas de uso.';
 }
 
 async function handleMarketingToggle() {
@@ -1215,8 +1098,8 @@ async function handleMarketingToggle() {
   marketingOptOutState = targetOptOut;
   updateMarketingToggleUI();
   showToast(targetOptOut
-    ? 'Listo — ya no recibirás promociones ni mercadotecnia.'
-    : 'Listo — recibirás promociones y mercadotecnia.', 'success');
+    ? 'Listo — ya no se usarán tus datos para finalidades secundarias (promociones ni estadísticas de uso).'
+    : 'Listo — aceptaste las finalidades secundarias.', 'success');
 }
 
 function updateArcoTipoHelp() {
@@ -1339,6 +1222,9 @@ async function checkConsentGate() {
     }
     const missing = REQUIRED_CONSENT_TYPES.filter(t => !signedTypes.includes(t));
     if (missing.length === 0) return false;
+    // Only the documents that are missing or outdated (e.g. Aviso v3).
+    window.__consentPending = missing;
+    window.__hsStarted = false;
     consentGateActive = true;
     consentGateVerifyError = false;
     renderConsentOnboarding();
@@ -1401,6 +1287,13 @@ function setAppChromeVisible(visible) {
 
 // Shared card markup for the standard documents — used by both the
 // consent-onboarding gate and the public sign-and-register view.
+// Consent gate: the documents still to sign — missing ones, or ones whose
+// signed copy is an older version (e.g. Aviso de Privacidad v3).
+function consentDocsPending() {
+  const pending = Array.isArray(window.__consentPending) && window.__consentPending.length ? window.__consentPending : REQUIRED_CONSENT_TYPES;
+  return (window.APOLO_CONSENT_DOCS || []).filter(d => REQUIRED_CONSENT_TYPES.includes(d.type) && pending.includes(d.type));
+}
+
 function consentDocCardsHtml(docs, checkboxIdPrefix, onchangeFnName) {
   return docs.map(doc => `
       <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
@@ -1419,7 +1312,7 @@ function renderConsentOnboarding() {
   closeMenu();
   setAppChromeVisible(false);
 
-  const docs = (window.APOLO_CONSENT_DOCS || []).filter(d => REQUIRED_CONSENT_TYPES.includes(d.type));
+  const docs = consentDocsPending();
 
   // Minor patient (from customers.date_of_birth): the padre/madre/tutor
   // signs — signer_name is the guardian's name and each document records
@@ -1437,8 +1330,12 @@ function renderConsentOnboarding() {
 
   mainContent.innerHTML = `
     <div style="padding: 1.5rem 1rem; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white;">
-      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📋 Documentos de consentimiento</h1>
-      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">Para usar la app, lee y acepta los siguientes documentos. Solo es necesario una vez.</p>
+      <h1 style="margin: 0; font-size: 1.4rem; font-weight: 700;">📋 ${docs.length < REQUIRED_CONSENT_TYPES.length ? 'Actualizamos nuestros documentos' : 'Documentos de consentimiento'}</h1>
+      <p style="margin: 0.5rem 0 0; font-size: 0.9rem; opacity: 0.9;">${docs.length < REQUIRED_CONSENT_TYPES.length
+        ? (docs.length === 1 && docs[0].type === 'privacidad'
+          ? 'Actualizamos nuestro Aviso de Privacidad: ahora tus registros de salud se guardan en tu cuenta y tu médico puede verlos, y explicamos el uso de Google Analytics. Léelo y acéptalo para seguir usando la app.'
+          : 'Actualizamos algunos documentos. Léelos y acéptalos para seguir usando la app.')
+        : 'Para usar la app, lee y acepta los siguientes documentos. Solo es necesario una vez.'}</p>
     </div>
 
     <div style="padding: 1rem;">
@@ -1454,7 +1351,7 @@ function renderConsentOnboarding() {
       <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
         <label style="display: flex; align-items: flex-start; gap: 0.5rem; cursor: pointer;">
           <input type="checkbox" id="consent-marketing-optin" style="margin-top: 0.15rem; width: 1rem; height: 1rem; flex-shrink: 0; accent-color: #46AC78; cursor: pointer;">
-          <span style="font-size: 0.8rem; color: #475569; line-height: 1.4;"><strong>Opcional:</strong> Acepto el uso de mis datos para finalidades secundarias (promociones y mercadotecnia). Si no marcas esta casilla, tus datos no se usarán para esas finalidades y el servicio se presta exactamente igual.</span>
+          <span style="font-size: 0.8rem; color: #475569; line-height: 1.4;"><strong>Opcional:</strong> Acepto el uso de mis datos para finalidades secundarias: promociones, el programa de lealtad Monedas Apolo y estadísticas de uso de la aplicación (Google Analytics, sin datos de salud). Si no marcas esta casilla, tus datos no se usarán para esas finalidades y el servicio se presta exactamente igual.</span>
         </label>
       </div>
 
@@ -1481,7 +1378,7 @@ function renderConsentOnboarding() {
 
 // Master button stays disabled until every document is accepted
 function updateConsentSubmitButton() {
-  const docs = (window.APOLO_CONSENT_DOCS || []).filter(d => REQUIRED_CONSENT_TYPES.includes(d.type));
+  const docs = consentDocsPending();
   const allChecked = docs.length > 0 && docs.every(d => document.getElementById('consent-check-' + d.type)?.checked);
   const btn = document.getElementById('consent-submit-btn');
   if (btn) {
@@ -1492,7 +1389,7 @@ function updateConsentSubmitButton() {
 }
 
 async function handleConsentOnboardingSubmit() {
-  const docs = (window.APOLO_CONSENT_DOCS || []).filter(d => REQUIRED_CONSENT_TYPES.includes(d.type));
+  const docs = consentDocsPending();
   const allChecked = docs.length > 0 && docs.every(d => document.getElementById('consent-check-' + d.type)?.checked);
   if (!allChecked) return;
 
@@ -2089,7 +1986,7 @@ function renderFirmaRegistro() {
       <div style="background: #ffffff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 1rem; margin-bottom: 1rem;">
         <label style="display: flex; align-items: flex-start; gap: 0.5rem; cursor: pointer;">
           <input type="checkbox" id="firma-marketing-optin" style="margin-top: 0.15rem; width: 1rem; height: 1rem; flex-shrink: 0; accent-color: #46AC78; cursor: pointer;">
-          <span style="font-size: 0.8rem; color: #475569; line-height: 1.4;"><strong>Opcional:</strong> Acepto el uso de mis datos para finalidades secundarias (promociones y mercadotecnia). Si no marcas esta casilla, tus datos no se usarán para esas finalidades y el servicio se presta exactamente igual.</span>
+          <span style="font-size: 0.8rem; color: #475569; line-height: 1.4;"><strong>Opcional:</strong> Acepto el uso de mis datos para finalidades secundarias: promociones, el programa de lealtad Monedas Apolo y estadísticas de uso de la aplicación (Google Analytics, sin datos de salud). Si no marcas esta casilla, tus datos no se usarán para esas finalidades y el servicio se presta exactamente igual.</span>
         </label>
       </div>
 
@@ -2983,6 +2880,10 @@ function clearAppData() {
 async function handleLogout() {
   if (!confirm('¿Cerrar sesión?')) return;
 
+  // Stop the health sync BEFORE clearing local data, so removing the local
+  // copies is never mirrored as deletions to the account.
+  clearHealthLocal();
+  window.__hsStarted = false;
   clearAppData();
   await FarmaciaAPI.signOut();
   currentAuthUser = null;
@@ -3404,6 +3305,9 @@ function renderPage(page) {
     }
   } else {
     setAppChromeVisible(true);
+    // Health records → account (healthsync.js), once the consent gate is
+    // clear; healthsync re-checks the aviso server-side.
+    if (!window.__hsStarted) { window.__hsStarted = true; startHealthSync(window.farmaciaSupabase); }
   }
 
   // Clear any running intervals
