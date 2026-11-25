@@ -307,8 +307,21 @@ const rnpError = (inner: XNode | null) => {
   return text ? text : null;
 };
 
-const isTruthyExito = (v: string | null) =>
-  v != null && ['1', 'true', 'si', 'sí', 'ok', 'exito', 'éxito', 'aprobada', 'success'].includes(v.trim().toLowerCase());
+// RNP's <Exito> is free text ("Recarga realizada con éxito", "Consulta
+// exitosa"), not a flag: ANY non-empty text counts as success (fixed
+// 2026-11-25 — a real recarga with Exito + Venta + Autorizacion was being
+// filed as pendiente because only exact words like "exito"/"1" matched).
+const nodeText = (inner: XNode | null, tag: string) => (inner ? findFirst(inner, tag)?.text?.trim() || '' : '');
+
+// Read-only calls (saldo / productos): OK when RNP replied, there is no
+// non-empty <Error>, and <Exito> has any text or the answer carries the
+// expected data (dataTags). Returns the error text, or null when OK.
+const readOnlyError = (r: RnpResult, dataTags: string[]) => {
+  const err = rnpError(r.inner) || r.fault || r.transportError || (r.answered ? null : 'Respuesta ilegible');
+  if (err) return err;
+  const confirmed = !!nodeText(r.inner, 'Exito') || dataTags.some((t) => !!findFirst(r.inner!, t));
+  return confirmed ? null : 'RNP no confirmó la consulta';
+};
 
 // Catalog normalization (v2, from the plain view of obtenerProductos).
 // Live catalog shape (verified 2026-11-24):
@@ -462,7 +475,7 @@ Deno.serve(async (req) => {
       const c = credentials(env);
       const { real, redacted } = buildInner('PDV', [['Tipo', 1], ['Usuario', c.user], ['Password', c.pass], ['ApiKey', c.key]]);
       const r = await callRnp('obtenerSaldo', real);
-      const err = rnpError(r.inner) || r.fault || r.transportError || (r.answered ? null : 'Respuesta ilegible');
+      const err = readOnlyError(r, ['SaldoRecargas', 'SaldoServicios']);
       await logReadOnly(db, caller, 'obtenerSaldo', envelope('obtenerSaldo', redacted), r, !err, err);
       if (err) return jsonResponse({ ok: false, error: `RNP: ${err}` }, 502);
       const saldoRecargas = toNumber(findFirst(r.inner!, 'SaldoRecargas')?.text ?? null);
@@ -547,7 +560,7 @@ Deno.serve(async (req) => {
         ['Tipo', 1], ['Usuario', c.user], ['Password', c.pass], ['ApiKey', c.key], ['Categoria', categoria],
       ]);
       const r = await callRnp('obtenerProductos', real);
-      const err = rnpError(r.inner) || r.fault || r.transportError || (r.answered ? null : 'Respuesta ilegible');
+      const err = readOnlyError(r, ['Carrier']);
       // Catalog answers can be large: keep the first 200 KB in the log.
       await logReadOnly(db, caller, 'obtenerProductos', envelope('obtenerProductos', redacted), {
         ...r,
@@ -737,18 +750,25 @@ Deno.serve(async (req) => {
     const nuevoSaldo = r.inner ? toNumber(findFirst(r.inner, 'NuevoSaldo')?.text ?? null) : null;
     const fecha = r.inner ? findFirst(r.inner, 'Fecha')?.text?.trim() || null : null;
 
-    // Order matters: a confirmed Exito wins over any Error text (money was
-    // taken); only an explicit Error without Exito is a refundable reject.
+    // aprobada  = RNP replied, no non-empty <Error>, and <Exito> has any
+    //             text or there is an Autorizacion / Venta.
+    // rechazada = RNP replied with a non-empty <Error> and NO sign of
+    //             success (safe to refund).
+    // pendiente = everything else: timeout, SOAP fault, unreadable, or a
+    //             contradictory answer (Error AND Exito/Autorizacion/Venta)
+    //             → never resend, never refund automatically; the admin
+    //             checks the RNP portal.
+    const successSign = !!exito || !!autorizacion || !!venta;
     let status: 'aprobada' | 'rechazada' | 'pendiente';
-    if (r.answered && (isTruthyExito(exito) || (!!autorizacion && exito == null && !errorText))) status = 'aprobada';
-    else if (r.answered && errorText) status = 'rechazada';
-    else status = 'pendiente'; // timeout, SOAP fault, Exito=0 without Error, unreadable → do not resend
+    if (r.answered && !errorText && successSign) status = 'aprobada';
+    else if (r.answered && errorText && !successSign) status = 'rechazada';
+    else status = 'pendiente';
 
     await finish({
       status,
       response_xml: r.rawResponse,
       http_status: r.httpStatus,
-      error_text: errorText || r.fault || r.transportError || (status === 'pendiente' ? `Respuesta sin confirmación (Exito=${exito ?? '—'})` : null),
+      error_text: errorText || r.fault || r.transportError || (status === 'pendiente' ? `Respuesta sin confirmación (Exito=${exito || '—'})` : null),
       autorizacion,
       venta,
       codigo,
