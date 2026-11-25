@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon, Award, UserPlus, UserCircle, Receipt } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon, Award, UserPlus, UserCircle, Receipt, Coins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
@@ -19,7 +19,7 @@ import ApoloBrand from '@/components/ApoloBrand';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN, getTaxSettings, calcIVA } from '@/lib/currency';
 import {
-  getInventory, createSale, createSaleWithPayments, getRecentSales, voidSale, findDiscount,
+  getInventory, createSale, createSaleWithPayments, getRecentSales, voidSale, findDiscount, coinsLinkRedemptionSale,
   getTaxSettingsDb, getBankAccounts, createPrescription, linkPrescriptionToSale, searchCustomersPos, createCustomerPos,
   processMembershipRenewals, ensureMembershipConsultationProduct, decrementMembershipVisits,
   fulfillMembershipTrackers, getMembershipByIdPos, isServiceItem,
@@ -36,6 +36,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { enqueueRxJob, flushRxQueue } from '@/lib/rxQueue';
 import ServiciosModal from '@/components/ServiciosModal';
+import MonedasModal from '@/components/MonedasModal';
 import ServiciosResultDialog from '@/components/ServiciosResultDialog';
 import {
   isRnpCartLine, isRnpServiceLine, cartHasRnp, rnpLinesTotal, sendRnpLine, linkRnpOpsToSale,
@@ -122,6 +123,7 @@ const PoSDashboard = () => {
   const [profileOpen, setProfileOpen] = useState(false);
   // Servicios RNP (recargas / paquetes / pagos de servicios / tarjetas de regalo)
   const [serviciosOpen, setServiciosOpen] = useState(false);
+  const [monedasOpen, setMonedasOpen] = useState(false);
   const [rnpSending, setRnpSending] = useState(false);
   const [rnpOutcome, setRnpOutcome] = useState(null);
   const searchInputRef = useRef(null);
@@ -1492,7 +1494,7 @@ const PoSDashboard = () => {
           amount_given: cashPayment ? cashPayment.amount : null,
           change_due: cashPayment ? (cashPayment.amount - (cashPayment.amountApplied || cashPayment.amount)) : null,
           discount_code: useMembershipDiscount ? 'MEMBRESIA' : (discount?.code || null),
-          discount_value: useMembershipDiscount ? membershipDiscountPercent : (discount?.value || null),
+          discount_value: useMembershipDiscount ? membershipDiscountPercent : (discount?.type === 'fixed' ? null : (discount?.value || null)),
           discount_amount: saleDiscountAmount || null,
           iva_enabled: taxSettings.ivaEnabled,
           iva_rate: taxSettings.ivaRate,
@@ -1782,6 +1784,11 @@ const PoSDashboard = () => {
           }
         }
 
+        if (discount?.redemptionId && !useMembershipDiscount) {
+          coinsLinkRedemptionSale(discount.redemptionId, sale.id)
+            .catch((linkErr) => console.warn('Failed to link Monedas redemption to sale:', linkErr));
+        }
+
         if (rnpOutcomes.length > 0) {
           linkRnpOpsToSale(sale.id, rnpOutcomes.map((o) => o.line.rnp.opId))
             .catch((linkErr) => console.warn('Failed to link RNP ops to sale:', linkErr));
@@ -1980,21 +1987,27 @@ const PoSDashboard = () => {
   const membershipDiscountAmount = isMembershipActive && !isCostPlus
     ? regularSubtotal * (membershipDiscountPercent / 100)
     : 0;
-  const codeDiscountAmount = discount && !isCostPlus ? regularSubtotal * (discount.value / 100) : 0;
+  // type 'fixed' (Monedas wellness-product reward) and `cap` (Monedas %
+  // rewards) only exist on Monedas Apolo rewards; promo codes from the
+  // discounts table have neither, so their amount is unchanged.
+  const codeDiscountRaw = discount && !isCostPlus
+    ? (discount.type === 'fixed' ? Math.min(regularSubtotal, Number(discount.value) || 0) : regularSubtotal * (discount.value / 100))
+    : 0;
+  const codeDiscountAmount = discount?.cap != null ? Math.min(codeDiscountRaw, Number(discount.cap)) : codeDiscountRaw;
 
   // The membership discount only "wins" when it actually discounts something
   // (> 0). A consulta-only cart has a zero discount base; without this guard
   // 0 >= 0 tags the sale MEMBRESIA with a null discount amount.
-  const useMembershipDiscount = isMembershipActive && !isCostPlus && membershipDiscountAmount > 0 && membershipDiscountAmount >= codeDiscountAmount;
+  const useMembershipDiscount = isMembershipActive && !isCostPlus && !discount?.redemptionId && membershipDiscountAmount > 0 && membershipDiscountAmount >= codeDiscountAmount;
   const appliedDiscountAmount = useMembershipDiscount ? membershipDiscountAmount : codeDiscountAmount;
   const appliedDiscountLabel = useMembershipDiscount
     ? `Membresía ${membershipDiscountPercent}%`
     : isCostPlus
       ? `${discount.code} (costo +${discount.value}%)`
-      : discount?.code || null;
+      : discount?.redemptionId ? `Monedas Apolo: ${discount.title}` : discount?.code || null;
   const appliedDiscountPercent = useMembershipDiscount
     ? membershipDiscountPercent
-    : isCostPlus
+    : isCostPlus || discount?.type === 'fixed'
       ? null
       : discount?.value || null;
 
@@ -2727,6 +2740,9 @@ const PoSDashboard = () => {
                 <Button onClick={() => setServiciosOpen(true)} size="sm" className="hidden sm:inline-flex bg-apolo-navy hover:bg-apolo-navy-dark text-white">
                   <Receipt className="w-4 h-4 mr-2" />Servicios
                 </Button>
+                <Button onClick={() => setMonedasOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-apolo-navy border-apolo-navy/30 hover:bg-apolo-navy/5">
+                  <Coins className="w-4 h-4 mr-2" />Monedas
+                </Button>
                 <Button onClick={() => setReturnOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-orange-600 border-orange-200 hover:bg-orange-50">
                   <RotateCcw className="w-4 h-4 mr-2" />Devolución
                 </Button>
@@ -2981,6 +2997,18 @@ const PoSDashboard = () => {
       <CloseShiftModal open={closeShiftOpen} onOpenChange={setCloseShiftOpen} />
       <ReceiptModal open={receiptOpen} onOpenChange={setReceiptOpen} sale={completedSale} autoPrint={true} />
       <ServiciosModal open={serviciosOpen} onOpenChange={setServiciosOpen} cart={cart} onAdd={addRnpLines} />
+      <MonedasModal
+        open={monedasOpen}
+        onOpenChange={setMonedasOpen}
+        hasDiscount={!!discount}
+        onApplyReward={(reward) => {
+          // Monedas Apolo reward (% with cap, or a fixed amount up to its
+          // cap): becomes the ticket's discount, linked to the redemption.
+          setDiscount(reward);
+          setDiscountCode('');
+          logAudit({ action: AUDIT_ACTIONS.DISCOUNT_APPLIED, user, details: `Monedas Apolo: ${reward.title} (canje ${String(reward.redemptionId).slice(0, 8)})` });
+        }}
+      />
       <ServiciosResultDialog
         sending={rnpSending}
         outcome={rnpOutcome}

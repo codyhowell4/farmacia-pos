@@ -6,7 +6,7 @@ import {
   Users, Package, ShoppingCart, LogOut, BarChart3, Ticket, Menu, X, Clock, Shield,
   Settings, Truck, FileText, TrendingUp, TrendingDown, BookOpen, UserCircle, Stethoscope, Smartphone,
   ClipboardList, Pill, CalendarDays, AlertTriangle, ChevronDown, ChevronRight, UserPlus,
-  Award, FileSignature, HeartHandshake, FileWarning, Target,
+  Award, FileSignature, HeartHandshake, FileWarning, Target, Coins,
 } from 'lucide-react';
 import ApoloBrand from '@/components/ApoloBrand';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,7 @@ import AdminPartners from '@/components/admin/AdminPartners';
 import AdminKpis from '@/components/admin/AdminKpis';
 import StaffProfile from '@/components/StaffProfile';
 import AdminRnpServicios from '@/components/admin/AdminRnpServicios';
+import AdminMonedas from '@/components/admin/AdminMonedas';
 import { countRnpPending, getRnpBalance } from '@/lib/db';
 import { isRnpBalanceLow, RNP_LOW_BALANCE_DEFAULT } from '@/lib/rnpServices';
 import { formatMXN } from '@/lib/currency';
@@ -100,6 +101,7 @@ const AdminDashboard = () => {
     if (path.includes('/lost-sales')) return 'lost-sales';
     if (path.includes('/kpis')) return 'kpis';
     if (path.includes('/servicios-rnp')) return 'servicios-rnp';
+    if (path.includes('/monedas')) return 'monedas';
     return 'overview';
   };
   
@@ -242,6 +244,10 @@ const AdminDashboard = () => {
       <button onClick={() => navigateTo('/admin/memberships', 'memberships')} className={navButtonClass(isActive('memberships'))}>
         <Award className="w-5 h-5" />
         <span className="font-medium">Membresía</span>
+      </button>
+      <button onClick={() => navigateTo('/admin/monedas', 'monedas')} className={navButtonClass(isActive('monedas'))}>
+        <Coins className="w-5 h-5" />
+        <span className="font-medium">Monedas Apolo</span>
       </button>
       <button onClick={() => navigateTo('/admin/partners', 'partners')} className={navButtonClass(isActive('partners'))}>
         <HeartHandshake className="w-5 h-5" />
@@ -452,6 +458,7 @@ const AdminDashboard = () => {
                 <Route path="/lost-sales" element={<AdminLostSales />} />
                 <Route path="/kpis" element={<AdminKpis />} />
                 <Route path="/servicios-rnp" element={<AdminRnpServicios />} />
+                <Route path="/monedas" element={<AdminMonedas />} />
                 <Route path="/settings" element={<AdminSettings />} />
                 <Route path="/profile" element={<StaffProfile />} />
               </Routes>

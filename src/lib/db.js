@@ -4094,3 +4094,91 @@ export const getRnpTotalsByShift = async (shifts) => {
   });
   return out;
 };
+
+// ── Monedas Apolo (programa de lealtad, 2026-11-25) ───────────
+// Coins are NOT cash: they are spent only on the rewards ladder. All
+// earning/spending goes through definer RPCs (rules enforced server-side).
+export const coinsStaffLookup = async (query) => {
+  const { data, error } = await supabase.rpc('coins_staff_lookup', { p_query: query });
+  if (error) throw error;
+  return data || [];
+};
+
+export const coinsRedeem = async (customerId, tierId) => {
+  const { data, error } = await supabase.rpc('coins_redeem', { p_customer: customerId, p_tier: tierId });
+  if (error) throw error;
+  return data;
+};
+
+export const coinsCancelRedemption = async (redemptionId, reason = null) => {
+  const { data, error } = await supabase.rpc('coins_cancel_redemption', { p_redemption: redemptionId, p_reason: reason });
+  if (error) throw error;
+  return data;
+};
+
+export const coinsLinkRedemptionSale = async (redemptionId, saleId) => {
+  const { data, error } = await supabase.rpc('coins_link_redemption_sale', { p_redemption: redemptionId, p_sale: saleId });
+  if (error) throw error;
+  return data;
+};
+
+export const coinsCompleteChequeo = async (customerId, appointmentId = null) => {
+  const { data, error } = await supabase.rpc('coins_complete_chequeo', { p_customer: customerId, p_appointment: appointmentId });
+  if (error) throw error;
+  return data;
+};
+
+export const coinsStaffChequeos = async (customerId) => {
+  const { data, error } = await supabase.rpc('coins_staff_chequeos', { p_customer: customerId });
+  if (error) throw error;
+  return data || [];
+};
+
+export const getCoinTiers = async () => {
+  const { data, error } = await supabase.from('coin_reward_tiers').select('*').order('coins');
+  if (error) throw error;
+  return data || [];
+};
+
+export const saveCoinTier = async (tier) => {
+  const orgId = await getOrgId();
+  const row = { ...tier, org_id: orgId, updated_at: new Date().toISOString() };
+  const { data, error } = tier.id
+    ? await supabase.from('coin_reward_tiers').update(row).eq('id', tier.id).select().single()
+    : await supabase.from('coin_reward_tiers').insert(row).select().single();
+  if (error) throw error;
+  return data;
+};
+
+export const getCoinsSettings = async () => {
+  const { data, error } = await supabase.from('coins_settings').select('*').maybeSingle();
+  if (error) throw error;
+  return data || null;
+};
+
+export const saveCoinsSettings = async (patch) => {
+  const orgId = await getOrgId();
+  const { data, error } = await supabase.from('coins_settings')
+    .update({ ...patch, updated_at: new Date().toISOString() }).eq('org_id', orgId).select().single();
+  if (error) throw error;
+  return data;
+};
+
+// Recent redemptions (staff; optionally one customer's).
+export const getCoinRedemptions = async ({ customerId = null, limit = 50 } = {}) => {
+  let q = supabase.from('coin_redemptions').select('*, customers(full_name, phone)').order('redeemed_at', { ascending: false }).limit(limit);
+  if (customerId) q = q.eq('customer_id', customerId);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+};
+
+export const getCoinsProgramStats = async () => {
+  const [{ count: enrolled }, { data: ledger }] = await Promise.all([
+    supabase.from('coin_enrollments').select('customer_id', { count: 'exact', head: true }).is('revoked_at', null),
+    supabase.from('coin_ledger').select('coins').gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString()).limit(10000),
+  ]);
+  const earned = (ledger || []).filter((r) => r.coins > 0).reduce((s, r) => s + r.coins, 0);
+  const spent = (ledger || []).filter((r) => r.coins < 0).reduce((s, r) => s - r.coins, 0);
+  return { enrolled: enrolled || 0, earned30: earned, spent30: spent };
+};
