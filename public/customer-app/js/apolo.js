@@ -558,7 +558,7 @@ function ladderHtml(s) {
       <div style="width:34px;height:34px;border-radius:50%;background:${ok ? '#E6F4EC' : '#EEF0FA'};display:flex;align-items:center;justify-content:center;flex-shrink:0;">${ok ? svg('check', GREEN, 18) : svg('gift', NAVY, 18)}</div>
       <div style="flex:1;font-size:13px;font-weight:600;">${esc(t.title)}</div>
       <span style="font-size:12px;font-weight:800;color:${ok ? GREEN : COIN_INK};white-space:nowrap;">${fmtInt(t.coins)}</span></div>`;
-  }).join('')}</div>`) + `<p style="font-size:11px;color:${MUTED};margin:0 2px;">Canjea en caja mostrando tu código. Los descuentos aplican a una compra, con el tope indicado.</p>`;
+  }).join('')}</div>`) + `<p style="font-size:11px;color:${MUTED};margin:0 2px;">Canjea en caja mostrando tu código. Cada descuento aplica a una compra.</p>`;
 }
 
 // ============================================================

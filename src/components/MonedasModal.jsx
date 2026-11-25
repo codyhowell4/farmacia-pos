@@ -195,7 +195,7 @@ const MonedasModal = ({ open, onOpenChange, onApplyReward, hasDiscount }) => {
                 <span>
                   <b>Canjeado:</b> {lastRedeemed.title}.{' '}
                   {lastRedeemed.kind === 'percent' || lastRedeemed.kind === 'free_product'
-                    ? 'El descuento se aplicó al carrito actual (con su tope). Cobra la venta normalmente.'
+                    ? 'El descuento se aplicó al carrito actual. Cobra la venta normalmente.'
                     : HANDOVER[lastRedeemed.kind] || ''}
                 </span>
               </div>

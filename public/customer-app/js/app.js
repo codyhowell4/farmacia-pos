@@ -22,7 +22,7 @@ import { VoiceAI, HealthFAQ } from './voiceAI.js';
 import { FastingTracker, SleepTracker, CheckInSystem } from './tracking.js';
 import { NotificationManager } from './notifications.js';
 import { renderPulsera } from './pulsera.js?v=6';
-import { registerApolo, renderInicio, renderMonedas, renderAhorro, renderChequeo, getApoloStreak, renderMiControl, renderBienestar } from './apolo.js?v=2';
+import { registerApolo, renderInicio, renderMonedas, renderAhorro, renderChequeo, getApoloStreak, renderMiControl, renderBienestar } from './apolo.js?v=3';
 
 // Toast notifications (CSS in style.css)
 function showToast(message, type = 'info') {
@@ -8846,21 +8846,15 @@ window.submitRefillRequest = async function(prescriptionId) {
         throw error || new Error('Unknown error');
       }
     } catch (e) {
-      console.warn('[requestRefill] Supabase failed, falling back:', e.message);
+      console.warn('[requestRefill] Supabase failed:', e.message);
     }
   }
   
+  // Only a server preorder reaches the pharmacy: never confirm a
+  // local-only request.
   if (!request) {
-    request = Store.requestRefill({
-      prescriptionId,
-      medicine: prescription.medicine,
-      dose: prescription.dose,
-      quantity: parseInt(quantity),
-      pharmacyLocation: pharmacy,
-      pharmacyName: pharmacyNames[pharmacy],
-      requestedAt: new Date().toISOString()
-    });
-    console.log('[requestRefill] Fallback localStorage refill created');
+    showToast(currentAuthUser ? 'No pudimos enviar tu solicitud. Intenta de nuevo.' : 'Inicia sesión para solicitar tu resurtido', 'error');
+    return;
   }
   
   document.querySelector('.modal-overlay').remove();
@@ -9441,10 +9435,10 @@ function renderConsulta() {
           ¿Necesitas ayuda urgente?
         </div>
         <div style="display: flex; gap: 12px; margin-top: 14px;">
-          <a href="tel:+5214425488893" style="flex: 1; padding: 14px 8px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white; text-decoration: none; border-radius: 14px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+          <a href="tel:911" style="flex: 1; padding: 14px 8px; background: linear-gradient(120deg, #2B37A5 0%, #1E2A8A 48%, #141B5E 100%); color: white; text-decoration: none; border-radius: 14px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px;">
             ${ICON_PHONE}
             <span style="font-weight: 700; font-size: 0.95rem;">Llamar</span>
-            <span style="font-size: 0.72rem; opacity: 0.85;">+52 1 442 548 8893</span>
+            <span style="font-size: 0.72rem; opacity: 0.85;">911 · Emergencias</span>
           </a>
           <button onclick="showEmergencyInfo()" style="flex: 1; padding: 14px 8px; background: white; color: #1E2A8A; border: 1.5px solid #1E2A8A; border-radius: 14px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: inherit;">
             ${ICON_CHAT}
@@ -10909,9 +10903,15 @@ window.confirmInPersonBooking = async function(locationId) {
 
   const estimatedTime = new Date(now.getTime() + waitMinutes * 60000);
 
+  // The line only exists on the server: no account / no server booking →
+  // nobody is added (never a local-only "¡Estás en la lista!").
+  if (!currentAuthUser) {
+    showToast('Inicia sesión para unirte a la fila', 'warning');
+    window.goPage('login');
+    return;
+  }
   let useSupabase = false;
 
-  // Try Supabase if authenticated
   if (FarmaciaAPI.isSupabaseAvailable() && currentAuthUser) {
     try {
       const { data, error } = await FarmaciaAPI.createAppointment({
@@ -10926,24 +10926,13 @@ window.confirmInPersonBooking = async function(locationId) {
         throw error || new Error('Unknown error');
       }
     } catch (e) {
-      console.warn('[createAppointment] Supabase failed, falling back:', e.message);
+      console.warn('[createAppointment] Supabase failed:', e.message);
     }
   }
 
-  // Fallback to localStorage
   if (!useSupabase) {
-    Store.addAppointment({
-      locationId,
-      locationName: location.name,
-      patientName: name,
-      reason,
-      notes,
-      currentWait: waitMinutes,
-      estimatedTime: estimatedTime.toISOString(),
-      queuePosition
-    });
-    console.log('[createAppointment] Fallback localStorage appointment created');
-    // (No local wait simulation: the displayed wait is only the live queue.)
+    showToast('No pudimos agregarte a la fila. Revisa tu conexión e intenta de nuevo.', 'error');
+    return;
   }
   
   document.querySelector('.modal-overlay').innerHTML = `
