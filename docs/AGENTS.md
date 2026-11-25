@@ -304,6 +304,9 @@ The canonical schema is **`supabase/schemas/supabase_schema.sql`**. Additional m
 
 ---
 
+### Customer app — Cita en Persona wait / open state (2026-11-25)
+- `public/customer-app/js/app.js` (`showInPersonConsulta`, `showLocationBooking`, `confirmInPersonBooking`): the ONLY wait shown is the live `get_queue_status` estimate. The localStorage `currentWait` (default 10, +15 per local booking) is no longer displayed or simulated. Rules (all three screens, helpers `inPersonOpenState` / `inPersonQueueState` / `fetchInPersonQueueState`): closed by store hours (location `hours` "8:00 - 22:00", America/Mexico_City, fallback 8–22) → Cerrado + "Abre hoy/mañana a las 8:00"; `doctors_on_clock = 0` → "Sin médico disponible", can't join; doctor on clock → real `estimated_wait_minutes` (0 → "Sin espera"); RPC fails / null → "No disponible", never a number, can't join. `confirmInPersonBooking` re-checks both before adding anyone. There is no "book a later time" in-person flow.
+
 ## Deployment
 
 The frontend is fully static; Supabase does all backend work. See `docs/HOSTING.md` for the full setup.

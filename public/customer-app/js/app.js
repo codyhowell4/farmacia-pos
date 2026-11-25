@@ -10544,6 +10544,63 @@ window.goToAppointments = function() {
 // IN-PERSON CONSULTA - Appointment with Wait Times
 // ============================================
 
+// ============================================
+// CITA EN PERSONA — store hours + live queue state (2026-11-25)
+// The wait shown is ONLY the live get_queue_status estimate. The old
+// localStorage `currentWait` (default 10, +15 per local booking) is no
+// longer displayed or simulated. Same rules on all three screens:
+//   · closed (store hours, America/Mexico_City) → Cerrado + reopening time
+//   · doctors_on_clock = 0  → "Sin médico disponible", can't join the line
+//   · doctor on clock       → real estimated_wait_minutes (0 = "Sin espera")
+//   · RPC failed / null     → "No disponible", never a number, can't join
+// ============================================
+const IN_PERSON_DEFAULT_HOURS = { open: 8 * 60, close: 22 * 60 };
+
+// Hours come from the location's `hours` setting ("8:00 - 22:00");
+// falls back to 8:00–22:00.
+function inPersonHours(loc) {
+  const m = String((loc && loc.hours) || '').match(/(\d{1,2}):(\d{2})\s*[-–a]+\s*(\d{1,2}):(\d{2})/);
+  if (!m) return IN_PERSON_DEFAULT_HOURS;
+  const open = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  const close = parseInt(m[3], 10) * 60 + parseInt(m[4], 10);
+  return open < close ? { open, close } : IN_PERSON_DEFAULT_HOURS;
+}
+
+function inPersonFmtTime(mins) {
+  return Math.floor(mins / 60) + ':' + String(mins % 60).padStart(2, '0');
+}
+
+// { isOpen, label } — label is the reopening text when closed.
+function inPersonOpenState(loc) {
+  const { open, close } = inPersonHours(loc);
+  const now = videoClinicNow().minutes;
+  if (now >= open && now < close) return { isOpen: true, label: '' };
+  return { isOpen: false, label: (now < open ? 'Abre hoy a las ' : 'Abre mañana a las ') + inPersonFmtTime(open) };
+}
+
+// kind: 'live' | 'no_doctor' | 'unavailable'
+function inPersonQueueState(qs) {
+  if (!qs || typeof qs !== 'object' || !Number.isFinite(Number(qs.doctors_on_clock))) return { kind: 'unavailable' };
+  const doctors = Number(qs.doctors_on_clock);
+  if (doctors <= 0) return { kind: 'no_doctor' };
+  const est = qs.estimated_wait_minutes;
+  if (est == null || !Number.isFinite(Number(est))) return { kind: 'unavailable' };
+  const minutes = Math.max(0, Math.round(Number(est)));
+  return { kind: 'live', minutes, noWait: minutes === 0, doctors, waiting: Math.max(0, Number(qs.waiting) || 0) };
+}
+
+async function fetchInPersonQueueState() {
+  if (!window.FarmaciaAPI || !FarmaciaAPI.getQueueStatus) return { kind: 'unavailable' };
+  if (FarmaciaAPI.isSupabaseAvailable && !FarmaciaAPI.isSupabaseAvailable()) return { kind: 'unavailable' };
+  const qs = await FarmaciaAPI.getQueueStatus().catch(() => null);
+  return inPersonQueueState(qs);
+}
+
+const IN_PERSON_BLOCK_MSG = {
+  no_doctor: 'En este momento no hay médico en turno, así que no es posible unirse a la fila. Intenta más tarde.',
+  unavailable: 'No pudimos consultar la fila en este momento. Intenta de nuevo en unos minutos.',
+};
+
 window.showInPersonConsulta = function() {
   const locations = Store.getLocations();
   
@@ -10580,10 +10637,10 @@ window.showInPersonConsulta = function() {
       
       <div style="display: flex; flex-direction: column; gap: 0.75rem;">
         ${locations.map(loc => {
-          const isShortWait = loc.currentWait <= 10;
-          const isMediumWait = loc.currentWait > 10 && loc.currentWait <= 20;
-          const waitColor = isShortWait ? '#46AC78' : isMediumWait ? '#f59e0b' : '#dc2626';
-          const waitBg = isShortWait ? '#F2FBF6' : isMediumWait ? '#fef3c7' : '#fee2e2';
+          // Open/closed from the store hours; the wait badge and the button
+          // are filled from the live queue once it loads (see below).
+          const openState = inPersonOpenState(loc);
+          loc = { ...loc, isOpen: openState.isOpen };
           
           return `
             <div style="background: white; border-radius: 16px; padding: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); ${!loc.isOpen ? 'opacity: 0.6;' : ''}">
@@ -10594,9 +10651,8 @@ window.showInPersonConsulta = function() {
                   <div style="font-size: 0.8rem; color: var(--text-muted);">📞 ${loc.phone} • 🕐 ${loc.hours}</div>
                 </div>
                 ${loc.isOpen ? `
-                  <div style="text-align: center; background: ${waitBg}; padding: 0.5rem 0.75rem; border-radius: 12px; min-width: 70px;">
-                    <div id="queue-wait-num-${loc.id}" style="font-size: 1.5rem; font-weight: 700; color: ${waitColor};">${loc.currentWait}</div>
-                    <div style="font-size: 0.65rem; color: ${waitColor};">min de espera</div>
+                  <div id="queue-wait-box-${loc.id}" style="text-align: center; background: #f3f4f6; padding: 0.5rem 0.75rem; border-radius: 12px; min-width: 70px;">
+                    <div id="queue-wait-num-${loc.id}" style="font-size: 0.75rem; color: var(--text-muted);">Consultando…</div>
                   </div>
                 ` : `
                   <div style="text-align: center; background: #f3f4f6; padding: 0.5rem 0.75rem; border-radius: 12px;">
@@ -10614,13 +10670,14 @@ window.showInPersonConsulta = function() {
               </div>
               
               ${loc.isOpen ? `
-                <button onclick="showLocationBooking('${loc.id}')" style="width: 100%; padding: 0.875rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
-                  <span>Agendar cita</span>
-                  ${isShortWait ? '<span style="font-size: 0.75rem; background: rgba(255,255,255,0.3); padding: 0.125rem 0.5rem; border-radius: 10px;">¡Rápido!</span>' : ''}
-                </button>
+                <div id="queue-btn-wrap-${loc.id}">
+                  <button disabled style="width: 100%; padding: 0.875rem; background: #e5e7eb; color: #9ca3af; border: none; border-radius: 12px; font-weight: 600;">
+                    Consultando disponibilidad…
+                  </button>
+                </div>
               ` : `
                 <button disabled style="width: 100%; padding: 0.875rem; background: #e5e7eb; color: #9ca3af; border: none; border-radius: 12px; font-weight: 600;">
-                  Abre mañana a las 8:00
+                  ${openState.label}
                 </button>
               `}
             </div>
@@ -10631,22 +10688,46 @@ window.showInPersonConsulta = function() {
   `;
   document.body.appendChild(modal);
 
-  // Live queue: when at least one doctor is clocked in, replace the
-  // schedule-based estimate with the real one (fila ÷ médicos × ~27 min).
-  if (window.FarmaciaAPI?.getQueueStatus) {
-    FarmaciaAPI.getQueueStatus().then(qs => {
-      if (!qs || !qs.doctors_on_clock || qs.estimated_wait_minutes == null) return;
-      locations.forEach(loc => {
-        const num = document.getElementById(`queue-wait-num-${loc.id}`);
-        const note = document.getElementById(`queue-live-note-${loc.id}`);
-        if (num) num.textContent = qs.estimated_wait_minutes;
+  // Live queue (fila ÷ médicos × ~27 min) is the ONLY wait shown. Without a
+  // doctor on the clock, or if the RPC fails, no number and no joining.
+  fetchInPersonQueueState().then(q => {
+    locations.forEach(loc => {
+      const box = document.getElementById(`queue-wait-box-${loc.id}`);
+      const btnWrap = document.getElementById(`queue-btn-wrap-${loc.id}`);
+      const note = document.getElementById(`queue-live-note-${loc.id}`);
+      if (!box || !btnWrap) return; // closed by store hours
+      if (q.kind === 'live') {
+        const isShortWait = q.minutes <= 10;
+        const isMediumWait = q.minutes > 10 && q.minutes <= 20;
+        const waitColor = isShortWait ? '#46AC78' : isMediumWait ? '#f59e0b' : '#dc2626';
+        const waitBg = isShortWait ? '#F2FBF6' : isMediumWait ? '#fef3c7' : '#fee2e2';
+        box.style.background = waitBg;
+        box.innerHTML = q.noWait
+          ? `<div id="queue-wait-num-${loc.id}" style="font-size: 1rem; font-weight: 700; color: ${waitColor};">Sin espera</div>`
+          : `<div id="queue-wait-num-${loc.id}" style="font-size: 1.5rem; font-weight: 700; color: ${waitColor};">${q.minutes}</div>
+             <div style="font-size: 0.65rem; color: ${waitColor};">min de espera</div>`;
+        btnWrap.innerHTML = `
+          <button onclick="showLocationBooking('${loc.id}')" style="width: 100%; padding: 0.875rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+            <span>Agendar cita</span>
+            ${isShortWait ? '<span style="font-size: 0.75rem; background: rgba(255,255,255,0.3); padding: 0.125rem 0.5rem; border-radius: 10px;">¡Rápido!</span>' : ''}
+          </button>`;
         if (note) {
-          note.textContent = `${qs.doctors_on_clock} médico${qs.doctors_on_clock > 1 ? 's' : ''} disponible${qs.doctors_on_clock > 1 ? 's' : ''} · ${qs.waiting} en fila`;
+          note.textContent = `${q.doctors} médico${q.doctors > 1 ? 's' : ''} disponible${q.doctors > 1 ? 's' : ''} · ${q.waiting} en fila`;
           note.style.display = 'block';
         }
-      });
-    }).catch(() => {});
-  }
+      } else {
+        const label = q.kind === 'no_doctor' ? 'Sin médico disponible' : 'No disponible';
+        box.style.background = '#f3f4f6';
+        box.innerHTML = `<div id="queue-wait-num-${loc.id}" style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted);">${label}</div>`;
+        btnWrap.innerHTML = `
+          <button disabled style="width: 100%; padding: 0.875rem; background: #e5e7eb; color: #9ca3af; border: none; border-radius: 12px; font-weight: 600;">
+            ${label}
+          </button>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;">${IN_PERSON_BLOCK_MSG[q.kind]}</div>`;
+        if (note) note.style.display = 'none';
+      }
+    });
+  });
 };
 
 window.showLocationBooking = async function(locationId) {
@@ -10654,19 +10735,19 @@ window.showLocationBooking = async function(locationId) {
   const location = locations.find(l => l.id === locationId);
   if (!location) return;
 
-  // Prefer the live queue when a doctor is on shift
-  let waitMinutes = location.currentWait;
-  if (window.FarmaciaAPI?.isSupabaseAvailable?.() && FarmaciaAPI?.getQueueStatus) {
-    const qs = await FarmaciaAPI.getQueueStatus().catch(() => null);
-    if (qs && qs.doctors_on_clock > 0 && qs.estimated_wait_minutes != null) {
-      waitMinutes = qs.estimated_wait_minutes;
-    }
-  }
+  // Only the live queue is shown (no local estimate). Closed / no doctor /
+  // RPC unavailable → no number and the join button is disabled.
+  const openState = inPersonOpenState(location);
+  const q = openState.isOpen ? await fetchInPersonQueueState() : { kind: 'closed' };
+  const canJoin = q.kind === 'live';
+  const waitMinutes = canJoin ? q.minutes : null;
 
   // Calculate estimated time
   const now = new Date();
-  const estimatedTime = new Date(now.getTime() + waitMinutes * 60000);
+  const estimatedTime = new Date(now.getTime() + (waitMinutes || 0) * 60000);
   const estimatedTimeStr = estimatedTime.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  const blockLabel = q.kind === 'closed' ? 'Cerrado' : q.kind === 'no_doctor' ? 'Sin médico disponible' : 'No disponible';
+  const blockMsg = q.kind === 'closed' ? `${openState.label}.` : (IN_PERSON_BLOCK_MSG[q.kind] || '');
   
   const modal = document.querySelector('.modal-overlay');
   modal.innerHTML = `
@@ -10688,12 +10769,17 @@ window.showLocationBooking = async function(locationId) {
         </div>
         
         <!-- Wait Time Display -->
+        ${canJoin ? `
         <div style="background: linear-gradient(135deg, #F2FBF6, #E2F5EB); border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: center;">
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div>
               <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Tiempo de espera</div>
+              ${q.noWait ? `
+              <div style="font-size: 1.75rem; font-weight: 700; color: #46AC78; line-height: 2.9rem;">Sin espera</div>
+              ` : `
               <div style="font-size: 2.5rem; font-weight: 700; color: #46AC78;">${waitMinutes}</div>
               <div style="font-size: 0.85rem; color: #46AC78;">minutos</div>
+              `}
             </div>
             <div>
               <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 0.25rem;">Te toca aprox.</div>
@@ -10703,6 +10789,13 @@ window.showLocationBooking = async function(locationId) {
             </div>
           </div>
         </div>
+        ` : `
+        <div style="background: #f3f4f6; border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: center;">
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Tiempo de espera</div>
+          <div style="font-size: 1.5rem; font-weight: 700; color: #6b7280;">${blockLabel}</div>
+          <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.5rem;">${blockMsg}</div>
+        </div>
+        `}
         
         <!-- Your Info -->
         <div style="margin-bottom: 1.25rem;">
@@ -10757,7 +10850,11 @@ window.showLocationBooking = async function(locationId) {
           <div style="font-size: 0.8rem; color: #46AC78; margin-top: 0.25rem;">Pago en sucursal</div>
         </div>
         
+        ${canJoin ? `
         <button onclick="confirmInPersonBooking('${locationId}')" style="width: 100%; padding: 1rem; background: #46AC78; color: white; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem; cursor: pointer;">Unirme a la lista</button>
+        ` : `
+        <button disabled style="width: 100%; padding: 1rem; background: #e5e7eb; color: #9ca3af; border: none; border-radius: 12px; font-weight: 600; font-size: 1rem;">${blockLabel}</button>
+        `}
       </div>
     </div>
   `;
@@ -10776,20 +10873,21 @@ window.confirmInPersonBooking = async function(locationId) {
   const locations = Store.getLocations();
   const location = locations.find(l => l.id === locationId);
   
-  // Calculate wait times — prefer the live queue (a doctor on shift),
-  // fall back to the schedule-based local estimate
+  // Re-check right before joining: store open + a doctor on the clock +
+  // a live estimate. Otherwise nobody joins the line (no local estimate).
   const now = new Date();
-  let waitMinutes = location.currentWait;
-  let queuePosition = Math.ceil(location.currentWait / 10); // Approx 10 min per patient
-  let liveQueue = null;
-
-  if (window.FarmaciaAPI?.isSupabaseAvailable?.() && FarmaciaAPI?.getQueueStatus) {
-    liveQueue = await FarmaciaAPI.getQueueStatus().catch(() => null);
-    if (liveQueue && liveQueue.doctors_on_clock > 0 && liveQueue.estimated_wait_minutes != null) {
-      waitMinutes = liveQueue.estimated_wait_minutes;
-      queuePosition = liveQueue.waiting + 1;
-    }
+  const openState = inPersonOpenState(location);
+  if (!openState.isOpen) {
+    showToast(`Cerrado. ${openState.label}.`, 'warning');
+    return;
   }
+  const q = await fetchInPersonQueueState();
+  if (q.kind !== 'live') {
+    showToast(IN_PERSON_BLOCK_MSG[q.kind] || IN_PERSON_BLOCK_MSG.unavailable, 'warning');
+    return;
+  }
+  const waitMinutes = q.minutes;
+  const queuePosition = q.waiting + 1;
 
   const estimatedTime = new Date(now.getTime() + waitMinutes * 60000);
 
@@ -10827,8 +10925,7 @@ window.confirmInPersonBooking = async function(locationId) {
       queuePosition
     });
     console.log('[createAppointment] Fallback localStorage appointment created');
-    // Simulate the queue growing locally; real queue comes from Supabase
-    Store.updateLocationWaitTime(locationId, location.currentWait + 15);
+    // (No local wait simulation: the displayed wait is only the live queue.)
   }
   
   document.querySelector('.modal-overlay').innerHTML = `
@@ -10840,7 +10937,7 @@ window.confirmInPersonBooking = async function(locationId) {
         <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;">Tu posición en la fila:</div>
         <div style="font-size: 3rem; font-weight: 700; color: #46AC78;">#${queuePosition}</div>
         <div style="font-size: 0.9rem; color: #46AC78; margin-top: 0.5rem;">
-          Tiempo estimado: ${waitMinutes} min de espera
+          ${waitMinutes === 0 ? 'Sin espera: pasa a la sucursal' : `Tiempo estimado: ${waitMinutes} min de espera`}
         </div>
       </div>
       
