@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 import { getInventoryIntelligence, getLocations, getServiceItemIds, getAllProductLinks, buildLinkedStockMap } from '@/lib/db';
+import { daysUntil, expiryLabel } from '@/lib/dateFormat';
 
 // Linked-stock coverage (productos vinculados): an item whose linked
 // equivalents have stock doesn't need a purchase — same rule as AdminReorderReport.
@@ -22,13 +23,12 @@ const linkedCoverage = (map, item) => {
 
 const getExpiryStatus = (expirationDate) => {
   if (!expirationDate) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const expiry = new Date(expirationDate);
-  const daysUntilExpiry = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
-  if (daysUntilExpiry < 0) return { label: 'Vencido', color: 'bg-red-100 text-red-700', days: daysUntilExpiry };
-  if (daysUntilExpiry <= 30) return { label: `${daysUntilExpiry}d`, color: 'bg-orange-100 text-orange-700', days: daysUntilExpiry };
-  if (daysUntilExpiry <= 90) return { label: `${daysUntilExpiry}d`, color: 'bg-yellow-100 text-yellow-700', days: daysUntilExpiry };
+  const daysUntilExpiry = daysUntil(expirationDate); // local calendar days, no UTC shift
+  if (daysUntilExpiry == null) return null;
+  const label = expiryLabel(daysUntilExpiry);
+  if (daysUntilExpiry < 0) return { label, color: 'bg-red-100 text-red-700', days: daysUntilExpiry };
+  if (daysUntilExpiry <= 30) return { label, color: 'bg-orange-100 text-orange-700', days: daysUntilExpiry };
+  if (daysUntilExpiry <= 90) return { label, color: 'bg-yellow-100 text-yellow-700', days: daysUntilExpiry };
   return null;
 };
 

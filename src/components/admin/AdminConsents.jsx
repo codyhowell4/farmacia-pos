@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { getAllConsentDocuments, getCustomers } from '@/lib/db';
+import { fmtDate } from '@/lib/dateFormat';
 
 const STATUS_BADGES = {
   signed:   { label: 'Firmado',   color: 'bg-green-100 text-green-700' },
@@ -22,7 +23,7 @@ const STATUS_FILTERS = [
 
 const formatDate = (iso) => {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+  return fmtDate(iso);
 };
 
 // The standard documents every customer signs via the customer-app gate

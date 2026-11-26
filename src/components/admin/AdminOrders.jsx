@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { getSales, updateSaleStatus, decrementInventoryItem, incrementInventory, getInventoryQuantity, createNotification, saleStockAlreadyTaken } from '@/lib/db';
 import { formatMXN } from '@/lib/currency';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 const statusConfig = {
   pending:    { label: 'Pendiente',   className: 'bg-yellow-100 text-yellow-800' },
@@ -209,7 +210,7 @@ const AdminOrders = () => {
 
   const formatDate = (d) => {
     if (!d) return '—';
-    return new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return fmtDateTime(d);
   };
 
   const nextStatuses = (current) => {

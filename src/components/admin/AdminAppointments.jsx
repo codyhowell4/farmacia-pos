@@ -5,6 +5,7 @@ import { DateInput } from '@/components/ui/date-input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { getAppointments, updateAppointment, createNotification, confirmVideoAppointment } from '@/lib/db';
+import { fmtDate, fmtDateTime } from '@/lib/dateFormat';
 
 const statusConfig = {
   pending:   { label: 'Pendiente',  className: 'bg-yellow-100 text-yellow-800' },
@@ -95,7 +96,7 @@ const AdminAppointments = () => {
             type: 'appointment',
             title: `Cita ${statusConfig[newStatus]?.label || newStatus}`,
             message: appt.appointment_date
-              ? `Tu cita del ${new Date(appt.appointment_date).toLocaleDateString('es-MX')} ha sido ${statusConfig[newStatus]?.label || newStatus}.`
+              ? `Tu cita del ${fmtDate(appt.appointment_date)} ha sido ${statusConfig[newStatus]?.label || newStatus}.`
               : 'Tu cita ha sido actualizada.',
             related_id: id,
             related_table: 'appointments',
@@ -125,9 +126,7 @@ const AdminAppointments = () => {
 
   const formatDateTime = (d) => {
     if (!d) return '—';
-    const date = new Date(d);
-    return date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }) +
-      ' ' + date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+    return fmtDateTime(d);
   };
 
   const nextActions = (status) => {

@@ -20,6 +20,7 @@ import { getSales } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { maskCurp } from '@/lib/utils';
 import ReceiptModal from '@/components/ReceiptModal';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 const AdminSales = () => {
   const [sales, setSales] = useState([]);
@@ -120,7 +121,7 @@ const AdminSales = () => {
         <tbody>
           ${filteredSales.map(s => `
             <tr>
-              <td>${new Date(s.timestamp).toLocaleString()}</td>
+              <td>${fmtDateTime(s.timestamp)}</td>
               <td>${s.salesperson_name || s.salesperson || 'N/A'}</td>
               <td>${s.location_id}</td>
               <td>${(s.sale_items || []).length}</td>
@@ -213,7 +214,7 @@ const AdminSales = () => {
                 <React.Fragment key={sale.id}>
                 <tr className={`hover:bg-slate-50 transition-colors cursor-pointer ${sale.voided ? 'opacity-50' : ''}`} onClick={() => toggleExpand(sale.id)}>
                   <td className="px-4 py-3 text-center">{expandedSale === sale.id ? <ChevronUp className="w-4 h-4"/> : <ChevronDown className="w-4 h-4"/>}</td>
-                  <td className="px-4 py-3 text-slate-600">{new Date(sale.timestamp).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-slate-600">{fmtDateTime(sale.timestamp)}</td>
                   <td className="px-4 py-3 text-slate-600">{sale.location_id}</td>
                   <td className="px-4 py-3 text-slate-600">{sale.sale_items ? sale.sale_items.length : 0}</td>
                   <td className="px-4 py-3"><PaymentBadge method={sale.payment_method} /></td>

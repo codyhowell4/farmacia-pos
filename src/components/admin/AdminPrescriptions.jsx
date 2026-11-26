@@ -11,6 +11,7 @@ import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { downloadPrescriptionPDF } from '@/lib/pdf';
 import { parseDateLocal } from '@/lib/timezone';
 import PrintablePrescription from '@/components/doctor/PrintablePrescription';
+import { fmtDate } from '@/lib/dateFormat';
 
 const statusConfig = {
   active: { label: 'Activa', className: 'bg-green-100 text-green-800' },
@@ -80,7 +81,7 @@ const AdminPrescriptions = () => {
 
   const formatDate = (d) => {
     if (!d) return '—';
-    return parseDateLocal(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+    return fmtDate(String(d).length === 10 ? String(d) : d);
   };
 
   return (

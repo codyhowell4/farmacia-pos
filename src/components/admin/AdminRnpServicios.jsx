@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { fmtDateTime as fmtDateTimeMX } from '@/lib/dateFormat';
 import { useToast } from '@/components/ui/use-toast';
 import { formatMXN } from '@/lib/currency';
 import { RNP_CATEGORIES, RNP_LOW_BALANCE_DEFAULT, isRnpBalanceLow, formatPhone } from '@/lib/rnpServices';
@@ -24,7 +25,7 @@ import {
 // a cashier opens Servicios, or NuevoSaldo after each sale) — this page
 // never calls RNP.
 
-const fmtDateTime = (iso) => (iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+const fmtDateTime = (iso) => fmtDateTimeMX(iso);
 const catLabel = (c) => RNP_CATEGORIES[c]?.label || c || '—';
 const refText = (op) => (op.category === 'servicio' || !/^\d{10}$/.test(op.phone || '') ? op.phone : formatPhone(op.phone));
 

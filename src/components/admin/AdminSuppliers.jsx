@@ -20,6 +20,7 @@ import {
   getAllProductLinks,
   buildLinkedStockMap,
 } from '@/lib/db';
+import { fmtDate } from '@/lib/dateFormat';
 
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -415,7 +416,7 @@ const AdminSuppliers = () => {
                         <td className="px-4 py-3">{expandedOrder === order.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</td>
                         <td className="px-4 py-3 font-medium">#{order.id.slice(-6).toUpperCase()}</td>
                         <td className="px-4 py-3 text-slate-700">{order.suppliers?.name}</td>
-                        <td className="px-4 py-3 text-slate-500">{new Date(order.created_at).toLocaleDateString('es-MX')}</td>
+                        <td className="px-4 py-3 text-slate-500">{fmtDate(order.created_at)}</td>
                         <td className="px-4 py-3 text-slate-600">{(order.purchase_order_items || []).length}</td>
                         <td className="px-4 py-3 font-semibold text-green-600">{formatMXN(ocTotal)}</td>
                         <td className="px-4 py-3">
@@ -435,7 +436,7 @@ const AdminSuppliers = () => {
                                 </Button>
                               </>
                             )}
-                            {order.status === 'received' && <span className="text-xs text-slate-400">{new Date(order.received_at).toLocaleDateString('es-MX')}</span>}
+                            {order.status === 'received' && <span className="text-xs text-slate-400">{fmtDate(order.received_at)}</span>}
                           </div>
                         </td>
                       </tr>

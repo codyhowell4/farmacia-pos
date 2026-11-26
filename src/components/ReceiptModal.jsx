@@ -6,6 +6,7 @@ import { formatMXN } from '@/lib/currency';
 import { useToast } from '@/components/ui/use-toast';
 import { getOrgInfo } from '@/lib/orgInfo';
 import { maskCurp } from '@/lib/utils';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 const PAYMENT_LABELS = {
   cash: 'Efectivo',
@@ -33,7 +34,7 @@ const ReceiptContent = ({ sale, orgInfo }) => {
         {orgInfo?.rfc && <p className="text-slate-600">RFC: {orgInfo.rfc}</p>}
         {orgInfo?.aviso_funcionamiento && <p className="text-slate-600">Aviso de Funcionamiento Nº: {orgInfo.aviso_funcionamiento}</p>}
         {orgInfo?.responsable_sanitario && <p className="text-slate-600">Responsable Sanitario: {orgInfo.responsable_sanitario}</p>}
-        <p className="text-slate-500">{new Date(sale.timestamp).toLocaleString('es-MX')}</p>
+        <p className="text-slate-500">{fmtDateTime(sale.timestamp)}</p>
       </div>
 
       {sale.voided && <p className="text-center font-bold text-red-600 border border-red-400 rounded py-0.5">*** VENTA ANULADA ***</p>}

@@ -9,6 +9,7 @@ import { getMemberships, searchMemberships, updateMembership, processMembershipR
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatMXN } from '@/lib/currency';
+import { fmtDate } from '@/lib/dateFormat';
 
 const PAYPAL_STATUS_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paypal-subscription-status`;
 const STRIPE_STATUS_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/stripe-subscription-status`;
@@ -35,7 +36,7 @@ const formatDate = (value) => {
     d = new Date(value);
   }
   if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? fmtDate(value) : fmtDate(d);
 };
 
 const getNextRosterChangeDate = (membership) => {

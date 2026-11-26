@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
 import { getLostSales, deleteLostSale, getLocations } from '@/lib/db';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 const MONTHS_BACK = 6;
 
@@ -261,7 +262,7 @@ const AdminLostSales = () => {
                 <div className="min-w-0">
                   <p className="font-medium text-slate-900 truncate">{e.item_name}</p>
                   <p className="text-xs text-slate-500">
-                    {new Date(e.created_at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}
+                    {fmtDateTime(e.created_at)}
                     {e.profiles?.full_name ? ` · ${e.profiles.full_name}` : ''}
                     {e.locations?.name ? ` · ${e.locations.name}` : ''}
                     {e.note ? ` · ${e.note}` : ''}

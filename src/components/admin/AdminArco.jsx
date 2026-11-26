@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { getArcoRequests, updateArcoRequest } from '@/lib/db';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 const TIPO_LABELS = {
   acceso: 'Acceso',
@@ -209,7 +210,7 @@ const AdminArco = () => {
                     {STATUS_LABELS[r.status] || r.status}
                   </span>
                   <span className="text-xs text-slate-400 ml-auto">
-                    {new Date(r.created_at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}
+                    {fmtDateTime(r.created_at)}
                   </span>
                 </div>
 
@@ -231,7 +232,7 @@ const AdminArco = () => {
                 {r.status === 'resuelta' && r.response && (
                   <div className="text-sm bg-green-50 border border-green-200 rounded-lg p-2">
                     <p className="text-xs font-semibold text-green-700 mb-0.5">
-                      Respuesta{r.resolved_at ? ` · ${new Date(r.resolved_at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}
+                      Respuesta{r.resolved_at ? ` · ${fmtDateTime(r.resolved_at)}` : ''}
                     </p>
                     <p className="text-green-800">{r.response}</p>
                   </div>

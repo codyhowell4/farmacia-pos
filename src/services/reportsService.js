@@ -1,5 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { fetchAllPages } from '../lib/db';
+import { fmtDate, fmtDateTime, daysUntil } from '@/lib/dateFormat';
+import { localDateString } from '@/lib/timezone';
 
 /**
  * Get prescription-required medications sold in a date range.
@@ -84,7 +86,7 @@ export async function getInventoryMovement(startDate, endDate) {
 export async function getExpiringItems(days = 90) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() + days);
-  const cutoffStr = cutoff.toISOString().split('T')[0];
+  const cutoffStr = localDateString(cutoff); // local, not UTC (rolls over after ~6 PM)
 
   const data = await fetchAllPages(() =>
     supabase
@@ -95,17 +97,12 @@ export async function getExpiringItems(days = 90) {
       .order('expiration_date', { ascending: true })
   );
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
   return (data || []).map(item => {
-    const exp = item.expiration_date ? new Date(item.expiration_date) : null;
-    if (exp) exp.setHours(0, 0, 0, 0);
-    const daysUntil = exp ? Math.ceil((exp - today) / (1000 * 60 * 60 * 24)) : null;
+    const daysLeft = daysUntil(item.expiration_date); // local calendar days, no UTC shift
     return {
       ...item,
-      days_until_expiry: daysUntil,
-      status: daysUntil < 0 ? 'EXPIRED' : daysUntil <= 30 ? 'EXPIRING_SOON' : 'OK',
+      days_until_expiry: daysLeft,
+      status: daysLeft < 0 ? 'EXPIRED' : daysLeft <= 30 ? 'EXPIRING_SOON' : 'OK',
     };
   });
 }
@@ -114,7 +111,7 @@ export async function getExpiringItems(days = 90) {
  * Get expired items
  */
 export async function getExpiredItems() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateString(); // local, not UTC (rolls over after ~6 PM)
 
   const data = await fetchAllPages(() =>
     supabase
@@ -161,20 +158,10 @@ export function downloadCSV(csvContent, filename) {
 
 export function formatReportDate(dateStr) {
   if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleDateString('es-MX', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
+  return fmtDate(dateStr, '-');
 }
 
 export function formatReportDateTime(dateStr) {
   if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleString('es-MX', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return fmtDateTime(dateStr, '-');
 }

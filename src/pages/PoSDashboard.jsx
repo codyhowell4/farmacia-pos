@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon, Award, UserPlus, UserCircle, Receipt, Coins } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, LogOut, Search, DollarSign, Barcode, Ticket, CreditCard, Stethoscope, XCircle, AlertTriangle, Clock, RotateCcw, Building2, TrendingDown, Trash2 as TrashIcon, Award, UserPlus, UserCircle, Receipt, Coins, ChevronDown, LayoutDashboard } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
@@ -43,6 +44,7 @@ import {
   isRnpCartLine, isRnpServiceLine, cartHasRnp, rnpLinesTotal, sendRnpLine, linkRnpOpsToSale,
   isRefundableStatus, RNP_ALLOWED_PAYMENT_METHODS, RNP_SEND_CUSTOMER_EMAIL, RNP_STORE_EMAIL, formatPhone,
 } from '@/lib/rnpServices';
+import { fmtDate, fmtDateTime, fmtTime, isDateExpired } from '@/lib/dateFormat';
 
 const PAYMENT_METHODS = [
   { id: 'cash', label: 'Efectivo', icon: DollarSign, color: 'from-green-500 to-emerald-600' },
@@ -59,8 +61,11 @@ const PoSDashboard = () => {
   const { activeShift } = useShift();
   const shiftOpenedAt = activeShift?.opened_at || activeShift?.openedAt;
   const shiftOpenedDate = shiftOpenedAt ? new Date(shiftOpenedAt) : null;
-  const shiftOpenedTime = shiftOpenedDate && !Number.isNaN(shiftOpenedDate.getTime())
-    ? shiftOpenedDate.toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })
+  const shiftOpenedValid = shiftOpenedDate && !Number.isNaN(shiftOpenedDate.getTime());
+  const shiftOpenedTime = shiftOpenedValid ? fmtDateTime(shiftOpenedDate) : null;
+  // Header: just the hour when the shift opened today (keeps the search wide)
+  const shiftOpenedShort = shiftOpenedValid
+    ? (fmtDate(shiftOpenedDate) === fmtDate(new Date()) ? fmtTime(shiftOpenedDate) : shiftOpenedTime)
     : null;
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -68,6 +73,10 @@ const PoSDashboard = () => {
   const [cart, setCart] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  // Keyboard highlight in the search dropdown (-1 = none: Enter keeps the
+  // original submit behaviour, so barcode scanners are unaffected)
+  const [activeResult, setActiveResult] = useState(-1);
+  const resultsListRef = useRef(null);
   const [inventory, setInventory] = useState([]);
   const [displayItems, setDisplayItems] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -292,11 +301,9 @@ const PoSDashboard = () => {
 
   const isExpired = (item) => {
     if (!item?.expiration_date) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const exp = new Date(item.expiration_date);
-    exp.setHours(0, 0, 0, 0);
-    return exp < today;
+    // Local calendar days: `new Date('YYYY-MM-DD')` is UTC midnight and
+    // flagged products as expired one day early in Mexico.
+    return isDateExpired(item.expiration_date);
   };
 
   const isSellable = (item) => {
@@ -519,7 +526,7 @@ const PoSDashboard = () => {
       return;
     }
     if (!service && isExpired(invItem)) {
-      toast({ title: 'Producto caducado', description: `${medicine.name} ha caducado (${invItem.expiration_date}) y no puede venderse.`, variant: 'destructive' });
+      toast({ title: 'Producto caducado', description: `${medicine.name} ha caducado (${fmtDate(invItem.expiration_date)}) y no puede venderse.`, variant: 'destructive' });
       return;
     }
 
@@ -755,6 +762,37 @@ const PoSDashboard = () => {
         ...results.map(item => ({ ...item, _unavailable: false })),
         ...unavailable.map(item => ({ ...item, _unavailable: true })),
       ]);
+    }
+  };
+
+  useEffect(() => { setActiveResult(-1); }, [searchResults]);
+
+  // Header menus: after a menu closes without opening a dialog, give the
+  // keyboard (and the barcode scanner) back to the search field.
+  const refocusSearchAfterMenu = (e) => {
+    e.preventDefault();
+    setTimeout(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body) searchInputRef.current?.focus();
+    }, 0);
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (searchResults.length === 0) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const n = searchResults.length;
+      setActiveResult((i) => {
+        let next = e.key === 'ArrowDown' ? (i + 1) % n : (i <= 0 ? n - 1 : i - 1);
+        resultsListRef.current?.children[next]?.scrollIntoView({ block: 'nearest' });
+        return next;
+      });
+    } else if (e.key === 'Enter' && activeResult >= 0) {
+      e.preventDefault();
+      const item = searchResults[activeResult];
+      if (item && !item._unavailable) addToCart(item);
+    } else if (e.key === 'Escape') {
+      setSearchResults([]);
     }
   };
 
@@ -2697,73 +2735,142 @@ const PoSDashboard = () => {
             <div className="flex justify-between items-center h-16 gap-3">
               <div className="flex flex-col justify-center shrink-0">
                 <ApoloBrand size="md" />
-                <div className="hidden md:flex items-center gap-2 text-[11px] leading-tight text-slate-500">
-                  <span>Vendedor: {user?.name}</span>
+                <div className="hidden md:flex items-center gap-2 text-[11px] leading-tight text-slate-500 max-w-[15rem]">
+                  <span className="truncate" title={`Vendedor: ${user?.name || ''}`}>{user?.name}</span>
                   {activeShift && (
                     <span className="inline-flex items-center gap-1 whitespace-nowrap">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                      Turno desde {shiftOpenedTime || '—'}
+                      Turno {shiftOpenedShort || '—'}
                     </span>
                   )}
                 </div>
               </div>
-              <form onSubmit={(e) => handleSearch(e, true)} className="flex-1 max-w-3xl mx-2 sm:mx-4 relative">
+              <form onSubmit={(e) => handleSearch(e, true)} className="flex-1 min-w-[12rem] mx-1 sm:mx-3 relative" role="search">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
                   <Barcode className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                  <Input ref={searchInputRef} placeholder="Buscar o escanear código de barras..." value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); handleSearch(null, false, e.target.value); }} className="pl-10 pr-10 h-12 text-lg" />
+                  <Input
+                    ref={searchInputRef}
+                    placeholder="Buscar o escanear código de barras..."
+                    value={searchTerm}
+                    onChange={(e) => { setSearchTerm(e.target.value); handleSearch(null, false, e.target.value); }}
+                    onKeyDown={handleSearchKeyDown}
+                    role="combobox"
+                    aria-expanded={searchResults.length > 0}
+                    aria-controls="pos-search-results"
+                    aria-activedescendant={activeResult >= 0 ? `pos-result-${activeResult}` : undefined}
+                    autoComplete="off"
+                    className="pl-10 pr-10 h-12 text-lg w-full"
+                  />
                 </div>
                 {searchResults.length > 0 && (
-                  <div className="absolute top-full mt-2 w-full bg-white rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
-                    {searchResults.map(item => (
-                      <div key={item.id}
-                        className={`p-3 flex justify-between items-center ${item._unavailable ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'hover:bg-slate-100 cursor-pointer'}`}
-                        onClick={() => { if (!item._unavailable) addToCart(item); }}>
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          {item.image_url && (
-                            <img src={item.image_url} alt="" loading="lazy" className="w-10 h-10 rounded-md object-contain bg-white border border-slate-100 flex-shrink-0" />
-                          )}
-                          <p className="min-w-0">{item.name} <span className="text-slate-500">({item.use})</span>
-                            {item._unavailable && (
-                              <span className="ml-2 text-xs font-semibold text-red-600">
-                                {item.quantity <= 0 ? 'Sin existencias' : 'Caducado'}
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                        <p className="font-bold text-green-600 flex-shrink-0">{formatMXN(item.price)}</p>
-                      </div>
-                    ))}
+                  // Readable size whatever the input width: at least 30rem
+                  // (480px), never wider than the screen; anchored under the input.
+                  <div className="absolute left-0 top-full mt-2 w-full min-w-[min(30rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] bg-white rounded-lg shadow-xl border border-slate-200 z-50">
+                    <div className="px-3 py-1.5 text-[11px] text-slate-500 border-b border-slate-100 flex justify-between">
+                      <span>{searchResults.length} resultado{searchResults.length === 1 ? '' : 's'}</span>
+                      <span className="hidden sm:inline">↑ ↓ para elegir · Enter para agregar · Esc para cerrar</span>
+                    </div>
+                    <ul id="pos-search-results" role="listbox" ref={resultsListRef} className="max-h-[min(60vh,28rem)] overflow-y-auto divide-y divide-slate-100">
+                      {searchResults.map((item, idx) => {
+                        const service = isServiceItem(item);
+                        const active = idx === activeResult;
+                        return (
+                          <li
+                            key={item.id}
+                            id={`pos-result-${idx}`}
+                            role="option"
+                            aria-selected={active}
+                            aria-disabled={item._unavailable || undefined}
+                            className={`px-3 py-2.5 flex justify-between items-center gap-3 ${item._unavailable ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'cursor-pointer hover:bg-slate-100'} ${active ? 'bg-apolo-navy/10 ring-1 ring-inset ring-apolo-navy/40' : ''}`}
+                            onMouseEnter={() => setActiveResult(idx)}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => { if (!item._unavailable) addToCart(item); }}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              {item.image_url && (
+                                <img src={item.image_url} alt="" loading="lazy" className="w-10 h-10 rounded-md object-contain bg-white border border-slate-100 flex-shrink-0" />
+                              )}
+                              <div className="min-w-0">
+                                <p className="font-semibold text-slate-900 leading-snug break-words">
+                                  {item.name}
+                                  {item.requires_prescription && <span className="ml-1.5 align-middle px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">Rx</span>}
+                                </p>
+                                <p className="text-xs text-slate-500 leading-snug break-words">
+                                  {[item.use, item.laboratorio].filter(Boolean).join(' · ')}
+                                  {!service && item.expiration_date && !item._unavailable && <span className="ml-1 text-amber-700">· Cad: {fmtDate(item.expiration_date)}</span>}
+                                </p>
+                                {item._unavailable && (
+                                  <p className="text-xs font-semibold text-red-600">
+                                    {item.quantity <= 0 ? 'Sin existencias' : `Caducado (${fmtDate(item.expiration_date)})`}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <p className="font-bold text-green-600 tabular-nums">{formatMXN(item.price)}</p>
+                              <p className="text-xs text-slate-500 tabular-nums">{service ? 'Servicio' : `Stock: ${item.quantity}`}</p>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
                 )}
               </form>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <OnlineOrdersButton activeShift={activeShift} user={user} />
-                <Button onClick={() => setServiciosOpen(true)} size="sm" className="hidden sm:inline-flex bg-apolo-navy hover:bg-apolo-navy-dark text-white">
-                  <Receipt className="w-4 h-4 mr-2" />Servicios
+                <Button onClick={() => setServiciosOpen(true)} size="sm" className="hidden sm:inline-flex bg-apolo-navy hover:bg-apolo-navy-dark text-white" title="Servicios">
+                  <Receipt className="w-4 h-4 xl:mr-2" /><span className="hidden xl:inline">Servicios</span>
                 </Button>
-                <Button onClick={() => setMonedasOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-apolo-navy border-apolo-navy/30 hover:bg-apolo-navy/5">
-                  <Coins className="w-4 h-4 mr-2" />Monedas
+                <Button onClick={() => setMonedasOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-apolo-navy border-apolo-navy/30 hover:bg-apolo-navy/5" title="Monedas">
+                  <Coins className="w-4 h-4 xl:mr-2" /><span className="hidden xl:inline">Monedas</span>
                 </Button>
-                <Button onClick={() => setReturnOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-orange-600 border-orange-200 hover:bg-orange-50">
-                  <RotateCcw className="w-4 h-4 mr-2" />Devolución
-                </Button>
-                <Button onClick={openVoidDialog} variant="outline" size="sm" className="hidden sm:inline-flex text-red-600 border-red-200 hover:bg-red-50">
-                  <XCircle className="w-4 h-4 mr-2" />Anular venta
-                </Button>
-                <Button onClick={() => setCloseShiftOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-orange-600 border-orange-200 hover:bg-orange-50">
-                  <Clock className="w-4 h-4 mr-2" />Cerrar turno
-                </Button>
-                {user?.role === 'admin' && (
-                  <Button onClick={() => navigate('/admin')} variant="outline" size="sm" className="hidden sm:inline-flex text-apolo-navy border-apolo-navy/30 hover:bg-apolo-navy/5">
-                    ← Admin
-                  </Button>
-                )}
-                <Button onClick={() => setProfileOpen(true)} variant="outline" size="sm" className="hidden sm:inline-flex text-apolo-navy border-apolo-navy/30 hover:bg-apolo-navy/5">
-                  <UserCircle className="w-4 h-4 mr-2" />Mi Perfil
-                </Button>
-                <Button onClick={handleLogout} variant="outline" size="sm" className="hidden sm:inline-flex"><LogOut className="w-4 h-4 mr-2" />Logout</Button>
-                <Button onClick={handleLogout} variant="ghost" size="icon" className="sm:hidden"><LogOut className="w-5 h-5" /></Button>
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="text-slate-700" title="Devolución o anular venta">
+                      <RotateCcw className="w-4 h-4 xl:mr-1.5" /><span className="hidden xl:inline">Venta</span><ChevronDown className="w-3.5 h-3.5 ml-0.5 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52 z-[60]" onCloseAutoFocus={refocusSearchAfterMenu}>
+                    <DropdownMenuLabel className="text-xs text-slate-500 font-normal">Venta</DropdownMenuLabel>
+                    <DropdownMenuItem onSelect={() => setReturnOpen(true)} className="text-orange-700 cursor-pointer">
+                      <RotateCcw className="w-4 h-4 mr-2" />Devolución
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={openVoidDialog} className="text-red-700 cursor-pointer">
+                      <XCircle className="w-4 h-4 mr-2" />Anular venta
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="text-apolo-navy border-apolo-navy/30 hover:bg-apolo-navy/5" title="Mi perfil">
+                      <UserCircle className="w-4 h-4 xl:mr-1.5" /><span className="hidden xl:inline">Mi perfil</span><ChevronDown className="w-3.5 h-3.5 ml-0.5 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56 z-[60]" onCloseAutoFocus={refocusSearchAfterMenu}>
+                    <DropdownMenuLabel className="font-normal">
+                      <p className="text-sm font-medium text-slate-900 truncate">{user?.name}</p>
+                      {activeShift && <p className="text-xs text-slate-500">Turno desde {shiftOpenedTime || '—'}</p>}
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={() => setProfileOpen(true)} className="cursor-pointer">
+                      <UserCircle className="w-4 h-4 mr-2" />Mi Perfil
+                    </DropdownMenuItem>
+                    {user?.role === 'admin' && (
+                      <DropdownMenuItem onSelect={() => navigate('/admin')} className="cursor-pointer">
+                        <LayoutDashboard className="w-4 h-4 mr-2" />Admin
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onSelect={() => setCloseShiftOpen(true)} className="text-orange-700 cursor-pointer">
+                      <Clock className="w-4 h-4 mr-2" />Cerrar turno
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={handleLogout} className="cursor-pointer">
+                      <LogOut className="w-4 h-4 mr-2" />Cerrar sesión
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </div>
@@ -2807,7 +2914,7 @@ const PoSDashboard = () => {
                       </div>
                       {medicine.expiration_date && (
                         <span className={`text-[10px] mt-1 px-1.5 py-0.5 rounded-full self-start ${expired ? 'bg-red-100 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
-                          {expired ? 'Caducado — No vendible' : `Cad: ${medicine.expiration_date}`}
+                          {expired ? 'Caducado — No vendible' : `Cad: ${fmtDate(medicine.expiration_date)}`}
                         </span>
                       )}
                       {outOfStock && (
@@ -2968,7 +3075,7 @@ const PoSDashboard = () => {
                     <div className="flex justify-between items-center">
                       <div>
                         <p className="text-sm font-medium">#{sale.id.slice(-6)} &middot; {sale.salesperson_name || sale.salesperson || 'N/A'}</p>
-                        <p className="text-xs text-slate-500">{new Date(sale.timestamp).toLocaleString()}</p>
+                        <p className="text-xs text-slate-500">{fmtDateTime(sale.timestamp)}</p>
                       </div>
                       <p className="font-bold text-green-600">{formatMXN(sale.total)}</p>
                     </div>

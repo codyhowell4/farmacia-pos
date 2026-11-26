@@ -27,6 +27,7 @@ import {
 import { exportToCSV, downloadCSV, getExpiredItems } from '../../services/reportsService';
 import { getInventoryIntelligence } from '@/lib/db';
 import { toast } from 'sonner';
+import { fmtDate, fmtDateTime } from '@/lib/dateFormat';
 
 export default function AdminReports() {
   const today = new Date().toISOString().split('T')[0];
@@ -329,7 +330,7 @@ export default function AdminReports() {
                           <td className="px-3 py-2 text-center">{item.current_stock}</td>
                           <td className="px-3 py-2">
                             {item.last_sale_date 
-                              ? new Date(item.last_sale_date).toLocaleDateString('es-MX')
+                              ? fmtDate(item.last_sale_date)
                               : 'Nunca vendido'
                             }
                           </td>
@@ -372,7 +373,7 @@ export default function AdminReports() {
                       {openShifts.map((shift) => (
                         <tr key={shift.id} className="border-b hover:bg-gray-50">
                           <td className="px-3 py-2">{shift.cashier_name}</td>
-                          <td className="px-3 py-2">{new Date(shift.start_time).toLocaleString('es-MX')}</td>
+                          <td className="px-3 py-2">{fmtDateTime(shift.start_time)}</td>
                           <td className="px-3 py-2 text-center">{formatCurrency(shift.initial_cash)}</td>
                           <td className="px-3 py-2 text-center">{shift.total_sales || 0}</td>
                           <td className="px-3 py-2 text-center">{formatCurrency(shift.total_revenue)}</td>
@@ -435,7 +436,7 @@ export default function AdminReports() {
                     <tbody>
                       {data.sales.map((sale) => (
                         <tr key={sale.date} className="border-b hover:bg-gray-50">
-                          <td className="px-3 py-2">{new Date(sale.date).toLocaleDateString('es-MX')}</td>
+                          <td className="px-3 py-2">{fmtDate(sale.date)}</td>
                           <td className="px-3 py-2 text-center">{sale.total_sales}</td>
                           <td className="px-3 py-2 text-right font-medium">{formatCurrency(sale.total_revenue)}</td>
                           <td className="px-3 py-2 text-right text-red-600">{formatCurrency(sale.total_discounts)}</td>
@@ -507,7 +508,7 @@ export default function AdminReports() {
                         <tr key={shift.shift_id} className="border-b hover:bg-gray-50">
                           <td className="px-3 py-2">
                             {shift.closed_at 
-                              ? new Date(shift.closed_at).toLocaleString('es-MX') 
+                              ? fmtDateTime(shift.closed_at) 
                               : '—'}
                           </td>
                           <td className="px-3 py-2 font-medium">{shift.cashier_name || '—'}</td>
@@ -575,7 +576,7 @@ export default function AdminReports() {
                     <tbody>
                       {data.profit.map((row) => (
                         <tr key={row.date} className="border-b hover:bg-gray-50">
-                          <td className="px-3 py-2">{new Date(row.date).toLocaleDateString('es-MX')}</td>
+                          <td className="px-3 py-2">{fmtDate(row.date)}</td>
                           <td className="px-3 py-2 text-center">{row.total_sales}</td>
                           <td className="px-3 py-2 text-right">{formatCurrency(row.gross_revenue)}</td>
                           <td className="px-3 py-2 text-right">{formatCurrency(row.cost_of_goods)}</td>
@@ -756,7 +757,7 @@ export default function AdminReports() {
                               <td className="px-3 py-2 font-medium">{item.name}</td>
                               <td className="px-3 py-2">{item.batch_number || '—'}</td>
                               <td className="px-3 py-2 text-red-700 font-medium">
-                                {new Date(item.expiration_date).toLocaleDateString('es-MX')}
+                                {fmtDate(item.expiration_date)}
                               </td>
                               <td className="px-3 py-2 text-center">{item.quantity}</td>
                               <td className="px-3 py-2 text-right">{formatCurrency(item.price)}</td>
@@ -818,7 +819,7 @@ export default function AdminReports() {
                             <td className="px-3 py-2 text-center">{item.current_stock}</td>
                             <td className="px-3 py-2">
                               {item.last_sale_date 
-                                ? new Date(item.last_sale_date).toLocaleDateString('es-MX')
+                                ? fmtDate(item.last_sale_date)
                                 : 'Nunca'
                               }
                             </td>

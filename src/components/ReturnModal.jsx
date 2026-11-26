@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { getSaleForReturnPos, listRecentSaleIds, createReturn, getInventoryFlags } from '@/lib/db';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -194,7 +195,7 @@ const ReturnModal = ({ open, onOpenChange, onReturnComplete }) => {
           <div className="space-y-4">
             <div className="bg-slate-50 rounded-lg p-3 text-sm space-y-1">
               <div className="flex justify-between"><span className="text-slate-500">Folio</span><span className="font-medium">#{foundSale.id.slice(-8).toUpperCase()}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Fecha</span><span>{new Date(foundSale.timestamp).toLocaleString('es-MX')}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Fecha</span><span>{fmtDateTime(foundSale.timestamp)}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Total original</span><span className="font-bold">{formatMXN(foundSale.total)}</span></div>
             </div>
 

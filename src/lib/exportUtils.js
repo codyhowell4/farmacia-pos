@@ -1,5 +1,6 @@
 // Export utilities for CSV and print-to-PDF
 import { isRnpServiceSaleItem, isRnpFeeSaleItem } from '@/lib/rnpServices';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 // Last column of the sales CSV: marks Servicios RNP lines (pass-through to
 // RNP vs the store's comisión). Empty for regular products/services.
@@ -16,7 +17,7 @@ export const exportSalesCSV = (sales) => {
     (sale.sale_items || sale.items || []).map(item => [
       `"#${(sale.id || '').slice(-8).toUpperCase()}"`,
       `"${sale.id}"`,
-      `"${new Date(sale.timestamp).toLocaleString()}"`,
+      `"${fmtDateTime(sale.timestamp, '')}"`,
       `"${sale.salesperson_name || sale.salesperson || ''}"`,
       `"${sale.location_id || sale.pharmacyLocation || ''}"`,
       `"${sale.payment_method || sale.paymentMethod || 'cash'}"`,
@@ -51,8 +52,8 @@ export const exportShiftsCSV = (shifts) => {
       `"${s.id}"`,
       `"${s.opened_by_name || s.openedBy || ''}"`,
       `"${s.locations?.name || s.pharmacyLocation || ''}"`,
-      `"${openedAt ? new Date(openedAt).toLocaleString() : ''}"`,
-      `"${closedAt ? new Date(closedAt).toLocaleString() : ''}"`,
+      `"${openedAt ? fmtDateTime(openedAt, '') : ''}"`,
+      `"${closedAt ? fmtDateTime(closedAt, '') : ''}"`,
       durationMin,
       (s.starting_cash ?? s.startingCash ?? 0).toFixed(2),
       (s.closing_cash ?? s.closingCash ?? 0).toFixed(2),
@@ -119,7 +120,7 @@ export const exportShiftsSummaryCSV = (shifts, startDate, endDate, rnpByShift = 
 export const exportAuditCSV = (entries) => {
   const headers = ['Fecha y hora','Acción','Usuario','Rol','Ubicación','Detalle'];
   const rows = entries.map(e => [
-    `"${new Date(e.timestamp).toLocaleString()}"`,
+    `"${fmtDateTime(e.timestamp, '')}"`,
     `"${e.action}"`,
     `"${e.userName}"`,
     `"${e.userRole || ''}"`,
@@ -172,7 +173,7 @@ export const printReport = (title, htmlContent) => {
     </head>
     <body>
       ${htmlContent}
-      <p class="meta" style="margin-top:24px">Generated ${new Date().toLocaleString()}</p>
+      <p class="meta" style="margin-top:24px">Generado ${fmtDateTime(new Date())}</p>
     </body>
     </html>
   `);

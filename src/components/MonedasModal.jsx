@@ -9,6 +9,7 @@ import {
   coinsStaffLookup, coinsRedeem, coinsCancelRedemption, coinsCompleteChequeo, coinsStaffChequeos,
   getCoinTiers, getCoinRedemptions,
 } from '@/lib/db';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 // Monedas Apolo at the register (2026-11-25). Coins are NOT cash: they are
 // spent only on the rewards ladder. The cashier looks the customer up (name,
@@ -17,7 +18,7 @@ import {
 // reward are applied to the current cart as a discount with their cap; the
 // free services / membership month / device are handed over by staff.
 
-const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '');
+const fmtDate = (iso) => fmtDateTime(iso, '');
 const coinsFmt = (n) => `${Number(n || 0).toLocaleString('es-MX')} Monedas`;
 
 const HANDOVER = {

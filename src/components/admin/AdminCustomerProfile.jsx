@@ -12,6 +12,7 @@ import {
   getCustomerOrders,
 } from '@/lib/db';
 import { parseDateLocal } from '@/lib/timezone';
+import { fmtDate, fmtDateTime } from '@/lib/dateFormat';
 
 const StatCard = ({ label, value, icon: Icon, color }) => (
   <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
@@ -103,7 +104,7 @@ const AdminCustomerProfile = () => {
 
   const formatDate = (d) => {
     if (!d) return '—';
-    return parseDateLocal(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+    return fmtDate(String(d).length === 10 ? String(d) : d);
   };
 
   const formatCurrency = (n) => {
@@ -264,7 +265,7 @@ const AdminCustomerProfile = () => {
                     <div>
                       <div className="text-sm font-medium text-slate-900">{a.profiles?.full_name || 'Médico'}</div>
                       <div className="text-xs text-slate-500">
-                        {a.appointment_date ? new Date(a.appointment_date).toLocaleString('es-MX') : '—'}
+                        {a.appointment_date ? fmtDateTime(a.appointment_date) : '—'}
                         {a.notes ? ` • ${a.notes}` : ''}
                       </div>
                     </div>

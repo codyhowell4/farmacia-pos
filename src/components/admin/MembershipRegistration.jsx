@@ -9,6 +9,7 @@ import { createMembership } from '@/lib/db';
 import { supabase } from '@/lib/supabase';
 import { getStripe, isStripeConfigured } from '@/lib/stripe';
 import { Users, User, Banknote, ChevronLeft, CheckCircle, Activity, CreditCard } from 'lucide-react';
+import { fmtDate } from '@/lib/dateFormat';
 
 const REVISION_SUMMARY = 'Revisión semestral gratis (valor $775): incluye Biometría Hemática, Examen General de Orina, Química Sanguínea de 12 elementos y Consulta';
 
@@ -581,7 +582,7 @@ const MembershipRegistration = () => {
         <p className="text-sm text-slate-500">Titular</p>
         <p className="font-medium">{created.customers?.full_name}</p>
         <p className="text-sm text-slate-500">Renovación</p>
-        <p className="font-medium">{created.next_renewal_date}</p>
+        <p className="font-medium">{fmtDate(created.next_renewal_date)}</p>
         <p className="text-sm text-slate-500">Monto mensual</p>
         <p className="font-medium">${Number(created.monthly_amount).toFixed(2)} MXN</p>
       </div>

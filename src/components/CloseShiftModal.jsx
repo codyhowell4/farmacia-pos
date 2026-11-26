@@ -10,6 +10,7 @@ import { useShift } from '@/contexts/ShiftContext';
 import { useToast } from '@/components/ui/use-toast';
 import { getShiftSales, getInventory, getRnpShiftSummary } from '@/lib/db';
 import { RNP_CATEGORIES, EMPTY_RNP_SHIFT_SUMMARY, loadRnpShiftSummary, rnpCashAdjustment } from '@/lib/rnpServices';
+import { fmtDate, fmtDateTime, fmtTime } from '@/lib/dateFormat';
 
 const CloseShiftModal = ({ open, onOpenChange }) => {
   const { activeShift, closeShift } = useShift();
@@ -215,7 +216,7 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
           <div className="space-y-5">
             <div className="bg-slate-50 rounded-lg p-4 space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-slate-500">Abierto por</span><span className="font-medium">{activeShift?.opened_by_name}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Hora de apertura</span><span className="font-medium">{activeShift ? new Date(activeShift.opened_at).toLocaleTimeString() : ''}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Hora de apertura</span><span className="font-medium">{activeShift ? fmtTime(activeShift.opened_at) : ''}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Duración</span><span className="font-medium">{duration}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Efectivo inicial</span><span className="font-medium">${activeShift?.starting_cash.toFixed(2)}</span></div>
             </div>
@@ -336,7 +337,7 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
               {/* Header */}
               <div className="text-center space-y-1">
                 <p className="font-bold text-sm">REPORTE DE TURNO</p>
-                <p className="text-slate-600">{new Date().toLocaleDateString('es-MX')}</p>
+                <p className="text-slate-600">{fmtDate(new Date())}</p>
                 <div className="divider"></div>
                 <div className="row">
                   <span>Cajero:</span>
@@ -344,11 +345,11 @@ const CloseShiftModal = ({ open, onOpenChange }) => {
                 </div>
                 <div className="row">
                   <span>Apertura:</span>
-                  <span>{reportShift ? new Date(reportShift.opened_at).toLocaleString('es-MX') : ''}</span>
+                  <span>{reportShift ? fmtDateTime(reportShift.opened_at) : ''}</span>
                 </div>
                 <div className="row">
                   <span>Cierre:</span>
-                  <span>{new Date().toLocaleString('es-MX')}</span>
+                  <span>{fmtDateTime(new Date())}</span>
                 </div>
                 <div className="row">
                   <span>Duración:</span>

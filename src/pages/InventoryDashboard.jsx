@@ -16,6 +16,7 @@ import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { formatMXN } from '@/lib/currency';
 import { getInventoryWithSupplier, getInventoryItemByBarcode, upsertInventoryItem, deleteInventoryItem, deleteAllInventory, createStockAdjustment, getInventoryMovements, getSuppliers, bulkInsertInventory, getAllInventoryBatches, restockInventoryItem, isServiceItem, getProductLinks, getAllProductLinks, addProductLink, removeProductLink, buildLinkedStockMap, uploadInventoryImage } from '@/lib/db';
 import { isAntibioticName } from '@/lib/antibiotics';
+import { fmtDate, daysUntil, expiryLabel } from '@/lib/dateFormat';
 
 const LOW_STOCK_THRESHOLD = 0;
 const waitForDialogUnmount = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -45,13 +46,15 @@ const findInvCache = () => {
 
 const getExpiryStatus = (expirationDate) => {
   if (!expirationDate) return null;
-  const today = new Date();
-  const expiry = new Date(expirationDate);
-  const daysUntilExpiry = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
-  if (daysUntilExpiry < 0) return { label: 'Expired', color: 'bg-red-100 text-red-700', days: daysUntilExpiry };
-  if (daysUntilExpiry <= 30) return { label: `Exp in ${daysUntilExpiry}d`, color: 'bg-orange-100 text-orange-700', days: daysUntilExpiry };
-  if (daysUntilExpiry <= 90) return { label: `Exp in ${daysUntilExpiry}d`, color: 'bg-yellow-100 text-yellow-700', days: daysUntilExpiry };
-  return { label: `Exp in ${daysUntilExpiry}d`, color: 'bg-green-100 text-green-700', days: daysUntilExpiry };
+  // Local calendar days (no UTC off-by-one): a product expires AFTER its date
+  const daysUntilExpiry = daysUntil(expirationDate);
+  if (daysUntilExpiry == null) return null;
+  const label = expiryLabel(daysUntilExpiry);
+  const date = fmtDate(expirationDate);
+  if (daysUntilExpiry < 0) return { label, date, color: 'bg-red-100 text-red-700', days: daysUntilExpiry };
+  if (daysUntilExpiry <= 30) return { label, date, color: 'bg-orange-100 text-orange-700', days: daysUntilExpiry };
+  if (daysUntilExpiry <= 90) return { label, date, color: 'bg-yellow-100 text-yellow-700', days: daysUntilExpiry };
+  return { label, date, color: 'bg-green-100 text-green-700', days: daysUntilExpiry };
 };
 
 const InventoryDashboard = () => {
@@ -577,7 +580,7 @@ const InventoryDashboard = () => {
     return s === '' ? null : s;
   };
 
-  // Accepts YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY — returns YYYY-MM-DD or null
+  // Accepts YYYY-MM-DD or DD/MM/YYYY (Mexican order) — returns YYYY-MM-DD or null
   const parseDate = (value) => {
     const s = (value ?? '').toString().trim();
     if (!s) return null;
@@ -924,7 +927,7 @@ const InventoryDashboard = () => {
                   onClick={() => setAlertFilter(alertFilter === 'expiring' ? null : 'expiring')}>
                   <div className="flex items-center space-x-3">
                     <Clock className="w-5 h-5 text-red-600 flex-shrink-0" />
-                    <p className="font-semibold text-red-800">{expiringItems.length} item{expiringItems.length > 1 ? 's' : ''} expiring within 90 days</p>
+                    <p className="font-semibold text-red-800">{expiringItems.length} artículo{expiringItems.length > 1 ? 's' : ''} caduca{expiringItems.length > 1 ? 'n' : ''} en los próximos 90 días</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-red-600 font-medium whitespace-nowrap">{alertFilter === 'expiring' ? 'Mostrar todos' : 'Ver artículos'}</span>
@@ -1282,7 +1285,12 @@ const InventoryDashboard = () => {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-sm">
-                          {expiryStatus ? <span className={`px-2 py-1 rounded-full text-xs font-semibold ${expiryStatus.color}`}>{expiryStatus.label}</span> : <span className="text-slate-400 text-xs">No establecida</span>}
+                          {expiryStatus ? (
+                            <div className="flex flex-col items-start gap-1">
+                              <span className="text-slate-700 tabular-nums whitespace-nowrap">{expiryStatus.date}</span>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap ${expiryStatus.color}`}>{expiryStatus.label}</span>
+                            </div>
+                          ) : <span className="text-slate-400 text-xs">No establecida</span>}
                         </td>
                         <td className="px-4 py-3 text-sm text-slate-600">{getItemBatchSummary(item)}</td>
                         <td className="px-4 py-3 text-sm text-slate-600">{item.warehouse_location}</td>
@@ -1461,7 +1469,7 @@ const InventoryDashboard = () => {
                         <span className="font-medium">{b.batch_number || 'Sin lote'}</span>
                         <span>{b.quantity} pzs</span>
                         <span>{b.cost != null ? formatMXN(b.cost) : '-'}</span>
-                        <span>{b.expiration_date ? new Date(`${b.expiration_date}T00:00:00`).toLocaleDateString('es-MX') : 'Sin caducidad'}</span>
+                        <span>{b.expiration_date ? fmtDate(b.expiration_date) : 'Sin caducidad'}</span>
                       </div>
                     ))}
                   </div>
@@ -1666,7 +1674,7 @@ const InventoryDashboard = () => {
                             <p className="text-sm text-slate-600 mt-1">{movement.reason}</p>
                           </div>
                           <div className="text-right text-sm text-slate-500 ml-4 shrink-0">
-                            <p>{new Date(movement.created_at).toLocaleDateString('es-MX')}</p>
+                            <p>{fmtDate(movement.created_at)}</p>
                             <p className="text-xs">{movement.user_name || 'Sistema'}</p>
                           </div>
                         </div>

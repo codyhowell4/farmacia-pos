@@ -9,6 +9,7 @@ import { formatMXN } from '@/lib/currency';
 import {
   getCoinTiers, saveCoinTier, getCoinsSettings, saveCoinsSettings, getCoinRedemptions, coinsCancelRedemption, getCoinsProgramStats,
 } from '@/lib/db';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 // Admin › Monedas Apolo (2026-11-25): program settings, the rewards ladder
 // (editable tiers) and recent redemptions. Coins are NOT cash: they are
@@ -39,7 +40,7 @@ const SETTING_FIELDS = [
   { key: 'coins_streak7', label: 'Monedas por racha de 7 días', min: 0, max: 500 },
 ];
 
-const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '');
+const fmtDate = (iso) => fmtDateTime(iso, '');
 
 const AdminMonedas = () => {
   const { toast } = useToast();

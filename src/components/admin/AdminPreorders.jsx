@@ -5,6 +5,7 @@ import { DateInput } from '@/components/ui/date-input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { getPreorders, updatePreorderStatus, createNotification } from '@/lib/db';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 const statusConfig = {
   pending:    { label: 'Pendiente',  className: 'bg-yellow-100 text-yellow-800' },
@@ -94,7 +95,7 @@ const AdminPreorders = () => {
 
   const formatDate = (d) => {
     if (!d) return '—';
-    return new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return fmtDateTime(d);
   };
 
   const nextStatuses = (current) => {

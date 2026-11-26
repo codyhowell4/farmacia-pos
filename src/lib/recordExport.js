@@ -3,6 +3,7 @@
 // jsPDF import style already used in src/lib/pdf.js.
 
 import { jsPDF } from 'jspdf';
+import { fmtDate, fmtDateTime } from '@/lib/dateFormat';
 
 // Section titles mirror SECTIONS in PatientMedicalHistory.jsx
 // (kept as a plain map so this lib has no component imports).
@@ -72,13 +73,12 @@ export const VITALS_LABELS = {
 
 const formatDate = (ts) => {
   if (!ts) return '-';
-  return new Date(ts).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+  return fmtDate(ts, '-');
 };
 
 const formatDateTime = (ts) => {
   if (!ts) return '-';
-  const d = new Date(ts);
-  return `${d.toLocaleDateString('es-MX')} ${d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}`;
+  return fmtDateTime(ts, '-');
 };
 
 // Storage path is {orgId}/{customerId}/{ts}_{name} — show just the file name

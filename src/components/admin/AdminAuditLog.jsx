@@ -27,6 +27,7 @@ const ACTION_COLORS = {
 };
 
 import { getAuditLog } from '@/lib/db';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 const AdminAuditLog = () => {
   const [entries, setEntries] = useState([]);
@@ -114,7 +115,7 @@ const AdminAuditLog = () => {
             <tbody className="divide-y divide-slate-200">
               {filtered.map(entry => (
                 <tr key={entry.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{new Date(entry.timestamp).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmtDateTime(entry.timestamp)}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded-full text-xs font-semibold ${ACTION_COLORS[entry.action] || 'bg-slate-100 text-slate-600'}`}>
                       {({

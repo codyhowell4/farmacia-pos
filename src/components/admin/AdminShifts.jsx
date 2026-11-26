@@ -12,11 +12,11 @@ import { useToast } from '@/components/ui/use-toast';
 
 import { getShifts, getShiftSales, getSalesSince, closeShiftDb, updateShift, updateSale, createShift, getRnpShiftSummary, getRnpTotalsByShift } from '@/lib/db';
 import { loadRnpShiftSummary, rnpCashAdjustment } from '@/lib/rnpServices';
+import { fmtDateTime, fmtTime } from '@/lib/dateFormat';
 
 const formatShiftDate = (value) => {
   if (!value) return '-';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '-' : date.toLocaleString();
+  return fmtDateTime(value, '-');
 };
 
 const formatShiftDuration = (shift) => {
@@ -433,7 +433,7 @@ const AdminShifts = () => {
                     <td className="px-4 py-3 text-center">{expandedShift === shift.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}</td>
                     <td className="px-4 py-3 font-medium text-slate-900">{shift.opened_by_name}</td>
                     <td className="px-4 py-3 text-slate-600">{shift.locations?.name}</td>
-                    <td className="px-4 py-3 text-slate-600">{new Date(shift.opened_at).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-slate-600">{fmtDateTime(shift.opened_at)}</td>
                     <td className="px-4 py-3 text-slate-600">{duration(shift)}</td>
                     <td className="px-4 py-3 text-slate-600">{shift.total_sales ?? '...'}</td>
                     <td className="px-4 py-3 font-semibold text-green-600">{formatMXN((shift.total_revenue || 0))}</td>
@@ -577,7 +577,7 @@ const AdminShifts = () => {
                               </div>
                               <div className="space-y-1">
                                 <p className="text-xs text-slate-500">Cerrado a las</p>
-                                <p className="font-semibold">{new Date(shift.closed_at).toLocaleTimeString()}</p>
+                                <p className="font-semibold">{fmtTime(shift.closed_at)}</p>
                               </div>
                               {shift.notes && (
                                 <div className="space-y-1 md:col-span-1">

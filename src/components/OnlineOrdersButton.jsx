@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { formatMXN } from '@/lib/currency';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import { getActiveOnlineOrders, markOnlineOrderReady, completeOnlineOrderAtPos } from '@/lib/db';
+import { fmtDateTime } from '@/lib/dateFormat';
 
 // POS: alert + list of online store orders ("Apartar mi pedido" on
 // apolofarmacia.com.mx/tienda and the customer app). Those orders are sales
@@ -20,9 +21,7 @@ const POLL_MS = 45000;
 
 const formatWhen = (ts) => {
   if (!ts) return '';
-  return new Date(ts).toLocaleString('es-MX', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'America/Mexico_City',
-  });
+  return fmtDateTime(ts, '');
 };
 
 const OnlineOrdersButton = ({ activeShift, user }) => {
