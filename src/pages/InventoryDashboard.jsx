@@ -245,7 +245,7 @@ const InventoryDashboard = () => {
       logAudit({
         action: editingItem ? AUDIT_ACTIONS.INVENTORY_EDIT : AUDIT_ACTIONS.INVENTORY_ADD,
         user,
-        details: editingItem ? `Updated: ${formData.name}` : `Added: ${formData.name} | Qty: ${formData.quantity} | Rx: ${formData.requiresPrescription}`,
+        details: editingItem ? `Editado: ${formData.name}` : `Agregado: ${formData.name} | Cantidad: ${formData.quantity} | Rx: ${formData.requiresPrescription ? 'sí' : 'no'}`,
       });
       toast({ title: editingItem ? 'Medicamento actualizado' : 'Medicamento agregado' });
       setIsDialogOpen(false);
@@ -377,7 +377,7 @@ const InventoryDashboard = () => {
       logAudit({
         action: AUDIT_ACTIONS.INVENTORY_EDIT,
         user,
-        details: `Stock adjusted: ${adjustmentItem.name} from ${adjustmentItem.quantity} to ${newQty}. Reason: ${adjustmentForm.reason}`,
+        details: `Ajuste de stock: ${adjustmentItem.name} de ${adjustmentItem.quantity} a ${newQty}. Motivo: ${adjustmentForm.reason}`,
       });
       
       toast({ title: 'Stock ajustado', description: `Cantidad actualizada de ${adjustmentItem.quantity} a ${newQty}` });
@@ -431,7 +431,7 @@ const InventoryDashboard = () => {
       logAudit({
         action: AUDIT_ACTIONS.INVENTORY_EDIT,
         user,
-        details: `Restock (compra): ${restockItem.name} +${qty} unidades (${result.previous_quantity} → ${result.new_quantity})${restockForm.batchNumber ? `, lote ${restockForm.batchNumber}` : ''}${restockForm.expirationDate ? `, caduca ${restockForm.expirationDate}` : ''}${cost != null ? `, costo ${formatMXN(cost)}` : ''}`,
+        details: `Compra: ${restockItem.name} +${qty} unidades (${result.previous_quantity} → ${result.new_quantity})${restockForm.batchNumber ? `, lote ${restockForm.batchNumber}` : ''}${restockForm.expirationDate ? `, caduca ${fmtDate(restockForm.expirationDate)}` : ''}${cost != null ? `, costo ${formatMXN(cost)}` : ''}`,
       });
 
       toast({ title: 'Compra registrada', description: `${restockItem.name}: ${result.previous_quantity} → ${result.new_quantity} unidades` });
@@ -459,7 +459,7 @@ const InventoryDashboard = () => {
       const item = inventory.find(i => i.id === id);
       await deleteInventoryItem(id);
       await loadInventory();
-      logAudit({ action: AUDIT_ACTIONS.INVENTORY_DELETE, user, details: `Deleted: ${item?.name || id}` });
+      logAudit({ action: AUDIT_ACTIONS.INVENTORY_DELETE, user, details: `Eliminado: ${item?.name || id}` });
       toast({ title: 'Medicamento eliminado' });
     } catch (e) {
       toast({ title: 'Error', description: e.message, variant: 'destructive' });
@@ -498,7 +498,7 @@ const InventoryDashboard = () => {
       }
     }
     const succeeded = selectedIds.size - failed;
-    logAudit({ action: AUDIT_ACTIONS.INVENTORY_DELETE, user, details: `Bulk deleted ${succeeded} item(s)${failed ? ` | ${failed} failed` : ''}` });
+    logAudit({ action: AUDIT_ACTIONS.INVENTORY_DELETE, user, details: `Eliminación masiva: ${succeeded} artículo(s)${failed ? ` | ${failed} con error` : ''}` });
     toast({
       title: failed ? 'Eliminación parcial' : 'Medicamentos eliminados',
       description: failed ? `${succeeded} eliminados, ${failed} con error` : `${succeeded} medicamento(s) eliminados`,
@@ -538,7 +538,7 @@ const InventoryDashboard = () => {
       }
     }
     const succeeded = selectedIds.size - failed;
-    logAudit({ action: AUDIT_ACTIONS.INVENTORY_EDIT, user, details: `Bulk edited ${succeeded} item(s): ${Object.keys(updates).join(', ')}${failed ? ` | ${failed} failed` : ''}` });
+    logAudit({ action: AUDIT_ACTIONS.INVENTORY_EDIT, user, details: `Edición masiva: ${succeeded} artículo(s): ${Object.keys(updates).map((k) => ({ department: 'departamento', supplier_id: 'proveedor', item_type: 'tipo', requires_prescription: 'receta' }[k] || k)).join(', ')}${failed ? ` | ${failed} con error` : ''}` });
     toast({
       title: failed ? 'Edición parcial' : 'Medicamentos actualizados',
       description: failed ? `${succeeded} actualizados, ${failed} con error` : `${succeeded} medicamento(s) actualizados`,
@@ -888,7 +888,7 @@ const InventoryDashboard = () => {
                   onClick={() => setAlertFilter(alertFilter === 'low_stock' ? null : 'low_stock')}>
                   <div className="flex items-center space-x-3">
                     <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0" />
-                    <p className="font-semibold text-orange-800">{lowStockItems.length} item{lowStockItems.length > 1 ? 's' : ''} running low on stock</p>
+                    <p className="font-semibold text-orange-800">{lowStockItems.length} artículo{lowStockItems.length > 1 ? 's' : ''} con stock bajo</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-orange-600 font-medium whitespace-nowrap">{alertFilter === 'low_stock' ? 'Mostrar todos' : 'Ver artículos'}</span>
