@@ -22,6 +22,24 @@ let clickBound = false;
 
 export const isPublicRoute = (pathname) => PUBLIC_ROUTE.test(pathname);
 
+// Cookie notice choice (site/assets/cookies.js, shared with the static site).
+const isRejected = () => {
+  try {
+    return localStorage.getItem('apolo_cookies') === 'rejected';
+  } catch {
+    return false;
+  }
+};
+
+const loadCookieNotice = () => {
+  if (document.getElementById('apolo-cookies-js')) return;
+  const s = document.createElement('script');
+  s.id = 'apolo-cookies-js';
+  s.src = '/sitio/cookies.js';
+  s.defer = true;
+  document.head.appendChild(s);
+};
+
 const isDebug = () => {
   try {
     return /[?&]debug_mode=1\b/.test(window.location.search) || localStorage.getItem('apolo_ga_debug') === '1';
@@ -37,7 +55,7 @@ const guardHistory = () => {
   const gate = (url) => {
     try {
       const path = new URL(url, window.location.href).pathname;
-      window[DISABLE_FLAG] = !isPublicRoute(path);
+      window[DISABLE_FLAG] = !isPublicRoute(path) || isRejected();
     } catch { /* keep current flag */ }
   };
   ['pushState', 'replaceState'].forEach((m) => {
@@ -80,7 +98,7 @@ const bindClicks = () => {
   if (clickBound) return;
   clickBound = true;
   document.addEventListener('click', (e) => {
-    if (!isPublicRoute(window.location.pathname) || !window.gtag) return;
+    if (!isPublicRoute(window.location.pathname) || !window.gtag || isRejected()) return;
     const el = e.target?.closest?.('a, button, [role="button"]');
     if (!el) return;
     let label = el.getAttribute('data-track-label') || (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim() || el.getAttribute('aria-label') || '';
@@ -99,8 +117,9 @@ const bindClicks = () => {
 // route is shown; toggles the opt-out flag so non-public routes send nothing.
 export const trackPublicPageView = (pathname) => {
   const isPublic = isPublicRoute(pathname);
-  window[DISABLE_FLAG] = !isPublic;
-  if (!isPublic) return;
+  if (isPublic) loadCookieNotice();
+  window[DISABLE_FLAG] = !isPublic || isRejected();
+  if (!isPublic || isRejected()) return;
   ensureGtag();
   bindClicks();
 };

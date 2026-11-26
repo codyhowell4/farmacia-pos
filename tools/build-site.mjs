@@ -151,6 +151,18 @@ const faqJsonLd = (body) => {
 
 const ldScript = (obj) => `<script type="application/ld+json">${JSON.stringify(obj).replace(/</g, '\\u003c')}</script>`;
 
+// Website-only notice (cookies + Google Analytics on apolofarmacia.com.mx).
+// Kept OUT of site/aviso-de-privacidad.txt on purpose: that file must stay
+// byte-identical to the app's consent_texts 'privacidad' (docs/AGENTS.md).
+const P = 'margin: 0; font-size: 16px; line-height: 1.7; color: #4A5578';
+const SITIO_WEB_SECTION = `<section id="sitio-web" style="background: #F5F7FB; padding: 64px 24px"><div style="max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px">
+<h2 style="margin: 0; font-size: 22px; font-weight: 800; color: #141B3A">SITIO WEB: COOKIES Y GOOGLE ANALYTICS</h2>
+<p style="${P}">En el sitio web apolofarmacia.com.mx usamos cookies propias y el almacenamiento de tu navegador para que el sitio funcione (recordar tu elección sobre cookies y, en la Tienda, tu sesión y tu pedido), y cookies de Google Analytics (servicio de Google LLC) para medir de forma estadística cómo se usa el sitio: páginas visitadas, botones y enlaces que se tocan, tipo de dispositivo y navegador, ciudad aproximada y, en la Tienda, qué categorías y productos se agregan o apartan, identificados solo por su clave interna.</p>
+<p style="${P}">No enviamos a Google Analytics tu nombre, correo, teléfono, CURP, número de membresía ni ningún dato de salud, y la medición no se vincula con tu cuenta. Es una finalidad secundaria: puedes negarte sin que eso afecte los servicios. Google puede tratar estos datos en servidores fuera de México.</p>
+<p style="${P}">Para rechazarla toca «Rechazar» en el aviso de cookies del sitio: a partir de ese momento el sitio deja de cargar Google Analytics en ese navegador. También puedes bloquear o borrar las cookies desde la configuración de tu navegador. <a href="#sitio-web" data-cookie-reset data-track-skip>Cambiar mi elección de cookies</a>.</p>
+</div></section>
+`;
+
 const privacyBody = () => {
   const lines = read('aviso-de-privacidad.txt').split('\n');
   const [title, updated, ...rest] = lines;
@@ -166,7 +178,7 @@ const privacyBody = () => {
   }
   return `<section style="background: #141B5E; padding: 64px 24px"><div style="max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px"><span style="font-size: 13px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #8FD9B0">${esc(updated.trim())}</span><h1 style="margin: 0; font-size: clamp(34px, 4.4vw, 52px); line-height: 1.1; font-weight: 800; color: #FFFFFF; max-width: 860px">Aviso de privacidad</h1><p style="margin: 0; font-size: 19px; line-height: 1.6; color: #D4D9F5; max-width: 780px">${esc(title.trim())}</p></div></section>
 <section style="background: #FFFFFF; padding: 64px 24px"><div style="max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px">${parts.join('\n')}</div></section>
-`;
+${SITIO_WEB_SECTION}`;
 };
 
 // Stable section names for analytics button_location ("<page>_<section>"):
@@ -335,8 +347,10 @@ input,button,select,textarea{font-family:inherit}
 details[open] summary svg{transform:rotate(180deg)}
 .skip{position:absolute;left:-9999px;top:0;background:#FFFFFF;color:#1E2A8A;padding:12px 16px;z-index:10;font-weight:700}
 .skip:focus{left:8px;top:8px}
+a[style*="background: #2F7D55"]:hover,button[style*="background: #2F7D55"]:hover,.m-bottom-bar a.primary:hover,.t-cartbar button:hover{background:#25643F!important;color:#FFFFFF!important}
 ${MOBILE_CSS}</style>
 ${ld.map(ldScript).join('\n')}
+<script src="/sitio/cookies.js?v=${assetVersion['cookies.js']}" defer></script>
 <script src="/sitio/analytics.js?v=${assetVersion['analytics.js']}" defer></script>
 <script src="/sitio/ui.js?v=${assetVersion['ui.js']}" defer></script>
 ${config}${formConfig}${scripts}

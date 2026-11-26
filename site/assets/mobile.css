@@ -155,7 +155,7 @@
     min-height: 52px; border-radius: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;
     font-weight: 800; font-size: 16px; text-decoration: none;
   }
-  .m-bottom-bar a.primary { flex: 1 1 auto; background: #46AC78; color: #FFFFFF; }
+  .m-bottom-bar a.primary { flex: 1 1 auto; background: #2F7D55; color: #FFFFFF; }
   .m-bottom-bar a.secondary { flex: 0 0 auto; padding: 0 18px; border: 2px solid #1E2A8A; color: #1E2A8A; background: #FFFFFF; }
 
   /* ---------- Tienda ---------- */
@@ -210,7 +210,7 @@
     border-top: 1px solid #E3E8F2; box-shadow: 0 -8px 24px rgba(20, 27, 94, 0.10);
   }
   .t-cartbar button {
-    flex: 1 1 auto; min-height: 52px; border: none; border-radius: 12px; background: #46AC78; color: #FFFFFF;
+    flex: 1 1 auto; min-height: 52px; border: none; border-radius: 12px; background: #2F7D55; color: #FFFFFF;
     font-weight: 800; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
   }
   [data-login-bar], [data-user-bar] { padding: 12px 14px !important; }

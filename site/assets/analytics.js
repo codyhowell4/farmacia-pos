@@ -15,6 +15,16 @@
 (function () {
   'use strict';
   var ID = 'G-0V3V4H1RMF';
+  // Visitor tapped "Rechazar" in the cookie notice (cookies.js): official
+  // opt-out flag on, gtag.js never loaded, no events queued.
+  var rejected = function () {
+    try { if (localStorage.getItem('apolo_cookies') === 'rejected') window['ga-disable-' + ID] = true; } catch (e) { /* noop */ }
+    return window['ga-disable-' + ID] === true;
+  };
+  if (rejected()) {
+    window.apoloTrack = function () {};
+    return;
+  }
   window.dataLayer = window.dataLayer || [];
   function gtag() { window.dataLayer.push(arguments); }
   window.gtag = window.gtag || gtag;
@@ -40,7 +50,7 @@
   var readyCbs = [];
   function onReady(cb) { if (ready) cb(); else readyCbs.push(cb); }
   function loadGtag() {
-    if (document.getElementById('gtag-js')) return;
+    if (rejected() || document.getElementById('gtag-js')) return;
     var s = document.createElement('script');
     s.id = 'gtag-js';
     s.async = true;
@@ -52,16 +62,21 @@
   // it loads on the first interaction (or 5 s after load), never during the
   // first render. Events queue in dataLayer meanwhile, nothing is lost.
   var triggers = ['pointerdown', 'keydown', 'scroll', 'touchstart'];
-  function kick() {
+  function kick(e) {
+    // A tap on the cookie notice is not "first use": wait for the choice
+    // (Rechazar must never load gtag.js).
+    if (e && e.target && e.target.closest && e.target.closest('.ck-banner')) return;
+    if (rejected()) return;
     triggers.forEach(function (t) { window.removeEventListener(t, kick, { passive: true }); });
     loadGtag();
   }
   triggers.forEach(function (t) { window.addEventListener(t, kick, { passive: true }); });
-  window.addEventListener('load', function () { setTimeout(kick, 5000); });
+  window.addEventListener('load', function () { setTimeout(function () { kick(); }, 5000); });
 
   var PII = /@|\d{7,}|\+\d/;
 
   function track(name, params) {
+    if (rejected()) return;
     var p = params || {};
     if (debug) p.debug_mode = true;
     window.gtag('event', name, p);
@@ -110,6 +125,7 @@
     if (/^agendar (mi )?consulta$/.test(norm)) names.push('agendar_consulta_click');
     if (norm === 'crear cuenta gratis') names.push('sign_up_click');
     if (norm === 'iniciar sesión' || norm === 'inicia sesión') names.push('login_click');
+    if (rejected()) return;
     var go = holdNavigation(e, el);
     if (go) {
       loadGtag();

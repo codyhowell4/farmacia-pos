@@ -11,7 +11,7 @@
   'use strict';
   var cfg = window.APOLO_SITE || {};
   var CART_KEY = 'apolo-site-cart-v1';
-  var PAGE = 48;
+  var PAGE = 20;
   var MAX_QTY = 20;
   var MAX_LINES = 50;
 
@@ -169,7 +169,7 @@
       // Invisible spacers keep the last row's cards from stretching.
       for (var i = 0; i < 4; i++) html += '<div aria-hidden="true" style="flex: 1 1 220px; height: 0"></div>';
       if (list.length > state.shown) {
-        html += '<div style="flex: 1 1 100%; display: flex; justify-content: center"><button type="button" data-more style="min-height: 48px; padding: 0 22px; border-radius: 12px; background: #FFFFFF; color: #1E2A8A; border: 2px solid #1E2A8A; font-weight: 700; font-size: 16px; cursor: pointer">Ver más productos (' + (list.length - state.shown) + ')</button></div>';
+        html += '<div data-section="ver_mas" style="flex: 1 1 100%; display: flex; justify-content: center"><button type="button" data-more data-track-label="Ver más" style="min-height: 48px; padding: 0 22px; border-radius: 12px; background: #FFFFFF; color: #1E2A8A; border: 2px solid #1E2A8A; font-weight: 700; font-size: 16px; cursor: pointer">Ver más productos (' + (list.length - state.shown) + ')</button></div>';
       }
     }
     grid.innerHTML = html;
