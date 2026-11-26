@@ -373,8 +373,10 @@ window.FarmaciaAPI = (function () {
 
     /**
      * Get the product catalog (inventory) for the online store.
-     * Only OTC products: Rx-only rows are excluded here (null counts as
-     * OTC) and the place_store_order RPC rejects them server-side anyway.
+     * Reads the store_catalog view: the SAME online-sale rule as the
+     * website /tienda (inventory_sold_online: no Rx, no controlled group,
+     * sell_online, no antibiotics/injectables/services by name, stock and
+     * price > 0). place_store_order enforces the same rule server-side.
      * Paginates past PostgREST's 1000-row cap via _fetchAllPages.
      * Real catalog only: no local/demo fallback (an error shows an empty shop).
      */
@@ -388,7 +390,7 @@ window.FarmaciaAPI = (function () {
 
       try {
         const data = await _fetchAllPages(() => sb
-          .from('inventory_catalog')
+          .from('store_catalog')
           .select('id, name, "use", price, quantity, requires_prescription, category, image_url, barcode, low_stock_threshold, laboratorio')
           .gt('quantity', 0)
           .or('requires_prescription.is.null,requires_prescription.eq.false')
