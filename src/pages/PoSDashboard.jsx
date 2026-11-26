@@ -806,8 +806,19 @@ const PoSDashboard = () => {
   const applyDiscount = async () => {
     try {
       const foundDiscount = await findDiscount(discountCode);
-      // Personal codes (e.g. CODY, owner test sales) only work for their
-      // owner's login. The server refuses the sale too (trigger on sales).
+      // Restricted codes: CODY (test sales) only works for users with the
+      // admin role; a profile-restricted code only for its owner. The server
+      // refuses the sale too (trigger on sales) and records who used it.
+      if (foundDiscount?.restricted_to_role && foundDiscount.restricted_to_role !== user?.role) {
+        logAudit({
+          action: AUDIT_ACTIONS.DISCOUNT_APPLIED,
+          user,
+          details: `Código ${foundDiscount.code} RECHAZADO: solo administradores (intento de ${user?.name || '—'}, rol ${user?.role || '—'})`,
+        });
+        toast({ title: 'Código no autorizado', description: 'Este código solo lo pueden usar administradores.', variant: 'destructive' });
+        setDiscount(null);
+        return;
+      }
       if (foundDiscount?.restricted_to_profile_id && foundDiscount.restricted_to_profile_id !== user?.id) {
         logAudit({
           action: AUDIT_ACTIONS.DISCOUNT_APPLIED,
@@ -1834,6 +1845,15 @@ const PoSDashboard = () => {
         }
 
         logAudit({ action: AUDIT_ACTIONS.SALE_COMPLETE, user, details: `Sale #${sale.id.slice(-6)} | ${formatMXN(saleFinalTotal)} | ${isSplitPayment ? 'split' : paymentMethod} | ${cart.length} item(s)` });
+        // Restricted code (CODY): record which admin used it on this sale
+        // (the sale row also stores it in discount_authorized_by).
+        if (!useMembershipDiscount && (discount?.restricted_to_role || discount?.restricted_to_profile_id)) {
+          logAudit({
+            action: AUDIT_ACTIONS.DISCOUNT_APPLIED,
+            user,
+            details: `Código ${discount.code} usado por ${user?.name || '—'} (${user?.email || user?.id}) en venta #${sale.id.slice(-6)} | Total cobrado ${formatMXN(saleFinalTotal)}`,
+          });
+        }
         toast({ title: '¡Venta completada!', description: `${formatMXN(saleFinalTotal)} ${isSplitPayment ? '(pago dividido)' : ''}` });
 
         // Prepare sale data for receipt. Los datos de receta salen del modal
